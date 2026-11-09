@@ -19,12 +19,9 @@ use sha2::{Digest, Sha256};
 
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
-use crate::clients::tenderdash_client::BlockTxResult;
+use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT};
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::PlatformServiceImpl;
-
-/// Tenderdash heights are signed 64-bit integers.
-pub(super) const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
 
 impl PlatformServiceImpl {
     /// Read the block at the requested height from Tenderdash and return the state

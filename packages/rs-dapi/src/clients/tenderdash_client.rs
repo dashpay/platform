@@ -16,6 +16,9 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace, warn};
 
+/// Tenderdash heights are signed 64-bit integers.
+pub const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
+
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
 ///

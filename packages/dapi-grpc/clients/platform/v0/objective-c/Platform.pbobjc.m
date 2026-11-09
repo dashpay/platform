@@ -62,6 +62,12 @@ GPBObjCClassDeclaration(GetAddressesTrunkStateRequest);
 GPBObjCClassDeclaration(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse);
 GPBObjCClassDeclaration(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0);
+GPBObjCClassDeclaration(GetBlocksRequest);
+GPBObjCClassDeclaration(GetBlocksRequest_GetBlocksRequestV0);
+GPBObjCClassDeclaration(GetBlocksResponse);
+GPBObjCClassDeclaration(GetBlocksResponse_GetBlocksResponseV0);
+GPBObjCClassDeclaration(GetBlocksResponse_GetBlocksResponseV0_Block);
+GPBObjCClassDeclaration(GetBlocksResponse_GetBlocksResponseV0_Transaction);
 GPBObjCClassDeclaration(GetConsensusParamsRequest);
 GPBObjCClassDeclaration(GetConsensusParamsRequest_GetConsensusParamsRequestV0);
 GPBObjCClassDeclaration(GetConsensusParamsResponse);
@@ -399,6 +405,11 @@ GPBObjCClassDeclaration(GetMostRecentShieldedAnchorRequest);
 GPBObjCClassDeclaration(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0);
 GPBObjCClassDeclaration(GetMostRecentShieldedAnchorResponse);
 GPBObjCClassDeclaration(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0);
+GPBObjCClassDeclaration(GetOwnerTransactionsInBlockRequest);
+GPBObjCClassDeclaration(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0);
+GPBObjCClassDeclaration(GetOwnerTransactionsInBlockResponse);
+GPBObjCClassDeclaration(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0);
+GPBObjCClassDeclaration(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction);
 GPBObjCClassDeclaration(GetPathElementsRequest);
 GPBObjCClassDeclaration(GetPathElementsRequest_GetPathElementsRequestV0);
 GPBObjCClassDeclaration(GetPathElementsResponse);
@@ -35403,6 +35414,688 @@ typedef struct GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesRespon
                                    storageSize:sizeof(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0_PrivateDocumentEntries__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntriesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockRequest
+
+@implementation GetOwnerTransactionsInBlockRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetOwnerTransactionsInBlockRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0 *v0;
+} GetOwnerTransactionsInBlockRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0),
+        .number = GetOwnerTransactionsInBlockRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetOwnerTransactionsInBlockRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetOwnerTransactionsInBlockRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetOwnerTransactionsInBlockRequest_ClearVersionOneOfCase(GetOwnerTransactionsInBlockRequest *message) {
+  GPBDescriptor *descriptor = [GetOwnerTransactionsInBlockRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0
+
+@implementation GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0
+
+@dynamic height;
+@dynamic ownerId;
+
+typedef struct GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *ownerId;
+  uint64_t height;
+} GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "height",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Height,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_, height),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "ownerId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_OwnerId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_, ownerId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetOwnerTransactionsInBlockRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockResponse
+
+@implementation GetOwnerTransactionsInBlockResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetOwnerTransactionsInBlockResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0 *v0;
+} GetOwnerTransactionsInBlockResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0),
+        .number = GetOwnerTransactionsInBlockResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetOwnerTransactionsInBlockResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetOwnerTransactionsInBlockResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetOwnerTransactionsInBlockResponse_ClearVersionOneOfCase(GetOwnerTransactionsInBlockResponse *message) {
+  GPBDescriptor *descriptor = [GetOwnerTransactionsInBlockResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0
+
+@implementation GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0
+
+@dynamic transactionsArray, transactionsArray_Count;
+
+typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *transactionsArray;
+} GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "transactionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction),
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_TransactionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_, transactionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetOwnerTransactionsInBlockResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction
+
+@implementation GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction
+
+@dynamic stateTransition;
+@dynamic hash_p;
+@dynamic code;
+
+typedef struct GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t code;
+  NSData *stateTransition;
+  NSData *hash_p;
+} GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransition",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_StateTransition,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, stateTransition),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "hash_p",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Hash_p,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, hash_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "code",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Code,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_, code),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetBlocksRequest
+
+@implementation GetBlocksRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetBlocksRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetBlocksRequest_GetBlocksRequestV0 *v0;
+} GetBlocksRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlocksRequest_GetBlocksRequestV0),
+        .number = GetBlocksRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetBlocksRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetBlocksRequest_ClearVersionOneOfCase(GetBlocksRequest *message) {
+  GPBDescriptor *descriptor = [GetBlocksRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetBlocksRequest_GetBlocksRequestV0
+
+@implementation GetBlocksRequest_GetBlocksRequestV0
+
+@dynamic startHeight;
+@dynamic count;
+
+typedef struct GetBlocksRequest_GetBlocksRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  uint64_t startHeight;
+} GetBlocksRequest_GetBlocksRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksRequest_GetBlocksRequestV0_FieldNumber_StartHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetBlocksRequest_GetBlocksRequestV0__storage_, startHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Count,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetBlocksRequest_GetBlocksRequestV0__storage_, count),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksRequest_GetBlocksRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksRequest_GetBlocksRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlocksRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetBlocksResponse
+
+@implementation GetBlocksResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetBlocksResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetBlocksResponse_GetBlocksResponseV0 *v0;
+} GetBlocksResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlocksResponse_GetBlocksResponseV0),
+        .number = GetBlocksResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetBlocksResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetBlocksResponse_ClearVersionOneOfCase(GetBlocksResponse *message) {
+  GPBDescriptor *descriptor = [GetBlocksResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0
+
+@implementation GetBlocksResponse_GetBlocksResponseV0
+
+@dynamic blocksArray, blocksArray_Count;
+
+typedef struct GetBlocksResponse_GetBlocksResponseV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *blocksArray;
+} GetBlocksResponse_GetBlocksResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blocksArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlocksResponse_GetBlocksResponseV0_Block),
+        .number = GetBlocksResponse_GetBlocksResponseV0_FieldNumber_BlocksArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0__storage_, blocksArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksResponse_GetBlocksResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksResponse_GetBlocksResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlocksResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0_Transaction
+
+@implementation GetBlocksResponse_GetBlocksResponseV0_Transaction
+
+@dynamic stateTransition;
+@dynamic hash_p;
+@dynamic code;
+
+typedef struct GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t code;
+  NSData *stateTransition;
+  NSData *hash_p;
+} GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransition",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_StateTransition,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_, stateTransition),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "hash_p",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Hash_p,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_, hash_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "code",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Code,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_, code),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksResponse_GetBlocksResponseV0_Transaction class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksResponse_GetBlocksResponseV0_Transaction__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlocksResponse_GetBlocksResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0_Block
+
+@implementation GetBlocksResponse_GetBlocksResponseV0_Block
+
+@dynamic height;
+@dynamic hash_p;
+@dynamic timeMs;
+@dynamic coreChainLockedHeight;
+@dynamic appHash;
+@dynamic proposerProTxHash;
+@dynamic transactionsArray, transactionsArray_Count;
+
+typedef struct GetBlocksResponse_GetBlocksResponseV0_Block__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t coreChainLockedHeight;
+  NSData *hash_p;
+  NSData *appHash;
+  NSData *proposerProTxHash;
+  NSMutableArray *transactionsArray;
+  uint64_t height;
+  uint64_t timeMs;
+} GetBlocksResponse_GetBlocksResponseV0_Block__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "height",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Height,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, height),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "hash_p",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Hash_p,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, hash_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "timeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_TimeMs,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, timeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "coreChainLockedHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_CoreChainLockedHeight,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, coreChainLockedHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "appHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_AppHash,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, appHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proposerProTxHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_ProposerProTxHash,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, proposerProTxHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "transactionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetBlocksResponse_GetBlocksResponseV0_Transaction),
+        .number = GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_TransactionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_, transactionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetBlocksResponse_GetBlocksResponseV0_Block class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetBlocksResponse_GetBlocksResponseV0_Block__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetBlocksResponse_GetBlocksResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

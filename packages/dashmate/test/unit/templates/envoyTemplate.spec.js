@@ -6,6 +6,9 @@ import renderTemplateFactory from '../../../src/templates/renderTemplateFactory.
 
 const GET_BLOCKS_PATH = '/org.dash.platform.dapi.v0.Platform/getBlocks';
 
+// envoy.yaml opens with `!ignore filters: &filters`, a tag only Envoy's own loader knows
+const ENVOY_YAML_SCHEMA = yaml.DEFAULT_SCHEMA.extend(new yaml.Type('!ignore', { kind: 'scalar' }));
+
 function renderGatewayConfigs(customize = () => {}) {
   const config = getBaseConfigFactory(HomeDir.createTemp())();
   customize(config);
@@ -24,6 +27,10 @@ function findRoutes(node) {
   return Object.values(node).reduce((found, child) => found ?? findRoutes(child), undefined);
 }
 
+function loadEnvoyRoutes(renderedConfigs) {
+  return findRoutes(yaml.load(renderedConfigs['platform/gateway/envoy.yaml'], { schema: ENVOY_YAML_SCHEMA }));
+}
+
 function loadGetBlocksDescriptors(renderedConfigs) {
   const { descriptors } = yaml.load(renderedConfigs['platform/gateway/rate_limiter/rate_limiter.yaml']);
   return descriptors.find(({ key, value }) => key === 'method' && value === 'getBlocks').descriptors;
@@ -31,9 +38,7 @@ function loadGetBlocksDescriptors(renderedConfigs) {
 
 describe('gateway rate limit of getBlocks', () => {
   it('should send getBlocks through its own limit before the Platform prefix route', () => {
-    const renderedConfigs = renderGatewayConfigs();
-
-    const routes = findRoutes(yaml.load(renderedConfigs['platform/gateway/envoy.yaml']));
+    const routes = loadEnvoyRoutes(renderGatewayConfigs());
 
     const routeIndex = routes.findIndex(({ match }) => match.path === GET_BLOCKS_PATH);
     const prefixIndex = routes.findIndex(({ match }) => (
@@ -78,11 +83,9 @@ describe('gateway rate limit of getBlocks', () => {
   });
 
   it('should not reference the rate limiter from the route when it is disabled', () => {
-    const renderedConfigs = renderGatewayConfigs((config) => {
+    const routes = loadEnvoyRoutes(renderGatewayConfigs((config) => {
       config.set('platform.gateway.rateLimiter.enabled', false);
-    });
-
-    const routes = findRoutes(yaml.load(renderedConfigs['platform/gateway/envoy.yaml']));
+    }));
     const route = routes.find(({ match }) => match.path === GET_BLOCKS_PATH);
 
     expect(route.route).to.not.have.property('rate_limits');

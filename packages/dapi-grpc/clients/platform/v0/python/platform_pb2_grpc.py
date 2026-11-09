@@ -394,6 +394,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
                 )
+        self.getOwnerTransactionsInBlock = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getOwnerTransactionsInBlock',
+                request_serializer=platform__pb2.GetOwnerTransactionsInBlockRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetOwnerTransactionsInBlockResponse.FromString,
+                )
+        self.getBlocks = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getBlocks',
+                request_serializer=platform__pb2.GetBlocksRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetBlocksResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -866,6 +876,23 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getOwnerTransactionsInBlock(self, request, context):
+        """The state transitions one owner has in the Tenderdash block at a height.
+        DAPI answers it from Tenderdash; the response carries no proof.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getBlocks(self, request, context):
+        """Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; the
+        response carries no proof. This is for looking blocks up, not for syncing a
+        chain: the gateway allows each IP very few of these requests.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1248,6 +1275,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getPrivateDocumentEntries,
                     request_deserializer=platform__pb2.GetPrivateDocumentEntriesRequest.FromString,
                     response_serializer=platform__pb2.GetPrivateDocumentEntriesResponse.SerializeToString,
+            ),
+            'getOwnerTransactionsInBlock': grpc.unary_unary_rpc_method_handler(
+                    servicer.getOwnerTransactionsInBlock,
+                    request_deserializer=platform__pb2.GetOwnerTransactionsInBlockRequest.FromString,
+                    response_serializer=platform__pb2.GetOwnerTransactionsInBlockResponse.SerializeToString,
+            ),
+            'getBlocks': grpc.unary_unary_rpc_method_handler(
+                    servicer.getBlocks,
+                    request_deserializer=platform__pb2.GetBlocksRequest.FromString,
+                    response_serializer=platform__pb2.GetBlocksResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2548,5 +2585,39 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPrivateDocumentEntries',
             platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
             platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getOwnerTransactionsInBlock(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getOwnerTransactionsInBlock',
+            platform__pb2.GetOwnerTransactionsInBlockRequest.SerializeToString,
+            platform__pb2.GetOwnerTransactionsInBlockResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getBlocks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getBlocks',
+            platform__pb2.GetBlocksRequest.SerializeToString,
+            platform__pb2.GetBlocksResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

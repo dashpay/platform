@@ -3102,6 +3102,72 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getOwnerTransactionsInBlock}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getOwnerTransactionsInBlockCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} [response] GetOwnerTransactionsInBlockResponse
+                         */
+
+                        /**
+                         * Calls getOwnerTransactionsInBlock.
+                         * @function getOwnerTransactionsInBlock
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest} request GetOwnerTransactionsInBlockRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getOwnerTransactionsInBlockCallback} callback Node-style callback called with the error, if any, and GetOwnerTransactionsInBlockResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getOwnerTransactionsInBlock = function getOwnerTransactionsInBlock(request, callback) {
+                            return this.rpcCall(getOwnerTransactionsInBlock, $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest, $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse, request, callback);
+                        }, "name", { value: "getOwnerTransactionsInBlock" });
+
+                        /**
+                         * Calls getOwnerTransactionsInBlock.
+                         * @function getOwnerTransactionsInBlock
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest} request GetOwnerTransactionsInBlockRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getBlocks}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getBlocksCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetBlocksResponse} [response] GetBlocksResponse
+                         */
+
+                        /**
+                         * Calls getBlocks.
+                         * @function getBlocks
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest} request GetBlocksRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getBlocksCallback} callback Node-style callback called with the error, if any, and GetBlocksResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getBlocks = function getBlocks(request, callback) {
+                            return this.rpcCall(getBlocks, $root.org.dash.platform.dapi.v0.GetBlocksRequest, $root.org.dash.platform.dapi.v0.GetBlocksResponse, request, callback);
+                        }, "name", { value: "getBlocks" });
+
+                        /**
+                         * Calls getBlocks.
+                         * @function getBlocks
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest} request GetBlocksRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetBlocksResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -129603,6 +129669,2620 @@ $root.org = (function() {
                         })();
 
                         return GetPrivateDocumentEntriesResponse;
+                    })();
+
+                    v0.GetOwnerTransactionsInBlockRequest = (function() {
+
+                        /**
+                         * Properties of a GetOwnerTransactionsInBlockRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetOwnerTransactionsInBlockRequest
+                         * @property {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0|null} [v0] GetOwnerTransactionsInBlockRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetOwnerTransactionsInBlockRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetOwnerTransactionsInBlockRequest.
+                         * @implements IGetOwnerTransactionsInBlockRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest=} [properties] Properties to set
+                         */
+                        function GetOwnerTransactionsInBlockRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetOwnerTransactionsInBlockRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @instance
+                         */
+                        GetOwnerTransactionsInBlockRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetOwnerTransactionsInBlockRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetOwnerTransactionsInBlockRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetOwnerTransactionsInBlockRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest} GetOwnerTransactionsInBlockRequest instance
+                         */
+                        GetOwnerTransactionsInBlockRequest.create = function create(properties) {
+                            return new GetOwnerTransactionsInBlockRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetOwnerTransactionsInBlockRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest} message GetOwnerTransactionsInBlockRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetOwnerTransactionsInBlockRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetOwnerTransactionsInBlockRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockRequest} message GetOwnerTransactionsInBlockRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetOwnerTransactionsInBlockRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetOwnerTransactionsInBlockRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest} GetOwnerTransactionsInBlockRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetOwnerTransactionsInBlockRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetOwnerTransactionsInBlockRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest} GetOwnerTransactionsInBlockRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetOwnerTransactionsInBlockRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetOwnerTransactionsInBlockRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetOwnerTransactionsInBlockRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetOwnerTransactionsInBlockRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest} GetOwnerTransactionsInBlockRequest
+                         */
+                        GetOwnerTransactionsInBlockRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetOwnerTransactionsInBlockRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest} message GetOwnerTransactionsInBlockRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetOwnerTransactionsInBlockRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetOwnerTransactionsInBlockRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetOwnerTransactionsInBlockRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetOwnerTransactionsInBlockRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                             * @interface IGetOwnerTransactionsInBlockRequestV0
+                             * @property {number|Long|null} [height] GetOwnerTransactionsInBlockRequestV0 height
+                             * @property {Uint8Array|null} [ownerId] GetOwnerTransactionsInBlockRequestV0 ownerId
+                             */
+
+                            /**
+                             * Constructs a new GetOwnerTransactionsInBlockRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest
+                             * @classdesc Represents a GetOwnerTransactionsInBlockRequestV0.
+                             * @implements IGetOwnerTransactionsInBlockRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0=} [properties] Properties to set
+                             */
+                            function GetOwnerTransactionsInBlockRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetOwnerTransactionsInBlockRequestV0 height.
+                             * @member {number|Long} height
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @instance
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.prototype.height = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetOwnerTransactionsInBlockRequestV0 ownerId.
+                             * @member {Uint8Array} ownerId
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @instance
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.prototype.ownerId = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new GetOwnerTransactionsInBlockRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0} GetOwnerTransactionsInBlockRequestV0 instance
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.create = function create(properties) {
+                                return new GetOwnerTransactionsInBlockRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetOwnerTransactionsInBlockRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0} message GetOwnerTransactionsInBlockRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.height != null && Object.hasOwnProperty.call(message, "height"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.height);
+                                if (message.ownerId != null && Object.hasOwnProperty.call(message, "ownerId"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.ownerId);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetOwnerTransactionsInBlockRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.IGetOwnerTransactionsInBlockRequestV0} message GetOwnerTransactionsInBlockRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetOwnerTransactionsInBlockRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0} GetOwnerTransactionsInBlockRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.height = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.ownerId = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetOwnerTransactionsInBlockRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0} GetOwnerTransactionsInBlockRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetOwnerTransactionsInBlockRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.height != null && message.hasOwnProperty("height"))
+                                    if (!$util.isInteger(message.height) && !(message.height && $util.isInteger(message.height.low) && $util.isInteger(message.height.high)))
+                                        return "height: integer|Long expected";
+                                if (message.ownerId != null && message.hasOwnProperty("ownerId"))
+                                    if (!(message.ownerId && typeof message.ownerId.length === "number" || $util.isString(message.ownerId)))
+                                        return "ownerId: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetOwnerTransactionsInBlockRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0} GetOwnerTransactionsInBlockRequestV0
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0();
+                                if (object.height != null)
+                                    if ($util.Long)
+                                        (message.height = $util.Long.fromValue(object.height)).unsigned = true;
+                                    else if (typeof object.height === "string")
+                                        message.height = parseInt(object.height, 10);
+                                    else if (typeof object.height === "number")
+                                        message.height = object.height;
+                                    else if (typeof object.height === "object")
+                                        message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber(true);
+                                if (object.ownerId != null)
+                                    if (typeof object.ownerId === "string")
+                                        $util.base64.decode(object.ownerId, message.ownerId = $util.newBuffer($util.base64.length(object.ownerId)), 0);
+                                    else if (object.ownerId.length >= 0)
+                                        message.ownerId = object.ownerId;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetOwnerTransactionsInBlockRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0} message GetOwnerTransactionsInBlockRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.height = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.height = options.longs === String ? "0" : 0;
+                                    if (options.bytes === String)
+                                        object.ownerId = "";
+                                    else {
+                                        object.ownerId = [];
+                                        if (options.bytes !== Array)
+                                            object.ownerId = $util.newBuffer(object.ownerId);
+                                    }
+                                }
+                                if (message.height != null && message.hasOwnProperty("height"))
+                                    if (typeof message.height === "number")
+                                        object.height = options.longs === String ? String(message.height) : message.height;
+                                    else
+                                        object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber(true) : message.height;
+                                if (message.ownerId != null && message.hasOwnProperty("ownerId"))
+                                    object.ownerId = options.bytes === String ? $util.base64.encode(message.ownerId, 0, message.ownerId.length) : options.bytes === Array ? Array.prototype.slice.call(message.ownerId) : message.ownerId;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetOwnerTransactionsInBlockRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockRequest.GetOwnerTransactionsInBlockRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetOwnerTransactionsInBlockRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetOwnerTransactionsInBlockRequestV0;
+                        })();
+
+                        return GetOwnerTransactionsInBlockRequest;
+                    })();
+
+                    v0.GetOwnerTransactionsInBlockResponse = (function() {
+
+                        /**
+                         * Properties of a GetOwnerTransactionsInBlockResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetOwnerTransactionsInBlockResponse
+                         * @property {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0|null} [v0] GetOwnerTransactionsInBlockResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetOwnerTransactionsInBlockResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetOwnerTransactionsInBlockResponse.
+                         * @implements IGetOwnerTransactionsInBlockResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockResponse=} [properties] Properties to set
+                         */
+                        function GetOwnerTransactionsInBlockResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetOwnerTransactionsInBlockResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @instance
+                         */
+                        GetOwnerTransactionsInBlockResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetOwnerTransactionsInBlockResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetOwnerTransactionsInBlockResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetOwnerTransactionsInBlockResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} GetOwnerTransactionsInBlockResponse instance
+                         */
+                        GetOwnerTransactionsInBlockResponse.create = function create(properties) {
+                            return new GetOwnerTransactionsInBlockResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetOwnerTransactionsInBlockResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockResponse} message GetOwnerTransactionsInBlockResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetOwnerTransactionsInBlockResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetOwnerTransactionsInBlockResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetOwnerTransactionsInBlockResponse} message GetOwnerTransactionsInBlockResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetOwnerTransactionsInBlockResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetOwnerTransactionsInBlockResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} GetOwnerTransactionsInBlockResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetOwnerTransactionsInBlockResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetOwnerTransactionsInBlockResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} GetOwnerTransactionsInBlockResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetOwnerTransactionsInBlockResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetOwnerTransactionsInBlockResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetOwnerTransactionsInBlockResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetOwnerTransactionsInBlockResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} GetOwnerTransactionsInBlockResponse
+                         */
+                        GetOwnerTransactionsInBlockResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetOwnerTransactionsInBlockResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse} message GetOwnerTransactionsInBlockResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetOwnerTransactionsInBlockResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetOwnerTransactionsInBlockResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetOwnerTransactionsInBlockResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetOwnerTransactionsInBlockResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                             * @interface IGetOwnerTransactionsInBlockResponseV0
+                             * @property {Array.<org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction>|null} [transactions] GetOwnerTransactionsInBlockResponseV0 transactions
+                             */
+
+                            /**
+                             * Constructs a new GetOwnerTransactionsInBlockResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse
+                             * @classdesc Represents a GetOwnerTransactionsInBlockResponseV0.
+                             * @implements IGetOwnerTransactionsInBlockResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0=} [properties] Properties to set
+                             */
+                            function GetOwnerTransactionsInBlockResponseV0(properties) {
+                                this.transactions = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetOwnerTransactionsInBlockResponseV0 transactions.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction>} transactions
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @instance
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.prototype.transactions = $util.emptyArray;
+
+                            /**
+                             * Creates a new GetOwnerTransactionsInBlockResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0} GetOwnerTransactionsInBlockResponseV0 instance
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.create = function create(properties) {
+                                return new GetOwnerTransactionsInBlockResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetOwnerTransactionsInBlockResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0} message GetOwnerTransactionsInBlockResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.transactions != null && message.transactions.length)
+                                    for (var i = 0; i < message.transactions.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.encode(message.transactions[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetOwnerTransactionsInBlockResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.IGetOwnerTransactionsInBlockResponseV0} message GetOwnerTransactionsInBlockResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetOwnerTransactionsInBlockResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0} GetOwnerTransactionsInBlockResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.transactions && message.transactions.length))
+                                            message.transactions = [];
+                                        message.transactions.push($root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetOwnerTransactionsInBlockResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0} GetOwnerTransactionsInBlockResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetOwnerTransactionsInBlockResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.transactions != null && message.hasOwnProperty("transactions")) {
+                                    if (!Array.isArray(message.transactions))
+                                        return "transactions: array expected";
+                                    for (var i = 0; i < message.transactions.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.verify(message.transactions[i]);
+                                        if (error)
+                                            return "transactions." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetOwnerTransactionsInBlockResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0} GetOwnerTransactionsInBlockResponseV0
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0();
+                                if (object.transactions) {
+                                    if (!Array.isArray(object.transactions))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.transactions: array expected");
+                                    message.transactions = [];
+                                    for (var i = 0; i < object.transactions.length; ++i) {
+                                        if (typeof object.transactions[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.transactions: object expected");
+                                        message.transactions[i] = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.fromObject(object.transactions[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetOwnerTransactionsInBlockResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0} message GetOwnerTransactionsInBlockResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.transactions = [];
+                                if (message.transactions && message.transactions.length) {
+                                    object.transactions = [];
+                                    for (var j = 0; j < message.transactions.length; ++j)
+                                        object.transactions[j] = $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.toObject(message.transactions[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetOwnerTransactionsInBlockResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetOwnerTransactionsInBlockResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetOwnerTransactionsInBlockResponseV0.OwnerTransaction = (function() {
+
+                                /**
+                                 * Properties of an OwnerTransaction.
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                                 * @interface IOwnerTransaction
+                                 * @property {Uint8Array|null} [stateTransition] OwnerTransaction stateTransition
+                                 * @property {Uint8Array|null} [hash] OwnerTransaction hash
+                                 * @property {number|null} [code] OwnerTransaction code
+                                 */
+
+                                /**
+                                 * Constructs a new OwnerTransaction.
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0
+                                 * @classdesc Represents an OwnerTransaction.
+                                 * @implements IOwnerTransaction
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction=} [properties] Properties to set
+                                 */
+                                function OwnerTransaction(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * OwnerTransaction stateTransition.
+                                 * @member {Uint8Array} stateTransition
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @instance
+                                 */
+                                OwnerTransaction.prototype.stateTransition = $util.newBuffer([]);
+
+                                /**
+                                 * OwnerTransaction hash.
+                                 * @member {Uint8Array} hash
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @instance
+                                 */
+                                OwnerTransaction.prototype.hash = $util.newBuffer([]);
+
+                                /**
+                                 * OwnerTransaction code.
+                                 * @member {number} code
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @instance
+                                 */
+                                OwnerTransaction.prototype.code = 0;
+
+                                /**
+                                 * Creates a new OwnerTransaction instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction} OwnerTransaction instance
+                                 */
+                                OwnerTransaction.create = function create(properties) {
+                                    return new OwnerTransaction(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified OwnerTransaction message. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction} message OwnerTransaction message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                OwnerTransaction.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.stateTransition != null && Object.hasOwnProperty.call(message, "stateTransition"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransition);
+                                    if (message.hash != null && Object.hasOwnProperty.call(message, "hash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.hash);
+                                    if (message.code != null && Object.hasOwnProperty.call(message, "code"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.code);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified OwnerTransaction message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.IOwnerTransaction} message OwnerTransaction message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                OwnerTransaction.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an OwnerTransaction message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction} OwnerTransaction
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                OwnerTransaction.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.stateTransition = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.hash = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.code = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an OwnerTransaction message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction} OwnerTransaction
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                OwnerTransaction.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an OwnerTransaction message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                OwnerTransaction.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        if (!(message.stateTransition && typeof message.stateTransition.length === "number" || $util.isString(message.stateTransition)))
+                                            return "stateTransition: buffer expected";
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        if (!(message.hash && typeof message.hash.length === "number" || $util.isString(message.hash)))
+                                            return "hash: buffer expected";
+                                    if (message.code != null && message.hasOwnProperty("code"))
+                                        if (!$util.isInteger(message.code))
+                                            return "code: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an OwnerTransaction message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction} OwnerTransaction
+                                 */
+                                OwnerTransaction.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction();
+                                    if (object.stateTransition != null)
+                                        if (typeof object.stateTransition === "string")
+                                            $util.base64.decode(object.stateTransition, message.stateTransition = $util.newBuffer($util.base64.length(object.stateTransition)), 0);
+                                        else if (object.stateTransition.length >= 0)
+                                            message.stateTransition = object.stateTransition;
+                                    if (object.hash != null)
+                                        if (typeof object.hash === "string")
+                                            $util.base64.decode(object.hash, message.hash = $util.newBuffer($util.base64.length(object.hash)), 0);
+                                        else if (object.hash.length >= 0)
+                                            message.hash = object.hash;
+                                    if (object.code != null)
+                                        message.code = object.code >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an OwnerTransaction message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction} message OwnerTransaction
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                OwnerTransaction.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.stateTransition = "";
+                                        else {
+                                            object.stateTransition = [];
+                                            if (options.bytes !== Array)
+                                                object.stateTransition = $util.newBuffer(object.stateTransition);
+                                        }
+                                        if (options.bytes === String)
+                                            object.hash = "";
+                                        else {
+                                            object.hash = [];
+                                            if (options.bytes !== Array)
+                                                object.hash = $util.newBuffer(object.hash);
+                                        }
+                                        object.code = 0;
+                                    }
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        object.stateTransition = options.bytes === String ? $util.base64.encode(message.stateTransition, 0, message.stateTransition.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransition) : message.stateTransition;
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        object.hash = options.bytes === String ? $util.base64.encode(message.hash, 0, message.hash.length) : options.bytes === Array ? Array.prototype.slice.call(message.hash) : message.hash;
+                                    if (message.code != null && message.hasOwnProperty("code"))
+                                        object.code = message.code;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this OwnerTransaction to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetOwnerTransactionsInBlockResponse.GetOwnerTransactionsInBlockResponseV0.OwnerTransaction
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                OwnerTransaction.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return OwnerTransaction;
+                            })();
+
+                            return GetOwnerTransactionsInBlockResponseV0;
+                        })();
+
+                        return GetOwnerTransactionsInBlockResponse;
+                    })();
+
+                    v0.GetBlocksRequest = (function() {
+
+                        /**
+                         * Properties of a GetBlocksRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetBlocksRequest
+                         * @property {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0|null} [v0] GetBlocksRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetBlocksRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetBlocksRequest.
+                         * @implements IGetBlocksRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest=} [properties] Properties to set
+                         */
+                        function GetBlocksRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetBlocksRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @instance
+                         */
+                        GetBlocksRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetBlocksRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetBlocksRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetBlocksRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksRequest} GetBlocksRequest instance
+                         */
+                        GetBlocksRequest.create = function create(properties) {
+                            return new GetBlocksRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetBlocksRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest} message GetBlocksRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetBlocksRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetBlocksRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksRequest} message GetBlocksRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetBlocksRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetBlocksRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksRequest} GetBlocksRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetBlocksRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetBlocksRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksRequest} GetBlocksRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetBlocksRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetBlocksRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetBlocksRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetBlocksRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksRequest} GetBlocksRequest
+                         */
+                        GetBlocksRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetBlocksRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlocksRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetBlocksRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetBlocksRequest} message GetBlocksRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetBlocksRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetBlocksRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetBlocksRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetBlocksRequest.GetBlocksRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetBlocksRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                             * @interface IGetBlocksRequestV0
+                             * @property {number|Long|null} [startHeight] GetBlocksRequestV0 startHeight
+                             * @property {number|null} [count] GetBlocksRequestV0 count
+                             */
+
+                            /**
+                             * Constructs a new GetBlocksRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest
+                             * @classdesc Represents a GetBlocksRequestV0.
+                             * @implements IGetBlocksRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0=} [properties] Properties to set
+                             */
+                            function GetBlocksRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetBlocksRequestV0 startHeight.
+                             * @member {number|Long} startHeight
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @instance
+                             */
+                            GetBlocksRequestV0.prototype.startHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetBlocksRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @instance
+                             */
+                            GetBlocksRequestV0.prototype.count = 0;
+
+                            /**
+                             * Creates a new GetBlocksRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0} GetBlocksRequestV0 instance
+                             */
+                            GetBlocksRequestV0.create = function create(properties) {
+                                return new GetBlocksRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetBlocksRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0} message GetBlocksRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetBlocksRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startHeight != null && Object.hasOwnProperty.call(message, "startHeight"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startHeight);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.count);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetBlocksRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksRequest.IGetBlocksRequestV0} message GetBlocksRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetBlocksRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetBlocksRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0} GetBlocksRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetBlocksRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startHeight = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.count = reader.uint32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetBlocksRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0} GetBlocksRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetBlocksRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetBlocksRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetBlocksRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (!$util.isInteger(message.startHeight) && !(message.startHeight && $util.isInteger(message.startHeight.low) && $util.isInteger(message.startHeight.high)))
+                                        return "startHeight: integer|Long expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetBlocksRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0} GetBlocksRequestV0
+                             */
+                            GetBlocksRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0();
+                                if (object.startHeight != null)
+                                    if ($util.Long)
+                                        (message.startHeight = $util.Long.fromValue(object.startHeight)).unsigned = true;
+                                    else if (typeof object.startHeight === "string")
+                                        message.startHeight = parseInt(object.startHeight, 10);
+                                    else if (typeof object.startHeight === "number")
+                                        message.startHeight = object.startHeight;
+                                    else if (typeof object.startHeight === "object")
+                                        message.startHeight = new $util.LongBits(object.startHeight.low >>> 0, object.startHeight.high >>> 0).toNumber(true);
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetBlocksRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0} message GetBlocksRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetBlocksRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startHeight = options.longs === String ? "0" : 0;
+                                    object.count = 0;
+                                }
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (typeof message.startHeight === "number")
+                                        object.startHeight = options.longs === String ? String(message.startHeight) : message.startHeight;
+                                    else
+                                        object.startHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startHeight) : options.longs === Number ? new $util.LongBits(message.startHeight.low >>> 0, message.startHeight.high >>> 0).toNumber(true) : message.startHeight;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetBlocksRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksRequest.GetBlocksRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetBlocksRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetBlocksRequestV0;
+                        })();
+
+                        return GetBlocksRequest;
+                    })();
+
+                    v0.GetBlocksResponse = (function() {
+
+                        /**
+                         * Properties of a GetBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetBlocksResponse
+                         * @property {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0|null} [v0] GetBlocksResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetBlocksResponse.
+                         * @implements IGetBlocksResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksResponse=} [properties] Properties to set
+                         */
+                        function GetBlocksResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetBlocksResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @instance
+                         */
+                        GetBlocksResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetBlocksResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetBlocksResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetBlocksResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksResponse} GetBlocksResponse instance
+                         */
+                        GetBlocksResponse.create = function create(properties) {
+                            return new GetBlocksResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetBlocksResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksResponse} message GetBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetBlocksResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetBlocksResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetBlocksResponse} message GetBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetBlocksResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetBlocksResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksResponse} GetBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetBlocksResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetBlocksResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksResponse} GetBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetBlocksResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetBlocksResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetBlocksResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetBlocksResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetBlocksResponse} GetBlocksResponse
+                         */
+                        GetBlocksResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetBlocksResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetBlocksResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetBlocksResponse} message GetBlocksResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetBlocksResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetBlocksResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetBlocksResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetBlocksResponse.GetBlocksResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                             * @interface IGetBlocksResponseV0
+                             * @property {Array.<org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock>|null} [blocks] GetBlocksResponseV0 blocks
+                             */
+
+                            /**
+                             * Constructs a new GetBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse
+                             * @classdesc Represents a GetBlocksResponseV0.
+                             * @implements IGetBlocksResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0=} [properties] Properties to set
+                             */
+                            function GetBlocksResponseV0(properties) {
+                                this.blocks = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetBlocksResponseV0 blocks.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock>} blocks
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @instance
+                             */
+                            GetBlocksResponseV0.prototype.blocks = $util.emptyArray;
+
+                            /**
+                             * Creates a new GetBlocksResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0} GetBlocksResponseV0 instance
+                             */
+                            GetBlocksResponseV0.create = function create(properties) {
+                                return new GetBlocksResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetBlocksResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0} message GetBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetBlocksResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.blocks != null && message.blocks.length)
+                                    for (var i = 0; i < message.blocks.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.encode(message.blocks[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetBlocksResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksResponse.IGetBlocksResponseV0} message GetBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetBlocksResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetBlocksResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0} GetBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetBlocksResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.blocks && message.blocks.length))
+                                            message.blocks = [];
+                                        message.blocks.push($root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetBlocksResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0} GetBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetBlocksResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetBlocksResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetBlocksResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.blocks != null && message.hasOwnProperty("blocks")) {
+                                    if (!Array.isArray(message.blocks))
+                                        return "blocks: array expected";
+                                    for (var i = 0; i < message.blocks.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.verify(message.blocks[i]);
+                                        if (error)
+                                            return "blocks." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetBlocksResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0} GetBlocksResponseV0
+                             */
+                            GetBlocksResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0();
+                                if (object.blocks) {
+                                    if (!Array.isArray(object.blocks))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.blocks: array expected");
+                                    message.blocks = [];
+                                    for (var i = 0; i < object.blocks.length; ++i) {
+                                        if (typeof object.blocks[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.blocks: object expected");
+                                        message.blocks[i] = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.fromObject(object.blocks[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetBlocksResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0} message GetBlocksResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetBlocksResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.blocks = [];
+                                if (message.blocks && message.blocks.length) {
+                                    object.blocks = [];
+                                    for (var j = 0; j < message.blocks.length; ++j)
+                                        object.blocks[j] = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.toObject(message.blocks[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetBlocksResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetBlocksResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetBlocksResponseV0.Transaction = (function() {
+
+                                /**
+                                 * Properties of a Transaction.
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                                 * @interface ITransaction
+                                 * @property {Uint8Array|null} [stateTransition] Transaction stateTransition
+                                 * @property {Uint8Array|null} [hash] Transaction hash
+                                 * @property {number|null} [code] Transaction code
+                                 */
+
+                                /**
+                                 * Constructs a new Transaction.
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                                 * @classdesc Represents a Transaction.
+                                 * @implements ITransaction
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction=} [properties] Properties to set
+                                 */
+                                function Transaction(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Transaction stateTransition.
+                                 * @member {Uint8Array} stateTransition
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @instance
+                                 */
+                                Transaction.prototype.stateTransition = $util.newBuffer([]);
+
+                                /**
+                                 * Transaction hash.
+                                 * @member {Uint8Array} hash
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @instance
+                                 */
+                                Transaction.prototype.hash = $util.newBuffer([]);
+
+                                /**
+                                 * Transaction code.
+                                 * @member {number} code
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @instance
+                                 */
+                                Transaction.prototype.code = 0;
+
+                                /**
+                                 * Creates a new Transaction instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction} Transaction instance
+                                 */
+                                Transaction.create = function create(properties) {
+                                    return new Transaction(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Transaction message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction} message Transaction message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Transaction.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.stateTransition != null && Object.hasOwnProperty.call(message, "stateTransition"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransition);
+                                    if (message.hash != null && Object.hasOwnProperty.call(message, "hash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.hash);
+                                    if (message.code != null && Object.hasOwnProperty.call(message, "code"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.code);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Transaction message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction} message Transaction message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Transaction.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Transaction message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction} Transaction
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Transaction.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.stateTransition = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.hash = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.code = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Transaction message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction} Transaction
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Transaction.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Transaction message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Transaction.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        if (!(message.stateTransition && typeof message.stateTransition.length === "number" || $util.isString(message.stateTransition)))
+                                            return "stateTransition: buffer expected";
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        if (!(message.hash && typeof message.hash.length === "number" || $util.isString(message.hash)))
+                                            return "hash: buffer expected";
+                                    if (message.code != null && message.hasOwnProperty("code"))
+                                        if (!$util.isInteger(message.code))
+                                            return "code: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Transaction message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction} Transaction
+                                 */
+                                Transaction.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction();
+                                    if (object.stateTransition != null)
+                                        if (typeof object.stateTransition === "string")
+                                            $util.base64.decode(object.stateTransition, message.stateTransition = $util.newBuffer($util.base64.length(object.stateTransition)), 0);
+                                        else if (object.stateTransition.length >= 0)
+                                            message.stateTransition = object.stateTransition;
+                                    if (object.hash != null)
+                                        if (typeof object.hash === "string")
+                                            $util.base64.decode(object.hash, message.hash = $util.newBuffer($util.base64.length(object.hash)), 0);
+                                        else if (object.hash.length >= 0)
+                                            message.hash = object.hash;
+                                    if (object.code != null)
+                                        message.code = object.code >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Transaction message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction} message Transaction
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Transaction.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.stateTransition = "";
+                                        else {
+                                            object.stateTransition = [];
+                                            if (options.bytes !== Array)
+                                                object.stateTransition = $util.newBuffer(object.stateTransition);
+                                        }
+                                        if (options.bytes === String)
+                                            object.hash = "";
+                                        else {
+                                            object.hash = [];
+                                            if (options.bytes !== Array)
+                                                object.hash = $util.newBuffer(object.hash);
+                                        }
+                                        object.code = 0;
+                                    }
+                                    if (message.stateTransition != null && message.hasOwnProperty("stateTransition"))
+                                        object.stateTransition = options.bytes === String ? $util.base64.encode(message.stateTransition, 0, message.stateTransition.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransition) : message.stateTransition;
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        object.hash = options.bytes === String ? $util.base64.encode(message.hash, 0, message.hash.length) : options.bytes === Array ? Array.prototype.slice.call(message.hash) : message.hash;
+                                    if (message.code != null && message.hasOwnProperty("code"))
+                                        object.code = message.code;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Transaction to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Transaction.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Transaction;
+                            })();
+
+                            GetBlocksResponseV0.Block = (function() {
+
+                                /**
+                                 * Properties of a Block.
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                                 * @interface IBlock
+                                 * @property {number|Long|null} [height] Block height
+                                 * @property {Uint8Array|null} [hash] Block hash
+                                 * @property {number|Long|null} [timeMs] Block timeMs
+                                 * @property {number|null} [coreChainLockedHeight] Block coreChainLockedHeight
+                                 * @property {Uint8Array|null} [appHash] Block appHash
+                                 * @property {Uint8Array|null} [proposerProTxHash] Block proposerProTxHash
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction>|null} [transactions] Block transactions
+                                 */
+
+                                /**
+                                 * Constructs a new Block.
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0
+                                 * @classdesc Represents a Block.
+                                 * @implements IBlock
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock=} [properties] Properties to set
+                                 */
+                                function Block(properties) {
+                                    this.transactions = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Block height.
+                                 * @member {number|Long} height
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.height = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Block hash.
+                                 * @member {Uint8Array} hash
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.hash = $util.newBuffer([]);
+
+                                /**
+                                 * Block timeMs.
+                                 * @member {number|Long} timeMs
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.timeMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Block coreChainLockedHeight.
+                                 * @member {number} coreChainLockedHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.coreChainLockedHeight = 0;
+
+                                /**
+                                 * Block appHash.
+                                 * @member {Uint8Array} appHash
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.appHash = $util.newBuffer([]);
+
+                                /**
+                                 * Block proposerProTxHash.
+                                 * @member {Uint8Array} proposerProTxHash
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.proposerProTxHash = $util.newBuffer([]);
+
+                                /**
+                                 * Block transactions.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.ITransaction>} transactions
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 */
+                                Block.prototype.transactions = $util.emptyArray;
+
+                                /**
+                                 * Creates a new Block instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block} Block instance
+                                 */
+                                Block.create = function create(properties) {
+                                    return new Block(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Block message. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock} message Block message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Block.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.height != null && Object.hasOwnProperty.call(message, "height"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.height);
+                                    if (message.hash != null && Object.hasOwnProperty.call(message, "hash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.hash);
+                                    if (message.timeMs != null && Object.hasOwnProperty.call(message, "timeMs"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.timeMs);
+                                    if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.coreChainLockedHeight);
+                                    if (message.appHash != null && Object.hasOwnProperty.call(message, "appHash"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.appHash);
+                                    if (message.proposerProTxHash != null && Object.hasOwnProperty.call(message, "proposerProTxHash"))
+                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.proposerProTxHash);
+                                    if (message.transactions != null && message.transactions.length)
+                                        for (var i = 0; i < message.transactions.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.encode(message.transactions[i], writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Block message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.IBlock} message Block message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Block.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Block message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block} Block
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Block.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.height = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.hash = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.timeMs = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.coreChainLockedHeight = reader.uint32();
+                                            break;
+                                        case 5:
+                                            message.appHash = reader.bytes();
+                                            break;
+                                        case 6:
+                                            message.proposerProTxHash = reader.bytes();
+                                            break;
+                                        case 7:
+                                            if (!(message.transactions && message.transactions.length))
+                                                message.transactions = [];
+                                            message.transactions.push($root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Block message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block} Block
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Block.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Block message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Block.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (!$util.isInteger(message.height) && !(message.height && $util.isInteger(message.height.low) && $util.isInteger(message.height.high)))
+                                            return "height: integer|Long expected";
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        if (!(message.hash && typeof message.hash.length === "number" || $util.isString(message.hash)))
+                                            return "hash: buffer expected";
+                                    if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                        if (!$util.isInteger(message.timeMs) && !(message.timeMs && $util.isInteger(message.timeMs.low) && $util.isInteger(message.timeMs.high)))
+                                            return "timeMs: integer|Long expected";
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        if (!$util.isInteger(message.coreChainLockedHeight))
+                                            return "coreChainLockedHeight: integer expected";
+                                    if (message.appHash != null && message.hasOwnProperty("appHash"))
+                                        if (!(message.appHash && typeof message.appHash.length === "number" || $util.isString(message.appHash)))
+                                            return "appHash: buffer expected";
+                                    if (message.proposerProTxHash != null && message.hasOwnProperty("proposerProTxHash"))
+                                        if (!(message.proposerProTxHash && typeof message.proposerProTxHash.length === "number" || $util.isString(message.proposerProTxHash)))
+                                            return "proposerProTxHash: buffer expected";
+                                    if (message.transactions != null && message.hasOwnProperty("transactions")) {
+                                        if (!Array.isArray(message.transactions))
+                                            return "transactions: array expected";
+                                        for (var i = 0; i < message.transactions.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.verify(message.transactions[i]);
+                                            if (error)
+                                                return "transactions." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Block message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block} Block
+                                 */
+                                Block.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block();
+                                    if (object.height != null)
+                                        if ($util.Long)
+                                            (message.height = $util.Long.fromValue(object.height)).unsigned = true;
+                                        else if (typeof object.height === "string")
+                                            message.height = parseInt(object.height, 10);
+                                        else if (typeof object.height === "number")
+                                            message.height = object.height;
+                                        else if (typeof object.height === "object")
+                                            message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber(true);
+                                    if (object.hash != null)
+                                        if (typeof object.hash === "string")
+                                            $util.base64.decode(object.hash, message.hash = $util.newBuffer($util.base64.length(object.hash)), 0);
+                                        else if (object.hash.length >= 0)
+                                            message.hash = object.hash;
+                                    if (object.timeMs != null)
+                                        if ($util.Long)
+                                            (message.timeMs = $util.Long.fromValue(object.timeMs)).unsigned = true;
+                                        else if (typeof object.timeMs === "string")
+                                            message.timeMs = parseInt(object.timeMs, 10);
+                                        else if (typeof object.timeMs === "number")
+                                            message.timeMs = object.timeMs;
+                                        else if (typeof object.timeMs === "object")
+                                            message.timeMs = new $util.LongBits(object.timeMs.low >>> 0, object.timeMs.high >>> 0).toNumber(true);
+                                    if (object.coreChainLockedHeight != null)
+                                        message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
+                                    if (object.appHash != null)
+                                        if (typeof object.appHash === "string")
+                                            $util.base64.decode(object.appHash, message.appHash = $util.newBuffer($util.base64.length(object.appHash)), 0);
+                                        else if (object.appHash.length >= 0)
+                                            message.appHash = object.appHash;
+                                    if (object.proposerProTxHash != null)
+                                        if (typeof object.proposerProTxHash === "string")
+                                            $util.base64.decode(object.proposerProTxHash, message.proposerProTxHash = $util.newBuffer($util.base64.length(object.proposerProTxHash)), 0);
+                                        else if (object.proposerProTxHash.length >= 0)
+                                            message.proposerProTxHash = object.proposerProTxHash;
+                                    if (object.transactions) {
+                                        if (!Array.isArray(object.transactions))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.transactions: array expected");
+                                        message.transactions = [];
+                                        for (var i = 0; i < object.transactions.length; ++i) {
+                                            if (typeof object.transactions[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block.transactions: object expected");
+                                            message.transactions[i] = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.fromObject(object.transactions[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Block message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block} message Block
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Block.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.transactions = [];
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.height = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.height = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.hash = "";
+                                        else {
+                                            object.hash = [];
+                                            if (options.bytes !== Array)
+                                                object.hash = $util.newBuffer(object.hash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.timeMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.timeMs = options.longs === String ? "0" : 0;
+                                        object.coreChainLockedHeight = 0;
+                                        if (options.bytes === String)
+                                            object.appHash = "";
+                                        else {
+                                            object.appHash = [];
+                                            if (options.bytes !== Array)
+                                                object.appHash = $util.newBuffer(object.appHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.proposerProTxHash = "";
+                                        else {
+                                            object.proposerProTxHash = [];
+                                            if (options.bytes !== Array)
+                                                object.proposerProTxHash = $util.newBuffer(object.proposerProTxHash);
+                                        }
+                                    }
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (typeof message.height === "number")
+                                            object.height = options.longs === String ? String(message.height) : message.height;
+                                        else
+                                            object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber(true) : message.height;
+                                    if (message.hash != null && message.hasOwnProperty("hash"))
+                                        object.hash = options.bytes === String ? $util.base64.encode(message.hash, 0, message.hash.length) : options.bytes === Array ? Array.prototype.slice.call(message.hash) : message.hash;
+                                    if (message.timeMs != null && message.hasOwnProperty("timeMs"))
+                                        if (typeof message.timeMs === "number")
+                                            object.timeMs = options.longs === String ? String(message.timeMs) : message.timeMs;
+                                        else
+                                            object.timeMs = options.longs === String ? $util.Long.prototype.toString.call(message.timeMs) : options.longs === Number ? new $util.LongBits(message.timeMs.low >>> 0, message.timeMs.high >>> 0).toNumber(true) : message.timeMs;
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        object.coreChainLockedHeight = message.coreChainLockedHeight;
+                                    if (message.appHash != null && message.hasOwnProperty("appHash"))
+                                        object.appHash = options.bytes === String ? $util.base64.encode(message.appHash, 0, message.appHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.appHash) : message.appHash;
+                                    if (message.proposerProTxHash != null && message.hasOwnProperty("proposerProTxHash"))
+                                        object.proposerProTxHash = options.bytes === String ? $util.base64.encode(message.proposerProTxHash, 0, message.proposerProTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proposerProTxHash) : message.proposerProTxHash;
+                                    if (message.transactions && message.transactions.length) {
+                                        object.transactions = [];
+                                        for (var j = 0; j < message.transactions.length; ++j)
+                                            object.transactions[j] = $root.org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Transaction.toObject(message.transactions[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Block to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetBlocksResponse.GetBlocksResponseV0.Block
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Block.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Block;
+                            })();
+
+                            return GetBlocksResponseV0;
+                        })();
+
+                        return GetBlocksResponse;
                     })();
 
                     return v0;
