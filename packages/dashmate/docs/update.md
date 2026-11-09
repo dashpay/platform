@@ -93,7 +93,9 @@ Local networks and devnets keep their nodes on Core v23, since a Core v24 node d
 $ dashmate core cli "sporkupdate SPORK_2_INSTANTSEND_ENABLED 0" --config=local_seed
 $ dashmate core cli "sporkupdate SPORK_17_QUORUM_DKG_ENABLED 0" --config=local_seed
 $ dashmate core cli "sporkupdate SPORK_19_CHAINLOCKS_ENABLED 0" --config=local_seed
-``` For a local network, `dashmate group reset --hard` followed by `dashmate setup local` gives a fresh network on Core v24.
+```
+
+For a local network, `dashmate group reset --hard` followed by `dashmate setup local` gives a fresh network on Core v24.
 
 ## Major Updates with Platform Reset
 
