@@ -27,8 +27,10 @@ use crate::platform::data_contracts_latest_versions::{
 use crate::platform::documents::document_query::RankingDirection;
 use crate::platform::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::platform::private_document_entries::PrivateDocumentEntries;
+use crate::platform::private_document_scan::PrivateDocumentScanKeys;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::private_document_create_from_shielded_pool::PrivateDocumentCreateFromShieldedPool;
+use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::types::epoch::current_epoch_probe_query;
 use crate::platform::types::identity::{
     IdentityRequest, IdentityResponse, NonUniquePublicKeyHashQuery,
@@ -2506,6 +2508,165 @@ async fn should_refuse_a_private_document_send_until_the_network_is_verified_at_
         }
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
     }
+}
+
+/// The bundle of a private document send that the gate refuses before it is built.
+fn unbuilt_bundle() -> OrchardBundleParams {
+    OrchardBundleParams {
+        actions: vec![],
+        anchor: [7; 32],
+        proof: vec![],
+        binding_signature: [9; 64],
+    }
+}
+
+/// An unpinned SDK below protocol version 15 that asks for no proofs still learns the
+/// network's version before refusing a private document send: the gate's probe asks for a
+/// proof whatever the SDK's setting, and the refusal is of the network proven at 14, not of
+/// a version the SDK never asked.
+#[tokio::test]
+async fn should_probe_before_refusing_a_private_document_send_without_proofs() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv14").await;
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            unbuilt_bundle(),
+            None,
+        )
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            required: PROTOCOL_VERSION_15,
+            network: V14,
+            pinned: false,
+            ..
+        }) => {}
+        other => panic!("expected the network proven at 14, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 1, "the network was asked");
+}
+
+/// A private document send learns the network's version under the caller's request
+/// settings: one attempt, banning no node for an answer it cannot verify, as the caller
+/// asked.
+#[tokio::test]
+async fn should_learn_the_version_for_a_private_document_send_under_the_caller_settings() {
+    let sdk = sdk_with_provider(V14, false, 0, true, NoQuorumKeys);
+    answer_probe(&sdk, "pv14").await;
+    let settings = PutSettings {
+        request_settings: RequestSettings {
+            ban_failed_address: Some(false),
+            ..once()
+        },
+        ..Default::default()
+    };
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            unbuilt_bundle(),
+            Some(settings),
+        )
+        .await;
+    assert!(
+        matches!(
+            &result,
+            Err(Error::ProtocolVersionNotActive { cause: Some(_), .. })
+        ),
+        "{result:?}"
+    );
+    assert!(result
+        .as_ref()
+        .is_err_and(Error::is_transient_protocol_version_refusal));
+    assert_eq!(probes(&sdk).await, 1, "no retries, as the caller asked");
+    assert!(
+        !sdk.address_list().is_banned(&node()),
+        "the caller asked not to ban failed nodes"
+    );
+}
+
+/// An unpinned SDK below protocol version 15 that asks for no proofs learns, from the gate's
+/// proved probe, that the network runs 15, and sends a private document: the send is
+/// broadcast, which the mock, answering no broadcast, fails, rather than refused for its
+/// version.
+#[tokio::test]
+async fn should_send_a_private_document_once_a_probe_proves_15_without_proofs() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv15").await;
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let result = sdk
+        .private_document_create_from_shielded_pool(
+            Identifier::new([4; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![1; 589])],
+            114_140_000,
+            OrchardBundleParams {
+                actions: vec![action.clone(), action],
+                anchor: [7; 32],
+                proof: vec![8; 64],
+                binding_signature: [9; 64],
+            },
+            None,
+        )
+        .await;
+    let error = result.expect_err("the mock answers no broadcast");
+    assert!(
+        format!("{error:?}").contains("BroadcastStateTransitionRequest"),
+        "broadcast: {error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sdk.protocol_version_number(), PROTOCOL_VERSION_15);
+}
+
+/// DashPay's private contact requests, read or sealed, establish the network's protocol
+/// version as the send does: an unpinned SDK below 15 that asks for no proofs learns from the
+/// gate's proved probe that the network runs 15 and goes on to resolve DashPay at it, which
+/// it then fetches, and, asking for no proofs, refuses to fetch unproved, where it was refused
+/// for its version before. An SDK pinned below 15 is refused without asking.
+#[tokio::test]
+async fn should_resolve_dashpay_for_private_contact_requests_once_a_probe_proves_15() {
+    let sdk = sdk_with_proofs(V14, false, 0, false);
+    answer_probe(&sdk, "pv15").await;
+    let error = sdk
+        .scan_private_contact_requests(0, &PrivateDocumentScanKeys::new())
+        .await
+        .expect_err("DashPay is not fetched unproved");
+    assert!(
+        matches!(&error, Error::Config(message) if message.contains("enable proofs")),
+        "DashPay is resolved: {error:?}"
+    );
+    assert_eq!(probes(&sdk).await, 1);
+    assert_eq!(sdk.protocol_version_number(), PROTOCOL_VERSION_15);
+
+    let pinned = sdk_with_proofs(V14, true, 0, false);
+    let refused = pinned
+        .scan_private_contact_requests(0, &PrivateDocumentScanKeys::new())
+        .await;
+    assert!(
+        matches!(
+            refused,
+            Err(Error::ProtocolVersionNotActive {
+                required: PROTOCOL_VERSION_15,
+                pinned: true,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(probes(&pinned).await, 0);
 }
 
 /// A private document transition built elsewhere and sent through the generic broadcast is

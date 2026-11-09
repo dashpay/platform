@@ -374,6 +374,38 @@ impl Sdk {
         })
     }
 
+    /// Establish, before a request built against the network's protocol version, that the
+    /// network serves `requirement` and this SDK speaks it. The gate decides first, under the
+    /// caller's `settings` ([`Self::ensure_network_serves`]): its probe asks with a proof
+    /// whatever this SDK's proof setting and raises an unpinned SDK's version, and it refuses
+    /// with [`Error::ProtocolVersionNotActive`], the probe's failure as its cause when it
+    /// failed. An SDK that enforces no gate (a mock) is checked on its own version instead,
+    /// refreshed first when it is below, under the same settings, the refresh's failure as the
+    /// refusal's cause.
+    pub(crate) async fn establish_protocol_requirement(
+        &self,
+        requirement: ProtocolRequirement,
+        settings: Option<RequestSettings>,
+    ) -> Result<(), Error> {
+        self.ensure_network_serves(Some(requirement), settings)
+            .await?;
+        if self.enforces_protocol_gate()
+            || self.protocol_version_number() >= requirement.protocol_version
+        {
+            return Ok(());
+        }
+        let (version, failure) = self.refresh_protocol_version_or_failure(settings).await;
+        if version < requirement.protocol_version {
+            return Err(self.protocol_version_not_active(
+                requirement.protocol_version,
+                requirement.method,
+                requirement.feature,
+                failure,
+            ));
+        }
+        Ok(())
+    }
+
     /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the
     /// probe failed, if it did, unless another call is probing: then wait for its answer and
     /// decide from it, as the call that probed does.
