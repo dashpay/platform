@@ -274,8 +274,8 @@ mod tests {
     #[test]
     fn should_read_the_chunk_power_of_a_store_taking_the_entries_and_none_otherwise() {
         let (drive, _, chunk_power) = drive_with_private_type(4096);
-        // 4096 + 16 bytes to an entry keeps 64 of them near the 512 KiB target.
-        assert_eq!(chunk_power, 6);
+        // 4096 + 16 bytes to an entry keeps 128 of them near the 1 MiB target.
+        assert_eq!(chunk_power, 7);
         let platform_version = PlatformVersion::latest();
         for (type_name, entry_size) in [("secret", 4095), ("missing", 4096)] {
             assert_eq!(
@@ -297,7 +297,7 @@ mod tests {
     /// The fixed fee of a private document create, which the pool pays, covers what its
     /// operations meter, and its entries' storage share covers the entries' metered storage, so
     /// the pool-paid split (`storage = min(metered storage, fee)`) never zeroes the proposer's
-    /// share. Checked for an entry size at every chunk power a store can take (11 down to 6),
+    /// share. Checked for an entry size at every chunk power a store can take (11 down to 7),
     /// for one entry and for the most a transition carries, over appends that cross a chunk's
     /// compaction. Every batch is estimated before it is applied: the estimate succeeds, with the
     /// store described at its committed chunk power, and the entries' estimate covers what their
@@ -321,12 +321,12 @@ mod tests {
             let transaction = drive.grove.start_transaction();
             let entry_storage_allowance =
                 (entry_size as u64 + private_document.entry_overhead_bytes) * per_byte;
-            // 70 appends: at entry size 4096 (chunk power 6, 64 entries to a chunk) they cross a
+            // 134 appends: at entry size 4096 (chunk power 7, 128 entries to a chunk) they cross a
             // chunk's compaction. GroveDB charges every append of a store the same, the
             // compacting one included, so the smaller sizes' appends meter what any of theirs
             // does.
             let mut appended = 0u64;
-            for entry_count in [1, max_entries, max_entries, 1, 1] {
+            for entry_count in [1, max_entries, max_entries, max_entries, max_entries, 1, 1] {
                 nonce = nonce.wrapping_add(1);
                 // Distinct entries, as basic structure requires.
                 let entries: Vec<Vec<u8>> = (0..entry_count)

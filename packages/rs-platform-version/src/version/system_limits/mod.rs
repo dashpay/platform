@@ -45,7 +45,7 @@ pub struct SystemLimits {
     /// this does not count.
     pub max_private_document_entry_size: Option<u32>,
     /// The bytes a compacted chunk of a private document store is kept near (protocol version
-    /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
     /// document type. Read with the two chunk power bounds below by Drive's
     /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
     /// type's store; the chunk power it picks is committed into the store, so a store keeps the
