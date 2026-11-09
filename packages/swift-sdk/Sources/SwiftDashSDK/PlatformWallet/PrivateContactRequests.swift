@@ -124,7 +124,10 @@ extension ManagedIdentity {
     /// contact (`PlatformWalletError.privateContactRequestPending`), so show
     /// the contact as pending and offer neither; a private sync settles it.
     /// Read from this snapshot: take a fresh `ManagedIdentity` to see a
-    /// change. After a relaunch, a reply paid for in an earlier process is
+    /// change. The snapshot does not consume the wallet's rejection notices:
+    /// read `ManagedPlatformWallet.privateContactReadiness(identityId:)` (or
+    /// refresh) first, so a pair whose payment was rejected for good is
+    /// already released. After a relaunch, a reply paid for in an earlier process is
     /// pending again once Rust restores it from the shielded store, which it
     /// does when the store is configured after the load
     /// (`PlatformWalletManager.configureShielded`) or the wallet binds its
@@ -141,9 +144,15 @@ extension ManagedIdentity {
 
 extension ManagedPlatformWallet {
     /// What a contact request from `identityId`, one of this wallet's
-    /// identities, waits for, as the wallet decides it. A pure read of live
-    /// wallet state; read it again after the shielded store is configured or
-    /// the wallet binds its shielded account to see the restore.
+    /// identities, waits for, as the wallet decides it. Not a pure read: it
+    /// first releases the private requests whose payment was settled as never
+    /// executing, briefly taking the wallet's write lock to consume the
+    /// wallet's rejection notices, so a pair rejected for good reads as free
+    /// with no restart and no other request; then it reads live wallet state.
+    /// Read it before `ManagedIdentity.privateReplyPending(contactId:)`, whose
+    /// snapshot does not consume the notices, and again after the shielded
+    /// store is configured or the wallet binds its shielded account to see
+    /// the restore.
     public func privateContactReadiness(identityId: Identifier) throws -> PrivateContactReadiness {
         var ffi = PrivateContactReadinessFFI()
         let handle = self.handle

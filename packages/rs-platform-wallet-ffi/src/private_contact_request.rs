@@ -305,8 +305,12 @@ pub unsafe extern "C" fn managed_identity_get_private_contact(
 /// the wallet refuses another private send or reply to the contact with
 /// `ErrorPrivateContactRequestPending`, so a host shows the contact as pending
 /// and offers neither; a later `platform_wallet_sync_private_contact_requests`
-/// settles it. A pure read of the managed-identity snapshot. The wallet keeps
-/// it in memory only, so it is false after a restart.
+/// settles it. A read of the managed-identity snapshot, which does not consume
+/// the wallet's rejection notices: read
+/// `platform_wallet_get_private_contact_readiness` (or refresh) first, so a
+/// pair whose payment was rejected for good is already released. After a
+/// restart a reply paid for in an earlier process is pending again once the
+/// wallet restores its private payments from the shielded store.
 ///
 /// # Safety
 /// - `contact_id` must point to 32 readable bytes.

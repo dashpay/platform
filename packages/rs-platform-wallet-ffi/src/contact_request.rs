@@ -265,7 +265,13 @@ impl From<PrivateContactReadiness> for PrivateContactReadinessFFI {
 /// waits for, as the wallet decides it, into `out_readiness`
 /// ([`PrivateContactReadinessFFI`]): so a host tells "restoring private
 /// payments" from "reading the private store" and from a contact's pending
-/// request by the wallet's own state. A pure read of live wallet state.
+/// request by the wallet's own state. Not a pure read: it first releases the
+/// private requests whose payment was settled as never executing, briefly
+/// taking the wallet's write lock to consume the wallet's rejection notices,
+/// so a pair rejected for good reads as free with no restart and no other
+/// request; then it reads live wallet state. Read it before
+/// `managed_identity_get_private_reply_pending`, whose snapshot does not
+/// consume the notices.
 ///
 /// `out_readiness` is reset to all false first. An unknown `wallet_handle` is
 /// `NotFound`; an identity the wallet does not hold is refused as its lookup
