@@ -132,7 +132,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
             store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
-        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 25)
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 27)
         ..DRIVE_VERSION_V9.methods
     },
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private

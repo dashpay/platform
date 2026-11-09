@@ -69,7 +69,8 @@ pub struct PlatformState {
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
     /// The fee versions earlier epochs ran on. Saved with the state and not read by block
-    /// execution: refunds are priced from the schedule of the block that removes the bytes.
+    /// execution: from protocol version 15 a refund uses the schedule of the epoch that stored
+    /// the bytes, read from that epoch's tree, and before it the removing block's schedule.
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
 
     /// True when a field carried only by the full saved record has changed since
