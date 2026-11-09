@@ -925,6 +925,43 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(removed)
     }
 
+    fn mark_pending_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending_by(nullifier, reservation))
+    }
+
+    fn clear_pending_reserved_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        let Some(sw) = self.subwallets.get_mut(&id) else {
+            return Ok(false);
+        };
+        let released = sw.clear_pending_reserved_by(nullifier, reservation);
+        if released {
+            // Same log-don't-abort rationale as `clear_pending`.
+            if let Err(e) = self.delete_redrive_rows_containing(id, nullifier) {
+                tracing::warn!(
+                    error = %e,
+                    "redrive row deletion failed after a released reservation; a stale row \
+                     may rehydrate on the next open (self-heals via reconcile/prune)"
+                );
+            }
+            self.evict_private_contact_payments(id);
+        }
+        Ok(released)
+    }
+
     fn set_pending_spend(
         &mut self,
         id: SubwalletId,

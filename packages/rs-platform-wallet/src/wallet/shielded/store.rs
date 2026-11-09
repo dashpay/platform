@@ -395,9 +395,34 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// got removed; `false` is a no-op (paired clear from the
     /// rollback path on a transition that never marked pending,
     /// or a stale clear after the spend already promoted to
-    /// `mark_spent`).
+    /// `mark_spent`). Clears whoever holds it: for a resolution of the
+    /// spend (a pruned anchor). A spend attempt releases its own with
+    /// [`Self::clear_pending_reserved_by`].
     fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
         -> Result<bool, Self::Error>;
+
+    /// [`Self::mark_pending`] for the spend attempt `reservation`, which owns
+    /// the reservation: only [`Self::clear_pending_reserved_by`] with the
+    /// same attempt, or a resolution of the spend, clears it.
+    fn mark_pending_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Release `id`'s reservation of `nullifier`, and the redrive records
+    /// carrying it, only while the spend attempt `reservation` still holds
+    /// it ([`Self::mark_pending_by`]), compared and cleared in one call
+    /// under the store lock: a stale attempt's cleanup never releases a
+    /// newer attempt's notes or deletes its records. Returns whether it was
+    /// released.
+    fn clear_pending_reserved_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error>;
 
     /// Attach the recorded `anchor` the spend was built against, and
     /// the linked `activity_id`, to `id`'s pending reservation for
@@ -745,6 +770,11 @@ pub(super) struct PendingSpend {
     /// The linked activity-log entry id, so a released reservation can
     /// flip its "Pending" row to "Failed" instead of stranding it.
     pub activity_id: Option<[u8; 32]>,
+    /// The spend attempt that reserved the note
+    /// ([`ShieldedStore::mark_pending_by`]), whose release clears it only
+    /// while it still holds it. `None` for a reservation restored from a
+    /// redrive record, which only a resolution of its spend clears.
+    pub reservation: Option<u64>,
 }
 
 /// Per-subwallet note + sync state used by both the in-memory and
@@ -886,6 +916,42 @@ impl SubwalletState {
                 true
             }
             std::collections::btree_map::Entry::Occupied(_) => false,
+        }
+    }
+
+    /// [`Self::mark_pending`] for the spend attempt `reservation`, which owns
+    /// the reservation from now on.
+    pub(super) fn mark_pending_by(&mut self, nullifier: &[u8; 32], reservation: u64) -> bool {
+        match self.pending_nullifiers.entry(*nullifier) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(PendingSpend {
+                    reservation: Some(reservation),
+                    ..PendingSpend::default()
+                });
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        }
+    }
+
+    /// Release the reservation of `nullifier` only while the spend attempt
+    /// `reservation` holds it ([`Self::mark_pending_by`]), with the redrive
+    /// records it carries, as [`Self::clear_pending`] does. Returns whether
+    /// it was released: another attempt's reservation, or one restored from
+    /// a redrive record, stays.
+    pub(super) fn clear_pending_reserved_by(
+        &mut self,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> bool {
+        if self
+            .pending_nullifiers
+            .get(nullifier)
+            .is_some_and(|pending| pending.reservation == Some(reservation))
+        {
+            self.clear_pending(nullifier)
+        } else {
+            false
         }
     }
 
@@ -1127,6 +1193,32 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get_mut(&id)
             .map(|sw| sw.clear_pending(nullifier))
             .unwrap_or(false))
+    }
+
+    fn mark_pending_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending_by(nullifier, reservation))
+    }
+
+    fn clear_pending_reserved_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        let released = self
+            .subwallets
+            .get_mut(&id)
+            .is_some_and(|sw| sw.clear_pending_reserved_by(nullifier, reservation));
+        Ok(released)
     }
 
     fn set_pending_spend(

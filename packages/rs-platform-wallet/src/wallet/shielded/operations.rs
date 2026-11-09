@@ -42,6 +42,8 @@ use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
 use std::collections::{BTreeMap, HashSet};
+use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
@@ -1466,7 +1468,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
+        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -1617,7 +1619,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         entry_size: entries.first().map_or(0, |entry| entry.len() as u32),
     };
 
-    let (selected_notes, total_input, exact_fee, mut reservation) =
+    let (selected_notes, total_input, exact_fee, reservation) =
         reserve_notes_covering(sdk, store, id, 0, 2, fee_kind).await?;
 
     info!(
@@ -1645,11 +1647,8 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             })
             .collect::<Vec<[u8; 32]>>()
     });
-    let mut pending_entry = None;
-    let result = async {
+    let built = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
-        let anchor_bytes = anchor.to_bytes();
-
         let (state_transition, fee_used) =
             build_private_document_create_from_shielded_pool_transition(
                 spends,
@@ -1668,47 +1667,130 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             fee_used, exact_fee,
             "builder fee must match the reserved private document create fee"
         );
-
-        // The spend's only outputs are change, so it records as an own spend
-        // with its fee and no counterparty.
-        pending_entry = record_pending_activity(
+        Ok::<_, PlatformWalletError>((state_transition, fee_used, anchor.to_bytes()))
+    }
+    .await;
+    let (state_transition, fee_used, anchor_bytes) = match built {
+        Ok(built) => built,
+        Err(e) => {
+            // Nothing was saved or broadcast.
+            reservation.cancel().await;
+            return Err(e);
+        }
+    };
+    // The spend's only outputs are change, so it records as an own spend
+    // with its fee and no counterparty.
+    let pending_entry = record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        &views,
+        LiveEntryParams {
+            kind: ShieldedActivityKind::ShieldedSpend,
+            direction: ShieldedDirection::Out,
+            amount: 0,
+            fee: Some(fee_used),
+            counterparty: None,
+            memo: None,
+            actions: shielded_actions(&state_transition),
+            spent_notes: &selected_notes,
+        },
+    )
+    .await;
+    // Type 29 proves its spent nullifiers as a snapshot, which a competing
+    // spend of the same notes shares, as type 22's does: the affected-state
+    // wait accepts it (see `identity_top_up_from_pool_with_metadata`).
+    submit_private_document_payment(
+        PrivateDocumentSubmission {
             store,
             persister,
             wallet_id,
             id,
-            &views,
-            LiveEntryParams {
-                kind: ShieldedActivityKind::ShieldedSpend,
-                direction: ShieldedDirection::Out,
-                amount: 0,
-                fee: Some(fee_used),
-                counterparty: None,
-                memo: None,
-                actions: shielded_actions(&state_transition),
-                spent_notes: &selected_notes,
-            },
-        )
-        .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
+            pending_entry,
+            selected_notes: &selected_notes,
+            reservation,
+            state_transition,
+            anchor: anchor_bytes,
+            private_contact,
+            journaled: journaled.as_deref(),
+            payment_started,
+        },
+        |state_transition| async move {
+            broadcast_shielded_spend_classified(
+                sdk,
+                &state_transition,
+                "private document create from shielded pool",
+                SpendResultWait::AffectedState,
+            )
+            .await
+        },
+    )
+    .await
+}
 
-        trace!("PrivateDocumentCreateFromShieldedPool: state transition built, broadcasting...");
-        // Saved before the broadcast, not after an unconfirmed wait: a
-        // process that exits once the node admitted the transition, before
-        // the wait returns, still leaves the record a restart restores the
-        // request's reservation from, and the redrive resolves. The record
-        // is dropped with the notes' reservation on either outcome. The
-        // payment is marked started once the record is saved, with nothing
-        // awaited in between: a send dropped while the save waits for the
-        // store has saved and broadcast nothing, and releases its
-        // reservation.
+/// A built private document create, and everything submitting it takes
+/// ([`submit_private_document_payment`]).
+struct PrivateDocumentSubmission<'a, S: ShieldedStore> {
+    store: &'a Arc<RwLock<S>>,
+    persister: Option<&'a WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    /// The spend's activity entry, recorded pending; it keys its records.
+    pending_entry: Option<super::activity::ShieldedActivityEntry>,
+    selected_notes: &'a [ShieldedNote],
+    reservation: NoteReservation<S>,
+    state_transition: StateTransition,
+    anchor: [u8; 32],
+    private_contact: Option<PrivateContactPayment>,
+    journaled: Option<&'a [[u8; 32]]>,
+    payment_started: &'a PaymentStarted,
+}
+
+/// Record, save and broadcast a built private document create, then settle
+/// its notes and saved record ([`settle_private_document_payment`]).
+/// `broadcast` sends the transition and waits for its result: the production
+/// flow passes the classified broadcast, a test intercepts it.
+///
+/// Saved before the broadcast, not after an unconfirmed wait: a process that
+/// exits once the node admitted the transition, before the wait returns,
+/// still leaves the record a restart restores the request's reservation from,
+/// and the redrive resolves. The payment is marked started once the record is
+/// saved, with nothing awaited in between, and the notes are handed over only
+/// then: a send dropped while the save waits for the store has saved and
+/// broadcast nothing, and its guard releases the notes. A save that fails
+/// stops the payment before the broadcast.
+async fn submit_private_document_payment<S, B, Fut>(
+    submission: PrivateDocumentSubmission<'_, S>,
+    broadcast: B,
+) -> Result<ResponseMetadata, PlatformWalletError>
+where
+    S: ShieldedStore,
+    B: FnOnce(StateTransition) -> Fut,
+    Fut: Future<Output = Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure>>,
+{
+    let PrivateDocumentSubmission {
+        store,
+        persister,
+        wallet_id,
+        id,
+        pending_entry,
+        selected_notes,
+        mut reservation,
+        state_transition,
+        anchor,
+        private_contact,
+        journaled,
+        payment_started,
+    } = submission;
+    let result = async {
+        let anchored =
+            arm_pending_release(store, id, anchor, &pending_entry, selected_notes).await?;
         arm_redrive_before_broadcast(
             store,
             id,
             pending_entry.as_ref().map(|entry| entry.id),
-            anchor_bytes,
+            anchor,
             selected_notes.iter().map(|note| note.nullifier).collect(),
             &state_transition,
             "private document create from shielded pool",
@@ -1716,16 +1798,12 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             Some(payment_started),
         )
         .await?;
-        // Type 29 proves its spent nullifiers as a snapshot, which a competing
-        // spend of the same notes shares, as type 22's does: the affected-state
-        // wait accepts it (see `identity_top_up_from_pool_with_metadata`).
-        broadcast_shielded_spend_classified(
-            sdk,
-            &state_transition,
-            "private document create from shielded pool",
-            SpendResultWait::AffectedState,
-        )
-        .await
+        if anchored {
+            // Each reservation carries its anchor: a pruned anchor releases it.
+            reservation.hand_over();
+        }
+        trace!("PrivateDocumentCreateFromShieldedPool: state transition saved, broadcasting...");
+        broadcast(state_transition).await
     }
     .await;
 
@@ -1736,8 +1814,8 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         id,
         &pending_entry,
         reservation,
-        &selected_notes,
-        journaled.as_deref(),
+        selected_notes,
+        journaled,
         payment_started,
         result.map(|(_proof, metadata)| metadata),
     )
@@ -1968,7 +2046,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
+        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2159,7 +2237,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
+        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2340,7 +2418,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
+        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -2558,7 +2636,7 @@ where
             },
         )
         .await;
-        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await {
+        if arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await? {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
         }
@@ -3191,10 +3269,11 @@ fn mark_notes_pending<S: ShieldedStore>(
     id: SubwalletId,
     notes: &[ShieldedNote],
 ) -> Result<NoteReservation<S>, PlatformWalletError> {
+    let reservation = next_note_reservation();
     let mut marked = Vec::with_capacity(notes.len());
     for note in notes {
-        if let Err(e) = locked.mark_pending(id, &note.nullifier) {
-            release_reserved_notes(locked, id, &marked);
+        if let Err(e) = locked.mark_pending_by(id, &note.nullifier, reservation) {
+            release_reserved_notes(locked, id, &marked, reservation);
             return Err(PlatformWalletError::ShieldedStoreError(e.to_string()));
         }
         marked.push(note.nullifier);
@@ -3203,8 +3282,16 @@ fn mark_notes_pending<S: ShieldedStore>(
         store: Arc::clone(store),
         id,
         nullifiers: marked,
+        reservation,
         handed_over: false,
     })
+}
+
+/// A spend attempt's reservation id, unique in the process: what its note
+/// reservations are owned by ([`ShieldedStore::mark_pending_by`]).
+fn next_note_reservation() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, AtomicOrdering::Relaxed)
 }
 
 /// Notes one spend reserved ([`ShieldedStore::mark_pending`]), released when
@@ -3220,6 +3307,11 @@ pub(super) struct NoteReservation<S: ShieldedStore> {
     store: Arc<RwLock<S>>,
     id: SubwalletId,
     nullifiers: Vec<[u8; 32]>,
+    /// The attempt that owns the reservations: a release clears a note
+    /// only while it still holds it, so a cleanup that runs after a purge,
+    /// a rebind or a wallet's replacement never releases a newer attempt's
+    /// notes or deletes its records.
+    reservation: u64,
     handed_over: bool,
 }
 
@@ -3241,7 +3333,7 @@ impl<S: ShieldedStore> NoteReservation<S> {
     pub(super) async fn cancel(mut self) {
         self.handed_over = false;
         let mut store = self.store.write().await;
-        release_reserved_notes(&mut *store, self.id, &self.nullifiers);
+        release_reserved_notes(&mut *store, self.id, &self.nullifiers, self.reservation);
         self.nullifiers.clear();
     }
 }
@@ -3251,10 +3343,10 @@ impl<S: ShieldedStore> Drop for NoteReservation<S> {
         if self.handed_over || self.nullifiers.is_empty() {
             return;
         }
-        let id = self.id;
+        let (id, reservation) = (self.id, self.reservation);
         let nullifiers = std::mem::take(&mut self.nullifiers);
         if let Ok(mut store) = self.store.try_write() {
-            release_reserved_notes(&mut *store, id, &nullifiers);
+            release_reserved_notes(&mut *store, id, &nullifiers, reservation);
             return;
         }
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
@@ -3266,19 +3358,21 @@ impl<S: ShieldedStore> Drop for NoteReservation<S> {
         let store = Arc::clone(&self.store);
         runtime.spawn(async move {
             let mut store = store.write().await;
-            release_reserved_notes(&mut *store, id, &nullifiers);
+            release_reserved_notes(&mut *store, id, &nullifiers, reservation);
         });
     }
 }
 
-/// Clear the reservations of `nullifiers`.
+/// Clear the reservations of `nullifiers` the spend attempt `reservation`
+/// still holds ([`ShieldedStore::clear_pending_reserved_by`]).
 fn release_reserved_notes<S: ShieldedStore>(
     store: &mut S,
     id: SubwalletId,
     nullifiers: &[[u8; 32]],
+    reservation: u64,
 ) {
     for nullifier in nullifiers {
-        if let Err(e) = store.clear_pending(id, nullifier) {
+        if let Err(e) = store.clear_pending_reserved_by(id, nullifier, reservation) {
             warn!(
                 error = %e,
                 "releasing a dropped spend's note failed; the next note scan will reconcile"
@@ -3343,38 +3437,38 @@ async fn finalize_pending<S: ShieldedStore>(
 ///
 /// No-op when no activity entry was recorded (an output-less bundle —
 /// unreachable for our own builders, which always carry a visible
-/// output). Best-effort: a store write failure only means the
-/// reservation won't self-release on a pruned anchor (it still frees
-/// on the next restart), so it must never abort a spend about to
-/// broadcast. A success (`finalize_pending`) or a definite failure
+/// output). A success (`finalize_pending`) or a definite failure
 /// (`NoteReservation::cancel`) removes the entry, so only an ambiguous
 /// unconfirmed outcome leaves it carrying the anchor.
 ///
 /// Returns whether every reservation now carries the anchor, so a pruned
-/// anchor releases each.
+/// anchor releases each. A store write that fails stops the spend before it
+/// is broadcast ([`PlatformWalletError::ShieldedStoreError`]): the caller's
+/// reservation guard still owns the notes, so they are released, rather
+/// than a spend that may execute leaving reservations no pruned anchor
+/// frees.
 async fn arm_pending_release<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     anchor: [u8; 32],
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     notes: &[ShieldedNote],
-) -> bool {
+) -> Result<bool, PlatformWalletError> {
     let Some(entry) = pending_entry else {
-        return false;
+        return Ok(false);
     };
     let mut store = store.write().await;
-    let mut armed = true;
     for note in notes {
-        if let Err(e) = store.set_pending_spend(id, &note.nullifier, anchor, entry.id) {
-            armed = false;
-            warn!(
-                error = %e,
-                "set_pending_spend failed; this reservation won't self-release on a pruned \
-                 anchor (it still frees on the next restart)"
-            );
-        }
+        store
+            .set_pending_spend(id, &note.nullifier, anchor, entry.id)
+            .map_err(|e| {
+                PlatformWalletError::ShieldedStoreError(format!(
+                    "the spend's note reservation could not carry its anchor, so it is not \
+                     broadcast: {e}"
+                ))
+            })?;
     }
-    armed
+    Ok(true)
 }
 
 /// Maximum sync-time re-broadcast attempts for a
@@ -4244,6 +4338,7 @@ mod shield_recipient_tests {
 mod redrive_tests {
     use super::*;
     use crate::wallet::identity::network::PaymentStarted;
+    use crate::wallet::shielded::activity::ShieldedActivityEntry;
     use crate::wallet::shielded::store::InMemoryShieldedStore;
     use crate::wallet::shielded::FileBackedShieldedStore;
     use dash_sdk::dpp::dashcore::Network;
@@ -4581,6 +4676,396 @@ mod redrive_tests {
             MAX_REDRIVE_ATTEMPTS + 1,
             "identity retries stay live beyond the note-spend attempt budget"
         );
+    }
+
+    /// The production payment flow saves a private contact request payment
+    /// durably before its broadcast runs: intercepting the broadcast, a second
+    /// handle on the store's file reads its journal record and redrive record,
+    /// and the payment is marked started. A payment whose save fails is never
+    /// broadcast, is not marked started, and releases its notes.
+    #[tokio::test]
+    async fn should_save_a_private_payment_durably_before_its_broadcast() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 5,
+        };
+        let wallet_id = [0x68; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        for save_fails in [false, true] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let store = Arc::new(RwLock::new(
+                FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
+            ));
+            let note = ShieldedNote {
+                position: 0,
+                cmx: [1; 32],
+                nullifier: [0x5F; 32],
+                block_height: 1,
+                is_spent: false,
+                value: 1_000_000_000_000,
+                note_data: vec![],
+            };
+            store.write().await.save_note(id, &note).expect("a note");
+            let (selected, _, _, reservation) =
+                reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                    .await
+                    .expect("reserved");
+            if save_fails {
+                rusqlite::Connection::open(&path)
+                    .expect("the store's file")
+                    .execute_batch(
+                        "CREATE TRIGGER reject_redrive_insert BEFORE INSERT ON \
+                         shielded_pending_spends BEGIN SELECT RAISE(FAIL, 'injected'); END;",
+                    )
+                    .expect("the trigger");
+            }
+            let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+                Identifier::from([0x44; 32]),
+                "privateContactRequest".to_string(),
+                vec![BinaryData::new(vec![9; 589])],
+                vec![action.clone(), action.clone()],
+                0,
+                [7; 32],
+                vec![8; 64],
+                [9; 64],
+                PlatformVersion::latest(),
+            )
+            .expect("a type 29 transition");
+            let started = PaymentStarted::default();
+            let broadcast = AtomicBool::new(false);
+            let submitted = submit_private_document_payment(
+                PrivateDocumentSubmission {
+                    store: &store,
+                    persister: None,
+                    wallet_id,
+                    id,
+                    pending_entry: Some(ShieldedActivityEntry {
+                        id: [0x77; 32],
+                        kind: ShieldedActivityKind::ShieldedSpend,
+                        direction: ShieldedDirection::Out,
+                        amount: 0,
+                        fee: Some(0),
+                        counterparty: None,
+                        memo: None,
+                        block_height: None,
+                        status: ShieldedActivityStatus::Pending,
+                        created_at_ms: 1,
+                        min_note_position: None,
+                        note_cmxs: vec![],
+                        spent_nullifiers: vec![],
+                    }),
+                    selected_notes: &selected,
+                    reservation,
+                    state_transition: transition,
+                    anchor: [7; 32],
+                    private_contact: Some(payment),
+                    journaled: Some(&[[9; 32]]),
+                    payment_started: &started,
+                },
+                |_| {
+                    broadcast.store(true, Ordering::SeqCst);
+                    let durable =
+                        FileBackedShieldedStore::open_path(&path, 100).expect("a second handle");
+                    assert_eq!(
+                        durable
+                            .private_payment_journal(wallet_id)
+                            .expect("the journal")
+                            .len(),
+                        1,
+                        "the journal record is on the file"
+                    );
+                    assert_eq!(
+                        durable
+                            .private_contact_redrives_for_wallet(wallet_id)
+                            .expect("the records")
+                            .len(),
+                        1,
+                        "the redrive record and its association are on the file"
+                    );
+                    assert!(started.is_marked(), "marked once saved");
+                    std::future::ready(Err(SpendFailure {
+                        error: PlatformWalletError::ShieldedSpendUnconfirmed {
+                            operation: "private document create from shielded pool",
+                            reason: "intercepted".to_string(),
+                        },
+                        never_delivered: false,
+                    }))
+                },
+            )
+            .await;
+            let unspent = store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .len();
+            if save_fails {
+                assert!(
+                    matches!(submitted, Err(PlatformWalletError::ShieldedStoreError(_))),
+                    "{submitted:?}"
+                );
+                assert!(!broadcast.load(Ordering::SeqCst), "never broadcast");
+                assert!(!started.is_marked(), "never marked");
+                assert_eq!(unspent, 1, "the notes are released");
+                assert!(store
+                    .read()
+                    .await
+                    .private_payment_journal(wallet_id)
+                    .expect("the journal")
+                    .is_empty());
+            } else {
+                assert!(
+                    matches!(
+                        submitted,
+                        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+                    ),
+                    "{submitted:?}"
+                );
+                assert!(broadcast.load(Ordering::SeqCst));
+                assert_eq!(unspent, 0, "the notes stay reserved");
+            }
+        }
+    }
+
+    /// A payment dropped while its recovery save waits for the store has saved
+    /// and broadcast nothing, and its note guard releases the notes once the
+    /// store frees: the notes are handed over only after the save.
+    #[tokio::test]
+    async fn should_release_the_notes_of_a_payment_dropped_while_its_save_waits() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let wallet_id = [0x69; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5E; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000_000_000_000,
+            note_data: vec![],
+        };
+        store.write().await.save_note(id, &note).expect("a note");
+        let (selected, _, _, reservation) =
+            reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                .await
+                .expect("reserved");
+        let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            Identifier::from([0x44; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![9; 589])],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition");
+        let started = PaymentStarted::default();
+        let mut cx = Context::from_waker(Waker::noop());
+
+        let held = store.write().await;
+        let mut submitted = Box::pin(submit_private_document_payment(
+            PrivateDocumentSubmission {
+                store: &store,
+                persister: None,
+                wallet_id,
+                id,
+                pending_entry: Some(ShieldedActivityEntry {
+                    id: [0x78; 32],
+                    kind: ShieldedActivityKind::ShieldedSpend,
+                    direction: ShieldedDirection::Out,
+                    amount: 0,
+                    fee: Some(0),
+                    counterparty: None,
+                    memo: None,
+                    block_height: None,
+                    status: ShieldedActivityStatus::Pending,
+                    created_at_ms: 1,
+                    min_note_position: None,
+                    note_cmxs: vec![],
+                    spent_nullifiers: vec![],
+                }),
+                selected_notes: &selected,
+                reservation,
+                state_transition: transition,
+                anchor: [7; 32],
+                private_contact: Some(PrivateContactPayment {
+                    sender: [0xB1; 32],
+                    recipient: [0xA1; 32],
+                    account_reference: 5,
+                }),
+                journaled: Some(&[[9; 32]]),
+                payment_started: &started,
+            },
+            |_| async { panic!("never broadcast") },
+        ));
+        // The submission waits for the store before its anchor step.
+        assert!(submitted.as_mut().poll(&mut cx).is_pending());
+        // Freed, the lock goes to the submission first; this request queues
+        // behind it, so the submission's next one, the save, waits for it.
+        drop(held);
+        let mut ours = Box::pin(store.write());
+        assert!(ours.as_mut().poll(&mut cx).is_pending());
+        assert!(submitted.as_mut().poll(&mut cx).is_pending());
+        let Poll::Ready(held) = ours.as_mut().poll(&mut cx) else {
+            panic!("the store is ours once the submission's anchor step is done");
+        };
+        // Dropped while the save waits.
+        drop(submitted);
+        assert!(!started.is_marked(), "nothing was saved");
+        drop(held);
+        for _ in 0..50 {
+            if !store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .is_empty()
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .len(),
+            1,
+            "the guard released the notes"
+        );
+        assert!(store
+            .read()
+            .await
+            .private_payment_journal(wallet_id)
+            .expect("the journal")
+            .is_empty());
+    }
+
+    /// A stale spend attempt's detached cleanup, delayed until after an
+    /// account purge and rebind (or the wallet's replacement) let a newer
+    /// attempt reserve the same notes and save its payment, releases nothing:
+    /// the newer attempt's notes stay reserved, and its redrive record,
+    /// association and journal record stay.
+    #[tokio::test]
+    async fn should_not_release_a_newer_attempt_s_notes_from_a_stale_cleanup() {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let wallet_id = [0x6A; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5D; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000_000_000_000,
+            note_data: vec![],
+        };
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 5,
+        };
+        for wallet_replaced in [false, true] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let store = Arc::new(RwLock::new(
+                FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100)
+                    .expect("the store"),
+            ));
+            store.write().await.save_note(id, &note).expect("a note");
+            let (_, _, _, stale) =
+                reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                    .await
+                    .expect("reserved");
+            // Dropped while the store is busy: its cleanup waits on a task.
+            let mut held = store.write().await;
+            drop(stale);
+            if wallet_replaced {
+                held.purge_wallet(wallet_id).expect("the wallet's purge");
+            } else {
+                held.purge_subwallet(id).expect("the account's purge");
+            }
+            held.save_note(id, &note).expect("the note again");
+            assert!(held
+                .mark_pending_by(id, &note.nullifier, u64::MAX)
+                .expect("reserved by the newer attempt"));
+            held.arm_private_contact_payment(
+                id,
+                PendingRedrive {
+                    activity_id: [0x79; 32],
+                    anchor: [7; 32],
+                    nullifiers: vec![note.nullifier],
+                    st_bytes: vec![0xAB; 96],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+                payment,
+                &[[0xC4; 32]],
+            )
+            .expect("the newer payment saved");
+            drop(held);
+            // The stale cleanup gets the store now.
+            for _ in 0..10 {
+                tokio::task::yield_now().await;
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            let store = store.read().await;
+            let context = format!("wallet replaced: {wallet_replaced}");
+            assert!(
+                store.get_unspent_notes(id).expect("notes").is_empty(),
+                "{context}: the newer attempt's note stays reserved"
+            );
+            assert_eq!(
+                store.pending_redrives(id).expect("records").len(),
+                1,
+                "{context}"
+            );
+            assert_eq!(
+                store
+                    .private_contact_redrives_for_wallet(wallet_id)
+                    .expect("associations")
+                    .len(),
+                1,
+                "{context}"
+            );
+            assert_eq!(
+                store
+                    .private_payment_journal(wallet_id)
+                    .expect("the journal")
+                    .len(),
+                1,
+                "{context}"
+            );
+        }
     }
 
     /// A private contact request payment's journal record outlives its notes'
@@ -4933,13 +5418,53 @@ mod redrive_tests {
             }
         }
 
-        // A node that accepts connections and never answers.
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-        let address = listener.local_addr().expect("its address");
-        std::thread::spawn(move || {
-            let held: Vec<_> = listener.incoming().collect();
-            drop(held);
-        });
+        /// A loopback node that accepts connections and never answers. Dropped,
+        /// even while a failed assertion unwinds, it stops accepting, closes
+        /// what it accepted and joins its thread.
+        struct SilentNode {
+            address: std::net::SocketAddr,
+            shutdown: Arc<std::sync::atomic::AtomicBool>,
+            thread: Option<std::thread::JoinHandle<()>>,
+        }
+        impl SilentNode {
+            fn start() -> Self {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+                listener.set_nonblocking(true).expect("non-blocking accept");
+                let address = listener.local_addr().expect("its address");
+                let shutdown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let stop = Arc::clone(&shutdown);
+                let thread = std::thread::spawn(move || {
+                    let mut held = Vec::new();
+                    while !stop.load(std::sync::atomic::Ordering::Acquire) {
+                        match listener.accept() {
+                            Ok((stream, _)) => held.push(stream),
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                std::thread::sleep(std::time::Duration::from_millis(5));
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    drop(held);
+                });
+                Self {
+                    address,
+                    shutdown,
+                    thread: Some(thread),
+                }
+            }
+        }
+        impl Drop for SilentNode {
+            fn drop(&mut self) {
+                self.shutdown
+                    .store(true, std::sync::atomic::Ordering::Release);
+                if let Some(thread) = self.thread.take() {
+                    let _ = thread.join();
+                }
+            }
+        }
+
+        let node = SilentNode::start();
+        let address = node.address;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new(
                 AddressList::from_str(&format!("http://{address}")).expect("an address"),
