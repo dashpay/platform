@@ -25,7 +25,6 @@ use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote,
     ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
-    ANCHOR_READ_BEFORE_THIS_PROCESS,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
@@ -334,12 +333,7 @@ impl FileBackedShieldedStore {
                 (record.commitment == commitment).then_some((wallet_id, record))
             });
             match read {
-                Some((wallet_id, mut record)) => {
-                    // Saved by an earlier process with no height: its anchor
-                    // was read before any set this process fetches.
-                    record
-                        .anchor_height
-                        .get_or_insert(ANCHOR_READ_BEFORE_THIS_PROCESS);
+                Some((wallet_id, record)) => {
                     self.private_payment_journal
                         .insert((wallet_id, record.commitment), record);
                 }
@@ -727,14 +721,6 @@ impl FileBackedShieldedStore {
                     return Err(corrupted("invalid nullifier width"));
                 }
                 let nullifiers: Vec<[u8; 32]> = nullifiers.as_chunks::<32>().0.to_vec();
-                // A note spend saved by an earlier process with no height,
-                // before heights were kept: its anchor was read before any set
-                // this process fetches, which its reservations are released
-                // by. An identity debit reserves no note and keeps its own.
-                let anchor_height = match anchor_height {
-                    None if !nullifiers.is_empty() => Some(ANCHOR_READ_BEFORE_THIS_PROCESS),
-                    height => height,
-                };
                 Ok((
                     SubwalletId::new(wallet_id, account_index),
                     PendingRedrive {

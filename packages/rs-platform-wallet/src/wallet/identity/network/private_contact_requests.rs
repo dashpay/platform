@@ -2330,7 +2330,8 @@ mod tests {
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::coordinator::{
-        private_payment_journal_snapshot, PrunedAnchorEvidence,
+        heightless_tree_bounds, private_payment_journal_snapshot, HeightlessAnchorEvidence,
+        PrunedAnchorEvidence,
     };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::operations::{
@@ -7093,6 +7094,7 @@ mod tests {
                         recorded,
                         height: Self::ANCHOR_SET_HEIGHT,
                         scan_covered_height,
+                        heightless: None,
                     },
                 )
                 .await;
@@ -7840,17 +7842,20 @@ mod tests {
         );
     }
 
-    /// A journal record with no anchor height is never proven expired while
-    /// it was created in this process. One an earlier process saved, before
-    /// heights were kept, counts as read before any set this process fetches:
-    /// reopened, it is discharged once its anchor is absent from a set at H,
-    /// the scan covers H and the store read through its end at H lacks its
-    /// entry, and not while the scan is below H.
+    /// A journal record with no anchor height, saved while the store's tree
+    /// held `TREE` leaves. A store that held no tree when it was opened bounds
+    /// no such anchor, so the record stays. Reopened, its height stays
+    /// unknown, and it is discharged only with the pool proved, at or below
+    /// the set's height, to hold `TREE` leaves or more, the scan covering the
+    /// set and the store read through its end at that height lacking its
+    /// entry. Evidence a block behind the anchor, every proof at H - 1 and the
+    /// pool short of its tree, discharges nothing.
     #[cfg(feature = "shielded")]
     #[tokio::test]
-    async fn should_discharge_a_reopened_heightless_journal_record_once_its_evidence_covers_the_set(
+    async fn should_discharge_a_reopened_heightless_journal_record_only_once_the_pool_reached_its_tree(
     ) {
         use crate::wallet::shielded::PrivatePaymentRecord;
+        const TREE: u64 = 4;
 
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
@@ -7871,18 +7876,27 @@ mod tests {
             },
             nullifiers: vec![fixture.input.nullifier],
         };
-        fixture
-            .coordinator
-            .store()
-            .write()
-            .await
-            .journal_private_payments(wallet_id, std::slice::from_ref(&record))
-            .expect("journaled");
+        {
+            let mut store = fixture.coordinator.store().write().await;
+            for leaf in 0..TREE {
+                store
+                    .append_commitment(&[leaf as u8 + 1; 32], true)
+                    .expect("appended");
+            }
+            store
+                .journal_private_payments(wallet_id, std::slice::from_ref(&record))
+                .expect("journaled");
+        }
         let recorded = HashSet::new();
-        // Created in this process with no height: unproven.
+        // The store held no tree when it was opened: no bound.
         let journal = fixture.journal_snapshot().await;
+        assert_eq!(
+            heightless_tree_bounds(&*fixture.coordinator.store().read().await, &[], &journal),
+            None,
+            "no tree held at open"
+        );
         fixture.discharge(&journal, &recorded, Some(height)).await;
-        assert_eq!(fixture.journaled().await, 1, "created in this process");
+        assert_eq!(fixture.journaled().await, 1, "unbounded");
 
         // Saved by an earlier process: this one reopens the store.
         let reopened = NetworkShieldedCoordinator::new(
@@ -7906,27 +7920,62 @@ mod tests {
             .into_iter()
             .map(|record| (wallet_id, record))
             .collect();
-        assert_eq!(
-            journal[0].1.anchor_height,
-            Some(0),
-            "read before this process"
-        );
-        for (covered, discharged) in [(height - 1, false), (height, true)] {
+        assert_eq!(journal[0].1.anchor_height, None, "its height stays unknown");
+        let (tree_bound, anchor_floors) =
+            heightless_tree_bounds(&*reopened.store().read().await, &[], &journal)
+                .expect("bounded");
+        assert_eq!(tree_bound, TREE, "the tree the earlier process held");
+        // (set height, scan coverage, pool leaves and their height, discharged)
+        let cases = [
+            (
+                height - 1,
+                height - 1,
+                (TREE - 1, height - 1),
+                false,
+                "a block behind",
+            ),
+            (
+                height,
+                height,
+                (TREE - 1, height),
+                false,
+                "the pool short of the tree",
+            ),
+            (
+                height,
+                height,
+                (TREE, height + 1),
+                false,
+                "the pool proved above the set",
+            ),
+            (
+                height,
+                height - 1,
+                (TREE, height),
+                false,
+                "the scan below the set",
+            ),
+            (height, height, (TREE, height), true, "proven"),
+        ];
+        for (set_height, covered, (pool_leaves, pool_height), discharged, case) in cases {
+            let heightless = HeightlessAnchorEvidence {
+                tree_bound,
+                pool_leaves,
+                pool_height,
+                anchor_floors: anchor_floors.clone(),
+            };
             reopened
                 .discharge_expired_private_payments(
                     &journal,
                     PrunedAnchorEvidence {
                         recorded: &recorded,
-                        height,
+                        height: set_height,
                         scan_covered_height: Some(covered),
+                        heightless: Some(&heightless),
                     },
                 )
                 .await;
-            assert_eq!(
-                records(&reopened).await.is_empty(),
-                discharged,
-                "scan covering {covered}"
-            );
+            assert_eq!(records(&reopened).await.is_empty(), discharged, "{case}");
         }
         assert!(FileBackedShieldedStore::open_path(&fixture.db_path, 100)
             .expect("reopened again")
