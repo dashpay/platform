@@ -149,11 +149,14 @@ pub struct DashPayState {
     /// restored from the shielded store's unconfirmed spends.
     pub(super) pending_private_replies: BTreeMap<Identifier, PendingPrivateReply>,
 
-    /// The public requests to each recipient being sent, counted: each claims
-    /// the pair from before its channel is decided until it is submitted and
-    /// recorded, and while one does no private request to the recipient is
-    /// reserved, as a reserved one refuses a public send. In memory only.
-    pub(super) public_contact_request_claims: BTreeMap<Identifier, u32>,
+    /// The public requests to each recipient being sent, by attempt: each
+    /// claims the pair from before its channel is decided until it is
+    /// submitted and recorded, and while one does no private request to the
+    /// recipient is reserved, as a reserved one refuses a public send. A
+    /// claim is released only by its own attempt, whose id is process-wide,
+    /// so a send that outlived its wallet's removal and re-creation under the
+    /// same id cannot release a claim of the new wallet. In memory only.
+    pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
 
     /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
     /// `contactRequest` docs to each recipient seen by a sweep this process.

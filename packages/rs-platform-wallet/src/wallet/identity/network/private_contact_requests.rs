@@ -5234,6 +5234,69 @@ mod tests {
         }
     }
 
+    /// A public request's claim is released only by its own attempt: a send
+    /// that outlived its wallet's removal and re-creation under the same id,
+    /// dropped once the new wallet's send claimed the same pair, leaves that
+    /// claim in place, and the new send's own release frees the pair.
+    #[tokio::test]
+    async fn should_release_only_its_own_claim_across_a_wallet_re_creation() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (manager, old_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let old_claim = old_wallet
+            .identity()
+            .dashpay()
+            .claim_public_pair(&alice.id(), &bob.id(), false)
+            .await
+            .expect("claimed")
+            .expect("a claim");
+
+        manager
+            .remove_wallet(&old_wallet.wallet_id())
+            .await
+            .expect("removed");
+        let new_wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed(ALICE_PHRASE),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-created");
+        assert_eq!(new_wallet.wallet_id(), old_wallet.wallet_id());
+        {
+            let iw = new_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&new_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .add_identity(alice.clone(), 0, new_wallet.wallet_id(), &iw.persister)
+                .expect("own identity");
+        }
+        let new_claim = new_wallet
+            .identity()
+            .dashpay()
+            .claim_public_pair(&alice.id(), &bob.id(), false)
+            .await
+            .expect("claimed")
+            .expect("a claim");
+        let claimed = || async {
+            managed(&new_wallet, ALICE, |managed| {
+                managed.dashpay().public_contact_request_claimed(&bob.id())
+            })
+            .await
+        };
+
+        drop(old_claim);
+        assert!(
+            claimed().await,
+            "the old send's release leaves the new claim"
+        );
+        drop(new_claim);
+        assert!(!claimed().await, "the new send's release frees the pair");
+    }
+
     /// The first private send since load reads the store first. While that
     /// read cannot finish, here because the recipient of a request the store
     /// holds from Alice cannot be read, it is refused with nothing sealed or

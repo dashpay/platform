@@ -22,10 +22,16 @@ use platform_encryption::account_reference_version;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The attempt id the next private request reservation takes. Process-wide,
-/// so a handle that outlived its wallet's removal and re-creation under the
-/// same id cannot release a reservation the new wallet made.
-static NEXT_PRIVATE_REPLY_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+/// The attempt id the next private request reservation or public request
+/// claim takes. Process-wide, so a handle that outlived its wallet's removal
+/// and re-creation under the same id cannot release a reservation or a claim
+/// the new wallet made.
+static NEXT_CONTACT_REQUEST_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+
+/// A new attempt id ([`NEXT_CONTACT_REQUEST_ATTEMPT`]).
+fn next_contact_request_attempt() -> u64 {
+    NEXT_CONTACT_REQUEST_ATTEMPT.fetch_add(1, Ordering::Relaxed)
+}
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -983,26 +989,29 @@ impl ManagedIdentity {
     }
 
     /// Claim the pair with `recipient` for a public request about to be
-    /// sent: until [`Self::release_public_contact_request`], no private
-    /// request to it is reserved. Claims count, so concurrent public sends
-    /// each hold one.
-    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) {
-        *self
-            .dashpay
+    /// sent, under a new attempt it returns: until that attempt releases it
+    /// ([`Self::release_public_contact_request`]), no private request to the
+    /// recipient is reserved. Concurrent public sends each hold their own.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay
             .public_contact_request_claims
             .entry(recipient)
-            .or_default() += 1;
+            .or_default()
+            .insert(attempt);
+        attempt
     }
 
-    /// Release one claim [`Self::claim_public_contact_request`] took.
-    pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier) {
+    /// Release the claim `attempt` took ([`Self::claim_public_contact_request`]);
+    /// another attempt's claim on the pair stays.
+    pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier, attempt: u64) {
         if let Some(claims) = self
             .dashpay
             .public_contact_request_claims
             .get_mut(recipient)
         {
-            *claims = claims.saturating_sub(1);
-            if *claims == 0 {
+            claims.remove(&attempt);
+            if claims.is_empty() {
                 self.dashpay.public_contact_request_claims.remove(recipient);
             }
         }
@@ -1010,7 +1019,7 @@ impl ManagedIdentity {
 
     /// Reserve `recipient` under a new attempt, `commitment` its entry's.
     fn insert_private_reply(&mut self, recipient: Identifier, commitment: Option<[u8; 32]>) -> u64 {
-        let attempt = NEXT_PRIVATE_REPLY_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+        let attempt = next_contact_request_attempt();
         self.dashpay.pending_private_replies.insert(
             recipient,
             PendingPrivateReply {

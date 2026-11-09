@@ -583,6 +583,8 @@ pub(super) struct PublicContactClaim {
     wallet_id: WalletId,
     sender: Identifier,
     recipient: Identifier,
+    /// The attempt the claim was taken under: only it releases the claim.
+    attempt: u64,
     held: bool,
 }
 
@@ -591,7 +593,13 @@ impl PublicContactClaim {
     /// the guard releases it.
     pub(super) async fn release(mut self) {
         let mut wm = self.wallet_manager.write().await;
-        release_public_claim(&mut wm, &self.wallet_id, &self.sender, &self.recipient);
+        release_public_claim(
+            &mut wm,
+            &self.wallet_id,
+            &self.sender,
+            &self.recipient,
+            self.attempt,
+        );
         self.held = false;
     }
 }
@@ -601,27 +609,29 @@ impl Drop for PublicContactClaim {
         if !self.held {
             return;
         }
-        let (wallet_id, sender, recipient) = (self.wallet_id, self.sender, self.recipient);
+        let (wallet_id, sender, recipient, attempt) =
+            (self.wallet_id, self.sender, self.recipient, self.attempt);
         apply_detached(
             &self.wallet_manager,
             "a dropped public contact request's claim",
-            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient),
+            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient, attempt),
         );
     }
 }
 
-/// Release one claim `sender` holds on its pair with `recipient`.
+/// Release the claim `attempt` holds on `sender`'s pair with `recipient`.
 fn release_public_claim(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
     sender: &Identifier,
     recipient: &Identifier,
+    attempt: u64,
 ) {
     if let Some(managed) = wm
         .get_wallet_info_mut(wallet_id)
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
-        managed.release_public_contact_request(recipient);
+        managed.release_public_contact_request(recipient, attempt);
     }
 }
 
@@ -809,12 +819,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 *recipient,
             ));
         }
-        managed.claim_public_contact_request(*recipient);
+        let attempt = managed.claim_public_contact_request(*recipient);
         Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
             sender: *sender,
             recipient: *recipient,
+            attempt,
             held: true,
         }))
     }
