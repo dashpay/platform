@@ -234,11 +234,20 @@ fn tenderdash_method_error(error: &DapiError) -> Option<&str> {
     }
 }
 
-/// Whether Tenderdash's `tx` failed because its transaction index does not have the hash:
-/// `tx (<HASH>) not found, err: ...`.
+/// Whether Tenderdash's `tx` failed because its transaction index does not have the hash.
+///
+/// Tenderdash answers `tx (<HASH>) not found, err: <cause>` both when the index has no entry
+/// and when reading the entry failed (a database or decoding error). Only a lookup with no
+/// cause is a missing hash: Go formats the absent cause as `%!w(<nil>)`. A failed read must
+/// fail the call, or a committed transition whose entry could not be read would be reported
+/// unknown.
 fn is_missing_from_index(error: &DapiError) -> bool {
-    tenderdash_method_error(error)
-        .is_some_and(|message| message.starts_with("tx (") && message.contains(") not found"))
+    tenderdash_method_error(error).is_some_and(|message| {
+        message
+            .strip_prefix("tx (")
+            .and_then(|rest| rest.strip_suffix(") not found, err: %!w(<nil>)"))
+            .is_some_and(|hash| !hash.is_empty() && hash.chars().all(|c| c.is_ascii_hexdigit()))
+    })
 }
 
 /// Whether Tenderdash's `unconfirmed_tx` failed because its mempool does not have the hash:
@@ -392,11 +401,21 @@ mod tests {
 
     #[test]
     fn should_read_only_a_missing_hash_as_absent_from_the_transaction_index() {
+        // Tenderdash's own text when the index has no entry: Go prints the nil cause this way.
         assert!(is_missing_from_index(&tenderdash_error(
             -32603,
-            "tx (ABCD) not found, err: <nil>"
+            "tx (ABCD) not found, err: %!w(<nil>)"
         )));
 
+        // The same message wrapping a failed read is not a missing hash: the entry may exist.
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: failed to read tx result: database unavailable"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: error reading TxResult: unexpected EOF"
+        )));
         // The mempool's message, a failure and an unrouted method are not a missing hash.
         assert!(!is_missing_from_index(&tenderdash_error(
             -32603,
