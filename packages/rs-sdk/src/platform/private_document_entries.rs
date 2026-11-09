@@ -143,12 +143,24 @@ impl Sdk {
             .map(Arc::new)
             .ok_or_else(|| Error::Generic(format!("the contract {data_contract_id} is gone")))?;
         if !declares_private_type(&contract, document_type_name) {
+            // Another operation may have given the provider a newer contract declaring the
+            // type while this one was fetched: it is read against that one.
+            if let Some(provider) = &provider {
+                if let Some(held) = provider.get_data_contract(&data_contract_id, self.version())? {
+                    if held.version() > contract.version()
+                        && declares_private_type(&held, document_type_name)
+                    {
+                        return Ok(held);
+                    }
+                }
+            }
             if self.protocol_version_number()
                 < PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
             {
                 return Err(self.protocol_version_not_active(
                     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                     PRIVATE_DOCUMENT_ENTRIES_METHOD,
+                    None,
                     None,
                 ));
             }

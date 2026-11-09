@@ -2425,6 +2425,51 @@ async fn should_tell_a_network_proven_below_a_version_from_a_pin_below_it() {
     );
 }
 
+/// A version verified earlier, by this SDK or a clone, does not show the network below a
+/// version now, as it may have upgraded since: an SDK that cannot ask it, for want of a context
+/// provider or because it enforces no gate, takes the network as proven below only while a
+/// probe's epoch hold shows it. A test's mock version stands for such a hold.
+#[tokio::test]
+async fn should_not_take_a_version_verified_earlier_as_the_network_below_now() {
+    let now_ms = chrono::Utc::now().timestamp_millis() as u64;
+    let hold = |epoch, until_ms| ProbeHold {
+        network: V13,
+        epoch,
+        until_ms,
+    };
+    let without_provider = mock_sdk(V13, false, V13);
+    without_provider.context_provider.store(None);
+    let unenforced = SdkBuilder::new_mock().build().unwrap();
+    for (case, sdk) in [
+        ("without a context provider", without_provider),
+        ("enforcing no gate", unenforced),
+    ] {
+        sdk.verified_protocol_version.store(V13, Ordering::Relaxed);
+        assert!(
+            !sdk.network_proven_below(V14).await.expect(case),
+            "{case}: a version verified earlier"
+        );
+        sdk.probe_hold.set(hold(3, now_ms - 1));
+        assert!(
+            !sdk.network_proven_below(V14).await.expect(case),
+            "{case}: a hold whose epoch has ended"
+        );
+        sdk.probe_hold.set(hold(4, now_ms + 3_600_000));
+        assert!(
+            sdk.network_proven_below(V14).await.expect(case),
+            "{case}: a hold that still shows it"
+        );
+    }
+
+    let mock = SdkBuilder::new_mock().build().unwrap();
+    mock.mock_verified_protocol_version(V13).unwrap();
+    assert!(
+        mock.network_proven_below(V14).await.unwrap(),
+        "a test's version"
+    );
+    assert!(!mock.network_proven_below(V13).await.unwrap());
+}
+
 /// A private document send from an SDK at protocol version 15, seeded or pinned, on a network
 /// a verified answer shows at 14 is refused before it is built, rather than broadcast to be
 /// rejected.
