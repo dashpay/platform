@@ -23,10 +23,10 @@
 //! and its index picker, and is itself versioned there.
 //!
 //! Re-validating any of that here would create two sources of truth
-//! for one grammar: the SDK's proof helpers call drive's validator
-//! directly (no abci in the path), so a routing-layer copy that
-//! drifted would make the server accept or reject requests the client
-//! disagrees about. The checks below are the minimum needed to *route*:
+//! for one grammar: the ranked proof helpers call that validator
+//! directly, so a routing-layer copy that drifted would make the server
+//! accept or reject requests the client disagrees about. The checks
+//! below are the minimum needed to *route*:
 //!
 //! 1. **`group_by` is non-empty.** A ranking ranks groups; with no
 //!    grouping there is exactly one implicit group and `ORDER BY
@@ -44,15 +44,15 @@
 //!
 //! Note what is *not* checked: the limit's bounds, its presence at
 //! all, `where` / `start_at` presence, `offset`'s value. Those all
-//! reach drive and come back as `Error::Query(...)`, which the ranked
-//! dispatcher maps onto `QueryError::Query` — a client-visible
-//! rejection, not an internal error.
+//! reach the ranked executor and come back as `Error::Query(...)`, which
+//! drive-abci's ranked dispatcher maps onto `QueryError::Query` — a
+//! client-visible rejection, not an internal error.
 
+use super::not_yet_implemented;
 use super::v0::compute_aggregate_mode_and_check_limit_v0;
 use super::AggregateRouting;
-use crate::error::query::QueryError;
-use crate::query::document_query::v1::not_yet_implemented;
-use drive::query::{
+use crate::error::Error;
+use crate::query::{
     HavingClause, OrderClause, SelectProjection, WhereClause, RANKED_COUNT_ORDER_KEY,
 };
 
@@ -60,13 +60,12 @@ use drive::query::{
 /// the projection's own field for `SUM(f)` / `AVG(f)`, and the
 /// [`RANKED_COUNT_ORDER_KEY`] sentinel for `COUNT(*)`.
 ///
-/// Mirrors drive's private `ranked_order_key`. The duplication is
-/// deliberate and safe in a way the rest of the grammar would not be:
-/// this is a *name*, pinned by a shared public constant, not a rule.
-/// A drift would be a compile-time constant mismatch, not a silent
-/// semantic disagreement — and calling into drive here would mean
-/// building a `DocumentRankedMode` before the contract has even been
-/// fetched.
+/// Mirrors `drive_document_ranked_query::mode_detection::ranked_order_key`
+/// for the shapes this table routes. The duplication is deliberate and
+/// safe in a way the rest of the grammar would not be: this is a *name*,
+/// pinned by a shared public constant, not a rule. It stays separate
+/// because the two differ for a `SUM` or `AVG` select without a field,
+/// and this table is selected by a protocol version a network runs.
 fn aggregate_order_key(select: &SelectProjection) -> &str {
     if select.field.is_empty() {
         RANKED_COUNT_ORDER_KEY
@@ -83,7 +82,7 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v1(
     limit: Option<u32>,
     having: &[HavingClause],
     function_name: &str,
-) -> Result<AggregateRouting, QueryError> {
+) -> Result<AggregateRouting, Error> {
     let orders_by_the_aggregate = match order_by {
         [only] => only.field == aggregate_order_key(select),
         _ => false,

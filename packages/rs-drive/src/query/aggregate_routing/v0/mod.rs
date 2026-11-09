@@ -1,24 +1,20 @@
 //! v0 of `compute_aggregate_mode_and_check_limit` — the protocol
 //! version 13 routing table.
 //!
-//! Original routing table extracted verbatim from
-//! `query/document_query/v1/mod.rs` so the v1 cutover is a pure code
-//! move with no semantic change. See the dispatcher's module-level
-//! docstring for the versioning rationale.
+//! See the dispatcher's module-level docstring for the versioning
+//! rationale.
 //!
-//! The blanket `HAVING` rejection below moved in from the same place
-//! for the same reason: it was an unversioned gate in
-//! `validate_and_route`, and "reject every non-empty HAVING" is
-//! precisely this table's behavior. Keeping it here rather than in the
-//! dispatcher means an older node's routing decisions are described by
-//! one function rather than two, and the ranked activation is a pure
-//! version selection.
+//! The blanket `HAVING` rejection below is part of this table: "reject
+//! every non-empty HAVING" is precisely its behavior. Keeping it here
+//! rather than in the dispatcher means an older node's routing decisions
+//! are described by one function rather than two, and the ranked
+//! activation is a pure version selection.
 
+use super::not_yet_implemented;
 use super::AggregateRouting;
-use crate::error::query::QueryError;
-use crate::query::document_query::v1::not_yet_implemented;
-use drive::error::query::QuerySyntaxError;
-use drive::query::{CountMode, HavingClause, WhereClause, WhereOperator};
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
+use crate::query::{CountMode, HavingClause, WhereClause, WhereOperator};
 
 pub(super) fn compute_aggregate_mode_and_check_limit_v0(
     group_by: &[String],
@@ -26,7 +22,7 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v0(
     limit: Option<u32>,
     having: &[HavingClause],
     function_name: &str,
-) -> Result<AggregateRouting, QueryError> {
+) -> Result<AggregateRouting, Error> {
     // v0 has no ranked surface: every non-empty HAVING is refused,
     // whatever its shape. The wording signals future capability
     // rather than a malformed request — a client can keep the
@@ -106,7 +102,7 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v0(
                  filtered them out"
             ),
         };
-        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(reason)));
+        return Err(Error::Query(QuerySyntaxError::InvalidLimit(reason)));
     }
 
     Ok(AggregateRouting::Grouped(mode))
