@@ -395,6 +395,11 @@ impl ManagedIdentity {
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
         self.dashpay.private_contact_requests_position = 0;
+        // A pass that read the store to its end passed over the sender's
+        // private requests: the store is not read for this identity until a
+        // pass reads it again from the rewound position, so a send reads it
+        // first.
+        self.dashpay.private_contact_requests_read = false;
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));

@@ -1544,7 +1544,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         }
                         // Read to the store's end with nothing held back this
                         // pass: every entry was ingested for this identity.
-                        if read.is_complete() && !identity.failed && identity.keys_current(managed)
+                        // Not once its cursor was rewound under the pass (a
+                        // sender unignored): the entries before it were read
+                        // with the sender ignored, and the next pass reads
+                        // them again.
+                        if read.is_complete()
+                            && !identity.failed
+                            && !identity.rewound
+                            && identity.keys_current(managed)
                         {
                             managed.note_private_contact_requests_read();
                         }
@@ -5295,6 +5302,128 @@ mod tests {
         );
         drop(new_claim);
         assert!(!claimed().await, "the new send's release frees the pair");
+    }
+
+    /// Unignoring a sender rewinds the private read and clears its
+    /// readiness: a pass that read the store with the sender ignored passed
+    /// over its private request, so a public send to it reads the store
+    /// again first, finds the request, and is refused, publishing nothing.
+    #[tokio::test]
+    async fn should_read_the_store_again_before_a_public_send_once_a_sender_is_unignored() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        let view = bob_wallet.identity().dashpay();
+        view.ignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("ignored");
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the pass");
+        assert!(store_read(&bob_wallet, BOB).await);
+        assert!(
+            managed(&bob_wallet, BOB, |managed| {
+                managed.dashpay().incoming_request(&alice.id()).is_none()
+            })
+            .await,
+            "passed over while ignored"
+        );
+
+        view.unignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("unignored");
+        assert!(!store_read(&bob_wallet, BOB).await, "read again first");
+        let public = view
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(contact))
+                    if contact == alice.id()
+            ),
+            "{public:?}"
+        );
+    }
+
+    /// A sender unignored while a pass runs, after the pass passed over its
+    /// private request: the pass reaches the store's end without taking the
+    /// store as read, so a public send to the sender reads it again first,
+    /// finds the request, and is refused, publishing nothing.
+    #[tokio::test]
+    async fn should_not_take_the_store_as_read_by_a_pass_a_sender_was_unignored_under() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        // Alice's request first, then pages enough for a second scan batch.
+        let mut entries = vec![entry];
+        entries.extend((1..=PRIVATE_SCAN_BATCH_PAGES as u8).map(|byte| vec![byte; 589]));
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        publish_chunked(&bob_wallet, &entries, 1).await;
+        let view = bob_wallet.identity().dashpay();
+        view.ignore_contact_sender(&bob.id(), &alice.id())
+            .await
+            .expect("ignored");
+
+        // Unignored before the pass scans its second batch, once the first,
+        // holding Alice's request, was ingested with her ignored.
+        let mut unignoring = HookedCrypto::new(BOB_PHRASE);
+        unignoring.before_scan = Some({
+            let bob_wallet = Arc::clone(&bob_wallet);
+            let scans = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let (bob_id, alice_id) = (bob.id(), alice.id());
+            Arc::new(move || {
+                let (bob_wallet, scans) = (Arc::clone(&bob_wallet), Arc::clone(&scans));
+                Box::pin(async move {
+                    if scans.fetch_add(1, Ordering::SeqCst) == 1 {
+                        bob_wallet
+                            .identity()
+                            .dashpay()
+                            .unignore_contact_sender(&bob_id, &alice_id)
+                            .await
+                            .expect("unignored");
+                    }
+                })
+            })
+        });
+        view.sync_private_contact_requests(&unignoring, 64)
+            .await
+            .expect("the pass");
+        assert!(
+            !store_read(&bob_wallet, BOB).await,
+            "not read for a sender unignored under the pass"
+        );
+
+        let public = view
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(contact))
+                    if contact == alice.id()
+            ),
+            "{public:?}"
+        );
     }
 
     /// The first private send since load reads the store first. While that
