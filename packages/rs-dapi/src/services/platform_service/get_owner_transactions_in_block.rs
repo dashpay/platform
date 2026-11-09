@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 
 use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
+use super::get_blocks::MAX_RESPONSE_BYTES;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT};
 use crate::error::{DAPIResult, DapiError};
@@ -85,15 +86,30 @@ impl PlatformServiceImpl {
                 },
             )),
         };
-        self.platform_cache.put_from_generation(
-            key,
-            &response,
-            dapi_grpc::Message::encoded_len(&response),
-            generation,
-        );
+        let response_bytes = dapi_grpc::Message::encoded_len(&response);
+        if prove {
+            check_proved_response_size(response_bytes)?;
+        }
+        self.platform_cache
+            .put_from_generation(key, &response, response_bytes, generation);
 
         Ok(Response::new(response))
     }
+}
+
+/// Refuse a proved answer no default gRPC client could decode.
+///
+/// Each transaction adds two Merkle paths, so a block full of one owner's small transitions
+/// can pass the limit even though the block itself fits. Dropping transactions would answer
+/// wrongly, so this fails instead; `getBlocks` returns that block within the limit.
+fn check_proved_response_size(response_bytes: usize) -> DAPIResult<()> {
+    if response_bytes > MAX_RESPONSE_BYTES {
+        return Err(DapiError::FailedPrecondition(format!(
+            "the proved response would be {response_bytes} bytes, above the limit of \
+             {MAX_RESPONSE_BYTES}; read the block with getBlocks instead"
+        )));
+    }
+    Ok(())
 }
 
 /// Validate the request, returning the height, the owner and whether to prove the answer.
@@ -344,6 +360,19 @@ mod tests {
         assert_eq!(height, 7);
         assert_eq!(owner_id, ALICE);
         assert!(!prove);
+    }
+
+    #[test]
+    fn should_accept_a_proved_response_at_the_size_limit() {
+        check_proved_response_size(MAX_RESPONSE_BYTES).unwrap();
+    }
+
+    #[test]
+    fn should_refuse_a_proved_response_above_the_size_limit() {
+        assert!(matches!(
+            check_proved_response_size(MAX_RESPONSE_BYTES + 1),
+            Err(DapiError::FailedPrecondition(_))
+        ));
     }
 
     #[test]

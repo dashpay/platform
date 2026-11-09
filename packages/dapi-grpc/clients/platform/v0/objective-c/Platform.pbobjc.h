@@ -15211,7 +15211,12 @@ GPB_FINAL @interface GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBl
  **/
 @property(nonatomic, readwrite, copy, null_resettable) NSData *ownerId;
 
-/** also return what proves the answer's transactions */
+/**
+ * Also return what proves the answer's transactions. When a block holds so
+ * many of the owner's transactions that the proved answer would pass about
+ * 4 MB, the request fails with FAILED_PRECONDITION: read the block with
+ * getBlocks instead.
+ **/
 @property(nonatomic, readwrite) BOOL prove;
 
 @end

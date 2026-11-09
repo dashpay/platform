@@ -27,7 +27,7 @@ const MAX_BLOCKS_PER_REQUEST: u32 = 10;
 
 /// Keeps a response within the 4 MiB a gRPC client decodes by default. A block can hold
 /// 2 MiB, so ten full blocks would not fit, while any single block does.
-const MAX_RESPONSE_BYTES: usize = 4_000_000;
+pub(super) const MAX_RESPONSE_BYTES: usize = 4_000_000;
 
 impl PlatformServiceImpl {
     /// Read the requested blocks from Tenderdash, each transaction with its execution result.
