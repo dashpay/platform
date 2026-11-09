@@ -281,7 +281,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     system field; no elected moderation), and registration holds `entrySize` to
 ///     `max_private_document_entry_size`, 4096 bytes in `SYSTEM_LIMITS_V5`. The compiled
 ///     stored form of note 8 records the declaration. A contract update cannot add, remove or
-///     change it (`DocumentTypeUpdateError`). No reference may name a private type: a
+///     change it (`DocumentTypeUpdateError`), and may only add properties after a private type's
+///     existing ones, at the end of the type and of each object, since its immutable entries are
+///     read with the type as it is now (`DocumentTypeUpdateError` too). No reference may name a private type: a
 ///     `findBy`, an `inList` list, a `countOf` or a `sumOf` naming one of the same contract is
 ///     refused by the contract parse (`InvalidContractStructure`), and every other reference,
 ///     to a type of the same contract or another, by contract registration
@@ -297,7 +299,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     of the primary-key tree (`insert_empty_private_document_store_operation` 0,
 ///     `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, `None` before); each stored entry is the client's behind a 16-byte header.
 ///     The store's chunk power is the largest keeping a compacted chunk near
-///     `private_document_store_target_chunk_bytes` (512 KiB), bounded by
+///     `private_document_store_target_chunk_bytes` (1 MiB), bounded by
 ///     `private_document_store_min_chunk_power` and `private_document_store_max_chunk_power`
 ///     (4 and 11), all in `SYSTEM_LIMITS_V5`; it is committed into the store. Document
 ///     queries refuse a private type; `getPrivateDocumentEntries` reads and proves a page of

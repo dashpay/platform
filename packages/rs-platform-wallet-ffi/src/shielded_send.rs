@@ -623,13 +623,16 @@ pub(crate) fn map_spend_result(
         // A private contact request in flight, or paid and not yet read back
         // from the store: nothing new was paid, and a later private sync
         // settles it, so it keeps its own pending code; unrestored private
-        // payments keep theirs. A wallet removed before the payment started keeps
-        // the lifecycle refusal code (`NotFound`) every other export gives
-        // it. A protocol-version refusal from the store read before any
-        // payment keeps the blanket conversion's split: a lasting refusal
-        // is `ErrorProtocolVersionNotActive`, a transient one the catch-all.
+        // payments keep theirs, and so does a persister that cannot keep a
+        // private payment's recovery marker. A wallet removed before the
+        // payment started keeps the lifecycle refusal code (`NotFound`) every
+        // other export gives it. A protocol-version refusal from the store
+        // read before any payment keeps the blanket conversion's split: a
+        // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
+        // the catch-all.
         Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
         | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
         | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
         | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
             e.into()
@@ -3072,6 +3075,28 @@ mod tests {
             )
             .code,
             PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
+    }
+
+    /// A persister that cannot keep a private payment's recovery state is
+    /// refused by the explicit private send and accept before anything is
+    /// sealed or paid; the refusal keeps its own code (73) through the spend
+    /// mapper they use, as the in-kind accept's blanket conversion does.
+    #[test]
+    fn map_spend_result_keeps_the_storage_configuration_refusal_at_73() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+            "private contact request",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as i32, 73);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported)
+                .code
         );
     }
 

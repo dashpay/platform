@@ -1808,7 +1808,10 @@ impl PlatformWallet {
     /// without its request (before it was kept with it) is restored by
     /// [`Self::restore_pending_private_contact_requests`] or the payment's
     /// own check. An identity added to the wallet after the bind is not
-    /// covered until the next bind or that call.
+    /// covered until the next bind or that call. A saved payment that does
+    /// not read back, its transition or the entries it appends, fails the
+    /// restoration with [`PlatformWalletError::ShieldedRecoveryCorrupted`],
+    /// and every hold stays.
     ///
     /// Run also by [`PlatformWalletManager::configure_shielded`] for every
     /// wallet the manager holds, and by its load for the wallets it loads once
@@ -1832,22 +1835,19 @@ impl PlatformWallet {
                 .private_contact_redrives_for_wallet(self.wallet_id)
                 .map_err(PlatformWalletError::from)?
         };
-        let payments: Vec<(Identifier, Identifier, u32, [u8; 32])> = saved
-            .iter()
-            .flat_map(|(redrive, payment)| {
-                private_contact_request_redrive_entries([redrive], dashpay_id)
-                    .into_iter()
-                    .filter_map(move |entry| {
-                        let commitment: [u8; 32] = entry.as_slice().get(..32)?.try_into().ok()?;
-                        Some((
-                            Identifier::from(payment.sender),
-                            Identifier::from(payment.recipient),
-                            payment.account_reference,
-                            commitment,
-                        ))
-                    })
-            })
-            .collect();
+        // All or nothing: a saved payment that does not read back fails the
+        // restoration, and every hold stays.
+        let mut payments: Vec<(Identifier, Identifier, u32, [u8; 32])> = Vec::new();
+        for (redrive, payment) in &saved {
+            for commitment in associated_payment_commitments(redrive, dashpay_id)? {
+                payments.push((
+                    Identifier::from(payment.sender),
+                    Identifier::from(payment.recipient),
+                    payment.account_reference,
+                    commitment,
+                ));
+            }
+        }
         let restored = self
             .identity
             .dashpay()
@@ -2813,6 +2813,72 @@ impl DerefMut for WalletStateWriteGuard<'_> {
             .get_wallet_info_mut(&self.wallet_id)
             .expect("wallet exists in guard")
     }
+}
+
+/// The commitments of the entries a saved private contact request payment
+/// appends, read from its signed transition. Refused with
+/// [`PlatformWalletError::ShieldedRecoveryCorrupted`] when the transition does
+/// not decode, is not a private document create (type 29) appending to
+/// DashPay's `privateContactRequest` store (`dashpay_id` being DashPay's
+/// contract id), carries no entry, or carries one shorter than its 32-byte
+/// commitment: the payment's pair is restored from it, so a payment that does
+/// not read back fails the restoration rather than release the holds.
+#[cfg(feature = "shielded")]
+fn associated_payment_commitments(
+    redrive: &PendingRedrive,
+    dashpay_id: Identifier,
+) -> Result<Vec<[u8; 32]>, PlatformWalletError> {
+    let corrupted = |reason: String| PlatformWalletError::ShieldedRecoveryCorrupted {
+        account_index: None,
+        reason,
+    };
+    let transition = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+        Ok(StateTransition::PrivateDocumentCreateFromShieldedPool(transition)) => transition,
+        Ok(_) => {
+            return Err(corrupted(
+                "a saved private contact request payment's transition is not a private \
+                 document create"
+                    .to_string(),
+            ))
+        }
+        Err(error) => {
+            return Err(corrupted(format!(
+                "a saved private contact request payment's transition does not decode: {error}"
+            )))
+        }
+    };
+    if transition.data_contract_id() != dashpay_id
+        || transition.document_type_name() != PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME
+    {
+        return Err(corrupted(format!(
+            "a saved private contact request payment appends to {} {}, not DashPay's \
+             {PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME}",
+            transition.data_contract_id(),
+            transition.document_type_name()
+        )));
+    }
+    if transition.entries().is_empty() {
+        return Err(corrupted(
+            "a saved private contact request payment carries no entry".to_string(),
+        ));
+    }
+    transition
+        .entries()
+        .iter()
+        .map(|entry| {
+            entry
+                .as_slice()
+                .get(..32)
+                .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
+                .ok_or_else(|| {
+                    corrupted(
+                        "a saved private contact request payment's entry is shorter than its \
+                         commitment"
+                            .to_string(),
+                    )
+                })
+        })
+        .collect()
 }
 
 /// The entries of every private document create (type 29) among `redrives`

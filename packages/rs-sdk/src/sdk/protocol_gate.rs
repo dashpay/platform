@@ -178,8 +178,8 @@ pub(super) fn decide(required: u32, state: &GateState<'_>) -> Gate {
     }
     // Asking raises the verified version, and the version of an unpinned SDK; a pinned SDK
     // below `required` stays below it whatever the answer. Without a context provider the
-    // answer cannot be verified, and an answer the SDK cannot verify bans the node that
-    // sent it. While a probe's epoch has not ended, asking again would show the same version.
+    // answer cannot be verified, so asking cannot show the network's version. While a
+    // probe's epoch has not ended, asking again would show the same version.
     if pinned_below(required, state)
         || !state.has_context_provider
         || state.hold.is_some_and(|hold| {
