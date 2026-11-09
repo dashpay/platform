@@ -910,11 +910,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// What a contact request from `identity_id` waits for, as the wallet
-    /// decides it ([`PrivateContactReadiness`]). A pure read.
+    /// decides it ([`PrivateContactReadiness`]). A read, once the requests
+    /// whose payment was settled as never executing are released
+    /// ([`Self::release_rejected_private_requests`]): a pair rejected for good
+    /// reads as free with no restart and no other request.
     pub async fn private_contact_readiness(
         &self,
         identity_id: &Identifier,
     ) -> Result<PrivateContactReadiness, PlatformWalletError> {
+        self.release_rejected_private_requests().await?;
         let wallet_held = self.persister.private_payments_unrestored();
         let wm = self.wallet_manager.read().await;
         let dashpay = wm
@@ -982,9 +986,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// rejection or a pruned anchor left unappendable
     /// (`WalletPersister::note_rejected_private_entries`): run before a
     /// private request is reserved, before a public one claims its pair,
-    /// and before a private payment, so a retry needs no restart. A
-    /// reservation is released only on that word, never for a missing
-    /// unconfirmed spend: a request paid and not yet read back has none.
+    /// before a private payment, by the private sync and by the readiness
+    /// read, so neither a retry nor the pair's pending state needs a restart.
+    /// A reservation is released only on that word, never for a missing
+    /// unconfirmed spend: a request paid and not yet read back, or whose
+    /// broadcast may have been delivered, has none.
     pub(crate) async fn release_rejected_private_requests(
         &self,
     ) -> Result<(), PlatformWalletError> {
@@ -1417,6 +1423,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// seed derives valid but unrelated keys, which open nothing, so its pass
     /// would record as read pages holding requests it never saw, and nothing
     /// rewinds them once the provider is fixed.
+    ///
+    /// Releases first the pending requests whose payment the shielded
+    /// coordinator settled as never executing
+    /// ([`Self::release_rejected_private_requests`]): no entry of theirs is
+    /// ever read back, so a sync is what frees their pairs.
     pub async fn sync_private_contact_requests<C>(
         &self,
         crypto: &C,
@@ -1425,6 +1436,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
+        self.release_rejected_private_requests().await?;
         self.reconcile_private_scan_keys().await?;
         let (mut identities, paths) = self.private_scan_identities().await?;
         let mut report = PrivateContactSyncReport::default();
@@ -5872,6 +5884,120 @@ mod tests {
             "paid, not read back: {retried:?}"
         );
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+    }
+
+    /// A private request whose payment is ambiguous, unconfirmed or with a
+    /// broadcast that may have been delivered, stays pending through a private
+    /// refresh. Once the shielded coordinator settles that payment as never
+    /// executing (a definitive rejection of its saved transition), the next
+    /// refresh, or a readiness read alone, frees the pair and clears its
+    /// marker, with no restart and no other request.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_free_a_pair_rejected_for_good_on_the_next_private_refresh() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let marker = |persistence: &RecordingPersistence| {
+            last_marker(&persistence.stored.lock().expect("stored"), &alice.id())
+        };
+        for refreshed in [true, false] {
+            let persistence = RecordingPersistence::attesting(
+                PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            );
+            let (_manager, alice_wallet) = wallet_on(
+                Arc::clone(&persistence),
+                ALICE_PHRASE,
+                &alice,
+                &[&alice, &bob],
+                vec![],
+            )
+            .await;
+            let view = alice_wallet.identity().dashpay();
+            let paid = Arc::new(Mutex::new(Vec::new()));
+            // What the wallet's shielded payment returns for a private contact
+            // request whose broadcast may have been delivered.
+            let ambiguous = {
+                let paid = Arc::clone(&paid);
+                move |entry: BinaryData, started: PaymentStarted| {
+                    started.mark();
+                    paid.lock().expect("paid").push(entry);
+                    std::future::ready(Err::<ResponseMetadata, _>(
+                        PlatformWalletError::ShieldedSpendUnconfirmed {
+                            operation: "private document create from shielded pool",
+                            reason: "the broadcast may have been delivered: unavailable"
+                                .to_string(),
+                        },
+                    ))
+                }
+            };
+            let sent = view
+                .send_private_contact_request(
+                    &alice.id(),
+                    &bob.id(),
+                    None,
+                    AutoAcceptProofSource::None,
+                    None,
+                    &alice_signer,
+                    &alice_crypto,
+                    ambiguous,
+                )
+                .await;
+            assert!(
+                matches!(
+                    sent,
+                    Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+                ),
+                "{sent:?}"
+            );
+            assert_eq!(marker(&persistence), Some(true));
+
+            // Ambiguous: a refresh keeps the pair reserved.
+            view.sync_private_contact_requests(&alice_crypto, 4)
+                .await
+                .expect("the private refresh");
+            assert!(pending_to(&alice_wallet, ALICE, &bob).await, "ambiguous");
+            assert!(
+                view.private_contact_readiness(&alice.id())
+                    .await
+                    .expect("the readiness")
+                    .unresolved_private_payment,
+                "ambiguous"
+            );
+
+            // The redrive pass's definitive rejection of the saved transition.
+            let entry = paid.lock().expect("paid")[0].clone();
+            note_rejected_private_documents(
+                &private_contact_request_payment(entry),
+                Some(&alice_wallet.identity().persister),
+            );
+
+            if refreshed {
+                view.sync_private_contact_requests(&alice_crypto, 4)
+                    .await
+                    .expect("the private refresh");
+                let snapshot = managed(&alice_wallet, ALICE, |managed| managed.clone()).await;
+                assert!(
+                    !snapshot.dashpay().private_reply_pending(&bob.id()),
+                    "a fresh snapshot after the refresh shows the pair free"
+                );
+            }
+            assert_eq!(
+                view.private_contact_readiness(&alice.id())
+                    .await
+                    .expect("the readiness"),
+                PrivateContactReadiness {
+                    private_payments_restored: true,
+                    private_store_read: true,
+                    unresolved_private_payment: false,
+                },
+                "refreshed first: {refreshed}"
+            );
+            assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+            assert_eq!(marker(&persistence), Some(false), "unmarked once released");
+            assert_eq!(paid.lock().expect("paid").len(), 1, "no other request");
+        }
     }
 
     /// A restoration that opened an unconfirmed request's entry before the
