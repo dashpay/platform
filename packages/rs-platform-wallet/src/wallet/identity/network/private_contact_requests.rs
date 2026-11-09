@@ -640,6 +640,20 @@ fn shielded_address_changeset(
     changeset
 }
 
+/// `position`, `owner`'s record, marked as holding a private payment that may
+/// be unresolved while the wallet's journal keeps one of `owner`'s
+/// (`WalletPersister::private_sender_journaled`): a marker is never stored
+/// cleared while a payment the identity's own state no longer shows may still
+/// execute.
+pub(super) fn with_journaled_marker(
+    persister: &WalletPersister,
+    owner: Identifier,
+    mut position: PrivateContactRequestsPosition,
+) -> PrivateContactRequestsPosition {
+    position.private_payments_unresolved |= persister.private_sender_journaled(&owner).is_some();
+    position
+}
+
 /// Store `owner`'s private read position. A failed store leaves the cursor
 /// advanced in memory: the next launch reads from the last position stored,
 /// and ingest is a fixpoint.
@@ -648,6 +662,7 @@ fn store_private_position(
     owner: Identifier,
     position: PrivateContactRequestsPosition,
 ) {
+    let position = with_journaled_marker(persister, owner, position);
     let mut changeset = ContactChangeSet::default();
     changeset
         .private_contact_requests_positions
@@ -6902,6 +6917,7 @@ mod tests {
     #[cfg(feature = "shielded")]
     struct ExpiryFixture {
         _manager: PlatformWalletManager<RecordingPersistence>,
+        persistence: Arc<RecordingPersistence>,
         wallet: Arc<PlatformWallet>,
         coordinator: Arc<NetworkShieldedCoordinator>,
         subwallet: SubwalletId,
@@ -6921,11 +6937,12 @@ mod tests {
             let alice = identity(ALICE_PHRASE, ALICE);
             let bob = identity(BOB_PHRASE, BOB);
             // A backend that keeps the viewing key, so the wallet binds.
+            let persistence = RecordingPersistence::attesting(
+                PersistenceCapabilities::SHIELDED_FVK_RESTART
+                    .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+            );
             let (manager, wallet) = wallet_on(
-                RecordingPersistence::attesting(
-                    PersistenceCapabilities::SHIELDED_FVK_RESTART
-                        .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
-                ),
+                Arc::clone(&persistence),
                 ALICE_PHRASE,
                 &alice,
                 &[&alice, &bob],
@@ -6964,6 +6981,7 @@ mod tests {
                 .expect("the input note");
             Self {
                 _manager: manager,
+                persistence,
                 wallet,
                 coordinator,
                 subwallet,
@@ -7281,16 +7299,21 @@ mod tests {
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
-    /// An unresolved private payment holds its pair at the wallet, beyond its
-    /// sender identity: removed and loaded again through
-    /// `load_identity_by_index_from_master` (the load an external-signable
-    /// wallet takes, sharing `load_identity_by_index`'s body), the identity
-    /// starts with no reservation, yet
-    /// a public request to the pair is refused (71), and so is a private one,
-    /// until the payment resolves. Then a private one pays.
+    /// An unresolved private payment holds its pair beyond its sender
+    /// identity's own state, and refuses the identity's removal (71): removed
+    /// and loaded again, the identity would start with no hold. Once its entry
+    /// is read back the identity's reservation settles, but the wallet's
+    /// journal keeps the payment until its record is discharged: until then
+    /// the pair stays held, the removal stays refused, and the identity's
+    /// stored marker stays set, so a restart without shielded support holds
+    /// it too. Discharged by a restoration from that read-back, with no
+    /// notice given by hand, the removal goes through, and the identity loaded
+    /// again through `load_identity_by_index_from_master` (the load an
+    /// external-signable wallet takes, sharing `load_identity_by_index`'s
+    /// body) sends a private request that reaches its payment.
     #[cfg(feature = "shielded")]
     #[tokio::test]
-    async fn should_hold_a_pair_through_its_sender_s_removal_and_reload() {
+    async fn should_hold_a_pair_and_its_sender_until_the_private_payment_resolves() {
         use crate::wallet::shielded::{
             ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
         };
@@ -7358,46 +7381,25 @@ mod tests {
             ),
             "{sent:?}"
         );
-        let commitment: [u8; 32] = paid.lock().expect("paid")[0].as_slice()[..32]
+        let entry = paid.lock().expect("paid")[0].clone();
+        let commitment: [u8; 32] = entry.as_slice()[..32]
             .try_into()
             .expect("an entry starts with its commitment");
-
-        // The sender identity is removed and loaded again from Platform.
-        {
+        let remove = || async {
             let iw = fixture.wallet.identity();
             let mut wm = iw.wallet_manager.write().await;
             wm.get_wallet_info_mut(&wallet_id)
                 .expect("the wallet")
                 .identity_manager
                 .remove_identity(&alice.id(), &iw.persister)
-                .expect("removed");
-        }
-        let probe = alice.public_keys()[&SIGNING_KEY_ID]
-            .public_key_hash()
-            .expect("a key hash");
-        let mut sdk = (*fixture.wallet.identity().sdk).clone();
-        sdk.mock()
-            .expect_fetch(PublicKeyHash(probe), Some(alice.clone()))
-            .await
-            .expect("the identity at index 0");
-        fixture
-            .wallet
-            .identity()
-            .load_identity_by_index_from_master(
-                0,
-                &ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
-                    .expect("the master key"),
-            )
-            .await
-            .expect("loaded")
-            .expect("found at index 0");
-        managed(&fixture.wallet, ALICE, |managed| {
-            assert!(
-                !managed.dashpay().private_reply_pending(&bob.id()),
-                "the reloaded identity holds no reservation"
-            );
-        })
-        .await;
+                .map(|_| ())
+        };
+        let refused = |result: &Result<(), PlatformWalletError>| {
+            matches!(result, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                if *recipient == bob.id())
+        };
+        let removed = remove().await;
+        assert!(refused(&removed), "removal refused while held: {removed:?}");
 
         let public = fixture
             .wallet
@@ -7430,11 +7432,8 @@ mod tests {
         );
         assert!(retry.lock().expect("retry").is_empty(), "nothing paid");
 
-        // Resolved, with no notice given by hand: its entry lands and a
-        // private sync reads it back, then a restoration discharges its
-        // journal record from that read-back. The wallet-level hold clears,
-        // and a private rotation to the pair reaches its payment.
-        let entry = paid.lock().expect("paid")[0].clone();
+        // Its entry lands and a private sync reads it back: the identity's
+        // reservation settles, the journal record waits for its discharge.
         publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
         fixture
             .wallet
@@ -7443,11 +7442,28 @@ mod tests {
             .sync_private_contact_requests(&alice_crypto, 4)
             .await
             .expect("the entry is read back");
+        managed(&fixture.wallet, ALICE, |managed| {
+            assert!(!managed.dashpay().private_reply_pending(&bob.id()));
+            assert!(!managed.dashpay().private_payments_unresolved());
+        })
+        .await;
         let persister = fixture.wallet.persister();
         assert!(
             persister.private_pair_journaled(&alice.id(), &bob.id()),
             "held until its record is discharged"
         );
+        assert_eq!(
+            last_marker(
+                &fixture.persistence.stored.lock().expect("stored"),
+                &alice.id()
+            ),
+            Some(true),
+            "the stored marker stays set while the journal keeps the payment"
+        );
+        let removed = remove().await;
+        assert!(refused(&removed), "still refused: {removed:?}");
+
+        // Discharged from that read-back by a restoration.
         fixture
             .wallet
             .restore_private_contact_payments(&fixture.coordinator)
@@ -7466,6 +7482,26 @@ mod tests {
             !persister.private_pair_journaled(&alice.id(), &bob.id()),
             "the read-back discharge clears the wallet-level hold"
         );
+        remove().await.expect("removed once resolved");
+        let probe = alice.public_keys()[&SIGNING_KEY_ID]
+            .public_key_hash()
+            .expect("a key hash");
+        let mut sdk = (*fixture.wallet.identity().sdk).clone();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(alice.clone()))
+            .await
+            .expect("the identity at index 0");
+        fixture
+            .wallet
+            .identity()
+            .load_identity_by_index_from_master(
+                0,
+                &ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
+                    .expect("the master key"),
+            )
+            .await
+            .expect("loaded")
+            .expect("found at index 0");
         let private = fixture.send_again(keep_entry(&retry)).await;
         assert!(
             matches!(
@@ -7477,8 +7513,143 @@ mod tests {
         assert_eq!(
             retry.lock().expect("retry").len(),
             1,
-            "the rotation reaches its payment"
+            "a private request reaches its payment"
         );
+    }
+
+    /// A sender identity is not removed while a contact request of it is in
+    /// flight (71), whichever channel: a public request parked at its host
+    /// signature holds its claim, and a private one parked at the signature
+    /// of the request it seals holds its reservation. Removed and loaded again in either
+    /// window, the identity would start with no hold, and the other channel
+    /// could publish the pair or pay for it.
+    #[tokio::test]
+    async fn should_refuse_removing_a_sender_while_a_contact_request_is_in_flight() {
+        use dash_sdk::query_types::IdentityContractNonceFetcher;
+        use std::sync::Arc as StdArc;
+        use tokio::sync::Notify;
+
+        #[derive(Debug)]
+        struct ParkedSigner {
+            inner: simple_signer::signer::SimpleSigner,
+            called: StdArc<Notify>,
+            release: StdArc<Notify>,
+        }
+        #[async_trait::async_trait]
+        impl Signer<IdentityPublicKey> for ParkedSigner {
+            async fn sign(
+                &self,
+                key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                self.called.notify_one();
+                self.release.notified().await;
+                self.inner.sign(key, data).await
+            }
+            async fn sign_create_witness(
+                &self,
+                key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                self.inner.sign_create_witness(key, data).await
+            }
+            fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+                self.inner.can_sign_with(key)
+            }
+        }
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        for public in [true, false] {
+            let (_manager, alice_wallet) =
+                wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+            let wallet_id = alice_wallet.wallet_id();
+            let mut sdk = (*alice_wallet.identity().sdk).clone();
+            sdk.mock()
+                .expect_fetch(
+                    (
+                        alice.id(),
+                        dashpay_contract().expect("bundled DashPay").id(),
+                    ),
+                    Some(IdentityContractNonceFetcher(3)),
+                )
+                .await
+                .expect("the nonce read");
+            let called = StdArc::new(Notify::new());
+            let release = StdArc::new(Notify::new());
+            let send = {
+                let wallet = Arc::clone(&alice_wallet);
+                let (alice_id, bob_id) = (alice.id(), bob.id());
+                let (called, release) = (StdArc::clone(&called), StdArc::clone(&release));
+                let alice_signer = signer(ALICE_PHRASE, &alice);
+                tokio::spawn(async move {
+                    let signer = ParkedSigner {
+                        inner: alice_signer,
+                        called,
+                        release,
+                    };
+                    let crypto =
+                        SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+                    if public {
+                        wallet
+                            .identity()
+                            .dashpay()
+                            .send_contact_request_with_external_signer(
+                                &alice_id,
+                                &bob_id,
+                                None,
+                                AutoAcceptProofSource::None,
+                                &signer,
+                                &crypto,
+                            )
+                            .await
+                            .map(|_| ())
+                    } else {
+                        wallet
+                            .identity()
+                            .dashpay()
+                            .send_private_contact_request(
+                                &alice_id,
+                                &bob_id,
+                                None,
+                                AutoAcceptProofSource::None,
+                                None,
+                                &signer,
+                                &crypto,
+                                |_: BinaryData, _: PaymentStarted| {
+                                    std::future::ready(Err::<ResponseMetadata, _>(
+                                        PlatformWalletError::ShieldedBroadcastFailed(
+                                            "not paid in this test".to_string(),
+                                        ),
+                                    ))
+                                },
+                            )
+                            .await
+                            .map(|_| ())
+                    }
+                })
+            };
+            tokio::time::timeout(Duration::from_secs(5), called.notified())
+                .await
+                .expect("the send is in flight");
+            let removed = {
+                let iw = alice_wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("the wallet")
+                    .identity_manager
+                    .remove_identity(&alice.id(), &iw.persister)
+                    .map(|_| ())
+            };
+            assert!(
+                matches!(&removed, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                    if *recipient == bob.id()),
+                "public {public}: {removed:?}"
+            );
+            release.notify_one();
+            let _ = send.await.expect("send task");
+            managed(&alice_wallet, ALICE, |_| {}).await;
+        }
     }
 
     /// The wallet holds a private payment's pair from just before its journal
@@ -7620,11 +7791,11 @@ mod tests {
     }
 
     /// A payment a restoration from the journal finds unresolved holds its
-    /// pair at the wallet too: its sender removed and added again, a public
-    /// request to the pair is still refused (71).
+    /// pair at the wallet too, and refuses its sender's removal (71): the
+    /// identity stays, and a public request to the pair is refused.
     #[cfg(feature = "shielded")]
     #[tokio::test]
-    async fn should_hold_a_restored_payment_s_pair_through_its_sender_s_removal() {
+    async fn should_refuse_removing_a_sender_holding_a_restored_payment() {
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
@@ -7639,16 +7810,16 @@ mod tests {
         {
             let iw = alice_wallet.identity();
             let mut wm = iw.wallet_manager.write().await;
-            let manager = &mut wm
+            let removed = wm
                 .get_wallet_info_mut(&alice_wallet.wallet_id())
                 .expect("the wallet")
-                .identity_manager;
-            manager
-                .remove_identity(&alice.id(), &iw.persister)
-                .expect("removed");
-            manager
-                .add_identity(alice.clone(), 0, alice_wallet.wallet_id(), &iw.persister)
-                .expect("added again");
+                .identity_manager
+                .remove_identity(&alice.id(), &iw.persister);
+            assert!(
+                matches!(&removed, Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                    if *recipient == bob.id()),
+                "{removed:?}"
+            );
         }
         let public = view
             .send_contact_request_with_external_signer(

@@ -27,7 +27,7 @@ use key_wallet_manager::WalletManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::private_contact_requests::apply_detached;
+use super::private_contact_requests::{apply_detached, with_journaled_marker};
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
@@ -4726,7 +4726,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if self.persister.persists_private_contact_scan_state() {
             cs.private_contact_requests_positions.insert(
                 *identity_id,
-                managed.private_contact_requests_position_record(),
+                with_journaled_marker(
+                    &self.persister,
+                    *identity_id,
+                    managed.private_contact_requests_position_record(),
+                ),
             );
         }
         self.persister.store(cs.into()).map_err(|e| {

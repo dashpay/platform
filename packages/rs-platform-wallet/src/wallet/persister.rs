@@ -189,6 +189,18 @@ impl WalletPersister {
         }
     }
 
+    /// A recipient of a private payment from `sender` the journal keeps
+    /// unresolved ([`Self::note_journaled_private_payments`]), if any: the
+    /// sender then holds a payment that may still execute, whatever its
+    /// identity's own state says.
+    pub(crate) fn private_sender_journaled(&self, sender: &Identifier) -> Option<Identifier> {
+        self.discharged_entries()
+            .journaled
+            .values()
+            .find(|(journaled_sender, _)| journaled_sender == sender)
+            .map(|(_, recipient)| *recipient)
+    }
+
     /// Whether a private payment the journal keeps unresolved holds the pair
     /// `sender`, `recipient` ([`Self::note_journaled_private_payments`]): then
     /// neither a public request nor another private one is sent for it.

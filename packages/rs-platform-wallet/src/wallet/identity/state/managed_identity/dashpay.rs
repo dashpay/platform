@@ -349,6 +349,18 @@ impl DashPayState {
         !self.pending_private_replies.is_empty()
     }
 
+    /// A recipient this identity holds a contact request in flight to, if
+    /// any: a private request it is paying for or has not read back
+    /// ([`Self::private_reply_pending`]), or a public one claimed and not yet
+    /// recorded ([`Self::public_contact_request_claimed`]).
+    pub fn contact_request_in_flight(&self) -> Option<Identifier> {
+        self.pending_private_replies
+            .keys()
+            .chain(self.public_contact_request_claims.keys())
+            .next()
+            .copied()
+    }
+
     /// Whether this identity was loaded with a private contact request payment
     /// that may be unresolved, and no restoration from the shielded store has
     /// restored its reservations since: its public contact requests are held.
