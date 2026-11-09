@@ -17,6 +17,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::error::StaleNodeError;
 use crate::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery, PrivateDocumentEntry,
 };
@@ -485,7 +486,13 @@ where
                         total,
                         aligned,
                     } => {
-                        let entries = match fetch(start).await {
+                        // Past the first page, a page from a snapshot that ends at or before
+                        // `start` is fetched again (`fetch_ahead_of`).
+                        let fetched = match total {
+                            None => fetch(start).await,
+                            Some(_) => fetch_ahead_of(&fetch, start).await,
+                        };
+                        let entries = match fetched {
                             Ok(entries) => entries,
                             Err(error) => return Some((Err(error), PageWalk::Done)),
                         };
@@ -543,6 +550,41 @@ where
     )
 }
 
+/// How many more times a page whose snapshot of the store ends at or before its start is
+/// fetched before the walk gives up on it ([`fetch_ahead_of`]).
+const BEHIND_PAGE_REFETCHES: usize = 2;
+
+/// The page `fetch` reads from `start`, a position an earlier page showed the store holds,
+/// fetched again while it comes from a snapshot that ends at or before `start`: a node behind,
+/// within the SDK's tolerance, proves an older store, which says nothing about the entries
+/// from `start`. Still behind after [`BEHIND_PAGE_REFETCHES`] more fetches, it fails with the
+/// retryable [`StaleNodeError::PrivateDocumentStoreBehind`]. An empty page from a snapshot
+/// that holds `start` is returned as it is, for the walk to refuse.
+async fn fetch_ahead_of<F>(fetch: &F, start: u64) -> Result<PrivateDocumentEntries, Error>
+where
+    F: Fn(u64) -> PageFuture,
+{
+    let behind = |entries: &PrivateDocumentEntries| {
+        entries.entries.is_empty() && entries.total_count <= start
+    };
+    let mut entries = fetch(start).await?;
+    for _ in 0..BEHIND_PAGE_REFETCHES {
+        if !behind(&entries) {
+            return Ok(entries);
+        }
+        entries = fetch(start).await?;
+    }
+    if behind(&entries) {
+        return Err(Error::StaleNode(
+            StaleNodeError::PrivateDocumentStoreBehind {
+                position: start,
+                total_count: entries.total_count,
+            },
+        ));
+    }
+    Ok(entries)
+}
+
 /// The pages of `chunk_size` entries from `first`, a chunk boundary, to `total`, fetched up to
 /// `max_concurrent` at once and yielded in store order. A page that ends at the end of an older
 /// snapshot of the store, partway through its chunk, is completed with the rest of the chunk
@@ -566,7 +608,7 @@ where
         .map(move |start| {
             let fetch = fetch.clone();
             async move {
-                let mut entries = fetch(start).await?;
+                let mut entries = fetch_ahead_of(&fetch, start).await?;
                 // A page read from an older snapshot than the first page's (a node behind,
                 // within the SDK's tolerance) may end at that snapshot's end, partway through
                 // its chunk: the rest of the chunk is read from where it stopped, into the same
@@ -592,7 +634,7 @@ where
                     if end < entries.total_count {
                         return Err(refused());
                     }
-                    let rest = fetch(end).await?;
+                    let rest = fetch_ahead_of(&fetch, end).await?;
                     if rest.entries.first().map(|entry| entry.position) != Some(end) {
                         return Err(refused());
                     }
@@ -1358,6 +1400,125 @@ mod tests {
             positions.extend(page.entries.entries.iter().map(|entry| entry.position));
         }
         assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A fetch of Drive's pages of a store of 30 entries in chunks of 4 where the fetch from
+    /// `behind` is answered, its first `times` times, by a node whose store held `behind`
+    /// entries: no entry from there.
+    fn behind_at(
+        behind: u64,
+        times: usize,
+    ) -> impl Fn(u64) -> PageFuture + Clone + Send + Sync + 'static {
+        let left = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(times));
+        move |start| {
+            let left = std::sync::Arc::clone(&left);
+            Box::pin(async move {
+                use std::sync::atomic::Ordering::SeqCst;
+                if start == behind
+                    && left
+                        .fetch_update(SeqCst, SeqCst, |left| left.checked_sub(1))
+                        .is_ok()
+                {
+                    return Ok(drive_page(4, behind, start));
+                }
+                Ok(drive_page(4, 30, start))
+            })
+        }
+    }
+
+    /// The positions of `pages`, in order, each read.
+    fn positions(pages: Vec<Result<PrivateDocumentPage, Error>>) -> Vec<u64> {
+        pages
+            .into_iter()
+            .flat_map(|page| {
+                page.expect("every page reads")
+                    .entries
+                    .entries
+                    .into_iter()
+                    .map(|entry| entry.position)
+            })
+            .collect()
+    }
+
+    /// An empty page from a node behind, whose store ended at the page's start, is fetched
+    /// again rather than refused: in the walk's first pages, read one at a time, and once
+    /// pages are fetched at once, as a page and as a chunk's continuation. Every entry comes
+    /// once, in order.
+    #[tokio::test]
+    async fn should_fetch_again_an_empty_page_from_a_node_behind() {
+        // The second page, read one at a time; a page fetched at once; the continuation of
+        // the chunk from 12, which a node behind ended at 14.
+        for behind in [4, 12] {
+            let pages = walk(
+                behind_at(behind, 1),
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            assert_eq!(
+                positions(pages),
+                (0..30).collect::<Vec<_>>(),
+                "behind at {behind}"
+            );
+        }
+        let continuation = {
+            let continued = behind_at(14, 1);
+            move |start: u64| -> PageFuture {
+                if start == 12 {
+                    return Box::pin(async move { Ok(drive_page(4, 14, start)) });
+                }
+                continued(start)
+            }
+        };
+        let pages = walk(
+            continuation,
+            0,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        )
+        .await;
+        assert_eq!(
+            positions(pages),
+            (0..30).collect::<Vec<_>>(),
+            "continuation"
+        );
+    }
+
+    /// A page from a node that stays behind, past the refetches, ends the walk with a
+    /// retryable stale-node error, after the pages before it, in both the walk's phases.
+    #[tokio::test]
+    async fn should_end_with_a_retryable_error_on_a_node_that_stays_behind() {
+        use rs_dapi_client::CanRetry;
+
+        for (behind, before) in [(4, vec![0]), (12, vec![0, 4, 8])] {
+            let pages = walk(
+                behind_at(behind, usize::MAX),
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .await;
+            let starts: Vec<u64> = pages
+                .iter()
+                .take_while(|page| page.is_ok())
+                .flatten()
+                .map(|page| page.start_position)
+                .collect();
+            assert_eq!(starts, before, "behind at {behind}");
+            let error = pages
+                .last()
+                .and_then(|page| page.as_ref().err())
+                .expect("the walk ends with an error");
+            assert!(
+                matches!(
+                    error,
+                    Error::StaleNode(StaleNodeError::PrivateDocumentStoreBehind {
+                        position,
+                        total_count,
+                    }) if *position == behind && *total_count == behind
+                ),
+                "{error:?}"
+            );
+            assert!(error.can_retry(), "behind at {behind}");
+        }
     }
 
     /// A page short of its chunk, before the store's end, is an error rather than a gap.
