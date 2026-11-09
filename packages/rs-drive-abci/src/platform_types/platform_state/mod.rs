@@ -29,7 +29,6 @@ use crate::platform_types::platform_state::platform_state_for_saving::v2::Platfo
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
@@ -71,7 +70,9 @@ pub struct PlatformState {
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
-    /// previous FeeVersions
+    /// The fee versions earlier epochs ran on. Saved with the state and not read by block
+    /// execution: from protocol version 15 a refund uses the schedule of the epoch that stored
+    /// the bytes, read from that epoch's tree, and before it the removing block's schedule.
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
 
     /// True when a field carried only by the full saved record has changed since
@@ -387,8 +388,7 @@ mod tests {
     mod fee_history {
         use super::*;
         use crate::config::PlatformConfig;
-        use dpp::block::epoch::{Epoch, EpochIndex};
-        use dpp::fee::default_costs::{EpochCosts, KnownCostItem};
+        use dpp::block::epoch::EpochIndex;
         use dpp::version::fee::FeeVersionNumber;
         use platform_version::version::mocks::fee_doubled_storage_test::{
             TEST_FEE_VERSION_DOUBLED_STORAGE, TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE,
@@ -417,15 +417,6 @@ mod tests {
                 state.previous_fee_versions,
                 CachedEpochIndexFeeVersions::from([(GENESIS_EPOCH_INDEX, expected)])
             );
-
-            for epoch_index in [GENESIS_EPOCH_INDEX, 7] {
-                let epoch = Epoch::new(epoch_index).expect("epoch");
-                assert_eq!(
-                    epoch.active_fee_version(&state.previous_fee_versions),
-                    expected,
-                    "epoch {epoch_index} must resolve to the genesis generation"
-                );
-            }
         }
 
         #[test]
@@ -438,18 +429,6 @@ mod tests {
                     GENESIS_EPOCH_INDEX,
                     &TEST_FEE_VERSION_DOUBLED_STORAGE
                 )])
-            );
-            let epoch = Epoch::new(GENESIS_EPOCH_INDEX).expect("epoch");
-            assert_eq!(
-                epoch.cost_for_known_cost_item(
-                    &state.previous_fee_versions,
-                    KnownCostItem::StorageDiskUsageCreditPerByte
-                ),
-                2 * PlatformVersion::latest()
-                    .fee_version
-                    .storage
-                    .storage_disk_usage_credit_per_byte,
-                "genesis-epoch bytes of a chain started at the mock are priced at the doubled rate"
             );
         }
 
@@ -488,17 +467,13 @@ mod tests {
                 ]
             );
 
-            // Every epoch must resolve to the whole schedule it had before the
-            // round trip, not only to the same number, so every cost the
-            // schedule prices is covered.
-            for epoch_index in 0..=5 {
-                let epoch = Epoch::new(epoch_index).expect("epoch");
-                assert_eq!(
-                    epoch.active_fee_version(&restored.previous_fee_versions),
-                    epoch.active_fee_version(&original.previous_fee_versions),
-                    "epoch {epoch_index} must resolve to the same fee schedule after the saved-state round trip"
-                );
-            }
+            // Every recorded epoch must come back with the whole schedule it had
+            // before the round trip, not only the same number, so every rate the
+            // schedule carries is covered.
+            assert_eq!(
+                restored.previous_fee_versions, original.previous_fee_versions,
+                "the recorded fee schedules must survive the saved-state round trip"
+            );
         }
 
         /// The standalone record (saved-state structure 0, also written beside

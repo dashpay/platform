@@ -8,6 +8,8 @@ use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
 use crate::version::fee::document_ttl::FeeDocumentTtlVersion;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
 use crate::version::fee::hashing::{FeeHashingVersion, FeeHashingVersionBeforeVersion11};
+use crate::version::fee::private_document::v1::FEE_PRIVATE_DOCUMENT_VERSION1;
+use crate::version::fee::private_document::FeePrivateDocumentVersion;
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
 };
@@ -31,6 +33,7 @@ mod data_contract_validation;
 pub mod document_reference;
 pub mod document_ttl;
 mod hashing;
+pub mod private_document;
 mod processing;
 pub mod signature;
 pub mod state_transition_min_fees;
@@ -43,6 +46,18 @@ pub mod vote_resolution_fund_fees;
 
 pub type FeeVersionNumber = u32;
 
+/// The fee versions a node can resolve from a `fee_version_number` stored in platform state.
+///
+/// Entries must be numbered contiguously from 1, in order: the entry at index `i` carries
+/// `fee_version_number` `i + 1`. [`FeeVersion::get`] and [`FeeVersion::get_optional`] look a
+/// number up by that position, which is correct exactly while this holds, so a new entry is
+/// appended with the next number and never skips or reuses one.
+///
+/// Saved state keeps only the number and reloads the entry registered here, and block execution
+/// does not read what it reloads: from protocol version 15 a refund is priced at the storage rate
+/// of the protocol version that ran the epoch that stored the bytes, which the epoch's tree
+/// records. Schedules keep the previous number, which is why `FEE_VERSION2` to `FEE_VERSION4`
+/// all carry 1 and are not listed.
 pub const FEE_VERSIONS: &[FeeVersion] = &[FEE_VERSION1];
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -66,12 +81,17 @@ pub struct FeeVersion {
     /// protocol version 14). Like `document_ttl`, this field touches no stored format;
     /// `FeeVersionFieldsBeforeVersion4` must not gain it.
     pub document_reference: FeeDocumentReferenceVersion,
+    /// The entries a `PrivateDocumentCreateFromShieldedPool` appends (protocol version 15).
+    /// Fee versions are stored by number only, so this group does not touch any stored
+    /// format; `FeeVersionFieldsBeforeVersion4` must not gain it.
+    pub private_document: FeePrivateDocumentVersion,
 }
 
 impl FeeVersion {
     pub fn as_static(&self) -> &'static FeeVersion {
         FeeVersion::get(self.fee_version_number).expect("expected fee version to exist")
     }
+    /// Looks `version` up by position in [`FEE_VERSIONS`], which is numbered contiguously from 1.
     pub fn get<'a>(version: FeeVersionNumber) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
             #[cfg(feature = "mock-versions")]
@@ -100,6 +120,7 @@ impl FeeVersion {
         }
     }
 
+    /// Looks `version` up by position in [`FEE_VERSIONS`], which is numbered contiguously from 1.
     pub fn get_optional<'a>(version: FeeVersionNumber) -> Option<&'a Self> {
         Self::get(version).ok()
     }
@@ -181,6 +202,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
             // Nor do they parse `chooseFirst`; the group is unread there too.
             document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
+            // Nor do they admit a private document entry; the group is unread there too.
+            private_document: FEE_PRIVATE_DOCUMENT_VERSION1,
         }
     }
 }

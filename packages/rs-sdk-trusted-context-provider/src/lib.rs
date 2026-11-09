@@ -18,6 +18,7 @@
 //! system-contract and HTTP plumbing; the name of the crate predates it.
 
 pub mod error;
+mod known_contracts;
 mod proof_fetches;
 mod proof_transport;
 pub mod provider;
@@ -28,7 +29,10 @@ pub mod verified_provider;
 
 pub use error::TrustedContextProviderError;
 pub use provider::TrustedHttpContextProvider;
-pub use verified_provider::{VerifiedContextProviderError, VerifiedHttpContextProvider};
+pub use verified_provider::{
+    Continuation, StartingPoint, VerifiedContextProviderError, VerifiedHttpContextProvider,
+    VerifiedProviderOptions, DEFAULT_QUORUM_KEY_CACHE_SIZE,
+};
 
 use dpp::dashcore::Network;
 

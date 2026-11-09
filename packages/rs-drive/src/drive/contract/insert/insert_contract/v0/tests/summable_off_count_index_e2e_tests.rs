@@ -168,7 +168,6 @@ fn insert_post(
             true,
             None,
             pv,
-            None,
         )
         .expect("insert the post");
     post.id().to_buffer()
@@ -1028,7 +1027,6 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
                 &BlockInfo::default(),
                 None,
                 pv,
-                None,
             )
             .map(|_| ());
         assert!(refused(result), "apply: {apply}");
@@ -1061,7 +1059,7 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
             operations.reverse();
         }
         let result = drive
-            .apply_drive_operations(operations, true, &BlockInfo::default(), None, pv, None)
+            .apply_drive_operations(operations, true, &BlockInfo::default(), None, pv)
             .map(|_| ());
         assert!(
             refused(result),
@@ -1089,14 +1087,7 @@ fn should_refuse_a_batch_writing_two_likes_of_a_type_keeping_counters() {
     }
 
     drive
-        .apply_drive_operations(
-            vec![add(&likes[0])],
-            true,
-            &BlockInfo::default(),
-            None,
-            pv,
-            None,
-        )
+        .apply_drive_operations(vec![add(&likes[0])], true, &BlockInfo::default(), None, pv)
         .expect("one like a batch applies");
     let a_posts = level(&contract, &[b"postAuthor", &AUTHOR_A, b"postId"]);
     let counter = read_grove_element(&drive, &a_posts, &post).expect("the counter");

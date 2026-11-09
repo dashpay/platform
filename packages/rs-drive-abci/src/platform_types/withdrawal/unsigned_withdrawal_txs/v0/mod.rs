@@ -1,7 +1,7 @@
 //! Withdrawal transactions definitions and processing
 
 use dpp::dashcore::consensus::{serialize, Encodable};
-use dpp::dashcore::hashes::{sha256d, Hash};
+use dpp::dashcore::hashes::sha256d;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::dashcore::{Transaction, VarInt};
 use std::collections::{BTreeMap, HashMap};

@@ -279,6 +279,7 @@ mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use crate::drive::system::core_fork_activations::CoreFork;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -741,7 +742,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record a document removal");
         conformance_of(&drive, "contract_with_document_removals", run);
@@ -826,7 +826,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to fill and claim the fee pots");
         conformance_of(&drive, "moderated_contract", run);
@@ -880,7 +879,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to count a moderation action");
         conformance_of(&drive, "elected_contract", run);
@@ -992,7 +990,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record the proposals of two team actions");
         drive
@@ -1008,7 +1005,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to record an approval of a team action");
         conformance_of(&drive, "contract_with_team_actions", run);
@@ -1225,7 +1221,6 @@ mod fixtures {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to set address balances");
         conformance_of(&drive, "address_balances", run);
@@ -1239,6 +1234,16 @@ mod fixtures {
             .record_core_credit_pool_blocks(&[(100, 5_000_000)], None, platform_version)
             .expect("expected to record a Core block");
         conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
+    }
+
+    /// A Core fork Platform has seen active.
+    fn core_fork_activations(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .store_core_fork_activation_height(CoreFork::V24, 1_000, None, platform_version)
+            .expect("expected to record V24");
+        conformance_of(&drive, "core_fork_activations", run);
     }
 
     /// An epoch while it runs, then after it was paid out: payout deletes the
@@ -1883,7 +1888,6 @@ mod fixtures {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to add the document");
         }
@@ -1914,6 +1918,7 @@ mod fixtures {
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
         core_anchored_withdrawal_accounting(&mut run);
+        core_fork_activations(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         yes_no_vote_polls(&mut run);

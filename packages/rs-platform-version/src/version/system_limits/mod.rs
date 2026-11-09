@@ -45,7 +45,7 @@ pub struct SystemLimits {
     /// this does not count.
     pub max_private_document_entry_size: Option<u32>,
     /// The bytes a compacted chunk of a private document store is kept near (protocol version
-    /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
     /// document type. Read with the two chunk power bounds below by Drive's
     /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
     /// type's store; the chunk power it picks is committed into the store, so a store keeps the
@@ -59,6 +59,11 @@ pub struct SystemLimits {
     /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
     /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
     pub private_document_store_max_chunk_power: Option<u8>,
+    /// Most entries one `PrivateDocumentCreateFromShieldedPool` transition may append to a
+    /// private document type's store (protocol version 15): 16 from `SYSTEM_LIMITS_V5`, `None`
+    /// in the earlier tables, which refuse the transition before validating it. Read by the
+    /// transition's basic structure 0.
+    pub max_private_document_entries_per_transition: Option<u16>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -242,7 +247,10 @@ pub struct SystemLimits {
     /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
     /// withdrawal whose whole amount is below the threshold of its output script is marked
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
-    /// method version 2). `None` for the protocol versions that predate the rule.
+    /// method version 2). From protocol version 15 a withdrawal whose whole amount is below
+    /// that threshold also keeps asset unlock payload version 1 when it is pooled
+    /// (`build_untied_withdrawal_transactions_from_documents` method version 1), so FAILED only
+    /// ever ends a version 1 withdrawal. `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
     /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
     /// `None` preserves the behavior of protocol versions that predate this limit.

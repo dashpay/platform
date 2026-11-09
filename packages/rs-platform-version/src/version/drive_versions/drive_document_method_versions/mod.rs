@@ -37,6 +37,11 @@ pub struct DriveDocumentMethodVersions {
     /// `verify_private_document_entries` checks. `Some(0)` from
     /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
     pub prove_private_document_entries: OptionalFeatureVersion,
+    /// `append_private_document_entries_operations`: the operations a
+    /// `PrivateDocumentCreateFromShieldedPool` appends its entries with, each after Drive's
+    /// header (the block's height and time). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+    /// (protocol version 15), `None` before.
+    pub append_private_document_entries_operations: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
@@ -121,6 +126,10 @@ pub struct DriveDocumentQueryMethodVersions {
     /// checks; v1 (protocol version 14) groups multiple `In` clauses
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a
+    /// documents query with several `In` clauses
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub where_clause_grouping: FeatureVersion,
     /// Reading a query's `startAt`/`startAfter` cursor document from the
     /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
@@ -128,6 +137,10 @@ pub struct DriveDocumentQueryMethodVersions {
     /// `documentsSummable` type, whose documents are stored as
     /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
     /// decodes any item element, as the proof verifier always has.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a cursor
+    /// on such a type (`DocumentQuery::required_protocol_version` in
+    /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
 }
 

@@ -65,8 +65,7 @@
 //! corrupt persisted xpub would otherwise let a mismatched (public,
 //! private) pair escape. On mismatch we return an error rather than a key.
 //!
-//! The raw 64-byte seed is obtained two ways, matching
-//! [`derive_core_address_private_key`](PlatformWallet::derive_core_address_private_key):
+//! The raw 64-byte seed is obtained two ways:
 //! `Some(seed)` for external-signable / watch-only wallets whose mnemonic
 //! the caller resolved on demand; `None` to take a resident key-bearing
 //! wallet's own [`wallet_seed_bytes`](key_wallet::wallet::Wallet::wallet_seed_bytes).
@@ -141,12 +140,11 @@ pub fn derive_platform_node_public_keys(
     // to `EdDSAAccount::from_seed`. `None` once the wallet has been
     // downgraded to external-signable, but registration snapshots this
     // while the wallet is still seed-bearing.
-    let seed: Zeroizing<[u8; 64]> =
-        Zeroizing::new(wallet.wallet_seed_bytes().ok_or_else(|| {
-            PlatformWalletError::KeyDerivation(
-                "wallet has no resident seed to pre-derive platform-node keys".to_string(),
-            )
-        })?);
+    let seed: Zeroizing<[u8; 64]> = wallet.wallet_seed_bytes().ok_or_else(|| {
+        PlatformWalletError::KeyDerivation(
+            "wallet has no resident seed to pre-derive platform-node keys".to_string(),
+        )
+    })?;
 
     let mut out = Vec::with_capacity(count as usize);
     for index in 0..count {
@@ -208,7 +206,6 @@ pub fn populate_platform_node_pool(
     keys: &[ProviderPlatformNodePubKey],
     network: key_wallet::Network,
 ) -> Result<(), PlatformWalletError> {
-    use dashcore::hashes::Hash;
     use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::AddressInfo;
@@ -778,7 +775,7 @@ mod tests {
             // the #881 seed entry point at that index — the same routine
             // `derive_provider_key_at_index` uses for the per-index reveal,
             // so the persisted batch and the reveal can't diverge.
-            let via_api = EdDSAAccount::platform_node_key_at(&seed, Network::Mainnet, i as u32)
+            let via_api = EdDSAAccount::platform_node_key_at(&*seed, Network::Mainnet, i as u32)
                 .expect("platform_node_key_at");
             assert_eq!(
                 k.public_key,
@@ -797,7 +794,7 @@ mod tests {
         // (`m/9'/5'/3'/4'/0'`), pinned to the SLIP-10 reference in
         // key-wallet `provider_key_derivation_tests.rs`. This is the value
         // DashSync/dashwallet-ios produce.
-        let sk0 = EdDSAAccount::platform_node_key_at(&seed, Network::Mainnet, 0)
+        let sk0 = EdDSAAccount::platform_node_key_at(&*seed, Network::Mainnet, 0)
             .expect("platform_node_key_at");
         assert_eq!(
             hex::encode(sk0.to_bytes()),
@@ -857,7 +854,7 @@ mod tests {
         );
 
         // Private: the gate-free #881 seed entry point (no account state).
-        let sk0 = BLSAccount::operator_private_key_at(&seed, Network::Mainnet, 0)
+        let sk0 = BLSAccount::operator_private_key_at(&*seed, Network::Mainnet, 0)
             .expect("operator private");
         assert_eq!(
             hex::encode(sk0.to_bytes()),
@@ -890,7 +887,7 @@ mod tests {
             "09d8beabae708de1638487f1aff44b38e8c07d9b09f22d76329d6c8ec01e2ad4d030b660bca40ddbd222373a72c5bcef",
             "testnet operator key0 legacy pubkey golden (dashbls reference)"
         );
-        let sk0_t = BLSAccount::operator_private_key_at(&seed_t, Network::Testnet, 0)
+        let sk0_t = BLSAccount::operator_private_key_at(&*seed_t, Network::Testnet, 0)
             .expect("operator private");
         assert_eq!(
             hex::encode(sk0_t.to_bytes()),
@@ -937,7 +934,7 @@ mod tests {
 
         // Mismatch: A's xpub, B's seed → the guard must reject.
         let err =
-            checked_operator_private_bytes_at(&xpub_a_modern, &seed_b, Network::Mainnet, 0, true)
+            checked_operator_private_bytes_at(&xpub_a_modern, &*seed_b, Network::Mainnet, 0, true)
                 .expect_err("a seed not matching the account xpub must be rejected");
         assert!(
             matches!(err, PlatformWalletError::KeyDerivation(_)),
@@ -946,7 +943,7 @@ mod tests {
 
         // Control: A's own seed passes and yields the golden secret.
         let ok =
-            checked_operator_private_bytes_at(&xpub_a_modern, &seed_a, Network::Mainnet, 0, true)
+            checked_operator_private_bytes_at(&xpub_a_modern, &*seed_a, Network::Mainnet, 0, true)
                 .expect("the matching seed must pass the cross-check");
         assert_eq!(
             hex::encode(&*ok.expect("private scalar returned when include_private")),
@@ -1108,7 +1105,7 @@ mod tests {
         for (network, coin) in [(Network::Mainnet, "5'"), (Network::Testnet, "1'")] {
             let wallet = seed_bearing_wallet(network);
             let seed = wallet.wallet_seed_bytes().expect("resident seed");
-            let master = ExtendedPrivKey::new_master(network, &seed).expect("master xpriv");
+            let master = ExtendedPrivKey::new_master(network, &*seed).expect("master xpriv");
 
             for (kind, family) in [
                 (ProviderKeyKind::Owner, "2'"),
@@ -1121,7 +1118,7 @@ mod tests {
 
                 for index in [0u32, 1, 19] {
                     let derived = account
-                        .derive_from_seed_private_key_at(&seed, index)
+                        .derive_from_seed_private_key_at(&*seed, index)
                         .expect("account-based derivation");
 
                     let path =
@@ -1156,10 +1153,10 @@ mod tests {
             .expect("voting account");
 
         let derived = account
-            .derive_from_seed_private_key_at(&seed, 19)
+            .derive_from_seed_private_key_at(&*seed, 19)
             .expect("account-based derivation");
 
-        let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Mainnet, &*seed).expect("master");
         let doubled = master
             .derive_priv(
                 &DerivationPath::from_str("m/9'/5'/3'/1'/9'/5'/3'/1'/19").expect("doubled path"),
@@ -1192,7 +1189,7 @@ mod tests {
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
         let seed = wallet.wallet_seed_bytes().expect("resident seed");
-        let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Mainnet, &*seed).expect("master");
 
         for (kind, family) in [
             (ProviderKeyKind::Owner, "2'"),
@@ -1213,7 +1210,7 @@ mod tests {
             // change back to it fails here rather than on a device.
             assert!(
                 watch_only
-                    .derive_from_seed_private_key_at(&seed, 19)
+                    .derive_from_seed_private_key_at(&*seed, 19)
                     .is_err(),
                 "the gated wrapper is expected to refuse a watch-only account"
             );

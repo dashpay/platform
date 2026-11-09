@@ -82,8 +82,12 @@ use tower::ServiceExt;
 
 #[path = "query_request_errors/composite_caps.rs"]
 mod composite_caps;
+#[path = "query_request_errors/document_features.rs"]
+mod document_features;
 #[path = "query_request_errors/features_not_active.rs"]
 mod features_not_active;
+#[path = "query_request_errors/index_coverage.rs"]
+mod index_coverage;
 #[path = "query_request_errors/offset_controls.rs"]
 mod offset_controls;
 #[path = "query_request_errors/offsets.rs"]

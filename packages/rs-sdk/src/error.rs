@@ -154,9 +154,10 @@ pub enum Error {
     ///
     /// Retrying another node cannot help. The same request succeeds once a verified answer
     /// shows the network runs `required`, and this SDK's own version is at least
-    /// `required`. See [`TransportRequest::needs_protocol_version`](rs_dapi_client::transport::TransportRequest::needs_protocol_version).
+    /// `required`. See [`Query::protocol_requirement`](crate::platform::Query::protocol_requirement).
     #[error(
-        "{method} needs Platform protocol version {required}; {}",
+        "{method} needs Platform protocol version {required}{}; {}",
+        describe_feature(*.feature),
         describe_proven_protocol_version(*.network, *.pinned, .cause.is_some())
     )]
     ProtocolVersionNotActive {
@@ -164,6 +165,9 @@ pub enum Error {
         method: &'static str,
         /// Protocol version from which every node serves the request.
         required: u32,
+        /// The feature of the request that needs `required`, when the method alone does not,
+        /// for example "time-range selections" of a `get_documents` request.
+        feature: Option<&'static str>,
         /// Protocol version the SDK could rely on: the lower of its own version and the
         /// newest version a verified answer was signed with; 0 before any verified answer.
         network: u32,
@@ -176,6 +180,13 @@ pub enum Error {
         #[source]
         cause: Option<Box<Error>>,
     },
+}
+
+/// The feature [`Error::ProtocolVersionNotActive`]'s message names, if any.
+fn describe_feature(feature: Option<&'static str>) -> String {
+    feature
+        .map(|feature| format!(" for {feature}"))
+        .unwrap_or_default()
 }
 
 /// The end of [`Error::ProtocolVersionNotActive`]'s message.
@@ -219,7 +230,6 @@ impl Error {
     fn cannot_verify_answers(&self) -> bool {
         match self {
             Self::NoAvailableAddressesToRetry(last_error) => last_error.cannot_verify_answers(),
-            Self::Proof(drive_proof_verifier::Error::ContextProviderNotSet) => true,
             Self::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. })
             | Self::ContextProviderError(error) => {
                 matches!(error, ContextProviderError::Config(_))
@@ -288,10 +298,14 @@ impl Error {
 }
 
 /// A trusted source outage is not the responding node's fault. Preserve that
-/// attribution and quorum context; so is a data contract the client's context cannot
-/// give as the request needs it, which every node's answer fails on alike. A verified
-/// result no node can return as the requested type is the request's to change
-/// ([`Error::InvalidRequest`]); every other verifier failure stays `Proof`.
+/// attribution and quorum context. A missing context provider, or one configured so that
+/// it cannot serve a lookup the verifier makes (a quorum key, or a data contract or token
+/// configuration a proof is read with), is this SDK's own setup, which no node can change:
+/// it is a configuration error that is not retried and bans no node. A data contract the
+/// client's context cannot give as the request needs it fails every node's answer alike,
+/// and is not retried either. A verified result no node can return as the requested type
+/// is the request's to change ([`Error::InvalidRequest`]); every other verifier failure
+/// stays `Proof`.
 impl From<drive_proof_verifier::Error> for Error {
     fn from(value: drive_proof_verifier::Error) -> Self {
         match value {
@@ -304,6 +318,20 @@ impl From<drive_proof_verifier::Error> for Error {
                 "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
                 hex::encode(quorum_hash)
             ))),
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                error: error @ ContextProviderError::Config(_),
+                ..
+            }
+            | drive_proof_verifier::Error::ContextProviderError(
+                error @ ContextProviderError::Config(_),
+            ) => Self::ContextProviderError(error),
+            drive_proof_verifier::Error::ContextProviderNotSet => {
+                Self::ContextProviderError(ContextProviderError::Config(
+                    "context provider is not set, so no proof can be verified; set one with \
+                     SdkBuilder::with_context_provider() or Sdk::set_context_provider()"
+                        .to_string(),
+                ))
+            }
             drive_proof_verifier::Error::ContextProviderError(
                 error @ ContextProviderError::DataContractFailure(_),
             ) => Self::ContextProviderError(error),
@@ -627,6 +655,16 @@ pub enum StaleNodeError {
         /// Protocol version in the response metadata
         signed: u32,
     },
+    /// Server proved a private document type's store of `total_count` entries for a page from
+    /// `position`, which an earlier page showed the store already holds: its snapshot is older
+    /// than the one the read started from. A later read, or another server, can serve it.
+    #[error("received a private document store of {total_count} entries for a page from position {position}, which it already holds; try another server")]
+    PrivateDocumentStoreBehind {
+        /// The page's first position
+        position: u64,
+        /// How many entries the server's snapshot of the store holds
+        total_count: u64,
+    },
 }
 
 #[cfg(test)]
@@ -665,6 +703,7 @@ mod tests {
         let refused = |network, pinned, cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network,
             pinned,
             cause: cause.map(Box::new),
@@ -705,6 +744,25 @@ mod tests {
         );
     }
 
+    /// A context provider configured so that it cannot serve a lookup the verifier makes,
+    /// such as the data contract a document history proof is read with, fails alike for
+    /// every node's answer: the request is not retried and no node is banned for it.
+    #[test]
+    fn should_not_retry_a_lookup_the_context_provider_is_configured_not_to_serve() {
+        let error = Error::from(drive_proof_verifier::Error::ContextProviderError(
+            ContextProviderError::Config("dump dir not set".to_string()),
+        ));
+        assert!(
+            matches!(
+                &error,
+                Error::ContextProviderError(ContextProviderError::Config(reason))
+                    if reason == "dump dir not set"
+            ),
+            "{error:?}"
+        );
+        assert!(!error.can_retry());
+    }
+
     /// A result that verified but cannot be returned as the requested type is the same from
     /// every honest node: the request fails without being retried, and the node is not banned.
     #[test]
@@ -739,6 +797,7 @@ mod tests {
         let refused = |cause: Option<Error>| Error::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: cause.map(Box::new),
@@ -777,7 +836,7 @@ mod tests {
             );
         }
         let permanent = [
-            Error::Proof(drive_proof_verifier::Error::ContextProviderNotSet),
+            Error::from(drive_proof_verifier::Error::ContextProviderNotSet),
             quorum_key(ContextProviderError::Config(
                 "Non-trusted mode is not supported".to_string(),
             )),
@@ -803,7 +862,6 @@ mod tests {
         use dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
         use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
         use dpp::consensus::basic::BasicError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::Txid;
         use dpp::serialization::PlatformSerializableWithPlatformVersion;
         use dpp::version::PlatformVersion;

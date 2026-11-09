@@ -71,24 +71,14 @@ where
         >,
     {
         // Default implementation
+        let requirement = query.protocol_requirement(&sdk.query_settings().without_proofs())?;
+        let required_protocol_version = requirement.map(|requirement| requirement.protocol_version);
+        sdk.ensure_network_serves(requirement, Some(request_settings))
+            .await?;
+        // The request is encoded, and its answer read, with the version the SDK speaks once
+        // the check above has run: asking the network for its version may have raised it.
         let settings = sdk.query_settings().without_proofs();
-        let request: <Self as FetchUnproved>::Request = query.query(&settings)?;
-        let required_protocol_version = request.needs_protocol_version();
-        sdk.ensure_network_serves(
-            required_protocol_version,
-            request.method_name(),
-            Some(request_settings),
-        )
-        .await?;
-        // Asking the network for its version may have raised the version the SDK speaks:
-        // encode the request again at it, as `Fetch` does, and read the answer with it.
-        let settings = sdk.query_settings().without_proofs();
-        let request = if required_protocol_version.is_some() {
-            query.query(&settings)?
-        } else {
-            request
-        };
-        let request = &request;
+        let request: &<Self as FetchUnproved>::Request = &query.query(&settings)?;
         let platform_version = settings.protocol_version;
         let closure = move |local_settings: RequestSettings| async move {
             // Execute the request using the Sdk instance

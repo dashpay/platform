@@ -1,6 +1,7 @@
 use super::broadcast_request::{checked_broadcast_request, BroadcastRequestForStateTransition};
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
+use crate::platform::ProtocolRequirement;
 use crate::sync::retry;
 use crate::sync::retry_with_additional_error;
 use crate::{Error, Sdk};
@@ -24,6 +25,7 @@ use dpp::state_transition::proof_result::{
 use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
+use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rs_dapi_client::AddressList;
@@ -37,6 +39,31 @@ use std::sync::atomic::Ordering;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
+
+/// The gRPC method a state transition is sent with.
+pub(crate) const BROADCAST_STATE_TRANSITION_METHOD: &str = "broadcast_state_transition";
+
+/// What a private document create from the shielded pool (type 29) needs: every node serves
+/// it from protocol version 15.
+pub(crate) fn private_document_create_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("private document create from shielded pool transitions"),
+    }
+}
+
+/// The protocol version `transition`'s kind needs before every node serves it, for a kind
+/// newer than every node may run: nodes of an older release reject it, which the client would
+/// take for the transition's own rejection.
+fn transition_protocol_requirement(transition: &StateTransition) -> Option<ProtocolRequirement> {
+    match transition {
+        StateTransition::PrivateDocumentCreateFromShieldedPool(_) => {
+            Some(private_document_create_requirement())
+        }
+        _ => None,
+    }
+}
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -132,6 +159,13 @@ impl BroadcastStateTransition for StateTransition {
                 .unwrap_or("UNKNOWN".to_string()),
             "broadcast: start"
         );
+        // A kind the network may not serve yet is sent only once a verified answer shows it
+        // does; otherwise it is refused here with `ProtocolVersionNotActive`.
+        sdk.ensure_network_serves(
+            transition_protocol_requirement(self),
+            settings.map(|settings| settings.request_settings),
+        )
+        .await?;
 
         let retry_settings = match settings {
             Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),

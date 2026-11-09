@@ -138,6 +138,12 @@ impl StateTransition {
                 )?
                 .into()
             }
+            StateTransitionType::PrivateDocumentCreateFromShieldedPool => {
+                PrivateDocumentCreateFromShieldedPoolTransition::deserialize_from_bytes_untrusted_exact(
+                    bytes,
+                )?
+                .into()
+            }
             StateTransitionType::IdentityKeyLimitsUpdate => {
                 IdentityKeyLimitsUpdateTransition::deserialize_from_bytes_untrusted_exact(bytes)?
                     .into()

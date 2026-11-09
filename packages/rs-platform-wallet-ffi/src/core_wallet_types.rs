@@ -46,7 +46,6 @@ impl From<&OutPointFFI> for dashcore::OutPoint {
     /// an outpoint a host hands back (a page cursor, a classification
     /// query), so the byte order round-trips exactly.
     fn from(outpoint: &OutPointFFI) -> Self {
-        use dashcore::hashes::Hash as _;
         dashcore::OutPoint {
             txid: dashcore::Txid::from_byte_array(outpoint.txid),
             vout: outpoint.vout,
@@ -1380,7 +1379,6 @@ pub struct MasternodeEntryV2FFI {
 /// interior-nul error.
 fn masternode_p2pkh_cstring(hash: [u8; 20], network: dashcore::Network) -> *mut c_char {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::PubkeyHash;
     let address = dashcore::Address::new(
         network,
@@ -1413,7 +1411,7 @@ pub(crate) fn masternode_entry_ffi(
     mn: &MasternodeRecord,
     network: dashcore::Network,
 ) -> MasternodeEntryFFI {
-    use dashcore::hashes::{hash160, Hash};
+    use dashcore::hashes::hash160;
     use std::ffi::CString;
 
     // Operator pseudo-address = P2PKH of hash160(BLS key); platform-node
@@ -1664,7 +1662,7 @@ fn tx_record_to_ffi(
     }
 }
 
-fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
+pub(crate) fn vec_to_ptr<T>(v: Vec<T>) -> *mut T {
     if v.is_empty() {
         std::ptr::null_mut()
     } else {

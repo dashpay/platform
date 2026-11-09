@@ -1049,7 +1049,6 @@ fn prepared_send_outcome(
 
 /// A txid as the 32 bytes the FFI hands out.
 fn txid_bytes(txid: &dashcore::Txid) -> [u8; 32] {
-    use dashcore::hashes::Hash;
     txid.to_raw_hash().to_byte_array()
 }
 
@@ -1959,7 +1958,6 @@ mod tests {
         TestCore,
         platform_wallet::test_support::WalletSigner,
     ) {
-        use dashcore::hashes::Hash;
         use key_wallet::account::account_type::StandardAccountType;
         use platform_wallet::test_support::{funded_spv_core_wallet, test_platform_wallet_manager};
         use platform_wallet::PreparedDashPayPayment;
@@ -1999,7 +1997,6 @@ mod tests {
     /// stale payment.
     #[test]
     fn should_carry_the_txid_for_every_send_outcome_that_built_it() {
-        use dashcore::hashes::Hash;
         use platform_wallet::PlatformWalletError;
         let local = dashcore::Txid::from_byte_array([0x42; 32]);
 

@@ -803,9 +803,8 @@ mod refund_tests {
     }
 
     #[tokio::test]
-    async fn test_document_refund_after_10_epochs_on_different_fee_version_increasing_fees() {
+    async fn test_document_refund_after_10_epochs() {
         let platform_version = PlatformVersion::latest();
-        let platform_version_with_higher_fees = platform_version.clone();
 
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -859,17 +858,13 @@ mod refund_tests {
                 0,
                 None,
                 &signer,
-                &platform_version_with_higher_fees,
+                platform_version,
                 None,
             )
             .await
             .expect("expect to create documents batch transition");
 
-        let mut platform_state = platform.state.load().clone().deref().clone();
-
-        platform_state
-            .previous_fee_versions_mut()
-            .insert(5, platform_version_with_higher_fees.fee_version.as_static());
+        let platform_state = platform.state.load().clone().deref().clone();
 
         let (mut fee_results, _) = process_state_transitions(
             &platform,
@@ -883,7 +878,7 @@ mod refund_tests {
         let credits_verified = platform
             .platform
             .drive
-            .calculate_total_credits_balance(None, &platform_version_with_higher_fees.drive)
+            .calculate_total_credits_balance(None, &platform_version.drive)
             .expect("expected to check sum trees");
 
         let balanced = credits_verified
@@ -909,7 +904,7 @@ mod refund_tests {
         fetch_expected_identity_balance(
             &platform,
             identity.id(),
-            &platform_version_with_higher_fees,
+            platform_version,
             expected_user_balance_after_deletion,
         );
     }
@@ -2263,83 +2258,5 @@ mod fee_generation_boundary {
             control.identity_balance_before
         );
         assert_doubled_storage_generation(&doubled, &control, GENESIS_EPOCH_INDEX, 1);
-    }
-
-    #[test]
-    fn should_reject_a_non_first_fee_generation_removal_without_fee_history() {
-        const REMOVED_BYTES: u32 = 1_000;
-        let owner = [7u8; 32];
-        let epoch = Epoch::new(3).expect("expected an epoch");
-
-        let removal = || {
-            let mut removal_per_epoch_by_identifier = StorageRemovalPerEpochByIdentifier::new();
-            removal_per_epoch_by_identifier
-                .entry(owner)
-                .or_default()
-                .insert(GENESIS_EPOCH_INDEX, REMOVED_BYTES);
-            LowLevelDriveOperation::CalculatedCostOperation(OperationCost {
-                storage_cost: StorageCost {
-                    added_bytes: 0,
-                    replaced_bytes: 0,
-                    removed_bytes: StorageRemovedBytes::SectionedStorageRemoval(
-                        removal_per_epoch_by_identifier,
-                    ),
-                },
-                ..Default::default()
-            })
-        };
-
-        // A generation other than the first cannot price a sectioned removal
-        // without the fee history: the lifecycle callers that pass `None` may
-        // only remove unflagged bytes.
-        let without_history = Drive::calculate_fee(
-            None,
-            Some(vec![removal()]),
-            &epoch,
-            DEFAULT_EPOCHS_PER_ERA,
-            &TEST_PLATFORM_V4,
-            None,
-        );
-        assert!(
-            matches!(
-                without_history,
-                Err(DriveCrateError::Drive(DriveError::CorruptedCodeExecution(
-                    _
-                )))
-            ),
-            "expected a corrupted code execution error, got {without_history:?}"
-        );
-
-        // With the history the same removal is refunded at the generation
-        // active for the storage epoch's lookup.
-        let history = CachedEpochIndexFeeVersions::from([(
-            GENESIS_EPOCH_INDEX,
-            &TEST_FEE_VERSION_DOUBLED_STORAGE,
-        )]);
-        let fee_result = Drive::calculate_fee(
-            None,
-            Some(vec![removal()]),
-            &epoch,
-            DEFAULT_EPOCHS_PER_ERA,
-            &TEST_PLATFORM_V4,
-            Some(&history),
-        )
-        .expect("expected the removal to be priced with the fee history");
-        assert_eq!(
-            fee_result
-                .fee_refunds
-                .get(&owner)
-                .and_then(|refunds| refunds.get(&GENESIS_EPOCH_INDEX))
-                .copied(),
-            Some(expected_refund(
-                Credits::from(REMOVED_BYTES)
-                    * TEST_FEE_VERSION_DOUBLED_STORAGE
-                        .storage
-                        .storage_disk_usage_credit_per_byte,
-                GENESIS_EPOCH_INDEX,
-                epoch.index,
-                DEFAULT_EPOCHS_PER_ERA,
-            ))
-        );
     }
 }

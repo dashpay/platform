@@ -2162,6 +2162,31 @@ impl Drive {
 
                 Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
             }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+
+                // All nullifiers must be marked as spent
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
             StateTransition::ShieldedWithdrawal(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::data_contracts::withdrawals_contract;
@@ -3254,6 +3279,10 @@ impl Drive {
             // Balance and pool snapshots at the proof's block: not bindable to one transition.
             StateTransition::TokenUnshieldWithShieldedFee(_) => false,
             StateTransition::TokenPurchaseFromShieldedPool(_) => false,
+            // Only the resulting state: the spent nullifiers name the notes paying the fee, not
+            // the entries, so a competing create spending the same notes for other entries
+            // leaves the same evidence.
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => false,
         };
 
         Ok(binds)
@@ -4574,7 +4603,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4588,7 +4616,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete document");
 
@@ -4713,7 +4740,6 @@ mod tests {
                 true,
                 None,
                 latest,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4820,7 +4846,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4952,7 +4977,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 

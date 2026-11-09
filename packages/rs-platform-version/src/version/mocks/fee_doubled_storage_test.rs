@@ -1,4 +1,3 @@
-use crate::version::fee::storage::v1::FEE_STORAGE_VERSION1;
 use crate::version::fee::storage::FeeStorageVersion;
 use crate::version::fee::v4::FEE_VERSION4;
 use crate::version::fee::{FeeVersion, FeeVersionNumber};
@@ -14,24 +13,24 @@ pub const TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE: FeeVersionNumber =
     (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 1;
 
 /// Storage rates of the doubled-storage test schedule: the disk usage rate is
-/// exactly twice `FEE_STORAGE_VERSION1`, every other storage rate (including
-/// the TTL ephemeral rate) is unchanged.
+/// exactly twice `FEE_VERSION4`'s, every other storage rate (including the TTL
+/// ephemeral rate) is unchanged.
 pub const TEST_FEE_STORAGE_VERSION_DOUBLED: FeeStorageVersion = FeeStorageVersion {
-    storage_disk_usage_credit_per_byte: 2 * FEE_STORAGE_VERSION1.storage_disk_usage_credit_per_byte,
-    ..FEE_STORAGE_VERSION1
+    storage_disk_usage_credit_per_byte: 2 * FEE_VERSION4.storage.storage_disk_usage_credit_per_byte,
+    ..FEE_VERSION4.storage
 };
 
 /// A fee generation that exists only under `mock-versions`.
 ///
 /// No shipped schedule carries a `fee_version_number` other than 1, so the
-/// registry lookup, the epoch-change hook, the saved-state round trip and the
-/// history-driven refund path have no production input that exercises a
-/// second generation. This schedule is `FEE_VERSION4`, the latest schedule
-/// (the one `TEST_PLATFORM_V4`'s base protocol version carries), with a new
-/// generation number and a doubled storage disk usage rate: processing,
-/// hashing, signature and vote resolution rates are identical, so any fee
-/// difference across a boundary into this generation is storage, and a refund
-/// priced at the wrong generation is off by a factor of two.
+/// registry lookup, the epoch-change hook and the saved-state round trip of
+/// the fee history have no production input that exercises a second
+/// generation. This schedule is `FEE_VERSION4`, the latest schedule (the one
+/// `TEST_PLATFORM_V4`'s base protocol version carries), with a new generation
+/// number and a doubled storage disk usage rate: processing, hashing,
+/// signature and vote resolution rates are identical, so any fee difference
+/// across a boundary into this generation is storage, and a refund priced at
+/// the wrong epoch's rate is off by a factor of two.
 ///
 /// It is unreachable in production builds: the constant is compiled only
 /// with `mock-versions`, and `FeeVersion::get` resolves the shifted number

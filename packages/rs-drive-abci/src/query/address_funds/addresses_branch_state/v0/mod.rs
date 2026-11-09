@@ -126,7 +126,7 @@ mod tests {
         ];
         platform
             .drive
-            .apply_drive_operations(operations, true, &BlockInfo::default(), None, version, None)
+            .apply_drive_operations(operations, true, &BlockInfo::default(), None, version)
             .expect("expected to apply operations");
 
         let checkpoint_height = 1u64;

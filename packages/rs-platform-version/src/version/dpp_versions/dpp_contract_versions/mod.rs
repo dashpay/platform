@@ -133,6 +133,12 @@ pub struct DocumentTypeMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
+    /// The contract grammar (document meta-schema generation). From generation 3 an index
+    /// can key the elements of a typed array and time and integer windows.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves
+    /// `contains` / `containsAny` clauses and window selections
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub document_type_schema: FeatureVersion,
     /// How full validation checks a document type's schema at registration. 0: against the
     /// document meta-schema `document_type_schema` names, through the `jsonschema` crate,
@@ -279,9 +285,12 @@ mod tests {
     }
 
     /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
-    /// sized from the private document store limits, and reads, proves and verifies a page of
-    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
-    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// sized from the private document store limits, reads, proves and verifies a page of it
+    /// through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`, and appends a private document create's entries,
+    /// at most `max_private_document_entries_per_transition` of them, through
+    /// `append_private_document_entries_operations`, after the transition's basic structure: a
+    /// protocol version parsing private types without
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
@@ -338,6 +347,29 @@ mod tests {
                         .methods
                         .document
                         .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "append_private_document_entries_operations",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .append_private_document_entries_operations
+                        .is_some(),
+                ),
+                (
+                    "max_private_document_entries_per_transition",
+                    limits.max_private_document_entries_per_transition.is_some(),
+                ),
+                (
+                    "private_document_create_from_shielded_pool basic_structure",
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                        .basic_structure
                         .is_some(),
                 ),
                 (

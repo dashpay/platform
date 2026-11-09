@@ -110,6 +110,10 @@ pub(crate) mod index_level_tree_types;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod layout;
 
+/// Whether a document's unique index entry sits under the key of its values
+#[cfg(feature = "server")]
+pub mod shared_unique_entry;
+
 /// What creating one document costs, element by element, from the elements
 /// the index walkers write
 #[cfg(any(feature = "server", feature = "verify"))]

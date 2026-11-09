@@ -174,11 +174,14 @@ already owns a new schedule, amend that schedule instead of creating another
 generation nobody references.
 
 `fee_version_number` is a separate concept from the schedule generation: it
-keys persisted fee history and storage-refund behaviour, and it is stored in
-platform state. Inspect its consumers before changing it. `FEE_VERSION1` and
-`FEE_VERSION2` both carry `fee_version_number: 1` because storage rates did not
-change between them, only a fee group did. See the
-[Fee System Overview](../fees/overview.md).
+keys the fee history saved in platform state. Inspect its consumers before
+changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
+`fee_version_number: 1` because storage rates did not change between them, only
+a fee group did.
+
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 
@@ -192,6 +195,17 @@ Serde-based conversions of `DataContract` read a process-wide current version
 set through `PlatformVersionCurrentVersion::set_current`. Tests that build
 platforms at different protocol versions race on it. Prefer the explicit
 `to_value(platform_version)` style API wherever a version is in hand.
+
+### Consensus code reads Core at the chain-locked height
+
+Every validator asks its own Dash Core, so a read is deterministic only when it
+asks about the block's chain-locked core height (`block_info.core_height`),
+never Core's tip, and a Core error is never read as a default such as "not
+active". [Syncing with Dash
+Core](../architecture/component-pipeline.md#syncing-with-dash-core) explains why
+and lists the rules for a new read, and [Core Fork
+Activations](../architecture/core-fork-activations.md) describes the record that
+code depending on a Core fork reads.
 
 ### Dispatcher shape
 
@@ -214,8 +228,7 @@ The observed order in `drive` and `drive-abci` is: `&self`, domain inputs,
 `block_info`, mode flags (`apply`, `stateful`), the estimation map,
 `transaction`, the operations accumulator, `platform_version`. A new parameter
 goes up with the context items, never after `platform_version`. The same holds
-for fields on context structs such as parse contexts. The known exception is
-`previous_fee_versions`, which trails it on fee-returning methods.
+for fields on context structs such as parse contexts.
 
 Why: readers of a few hundred versioned signatures expect the closing
 parameter to be the version. Appending after it breaks that scan.
@@ -442,7 +455,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how
