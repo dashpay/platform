@@ -112,29 +112,16 @@ impl PrivateDocumentCreateFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
-        // An unpinned SDK starts below protocol version 15, whose limits admit no entries: the
-        // network's version is established before the transition is built against it. One
-        // still below it after that refuses with the structured activation error, caused by
-        // the refresh's failure when it failed, so a caller can tell a refusal that may lift
-        // at once from one the network's version explains.
-        let requirement = private_document_create_requirement();
-        if self.protocol_version_number() < requirement.protocol_version {
-            let (version, failure) = self.refresh_protocol_version_or_failure().await;
-            if version < requirement.protocol_version {
-                return Err(self.protocol_version_not_active(
-                    requirement.protocol_version,
-                    requirement.method,
-                    requirement.feature,
-                    failure,
-                ));
-            }
-        }
-        // The SDK's own version does not show the network's: one seeded or pinned at 15 passes
-        // the check above on a network still at 14. The transition is sent only once a verified
-        // answer shows the network serves it, as a read of the store is (the broadcast checks
-        // again, for a transition built elsewhere).
-        self.ensure_network_serves(
-            Some(requirement),
+        // The network's version is established before the transition is built against it, as
+        // limits below protocol version 15 admit no entries, under the caller's request settings
+        // (`Sdk::establish_protocol_requirement`). The transition is sent only once a verified
+        // answer shows the network serves it and this SDK speaks it, as a read of the store is
+        // (the broadcast checks again, for a transition built elsewhere); otherwise the send is
+        // refused with the structured activation error, the probe's failure as its cause when it
+        // failed, so a caller can tell a refusal that may lift at once from one the network's
+        // version or a pin explains.
+        self.establish_protocol_requirement(
+            private_document_create_requirement(),
             settings.map(|settings| settings.request_settings),
         )
         .await?;

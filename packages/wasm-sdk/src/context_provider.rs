@@ -118,7 +118,8 @@ impl ContextProvider for WasmTrustedContext {
 
     /// Forwarded to the inner known-contracts cache, so a contract the SDK registers (the
     /// DPNS contract a name registration was built against, whose confirmations decode under
-    /// it) replaces the one the cache held.
+    /// it) replaces the one the cache held, unless the held one has a higher version: that
+    /// one is kept, and later lookups resolve it.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
         self.inner.register_data_contract(contract)
     }
