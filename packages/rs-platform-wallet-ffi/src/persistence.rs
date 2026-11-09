@@ -169,7 +169,8 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 =
 /// `on_persist_private_contact_scan_state_fn` +
 /// `on_load_private_contact_scan_state_fn` +
 /// `on_load_private_contact_scan_state_free_fn`, the wallet-list restore
-/// callbacks, and the host declaring the bit.
+/// callbacks, `on_persist_contacts_fn` (a read position vouches for the
+/// contact requests read before it), and the host declaring the bit.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 14;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
@@ -1795,8 +1796,13 @@ impl FFIPersister {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
         }
         // The scan state is restored per wallet during the wallet-list load,
-        // so that load is required alongside the extension trio.
+        // so that load is required alongside the extension trio. So is the
+        // contacts callback: a read position vouches for the contact
+        // requests read before it, and without that callback `store` skips
+        // them, so a restored position would skip entries whose requests
+        // were never kept.
         if wallet_restore
+            && self.callbacks.on_persist_contacts_fn.is_some()
             && self
                 .tracked_masternodes_callbacks
                 .persist_private_contact_scan_state
@@ -8180,10 +8186,35 @@ mod tests {
         drop(Box::from_raw(row.identities.cast_mut()));
     }
 
+    #[allow(clippy::too_many_arguments)]
+    unsafe extern "C" fn keep_scan_state_contacts(
+        _: *mut c_void,
+        _: *const u8,
+        _: *const ContactRequestFFI,
+        _: usize,
+        _: *const ContactRequestRemovalFFI,
+        _: usize,
+        _: *const ContactRequestRemovalFFI,
+        _: usize,
+        _: *const ContactIgnoredSenderFFI,
+        _: usize,
+    ) -> i32 {
+        0
+    }
+
     fn scan_state_persister(
         host: &ScanStateHost,
         declared: PersistenceCapabilities,
         extensions: PersistenceExtensionCallbacks,
+    ) -> FFIPersister {
+        scan_state_persister_with_contacts(host, declared, extensions, true)
+    }
+
+    fn scan_state_persister_with_contacts(
+        host: &ScanStateHost,
+        declared: PersistenceCapabilities,
+        extensions: PersistenceExtensionCallbacks,
+        persists_contacts: bool,
     ) -> FFIPersister {
         FFIPersister::new_with_persistence_capabilities_and_extensions(
             PersistenceCallbacks {
@@ -8192,6 +8223,7 @@ mod tests {
                 on_changeset_end_fn: Some(noop_end),
                 on_load_wallet_list_fn: Some(load_one_identity),
                 on_load_wallet_list_free_fn: Some(free_one_identity),
+                on_persist_contacts_fn: persists_contacts.then_some(keep_scan_state_contacts),
                 ..Default::default()
             },
             declared,
@@ -8358,10 +8390,10 @@ mod tests {
         }
     }
 
-    /// A host that does not declare the capability, or wires only part of
-    /// the trio, is not attested, has nothing read at load, and still
-    /// stores and loads everything else. A host without the slots stores a
-    /// round carrying scan state without error.
+    /// A host that does not declare the capability, wires only part of the
+    /// trio, or keeps no contact requests, is not attested, has nothing read
+    /// at load, and still stores and loads everything else. A host without
+    /// the slots stores a round carrying scan state without error.
     #[test]
     fn should_leave_hosts_without_the_scan_state_capability_unchanged() {
         let host = ScanStateHost::default();
@@ -8389,7 +8421,15 @@ mod tests {
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
             PersistenceExtensionCallbacks::default(),
         );
-        for persister in [&undeclared, &half_wired, &unwired] {
+        // A read position vouches for the requests read before it, which a
+        // host without the contacts callback never keeps.
+        let without_contacts = scan_state_persister_with_contacts(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            scan_state_trio(),
+            false,
+        );
+        for persister in [&undeclared, &half_wired, &unwired, &without_contacts] {
             assert!(!persister
                 .persistence_capabilities()
                 .contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE));
