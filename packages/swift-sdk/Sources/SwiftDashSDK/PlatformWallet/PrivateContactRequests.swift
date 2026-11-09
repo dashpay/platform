@@ -19,8 +19,10 @@ import DashSDKFFI
 // `PlatformWalletManager.sendPrivateContactRequest` instead.
 
 /// How an identity and one contact exchanged private contact requests. Rust
-/// reads it from the stored requests, so it holds across launches; only the
-/// contact's shielded address is kept in memory, rebuilt by
+/// reads it from the stored requests, so it holds across launches. The
+/// contact's shielded address holds across launches too where the store
+/// attests `PlatformWalletPersistenceCapabilities.privateContactRequestScanState`
+/// (the SwiftData handler does); otherwise it comes back with the next
 /// `ManagedPlatformWallet.syncPrivateContactRequests`.
 public struct PrivateContactInfo: Sendable, Equatable {
     /// The contact's request came privately, so accepting it replies
@@ -84,7 +86,11 @@ extension ManagedIdentity {
     /// contact (`PlatformWalletError.privateContactRequestPending`), so show
     /// the contact as pending and offer neither; a private sync settles it.
     /// Read from this snapshot: take a fresh `ManagedIdentity` to see a
-    /// change. Rust keeps it in memory only, so it is false after a relaunch.
+    /// change. After a relaunch, a reply paid for in an earlier process is
+    /// pending again once Rust restores it from the shielded store, which it
+    /// does when the store is configured after the load
+    /// (`PlatformWalletManager.configureShielded`) or the wallet binds its
+    /// shielded account.
     public func privateReplyPending(contactId: Identifier) throws -> Bool {
         var pending = false
         let result = contactId.withFFIBytes { idPtr in
@@ -103,10 +109,13 @@ extension ManagedPlatformWallet {
     ///
     /// The store is opened with keys that stay in the Keychain mnemonic
     /// resolver Rust-side; each request's signature is checked against its
-    /// sender's keys. The store cursors live in memory only, so the first
-    /// pass after launch reads the store from its start. A request it
-    /// ingests is stored as having come privately, which holds across
-    /// launches.
+    /// sender's keys. Where the store attests
+    /// `PlatformWalletPersistenceCapabilities.privateContactRequestScanState`
+    /// (the SwiftData handler does), each identity's read position is stored
+    /// with the requests read before it and restored at load, so a pass
+    /// after launch reads on from there; otherwise the first pass after
+    /// launch reads the store from its start. A request it ingests is stored
+    /// as having come privately, which holds across launches.
     public func syncPrivateContactRequests(
         maxPages: UInt32 = .max
     ) async throws -> PrivateContactSyncResult {
