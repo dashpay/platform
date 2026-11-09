@@ -97,6 +97,24 @@ pub struct PrivateContactSyncReportFFI {
     pub complete: bool,
 }
 
+// Expected `PrivateContactSyncReportFFI` layout on 64-bit targets:
+//
+//   0..=7     next_position               u64
+//   8..=11    pages_read                  u32
+//   12..=15   rejected_count              u32
+//   16..=19   unpersisted_identity_count  u32
+//   20        complete                    bool
+//   21..=23   (tail padding to 8)
+//
+// Total size = 24, alignment = 8 (from the u64).
+const _: [u8; 24] = [0u8; std::mem::size_of::<PrivateContactSyncReportFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateContactSyncReportFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, pages_read) == 8);
+const _: () = assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, rejected_count) == 12);
+const _: () =
+    assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, unpersisted_identity_count) == 16);
+const _: () = assert!(std::mem::offset_of!(PrivateContactSyncReportFFI, complete) == 20);
+
 fn saturating_count(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
@@ -190,6 +208,20 @@ pub struct PrivateContactFFI {
     /// `has_shielded_address`; zeros otherwise.
     pub shielded_address: [u8; 43],
 }
+
+// Expected `PrivateContactFFI` layout on all targets:
+//
+//   0         received_privately    bool
+//   1         sent_privately        bool
+//   2         has_shielded_address  bool
+//   3..=45    shielded_address      [u8; 43]
+//
+// Total size = 46, alignment = 1 (all-byte fields).
+const _: [u8; 46] = [0u8; std::mem::size_of::<PrivateContactFFI>()];
+const _: [u8; 1] = [0u8; std::mem::align_of::<PrivateContactFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateContactFFI, sent_privately) == 1);
+const _: () = assert!(std::mem::offset_of!(PrivateContactFFI, has_shielded_address) == 2);
+const _: () = assert!(std::mem::offset_of!(PrivateContactFFI, shielded_address) == 3);
 
 impl PrivateContactFFI {
     fn empty() -> Self {
