@@ -1379,6 +1379,19 @@ pub struct PrivateContactRequestsPosition {
     /// (`ManagedIdentity::private_scan_key_fingerprint`). A loaded position
     /// whose fingerprint is not the identity's is read again from 0.
     pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request this identity paid for may still be
+    /// unresolved: written set before such a payment may reach the network,
+    /// and cleared once the identity holds no private request it is paying
+    /// for or has not read back (each read back, definitively rejected, or
+    /// released before it was broadcast). Loaded set, it holds the identity's
+    /// public contact requests, sent or accepted, in every build, until a
+    /// restoration from the shielded store restores the reservations it
+    /// stands for (`PlatformWallet::restore_private_contact_payments`). A
+    /// build without the `shielded` feature never restores them, so it keeps
+    /// the identity held: its private payment may still execute, and a
+    /// public request would publish the pair the private one kept off chain.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_payments_unresolved: bool,
 }
 
 impl Merge for ContactChangeSet {

@@ -102,6 +102,36 @@ impl PrivateDocumentKeyPaths {
     }
 }
 
+/// What a contact request from one of the wallet's identities waits for, as
+/// the wallet decides it ([`DashPayView::private_contact_readiness`]), so a
+/// host shows it rather than inferring it from the refusals it got.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrivateContactReadiness {
+    /// Whether the reservations of the wallet's private payments from an
+    /// earlier process are restored for the identity. While false, its public
+    /// contact requests, sent or accepted, are refused with
+    /// [`PlatformWalletError::PrivateContactPaymentsNotRestored`]: the wallet
+    /// bound a shielded account before it was loaded, or the identity was
+    /// loaded marking a private payment that may be unresolved. Configuring
+    /// the shielded store, or binding the wallet's shielded account, restores
+    /// them; no private sync does. A build without the `shielded` feature
+    /// never does.
+    pub private_payments_restored: bool,
+    /// Whether a private sync read DashPay's private contact request store to
+    /// its end for the identity since load. Until then its first send or
+    /// accept reads it first, and is refused with
+    /// [`PlatformWalletError::PrivateContactRequestPending`] while that read
+    /// cannot finish; a private sync sets it.
+    pub private_store_read: bool,
+    /// Whether a private contact request the identity paid for may still be
+    /// unresolved: the marker its position record stores
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), set
+    /// while it holds a private request it is paying for or has not read back.
+    /// A contact's own pending request is
+    /// [`DashPayState::private_reply_pending`](crate::wallet::identity::DashPayState::private_reply_pending).
+    pub unresolved_private_payment: bool,
+}
+
 /// What a pass over DashPay's private contact request store did.
 #[derive(Clone, Debug, Default)]
 pub struct PrivateContactSyncReport {
@@ -247,6 +277,7 @@ impl PaymentStarted {
 /// have started, or the send kept it, the reservation stays for the sync.
 struct PrivateReplyReservation {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: WalletPersister,
     wallet_id: WalletId,
     sender: Identifier,
     recipient: Identifier,
@@ -274,6 +305,7 @@ impl PrivateReplyReservation {
             &self.recipient,
             self.attempt,
         );
+        store_private_payment_marker(&self.persister, &wm, &self.wallet_id, &self.sender);
         self.kept = true;
     }
 }
@@ -285,10 +317,14 @@ impl Drop for PrivateReplyReservation {
         }
         let (wallet_id, sender, recipient, attempt) =
             (self.wallet_id, self.sender, self.recipient, self.attempt);
+        let persister = self.persister.clone();
         apply_detached(
             &self.wallet_manager,
             "a cancelled private contact request's reservation",
-            move |wm| release_reservation(wm, &wallet_id, &sender, &recipient, attempt),
+            move |wm| {
+                release_reservation(wm, &wallet_id, &sender, &recipient, attempt);
+                store_private_payment_marker(&persister, wm, &wallet_id, &sender);
+            },
         );
     }
 }
@@ -334,6 +370,33 @@ fn release_reservation(
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
         managed.release_private_reply(recipient, attempt);
+    }
+}
+
+/// Store `owner`'s private read position record again, for a backend that
+/// keeps it, as whether a private payment of `owner` may be unresolved
+/// (`PrivateContactRequestsPosition::private_payments_unresolved`) may have
+/// changed: a reservation was released or settled. Best effort: a failed
+/// store leaves the marker set, which holds the identity after a restart
+/// until a restoration clears it, never the other way round.
+fn store_private_payment_marker(
+    persister: &WalletPersister,
+    wm: &WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    owner: &Identifier,
+) {
+    if !persister.persists_private_contact_scan_state() {
+        return;
+    }
+    if let Some(managed) = wm
+        .get_wallet_info(wallet_id)
+        .and_then(|info| info.identity_manager.managed_identity(owner))
+    {
+        store_private_position(
+            persister,
+            *owner,
+            managed.private_contact_requests_position_record(),
+        );
     }
 }
 
@@ -607,6 +670,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         ))?;
         let mut reservation = PrivateReplyReservation {
             wallet_manager: Arc::clone(&self.wallet_manager),
+            persister: self.persister.clone(),
             wallet_id: self.wallet_id,
             sender: *sender_identity_id,
             recipient: *recipient_identity_id,
@@ -712,6 +776,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]): such a
     /// payment's entry is not in the store until it executes, so no read
     /// shows the pair it holds; only the shielded store's record of it does.
+    /// That is so for a wallet a shielded build loads with a persisted
+    /// viewing key, and, in every build, for an identity loaded with its
+    /// position record marking a private payment that may be unresolved
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`).
     pub(super) async fn read_private_store_before_deciding<C>(
         &self,
         identity_id: &Identifier,
@@ -721,7 +789,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         C: ContactCryptoProvider + Sync,
     {
-        if self.persister.private_payments_unrestored() {
+        if self.persister.private_payments_unrestored()
+            || self.private_payments_unrestored(identity_id).await?
+        {
             return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
         }
         match self
@@ -776,6 +846,117 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(())
     }
 
+    /// Store `owner`'s position record, marking it as holding a private payment
+    /// that may be unresolved, before anything is paid, for a backend that
+    /// keeps it. A failed store refuses the send, with nothing paid: a payment
+    /// a restart could not see would leave the pair unheld.
+    fn store_private_payment_marker_before_paying(
+        &self,
+        owner: &Identifier,
+        marker: PrivateContactRequestsPosition,
+    ) -> Result<(), PlatformWalletError> {
+        if !self.persister.persists_private_contact_scan_state() {
+            return Ok(());
+        }
+        let mut changeset = ContactChangeSet::default();
+        changeset
+            .private_contact_requests_positions
+            .insert(*owner, marker);
+        self.persister.store(changeset.into()).map_err(|error| {
+            PlatformWalletError::Persistence(format!(
+                "the private contact request's unresolved payment was not stored, so it is not \
+                 paid for: {error}"
+            ))
+        })
+    }
+
+    /// Whether `identity_id` was loaded with a private contact request payment
+    /// that may be unresolved and no restoration has restored it since
+    /// ([`DashPayState::private_payments_unrestored`]).
+    ///
+    /// [`DashPayState::private_payments_unrestored`]: crate::wallet::identity::DashPayState::private_payments_unrestored
+    pub(crate) async fn private_payments_unrestored(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<bool, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        Ok(managed.dashpay().private_payments_unrestored())
+    }
+
+    /// What a contact request from `identity_id` waits for, as the wallet
+    /// decides it ([`PrivateContactReadiness`]). A pure read.
+    pub async fn private_contact_readiness(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<PrivateContactReadiness, PlatformWalletError> {
+        let wallet_held = self.persister.private_payments_unrestored();
+        let wm = self.wallet_manager.read().await;
+        let dashpay = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+            .dashpay();
+        Ok(PrivateContactReadiness {
+            private_payments_restored: !wallet_held && !dashpay.private_payments_unrestored(),
+            private_store_read: dashpay.private_contact_requests_read(),
+            unresolved_private_payment: dashpay.private_payments_unresolved(),
+        })
+    }
+
+    /// Whether any of the wallet's identities was loaded with a private
+    /// contact request payment that may be unresolved and no restoration has
+    /// restored it since.
+    pub(crate) async fn any_private_payments_unrestored(&self) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id).is_some_and(|info| {
+            info.identity_manager
+                .all_identities()
+                .iter()
+                .filter_map(|identity| info.identity_manager.managed_identity(&identity.id()))
+                .any(|managed| managed.dashpay().private_payments_unrestored())
+        })
+    }
+
+    /// The reservations of the wallet's private payments from an earlier
+    /// process are restored from the shielded store: release the hold a load
+    /// set on each identity, and store the record each one changed for a
+    /// backend that keeps it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn note_private_payments_restored(&self) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let identity_ids: Vec<Identifier> = info
+            .identity_manager
+            .all_identities()
+            .iter()
+            .map(|identity| identity.id())
+            .collect();
+        for identity_id in identity_ids {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                if managed.note_private_payments_restored()
+                    && self.persister.persists_private_contact_scan_state()
+                {
+                    store_private_position(
+                        &self.persister,
+                        identity_id,
+                        managed.private_contact_requests_position_record(),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Release the pending private requests whose payment the shielded
     /// coordinator settled as never executing, for an entry a definitive
     /// rejection or a pruned anchor left unappendable
@@ -806,7 +987,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .collect();
         for identity_id in identity_ids {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
+                let unresolved = managed.dashpay().private_payments_unresolved();
                 managed.release_rejected_private_replies(&rejected);
+                if self.persister.persists_private_contact_scan_state()
+                    && managed.dashpay().private_payments_unresolved() != unresolved
+                {
+                    store_private_position(
+                        &self.persister,
+                        identity_id,
+                        managed.private_contact_requests_position_record(),
+                    );
+                }
             }
         }
         Ok(())
@@ -965,14 +1156,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "the provider sealed an entry shorter than its commitment".to_string(),
                 )
             })?;
-        self.with_managed(sender_identity_id, |managed| {
-            managed.note_private_reply_commitment(
-                *recipient_identity_id,
-                reservation.attempt,
-                commitment,
-            )
-        })
-        .await?;
+        let marker = self
+            .with_managed(sender_identity_id, |managed| {
+                managed.note_private_reply_commitment(
+                    *recipient_identity_id,
+                    reservation.attempt,
+                    commitment,
+                );
+                managed.private_contact_requests_position_record()
+            })
+            .await?;
+        // Before anything is paid, the identity is marked as holding a private
+        // payment that may be unresolved: a process reopening the wallet before
+        // the payment's reservation is restored, or in a build that cannot
+        // restore it, holds its public requests until then.
+        self.store_private_payment_marker_before_paying(sender_identity_id, marker)?;
         // What the record read back must carry, computed before paying.
         let shared_secret = crypto
             .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
@@ -1527,6 +1725,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             }
                         }
                         if stored {
+                            let unresolved = managed.dashpay().private_payments_unresolved();
                             // A pending private request is settled once its
                             // entry's record is reconciled: the request tracked
                             // to the recipient is that record, carries its
@@ -1551,7 +1750,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             let before = managed.dashpay().private_contact_requests_position();
                             identity.advance(managed, read.next_position);
                             let after = managed.dashpay().private_contact_requests_position();
-                            if persists_scan_state && after != before {
+                            // Stored once it moved, or once the last private
+                            // payment it held settled.
+                            if persists_scan_state
+                                && (after != before
+                                    || managed.dashpay().private_payments_unresolved()
+                                        != unresolved)
+                            {
                                 store_private_position(
                                     &self.persister,
                                     identity_id,
@@ -1841,11 +2046,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 mod tests {
     use super::*;
     use crate::changeset::{
-        ClientStartState, IdentityManagerStartState, PersistenceCapabilities, PersistenceError,
-        PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, ClientWalletStartState, IdentityManagerStartState,
+        PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
-    #[cfg(feature = "shielded")]
-    use crate::changeset::{ClientWalletStartState, ShieldedSyncStartState};
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
@@ -2228,29 +2432,51 @@ mod tests {
         sdk
     }
 
-    /// A backend handing back, on every load, a wallet as [`snapshot`] took
-    /// it, with the viewing key its shielded account 0 bound with: the
-    /// relaunch of a wallet that bound a shielded account in an earlier
-    /// process.
-    #[cfg(feature = "shielded")]
+    /// A backend handing back, on every load, a wallet as [`snapshot`] or
+    /// [`scan_state_snapshot`] took it: the relaunch of a wallet from an
+    /// earlier process, with the viewing key its shielded account 0 bound
+    /// with, when it bound one. It keeps what the relaunched wallet stores.
     struct SnapshotPersistence {
         wallet: key_wallet::Wallet,
         core: key_wallet::wallet::ManagedWalletInfo,
         identities: BTreeMap<u32, ManagedIdentity>,
-        viewing_key: [u8; 96],
+        capabilities: PersistenceCapabilities,
+        #[cfg(feature = "shielded")]
+        viewing_key: Option<[u8; 96]>,
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
     }
 
-    #[cfg(feature = "shielded")]
+    impl SnapshotPersistence {
+        /// Whether the last position record stored for `owner` marks a private
+        /// payment that may be unresolved, if one was stored.
+        #[cfg(feature = "shielded")]
+        fn last_marker(&self, owner: &Identifier) -> Option<bool> {
+            last_marker(&self.stored.lock().expect("stored"), owner)
+        }
+    }
+
+    /// Whether the last of `stored` to carry `owner`'s position record marks a
+    /// private payment that may be unresolved.
+    fn last_marker(stored: &[PlatformWalletChangeSet], owner: &Identifier) -> Option<bool> {
+        stored
+            .iter()
+            .rev()
+            .filter_map(|changeset| changeset.contacts.as_ref())
+            .find_map(|contacts| contacts.private_contact_requests_positions.get(owner))
+            .map(|position| position.private_payments_unresolved)
+    }
+
     impl PlatformWalletPersistence for SnapshotPersistence {
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
-            PersistenceCapabilities::SHIELDED_FVK_RESTART
+            self.capabilities
         }
 
         fn store(
             &self,
             _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
+            changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            self.stored.lock().expect("stored").push(changeset);
             Ok(())
         }
 
@@ -2277,15 +2503,19 @@ mod tests {
                     dashpay_backfill: Default::default(),
                 },
             );
-            let mut shielded = ShieldedSyncStartState::default();
-            shielded
-                .viewing_keys
-                .insert(SubwalletId::new(wallet_id, 0), self.viewing_key.to_vec());
-            Ok(ClientStartState {
+            #[allow(unused_mut)]
+            let mut state = ClientStartState {
                 wallets,
-                shielded,
                 ..Default::default()
-            })
+            };
+            #[cfg(feature = "shielded")]
+            if let Some(viewing_key) = self.viewing_key {
+                state
+                    .shielded
+                    .viewing_keys
+                    .insert(SubwalletId::new(wallet_id, 0), viewing_key.to_vec());
+            }
+            Ok(state)
         }
     }
 
@@ -2313,11 +2543,277 @@ mod tests {
             wallet: wm.get_wallet(&wallet_id).expect("the wallet").clone(),
             core: info.core_wallet.clone(),
             identities,
-            viewing_key: OrchardKeySet::from_seed(&seed(phrase), Network::Testnet, 0)
-                .expect("shielded keys")
-                .viewing_keys()
-                .to_fvk_bytes(),
+            capabilities: PersistenceCapabilities::SHIELDED_FVK_RESTART,
+            viewing_key: Some(
+                OrchardKeySet::from_seed(&seed(phrase), Network::Testnet, 0)
+                    .expect("shielded keys")
+                    .viewing_keys()
+                    .to_fvk_bytes(),
+            ),
+            stored: Mutex::default(),
         }
+    }
+
+    /// `wallet`, with its identity `owner`, as a backend keeping the private
+    /// contact request scan state keeps it, with no shielded viewing key: the
+    /// identity's position record marks a private payment that may be
+    /// unresolved when `unresolved`, as a process that paid for one and ended
+    /// before it resolved stored it.
+    async fn scan_state_snapshot(
+        wallet: &PlatformWallet,
+        owner: &Identifier,
+        unresolved: bool,
+    ) -> SnapshotPersistence {
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        let wallet_id = wallet.wallet_id();
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        let mut managed = info
+            .identity_manager
+            .managed_identity(owner)
+            .expect("the owner")
+            .clone();
+        managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
+            private_payments_unresolved: unresolved,
+            ..managed.private_contact_requests_position_record()
+        });
+        SnapshotPersistence {
+            wallet: wm.get_wallet(&wallet_id).expect("the wallet").clone(),
+            core: info.core_wallet.clone(),
+            identities: BTreeMap::from([(0, managed)]),
+            capabilities: PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            #[cfg(feature = "shielded")]
+            viewing_key: None,
+            stored: Mutex::default(),
+        }
+    }
+
+    /// A process that paid for a private contact request and ended before the
+    /// payment resolved stored the identity's position record marking it, in a
+    /// build with the `shielded` feature: reloaded, in any build, the identity
+    /// sends and accepts no public contact request, with nothing read, signed
+    /// or sent, as no reservation holds the pair the payment is for. A build
+    /// with the `shielded` feature releases it once the shielded store is
+    /// configured, which restores the reservations and stores the record
+    /// unmarked; no private sync does, and a build without it keeps it.
+    #[tokio::test]
+    async fn should_hold_an_identity_reloaded_marking_an_unresolved_private_payment() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let incoming = public_request(&bob, &alice, 3);
+        let (_before_manager, before) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        add_incoming(&before, ALICE, &incoming).await;
+        let kept = Arc::new(scan_state_snapshot(&before, &alice.id(), true).await);
+
+        let manager = PlatformWalletManager::new(
+            Arc::new(dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await),
+            Arc::clone(&kept),
+            Arc::new(NoopEventHandler),
+        );
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the relaunch loads");
+        let restarted = manager
+            .get_wallet(&before.wallet_id())
+            .await
+            .expect("the relaunched wallet");
+        assert!(restarted.private_payments_held().await);
+
+        let public = restarted
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{public:?}"
+        );
+        let accepted = restarted
+            .identity()
+            .dashpay()
+            .accept_contact_request_replying_in_kind(
+                &incoming,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(
+                accepted,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{accepted:?}"
+        );
+
+        // A private sync reads the store, and restores nothing.
+        let view = restarted.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the private sync");
+        assert_eq!(
+            view.private_contact_readiness(&alice.id())
+                .await
+                .expect("the readiness"),
+            PrivateContactReadiness {
+                private_payments_restored: false,
+                private_store_read: true,
+                unresolved_private_payment: true,
+            }
+        );
+        assert!(restarted.private_payments_held().await, "still held");
+
+        #[cfg(feature = "shielded")]
+        {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            manager
+                .configure_shielded(dir.path().join("tree.sqlite"))
+                .await
+                .expect("the shielded store is configured");
+            assert!(!restarted.private_payments_held().await, "restored");
+            assert_eq!(kept.last_marker(&alice.id()), Some(false));
+            assert_eq!(
+                view.private_contact_readiness(&alice.id())
+                    .await
+                    .expect("the readiness"),
+                PrivateContactReadiness {
+                    private_payments_restored: true,
+                    private_store_read: true,
+                    unresolved_private_payment: false,
+                }
+            );
+        }
+        #[cfg(not(feature = "shielded"))]
+        assert!(
+            restarted.private_payments_held().await,
+            "no shielded store restores it here"
+        );
+    }
+
+    /// A private payment is marked unresolved in its identity's position
+    /// record before it is paid, for a backend keeping the scan state, and
+    /// unmarked once its entry is read back; one released before anything was
+    /// paid is unmarked too.
+    #[tokio::test]
+    async fn should_mark_a_private_payment_unresolved_until_it_resolves() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let attesting = || {
+            RecordingPersistence::attesting(
+                PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
+            )
+        };
+        let marker = |persistence: &RecordingPersistence| {
+            last_marker(&persistence.stored.lock().expect("stored"), &alice.id())
+        };
+
+        let persistence = attesting();
+        let (_manager, alice_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let marked_when_paid = Arc::new(AtomicBool::new(false));
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let pay = {
+            let paying = append_entry(&alice_wallet, 0, vec![], &kept);
+            let (persistence, marked, alice_id) = (
+                Arc::clone(&persistence),
+                Arc::clone(&marked_when_paid),
+                alice.id(),
+            );
+            move |entry: BinaryData, started: PaymentStarted| {
+                let unresolved =
+                    last_marker(&persistence.stored.lock().expect("stored"), &alice_id);
+                marked.store(unresolved == Some(true), Ordering::SeqCst);
+                paying(entry, started)
+            }
+        };
+        alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                pay,
+            )
+            .await
+            .expect("paid and read back");
+        assert!(
+            marked_when_paid.load(Ordering::SeqCst),
+            "marked before paying"
+        );
+        assert_eq!(marker(&persistence), Some(false), "unmarked once read back");
+
+        let persistence = attesting();
+        let (_manager, alice_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let marked_when_paid = Arc::new(AtomicBool::new(false));
+        let failing = {
+            let (persistence, marked, alice_id) = (
+                Arc::clone(&persistence),
+                Arc::clone(&marked_when_paid),
+                alice.id(),
+            );
+            move |_: BinaryData, _: PaymentStarted| {
+                let unresolved =
+                    last_marker(&persistence.stored.lock().expect("stored"), &alice_id);
+                marked.store(unresolved == Some(true), Ordering::SeqCst);
+                std::future::ready(Err::<ResponseMetadata, _>(
+                    PlatformWalletError::InvalidParameter("no notes to pay with".to_string()),
+                ))
+            }
+        };
+        let refused = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &alice_crypto,
+                failing,
+            )
+            .await;
+        assert!(refused.is_err(), "{refused:?}");
+        assert!(
+            marked_when_paid.load(Ordering::SeqCst),
+            "marked before paying"
+        );
+        assert_eq!(marker(&persistence), Some(false), "unmarked once released");
     }
 
     /// The page of DashPay's private store from `start`, holding `entries`.
@@ -3900,6 +4396,7 @@ mod tests {
             managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
                 position: 1,
                 key_fingerprint,
+                private_payments_unresolved: false,
             });
             managed.apply_private_shielded_address(alice.id(), address);
         }
@@ -3973,6 +4470,7 @@ mod tests {
                 .apply_private_contact_requests_position(PrivateContactRequestsPosition {
                     position: 7,
                     key_fingerprint: [0; 32],
+                    private_payments_unresolved: false,
                 });
         }
         view.ignore_contact_sender(&bob.id(), &alice.id())
@@ -4034,6 +4532,7 @@ mod tests {
         loaded.apply_private_contact_requests_position(PrivateContactRequestsPosition {
             position: 5,
             key_fingerprint,
+            private_payments_unresolved: false,
         });
         loaded.apply_private_shielded_address(alice.id(), [0x55; 43]);
         let mut start_state = IdentityManagerStartState::default();
