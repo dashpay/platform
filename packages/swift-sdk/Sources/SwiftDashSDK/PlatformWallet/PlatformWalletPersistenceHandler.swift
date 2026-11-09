@@ -12108,9 +12108,9 @@ private func persistPrivateContactScanStateCallback(
 }
 
 /// C shim for `on_load_private_contact_scan_state_fn`. Hands Rust two
-/// arrays of flat rows, released by the free shim below. A row whose
-/// stored bytes have the wrong length is skipped rather than handed back
-/// on zeros.
+/// arrays of flat rows, released by the free shim below. A stored row whose
+/// bytes have the wrong length cannot cross the ABI: the load fails, as for
+/// an unreadable store, rather than handing back the rest without it.
 private func loadPrivateContactScanStateCallback(
     context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
     outPositions: UnsafeMutablePointer<UnsafePointer<PrivateContactRequestsPositionFFI>?>?,
@@ -12130,10 +12130,13 @@ private func loadPrivateContactScanStateCallback(
     do {
         stored = try handler.loadPrivateContactScanState(walletId: Data(bytes: walletId, count: 32))
     } catch { return -1 }
-    let positions = stored.positions.filter { $0.identityId.count == 32 && $0.keyFingerprint.count == 32 }
-    let addresses = stored.addresses.filter {
-        $0.ownerId.count == 32 && $0.contactId.count == 32 && $0.address.count == 43
-    }
+    // Every row is checked before either output is allocated.
+    guard stored.positions.allSatisfy({ $0.identityId.count == 32 && $0.keyFingerprint.count == 32 }),
+          stored.addresses.allSatisfy({
+              $0.ownerId.count == 32 && $0.contactId.count == 32 && $0.address.count == 43
+          }) else { return -1 }
+    let positions = stored.positions
+    let addresses = stored.addresses
     if !positions.isEmpty {
         let buffer = UnsafeMutablePointer<PrivateContactRequestsPositionFFI>.allocate(capacity: positions.count)
         for (index, row) in positions.enumerated() {
