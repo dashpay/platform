@@ -821,6 +821,13 @@ impl ManagedIdentity {
         self.dashpay.private_contact_requests_read = true;
     }
 
+    /// [`Self::note_private_contact_requests_read`], for tests outside this
+    /// crate that read an identity's state after a private sync.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn note_private_contact_requests_read_for_tests(&mut self) {
+        self.note_private_contact_requests_read();
+    }
+
     /// Advance the private contact request cursor to `next_position` once
     /// every entry before it was read and what it held for this identity
     /// ingested. Never moves it back, and leaves it where a concurrent

@@ -349,9 +349,11 @@ mod tests {
     use dpp::prelude::Identifier;
 
     /// The readiness of a fresh wallet's identity: nothing held, the store not
-    /// read yet, no private payment. A null out pointer, an unknown wallet and
-    /// an identity the wallet does not hold are refused, with the out value
-    /// reset.
+    /// read yet, no private payment; then the identity's own state, once a
+    /// private sync read the store and once it was loaded with a private
+    /// payment that may be unresolved. A null out pointer, an unknown wallet
+    /// and an identity the wallet does not hold are refused, with the out
+    /// value reset.
     #[test]
     fn should_read_a_wallet_identity_s_private_contact_readiness() {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -443,6 +445,64 @@ mod tests {
                 private_payments_restored: true,
                 private_store_read: false,
                 unresolved_private_payment: false,
+            }
+        );
+        // The identity's own state, not a fresh identity's: once a private
+        // sync read the store to its end, and once loaded with a private
+        // payment that may be unresolved.
+        let readiness_now = |readiness: &mut PrivateContactReadinessFFI| {
+            let read = unsafe {
+                platform_wallet_get_private_contact_readiness(
+                    handle,
+                    identity_id.to_buffer().as_ptr(),
+                    readiness,
+                )
+            };
+            assert_eq!(read.code, PlatformWalletFFIResultCode::Success);
+        };
+        let with_identity =
+            |change: &dyn Fn(&mut platform_wallet::wallet::identity::ManagedIdentity)| {
+                PLATFORM_WALLET_STORAGE
+                    .with_item(handle, |wallet| {
+                        crate::runtime::runtime().block_on(async {
+                            let mut wm = wallet.wallet_manager().write().await;
+                            change(
+                                wm.get_wallet_info_mut(&wallet.wallet_id())
+                                    .expect("the wallet's info")
+                                    .identity_manager
+                                    .managed_identity_mut(&identity_id)
+                                    .expect("the identity"),
+                            );
+                        })
+                    })
+                    .expect("the wallet");
+            };
+        with_identity(&|managed| managed.note_private_contact_requests_read_for_tests());
+        readiness_now(&mut readiness);
+        assert_eq!(
+            readiness,
+            PrivateContactReadinessFFI {
+                private_payments_restored: true,
+                private_store_read: true,
+                unresolved_private_payment: false,
+            }
+        );
+        with_identity(&|managed| {
+            managed.apply_private_contact_requests_position(
+                platform_wallet::changeset::PrivateContactRequestsPosition {
+                    position: 0,
+                    key_fingerprint: [0; 32],
+                    private_payments_unresolved: true,
+                },
+            )
+        });
+        readiness_now(&mut readiness);
+        assert_eq!(
+            readiness,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: true,
+                unresolved_private_payment: true,
             }
         );
         let stranger = unsafe {
