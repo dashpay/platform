@@ -654,8 +654,11 @@ pub enum PlatformWalletFFIResultCode {
     /// The SDK refused the request without sending it: the network is proven
     /// at a protocol version below the one that serves it (for example
     /// DashPay's private contact request store before protocol version 15),
-    /// or the SDK is pinned below it. Expected on such a network; it lifts
-    /// when the network upgrades. A refusal whose query for the network's
+    /// or the SDK is pinned below it. Expected on such a network: a refusal
+    /// from the network's version lifts when the network upgrades, one from a
+    /// pin only once the host raises or removes the pin (and the network
+    /// supports the required version too); a network upgrade alone does not
+    /// lift it. A refusal whose query for the network's
     /// version failed keeps the catch-all code, whether that may pass or comes
     /// from the SDK's own setup (a context provider that cannot give quorum
     /// keys at all), as neither shows the network runs an earlier version.
@@ -2842,6 +2845,26 @@ mod private_contact_request_error_tests {
             "no node answered".to_string(),
         ))));
         assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+
+        // A pinned SDK refuses whatever its query for the network's version
+        // showed: the lasting code, with a cause too.
+        let pinned = PlatformWalletFFIResult::from(PlatformWalletError::Sdk(
+            dash_sdk::Error::ProtocolVersionNotActive {
+                method: "get_private_document_entries",
+                required: 15,
+                feature: None,
+                network: 14,
+                pinned: true,
+                cause: Some(Box::new(dash_sdk::Error::Generic(
+                    "no node answered".to_string(),
+                ))),
+            },
+        ));
+        assert_eq!(
+            pinned.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(pinned.code as u32, 70);
 
         // A provider that cannot give quorum keys at all is this SDK's setup,
         // not the network's version: the catch-all too.
