@@ -553,11 +553,19 @@ unsafe fn fixed_provider_parts(
             local_contracts,
         });
     }
-    let adaptive = Arc::new(AdaptiveContextProvider::new(
-        Arc::clone(&trusted) as Arc<dyn ContextProvider>,
-        Arc::clone(&local_contracts) as Arc<dyn ContractSource>,
-        network,
-    ));
+    let adaptive = Arc::new(
+        AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            Arc::clone(&local_contracts) as Arc<dyn ContractSource>,
+            network,
+        )
+        .map_err(|e| {
+            DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                format!("Failed to create adaptive context provider: {}", e),
+            )
+        })?,
+    );
     Ok(FixedProviderParts {
         provider: Arc::clone(&adaptive) as Arc<dyn ContextProvider>,
         trusted: Some(trusted),

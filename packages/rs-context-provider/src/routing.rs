@@ -310,18 +310,30 @@ pub struct AdaptiveContextProvider {
 impl AdaptiveContextProvider {
     /// A provider in [`ContextProviderMode::Auto`] that answers from `trusted`
     /// until an SPV client is published into its slot and synced.
+    ///
+    /// Fails with [`ContextProviderError::Config`] when `trusted` declares a
+    /// network other than `network`: the SDK checks only the network this
+    /// provider reports, and would verify proofs with the other network's
+    /// quorum keys whenever it routes to `trusted`.
     pub fn new(
         trusted: Arc<dyn ContextProvider>,
         contracts: Arc<dyn ContractSource>,
         network: Network,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ContextProviderError> {
+        if let Some(trusted_network) = trusted.network() {
+            if trusted_network != network {
+                return Err(ContextProviderError::Config(format!(
+                    "the trusted provider serves {trusted_network:?} quorums, but the adaptive provider routes {network:?} lookups"
+                )));
+            }
+        }
+        Ok(Self {
             trusted,
             spv: Arc::default(),
             contracts,
             mode: AtomicU8::new(ContextProviderMode::Auto as u8),
             network,
-        }
+        })
     }
 
     /// The slot an SPV client publishes its quorum keys into.
@@ -559,6 +571,7 @@ mod tests {
             Arc::new(TestContracts),
             Network::Testnet,
         )
+        .expect("a trusted provider without a network")
     }
 
     fn quorum_key(provider: &impl ContextProvider) -> Result<[u8; 48], ContextProviderError> {
@@ -816,6 +829,7 @@ mod tests {
     #[derive(Default)]
     struct Requiring {
         proofs: bool,
+        network: Option<Network>,
         verified: Mutex<Vec<(u32, [u8; 32], u32)>>,
     }
 
@@ -852,6 +866,10 @@ mod tests {
             self.proofs
         }
 
+        fn network(&self) -> Option<Network> {
+            self.network
+        }
+
         fn core_height_verified(&self, quorum_type: u32, quorum_hash: [u8; 32], height: u32) {
             self.verified
                 .lock()
@@ -876,9 +894,51 @@ mod tests {
                 ..Default::default()
             });
             let adaptive =
-                AdaptiveContextProvider::new(trusted, Arc::new(TestContracts), Network::Testnet);
+                AdaptiveContextProvider::new(trusted, Arc::new(TestContracts), Network::Testnet)
+                    .expect("a trusted provider without a network");
             assert_eq!(adaptive.network(), Some(Network::Testnet));
             assert_eq!(adaptive.requires_proofs(), proofs);
+        }
+    }
+
+    /// The SDK checks the network of the provider it is built with, and the
+    /// adaptive provider reports its own. Over a trusted provider for another
+    /// network it would pass that check, then verify proofs with that
+    /// network's quorum keys whenever it routes to the trusted provider, so
+    /// it refuses one. A trusted provider that declares no network, or the
+    /// same one, is accepted.
+    #[test]
+    fn should_refuse_a_trusted_provider_for_another_network() {
+        let trusted = |network| {
+            Arc::new(Requiring {
+                network,
+                ..Default::default()
+            }) as Arc<dyn ContextProvider>
+        };
+
+        let refusal = AdaptiveContextProvider::new(
+            trusted(Some(Network::Testnet)),
+            Arc::new(TestContracts),
+            Network::Mainnet,
+        )
+        .err();
+        assert!(
+            matches!(
+                &refusal,
+                Some(ContextProviderError::Config(message))
+                    if message.contains("Testnet") && message.contains("Mainnet")
+            ),
+            "{refusal:?}"
+        );
+
+        for network in [None, Some(Network::Mainnet)] {
+            let adaptive = AdaptiveContextProvider::new(
+                trusted(network),
+                Arc::new(TestContracts),
+                Network::Mainnet,
+            )
+            .expect("a trusted provider for no other network");
+            assert_eq!(adaptive.network(), Some(Network::Mainnet));
         }
     }
 
@@ -894,7 +954,8 @@ mod tests {
             Arc::clone(&trusted) as Arc<dyn ContextProvider>,
             Arc::new(TestContracts),
             Network::Testnet,
-        );
+        )
+        .expect("a trusted provider without a network");
         let _lease = publish(&adaptive.source_slot(), quorums("spv", 0x22), true);
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
 
