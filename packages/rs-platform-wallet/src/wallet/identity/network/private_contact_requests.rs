@@ -6492,7 +6492,9 @@ mod tests {
     /// host calls nor a public send then goes to the contact. Before the
     /// bind, the relaunched wallet, which bound its shielded account before,
     /// refuses both too, with nothing sent: the reservation is not restored
-    /// yet.
+    /// yet. Once the reply's entry is appended and read back, the hold
+    /// resolves. A payment whose broadcast may have been delivered is saved
+    /// and kept exactly so (`settle_private_document_payment`).
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_not_reply_publicly_after_a_restart_with_a_private_reply_unconfirmed() {
@@ -6519,10 +6521,13 @@ mod tests {
         // What the backend keeps of the wallet, before the reply is paid.
         let kept = Arc::new(snapshot(&before, &bob.id(), BOB_PHRASE).await);
         let subwallet = SubwalletId::new(before.wallet_id(), 0);
+        let paid_entries = Arc::new(Mutex::new(Vec::new()));
         let pay = {
             let store = Arc::clone(before_coordinator.store());
+            let paid_entries = Arc::clone(&paid_entries);
             let (sender, recipient) = (bob.id(), alice.id());
             move |entry: BinaryData, started: PaymentStarted| async move {
+                paid_entries.lock().expect("paid").push(entry.clone());
                 // As the shielded payment does: the record saved with the
                 // request it pays for, marked, broadcast; its result unknown.
                 let transition = private_contact_request_payment(entry);
@@ -6669,6 +6674,21 @@ mod tests {
                     if contact == alice.id()
             ),
             "{public:?}"
+        );
+
+        // Once the reply's entry is appended and read back, its reservation
+        // settles: the hold resolves.
+        let entry = paid_entries.lock().expect("paid").remove(0);
+        publish(&restarted, 0, vec![entry.to_vec()]).await;
+        restarted
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the store is read");
+        assert!(
+            !pending_to(&restarted, BOB, &alice).await,
+            "settled once read back"
         );
     }
 

@@ -1630,6 +1630,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
         "PrivateDocumentCreateFromShieldedPool"
     );
 
+    let pays_for_private_contact_request = private_contact.is_some();
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
@@ -1714,8 +1715,49 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     }
     .await;
 
+    settle_private_document_payment(
+        store,
+        persister,
+        wallet_id,
+        id,
+        &pending_entry,
+        reservation,
+        &selected_notes,
+        pays_for_private_contact_request,
+        result.map(|(_proof, metadata)| metadata),
+    )
+    .await
+}
+
+/// Settle a private document payment's notes and saved record once its
+/// broadcast and result wait returned `result`, as
+/// [`private_document_create_from_pool_with_metadata`] does.
+///
+/// A payment that executed marks its notes spent; one that may have executed
+/// keeps them reserved and its saved record, which the redrive pass resolves;
+/// one that did not execute releases them, and its record with them. A
+/// payment for a private contact request (`pays_for_private_contact_request`)
+/// whose broadcast may have been delivered
+/// ([`PlatformWalletError::ShieldedBroadcastMaybeDelivered`]) is one that may
+/// have executed: its record, with the request it pays for, is the only
+/// evidence a restart restores the request's pair from, so it is kept until
+/// the redrive pass proves the payment landed or never will, and the spend
+/// reads as unconfirmed. A spend paying for nothing else still releases its
+/// notes then, as the on-chain nullifier set keeps funds safe.
+#[allow(clippy::too_many_arguments)]
+async fn settle_private_document_payment<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    mut reservation: NoteReservation<S>,
+    selected_notes: &[ShieldedNote],
+    pays_for_private_contact_request: bool,
+    result: Result<ResponseMetadata, PlatformWalletError>,
+) -> Result<ResponseMetadata, PlatformWalletError> {
     match result {
-        Ok((_proof, metadata)) => {
+        Ok(metadata) => {
             // It executed: the outcome owns the notes, which it marks spent.
             reservation.hand_over();
             record_activity_status(
@@ -1723,23 +1765,22 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 persister,
                 wallet_id,
                 id,
-                &pending_entry,
+                pending_entry,
                 ShieldedActivityStatus::Confirmed,
                 None,
             )
             .await;
-            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, selected_notes).await
             {
                 warn!(
-                    account,
+                    account = id.account_index,
                     error = %e,
                     "PrivateDocumentCreateFromShieldedPool broadcast succeeded but local \
                      spent-state update failed; will heal on next sync"
                 );
             }
             info!(
-                account,
-                document_type = document_type_name,
+                account = id.account_index,
                 "PrivateDocumentCreateFromShieldedPool broadcast succeeded"
             );
             Ok(metadata)
@@ -1748,6 +1789,17 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             // It may have executed: the reservation stays, released by sync.
             reservation.hand_over();
             Err(e)
+        }
+        Err(PlatformWalletError::ShieldedBroadcastMaybeDelivered(reason))
+            if pays_for_private_contact_request =>
+        {
+            // It may have executed, and its saved record is the request's
+            // pair's only durable evidence: kept, as an unconfirmed spend's.
+            reservation.hand_over();
+            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "private document create from shielded pool",
+                reason,
+            })
         }
         Err(e) => {
             // It did not execute: the guard owns the notes until they are
@@ -1758,7 +1810,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 persister,
                 wallet_id,
                 id,
-                &pending_entry,
+                pending_entry,
                 ShieldedActivityStatus::Failed,
                 None,
             )
@@ -3872,18 +3924,8 @@ async fn broadcast_shielded_spend(
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
-        // The notes are released either way; whether the transition may
-        // still have been delivered is kept for what it pays for.
         Err(e) if broadcast_definitely_failed(&e) => {
-            return Err(
-                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
-                    if broadcast_may_have_been_delivered(&e) {
-                        PlatformWalletError::ShieldedBroadcastMaybeDelivered(e.to_string())
-                    } else {
-                        PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-                    }
-                }),
-            );
+            return Err(definite_broadcast_failure(&e));
         }
         Err(e) => {
             warn!(
@@ -3912,6 +3954,22 @@ async fn broadcast_shielded_spend(
         }
     };
     waited.map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
+}
+
+/// The error a spend's `broadcast()` failure that [`broadcast_definitely_failed`]
+/// accepts is reported as: a promoted address-nonce error, or a failed
+/// broadcast, kept apart when it may still have been delivered
+/// ([`broadcast_may_have_been_delivered`]) for what the spend pays for. Its
+/// notes are released either way, unless it pays for a private contact
+/// request ([`settle_private_document_payment`]).
+fn definite_broadcast_failure(e: &dash_sdk::Error) -> PlatformWalletError {
+    crate::error::promote_address_nonce_error(e).unwrap_or_else(|| {
+        if broadcast_may_have_been_delivered(e) {
+            PlatformWalletError::ShieldedBroadcastMaybeDelivered(e.to_string())
+        } else {
+            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+        }
+    })
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast
@@ -4101,6 +4159,10 @@ mod redrive_tests {
     use super::*;
     use crate::wallet::identity::network::PaymentStarted;
     use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use crate::wallet::shielded::FileBackedShieldedStore;
+    use dash_sdk::dapi_client::transport::TransportError;
+    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_grpc::tonic::{Code, Status};
     use dash_sdk::dpp::dashcore::Network;
     use dash_sdk::dpp::prelude::CoreBlockHeight;
     use dash_sdk::error::ContextProviderError;
@@ -4112,6 +4174,9 @@ mod redrive_tests {
     use dpp::consensus::ConsensusError;
     use dpp::data_contract::{DataContract, TokenConfiguration};
     use dpp::serialization::PlatformSerializable;
+    use dpp::shielded::SerializedAction;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
     use dpp::version::PlatformVersion;
     use futures::{poll, FutureExt};
@@ -4432,6 +4497,139 @@ mod redrive_tests {
             MAX_REDRIVE_ATTEMPTS + 1,
             "identity retries stay live beyond the note-spend attempt budget"
         );
+    }
+
+    /// A private contact request's payment whose broadcast may have been
+    /// delivered, an `Unavailable` answer the spend's classifier reports so,
+    /// is settled as an unconfirmed one: its notes stay reserved, and its saved
+    /// record with the request it pays for survives a reopen of the store, so
+    /// the redrive pass resolves it and a restart restores the request's pair
+    /// from it. A private document payment paying for nothing else releases its
+    /// notes, and its record with them, as before.
+    #[tokio::test]
+    async fn should_keep_a_private_contact_payment_s_record_when_its_broadcast_may_have_been_delivered(
+    ) {
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let unavailable = dash_sdk::Error::DapiClientError(DapiClientError::Transport(
+            TransportError::Grpc(Status::new(
+                Code::Unavailable,
+                "the stream was reset after the request was sent",
+            )),
+        ));
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            Identifier::from([0x44; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![9; 589])],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition");
+        let payment = PrivateContactPayment {
+            sender: [0xB1; 32],
+            recipient: [0xA1; 32],
+            account_reference: 5,
+        };
+        let wallet_id = [0x67; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        for pays_for_private_contact_request in [true, false] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let store = Arc::new(RwLock::new(
+                FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
+            ));
+            let note = ShieldedNote {
+                position: 0,
+                cmx: [1; 32],
+                nullifier: [0x5F; 32],
+                block_height: 1,
+                is_spent: false,
+                value: 1_000_000_000_000,
+                note_data: vec![],
+            };
+            store.write().await.save_note(id, &note).expect("a note");
+            let (selected, _, _, reservation) =
+                reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                    .await
+                    .expect("reserved");
+            let started = PaymentStarted::default();
+            arm_redrive_before_broadcast(
+                &store,
+                id,
+                Some([0x77; 32]),
+                [7; 32],
+                selected.iter().map(|note| note.nullifier).collect(),
+                &transition,
+                "private document create from shielded pool",
+                pays_for_private_contact_request.then_some(payment),
+                Some(&started),
+            )
+            .await
+            .expect("saved before the broadcast");
+
+            let settled = settle_private_document_payment(
+                &store,
+                None,
+                wallet_id,
+                id,
+                &None,
+                reservation,
+                &selected,
+                pays_for_private_contact_request,
+                Err(definite_broadcast_failure(&unavailable)),
+            )
+            .await;
+            let unspent = store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .len();
+            if pays_for_private_contact_request {
+                assert!(
+                    matches!(
+                        settled,
+                        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+                    ),
+                    "{settled:?}"
+                );
+                assert_eq!(unspent, 0, "the notes stay reserved");
+                drop(store);
+                let reopened = FileBackedShieldedStore::open_path(&path, 100).expect("reopened");
+                let saved = reopened
+                    .private_contact_redrives_for_wallet(wallet_id)
+                    .expect("listed");
+                assert_eq!(saved.len(), 1, "the record and its association stay");
+                assert_eq!(saved[0].1, payment);
+                assert!(reopened.get_unspent_notes(id).expect("notes").is_empty());
+            } else {
+                assert!(
+                    matches!(
+                        settled,
+                        Err(PlatformWalletError::ShieldedBroadcastMaybeDelivered(_))
+                    ),
+                    "{settled:?}"
+                );
+                assert_eq!(unspent, 1, "the notes are released");
+                assert!(store
+                    .read()
+                    .await
+                    .pending_redrives(id)
+                    .expect("records")
+                    .is_empty());
+            }
+        }
     }
 
     /// A spend that failed before anything was broadcast, here a private document payment
