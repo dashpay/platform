@@ -150,6 +150,7 @@ impl Sdk {
                     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                     PRIVATE_DOCUMENT_ENTRIES_METHOD,
                     None,
+                    None,
                 ));
             }
             return Err(Error::Generic(format!(
