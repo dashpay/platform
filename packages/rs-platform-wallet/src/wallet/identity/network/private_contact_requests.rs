@@ -59,7 +59,7 @@ use key_wallet::bip32::{DerivationPath, KeyDerivationType};
 use key_wallet_manager::WalletManager;
 use platform_encryption::{encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN};
 use tokio::sync::RwLock;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::contact_requests::{
     ingest_received_requests, ingest_sent_requests, newest_received_per_sender,
@@ -920,14 +920,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let signature =
             private_contact_request_signature(signer, &signing_key, &signing_data).await?;
 
-        let mut esk_seed = [0u8; 32];
+        // Wiped on drop, so a send dropped while the seal is awaited wipes it too.
+        let mut esk_seed = Zeroizing::new([0u8; 32]);
         StdRng::try_from_os_rng()
             .map_err(|error| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "the OS RNG failed while sealing a private contact request: {error}"
                 ))
             })?
-            .fill_bytes(&mut esk_seed);
+            .fill_bytes(&mut *esk_seed);
         let sealed = crypto
             .seal_private_contact_request(
                 &sender_enc_path,
@@ -943,7 +944,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 self.sdk.version(),
             )
             .await;
-        esk_seed.zeroize();
+        drop(esk_seed);
         let entry = sealed?;
         // An entry starts with its 32-byte commitment.
         let commitment: [u8; 32] = entry
