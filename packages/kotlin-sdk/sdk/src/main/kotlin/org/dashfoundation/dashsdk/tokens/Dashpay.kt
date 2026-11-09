@@ -350,8 +350,11 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * alone. The ingested requests reach Room through the persister.
      *
      * The store is opened with keys derived inside [coreSignerHandle], the
-     * manager's `MnemonicResolverHandle`. The store cursors live in memory
-     * only, so the first pass after launch reads the store from its start.
+     * manager's `MnemonicResolverHandle`. Where the persister attests
+     * `PRIVATE_CONTACT_REQUEST_SCAN_STATE` (the Room handler does), each
+     * identity's read position is stored with the requests read before it
+     * and restored at load, so a pass after launch reads on from there;
+     * otherwise the first pass after launch reads the store from its start.
      * Private requests reach the wallet only through this read.
      * ← Swift `ManagedPlatformWallet.syncPrivateContactRequests(maxPages:)`.
      */
@@ -403,8 +406,10 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * managed-identity snapshot. While one is, Rust refuses another private
      * send or reply to it ([DashSdkError.PlatformWallet.PrivateContactRequestPending]),
      * so a host shows it as pending and offers neither; a private sync
-     * settles it. Empty when the identity isn't managed. Rust keeps it in
-     * memory only, so it is empty after a relaunch.
+     * settles it. Empty when the identity isn't managed. After a relaunch, a
+     * reply paid for in an earlier process is pending again once Rust
+     * restores it from the shielded store, which it does when the store is
+     * configured after the load or the wallet binds its shielded account.
      * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`
      * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
      */
