@@ -218,14 +218,20 @@ impl ContextProvider for GrpcContextProvider {
             self.dump_data_contract(dc);
         }
 
-        // A newer contract registered while this one was fetched stays, and is the answer.
-        Ok(data_contract.map(|dc| {
-            let fetched_version = dc.version();
-            self.data_contracts_cache
-                .put_unless(*data_contract_id, dc, |held| {
-                    held.version() > fetched_version
-                })
-        }))
+        // A newer contract registered while this one was fetched stays, and is the answer. So
+        // is one registered while a fetch that found none ran.
+        Ok(match data_contract {
+            Some(dc) => {
+                let fetched_version = dc.version();
+                Some(
+                    self.data_contracts_cache
+                        .put_unless(*data_contract_id, dc, |held| {
+                            held.version() > fetched_version
+                        }),
+                )
+            }
+            None => self.data_contracts_cache.get(data_contract_id),
+        })
     }
 
     /// Keeps a held contract of a higher version, deciding under the cache's lock: a
