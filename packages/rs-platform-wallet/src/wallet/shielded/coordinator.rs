@@ -2569,7 +2569,7 @@ mod tests {
 
     use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::activity::compute_activity_id;
-    use crate::wallet::shielded::store::PendingRedrive;
+    use crate::wallet::shielded::store::{PendingRedrive, ANCHOR_READ_BEFORE_THIS_PROCESS};
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
@@ -4400,6 +4400,84 @@ mod tests {
         // A later set lacking it releases it.
         release(HashSet::new(), 30).await;
         assert!(stale(&coordinator).await.is_empty(), "proven pruned");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A note spend an earlier process saved before anchor heights were kept,
+    /// its anchor since pruned: reopened, its anchor counts as read before any
+    /// set this process fetches, so the first set lacking it releases the
+    /// reservation once the scan covers that set, and not before.
+    #[tokio::test]
+    async fn should_release_a_reopened_heightless_reservation_once_the_scan_covers_the_set() {
+        let dir = temp_dir("release_reopened_heightless");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let (nullifier, anchor, activity) = ([0x61; 32], [0x62; 32], [0x63; 32]);
+        {
+            // An earlier process, before heights were kept.
+            let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open");
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: None,
+                    },
+                )
+                .expect("record");
+        }
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened"),
+        );
+        let stale = || async {
+            coordinator
+                .store
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .expect("stale")
+        };
+        assert_eq!(
+            stale().await,
+            vec![(
+                nullifier,
+                anchor,
+                Some(activity),
+                Some(ANCHOR_READ_BEFORE_THIS_PROCESS)
+            )],
+            "read before any set this process fetches"
+        );
+        let recorded = HashSet::new();
+        for (covered, released) in [(9, false), (10, true)] {
+            let snapshot: Vec<(SubwalletId, StalePendingSpend)> =
+                stale().await.into_iter().map(|entry| (id, entry)).collect();
+            coordinator
+                .release_stranded_spends(
+                    snapshot,
+                    PrunedAnchorEvidence {
+                        recorded: &recorded,
+                        height: 10,
+                        scan_covered_height: Some(covered),
+                    },
+                )
+                .await;
+            assert_eq!(
+                stale().await.is_empty(),
+                released,
+                "scan covering {covered}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

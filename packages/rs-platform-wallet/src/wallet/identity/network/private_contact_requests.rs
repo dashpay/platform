@@ -7374,6 +7374,101 @@ mod tests {
         );
     }
 
+    /// A journal record with no anchor height is never proven expired while
+    /// it was created in this process. One an earlier process saved, before
+    /// heights were kept, counts as read before any set this process fetches:
+    /// reopened, it is discharged once its anchor is absent from a set at H,
+    /// the scan covers H and the store read through its end at H lacks its
+    /// entry, and not while the scan is below H.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_discharge_a_reopened_heightless_journal_record_once_its_evidence_covers_the_set(
+    ) {
+        use crate::wallet::shielded::PrivatePaymentRecord;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let fixture = ExpiryFixture::new().await;
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        fixture.prove_at(height);
+        let wallet_id = fixture.wallet.wallet_id();
+        let record = PrivatePaymentRecord {
+            account_index: 0,
+            activity_id: [0x71; 32],
+            anchor: ExpiryFixture::ANCHOR,
+            anchor_height: None,
+            commitment: [0x72; 32],
+            payment: PrivateContactPayment {
+                sender: alice.id().to_buffer(),
+                recipient: bob.id().to_buffer(),
+                account_reference: 1,
+            },
+            nullifiers: vec![fixture.input.nullifier],
+        };
+        fixture
+            .coordinator
+            .store()
+            .write()
+            .await
+            .journal_private_payments(wallet_id, std::slice::from_ref(&record))
+            .expect("journaled");
+        let recorded = HashSet::new();
+        // Created in this process with no height: unproven.
+        let journal = fixture.journal_snapshot().await;
+        fixture.discharge(&journal, &recorded, Some(height)).await;
+        assert_eq!(fixture.journaled().await, 1, "created in this process");
+
+        // Saved by an earlier process: this one reopens the store.
+        let reopened = NetworkShieldedCoordinator::new(
+            Arc::clone(&fixture.wallet.identity().sdk),
+            Network::Testnet,
+            fixture.db_path.clone(),
+            FileBackedShieldedStore::open_path(&fixture.db_path, 100).expect("reopened"),
+        );
+        let records = |coordinator: &NetworkShieldedCoordinator| {
+            let store = Arc::clone(coordinator.store());
+            async move {
+                store
+                    .read()
+                    .await
+                    .private_payment_journal(wallet_id)
+                    .expect("journal")
+            }
+        };
+        let journal: Vec<(WalletId, PrivatePaymentRecord)> = records(&reopened)
+            .await
+            .into_iter()
+            .map(|record| (wallet_id, record))
+            .collect();
+        assert_eq!(
+            journal[0].1.anchor_height,
+            Some(0),
+            "read before this process"
+        );
+        for (covered, discharged) in [(height - 1, false), (height, true)] {
+            reopened
+                .discharge_expired_private_payments(
+                    &journal,
+                    PrunedAnchorEvidence {
+                        recorded: &recorded,
+                        height,
+                        scan_covered_height: Some(covered),
+                    },
+                )
+                .await;
+            assert_eq!(
+                records(&reopened).await.is_empty(),
+                discharged,
+                "scan covering {covered}"
+            );
+        }
+        assert!(FileBackedShieldedStore::open_path(&fixture.db_path, 100)
+            .expect("reopened again")
+            .private_payment_journal(wallet_id)
+            .expect("journal")
+            .is_empty());
+    }
+
     /// A private payment that never executes is proven expired once its
     /// anchor is pruned and its entry is absent from the store: the
     /// coordinator discharges its journal record, the pair is freed, a retry

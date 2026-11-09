@@ -126,6 +126,15 @@ pub struct ShieldedOutgoingNote {
     pub block_height: u64,
 }
 
+/// The anchor height a store gives a reservation, saved record or journal
+/// record it loads at open with none kept: one saved by an earlier process,
+/// before heights were kept, whose anchor was necessarily read before any
+/// anchor set this process fetches. So a set this process fetches that lacks
+/// the anchor, the scan covering that set, shows it pruned
+/// (`PrunedAnchorEvidence::proves_pruned`). A record created in this process
+/// always has its height; one without stays unproven.
+pub(crate) const ANCHOR_READ_BEFORE_THIS_PROCESS: u64 = 0;
+
 /// A pending reservation that carries a recorded anchor:
 /// `(nullifier, anchor, activity_id, anchor_height)`, `anchor_height` being a
 /// proved height at which `anchor` was in Platform's recorded set, when known.
@@ -167,9 +176,11 @@ pub struct PendingRedrive {
     /// anchor set: the height of the set the spend's anchor was read from, or
     /// of a later set seen holding it
     /// ([`ShieldedStore::note_anchor_recorded`]). A set proved at or above it
-    /// that lacks the anchor shows it pruned rather than newer. `None` for a
-    /// record saved without it, whose anchor is not proven pruned until a set
-    /// is seen holding it.
+    /// that lacks the anchor shows it pruned rather than newer. A store
+    /// loading a record an earlier process saved without it gives it
+    /// [`ANCHOR_READ_BEFORE_THIS_PROCESS`]. `None` for one created in this
+    /// process without it, whose anchor is not proven pruned until a set is
+    /// seen holding it.
     pub anchor_height: Option<u64>,
     /// A proven identity nonce has made this exact debit impossible to execute
     /// again. Stop broadcasting, but keep its unresolved-payment guard until
@@ -243,9 +254,11 @@ pub struct PrivatePaymentRecord {
     /// The proved height of the recorded-anchor set `anchor` was chosen from:
     /// the anchor was recorded then, so only its absence from a set proved at
     /// or above this height shows it pruned. `None` when not known, as for a
-    /// payment saved before the journal or the redrive record kept it, whose
-    /// expiry is then never proven. Kept as `u64::MAX` in the record's bytes
-    /// ([`Self::to_bytes`]).
+    /// payment saved before the journal or the redrive record kept it; a
+    /// store loading such a record an earlier process saved gives it
+    /// [`ANCHOR_READ_BEFORE_THIS_PROCESS`], and one created in this process
+    /// without it is never proven expired. Kept as `u64::MAX` in the record's
+    /// bytes ([`Self::to_bytes`]).
     pub anchor_height: Option<u64>,
     /// The commitment of the entry it appends, which keys the record.
     pub commitment: [u8; 32],

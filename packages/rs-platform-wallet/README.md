@@ -160,8 +160,14 @@ the anchor set their anchor was read from: `set_pending_spend` takes an
 element, `PendingRedrive` struct literals require `anchor_height`, and stores
 must implement `note_anchor_recorded`, which gives that height to the
 reservations and records of an anchor that carry none, durably for a record.
-A store keeps a record's height with it, so a restart restores it; one
-without a known height is never released on an anchor's absence alone.
+A store keeps a record's height with it, so a restart restores it. A note
+spend's record, or a journal record, that an earlier process saved without a
+height (one saved before heights were kept) is loaded with height 0: its
+anchor was necessarily read before any anchor set this process fetches, so it
+is released, or discharged, on the first set lacking its anchor once the scan
+covers that set (and, for a journal record, the store read through its end
+lacks its entry at that set's height). One created in this process without a
+height is never released on an anchor's absence alone.
 
 The local shielded balance API introduces three Rust source compatibility changes:
 
