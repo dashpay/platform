@@ -13,16 +13,19 @@ use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::{Identity, KeyID};
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::secp256k1::SecretKey;
+use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::platform::dashpay::{
     private_contact_request_outgoing_viewing_key, PrivateContactRequest,
     PrivateContactRequestRejection, PrivateContactRequestScan,
+    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
 };
 use dash_sdk::platform::private_document_entries::{
     PrivateDocumentEntries, PrivateDocumentEntriesQuery,
 };
 use dash_sdk::platform::private_document_scan::PrivateDocumentScanKeys;
-use dash_sdk::platform::{Fetch, Identifier};
+use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use serde::Serialize;
+use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
@@ -386,48 +389,134 @@ fn request_from_options(options: &JsValue) -> Result<PrivateContactRequest, Wasm
     })
 }
 
-fn scan_keys_from_options(options: &JsValue) -> Result<PrivateDocumentScanKeys, WasmSdkError> {
-    let mut keys = PrivateDocumentScanKeys::new();
+/// The identities and keys a scan's options name: each recipient with the keys entries to it
+/// may be sealed to, each sender with the encryption keys it sealed with. The secret keys are
+/// wiped when it is dropped.
+#[derive(Default)]
+struct ScanKeyOptions {
+    recipients: Vec<(Identifier, ReadSecretKeys)>,
+    senders: Vec<(Identifier, ReadSecretKeys)>,
+}
+
+impl ScanKeyOptions {
+    /// The scan keys these give: a sender's outgoing viewing key is derived from each of its
+    /// encryption keys.
+    fn scan_keys(&self) -> PrivateDocumentScanKeys {
+        let mut keys = PrivateDocumentScanKeys::new();
+        for (identity_id, read) in &self.recipients {
+            keys = keys.with_recipient(*identity_id, &read.0);
+        }
+        for (identity_id, read) in &self.senders {
+            for (key_id, secret_key) in &read.0 {
+                keys = keys.with_sender(
+                    *identity_id,
+                    *key_id,
+                    private_contact_request_outgoing_viewing_key(secret_key),
+                );
+            }
+        }
+        keys
+    }
+}
+
+/// The keys of `entries`, an array of `{ keyId, privateKey }`, named `field` in errors. The
+/// vector is sized for them first: growing it would move secret keys and leave copies behind.
+fn secret_keys_from_array(
+    entries: &js_sys::Array,
+    field: &str,
+) -> Result<ReadSecretKeys, WasmSdkError> {
+    let mut read = ReadSecretKeys(Vec::with_capacity(entries.length() as usize));
+    for key in entries.iter() {
+        let key_id = try_from_options_with(&key, "keyId", |value| {
+            try_to_u32(value, &format!("{field}[].keyId"))
+        })?;
+        read.0
+            .push((key_id, secret_key_from_options(&key, "privateKey")?));
+    }
+    Ok(read)
+}
+
+fn scan_key_options(options: &JsValue) -> Result<ScanKeyOptions, WasmSdkError> {
+    let mut read = ScanKeyOptions::default();
     let recipients = try_from_options_optional_with(options, "recipients", |value| {
         try_to_array(value, "recipients")
     })?;
     for recipient in recipients.iter().flat_map(|array| array.iter()) {
         let identity_id: Identifier =
             IdentifierWasm::try_from_options(&recipient, "identityId")?.into();
-        let recipient_keys = try_from_options_with(&recipient, "keys", |value| {
+        let keys = try_from_options_with(&recipient, "keys", |value| {
             try_to_array(value, "recipients[].keys")
         })?;
-        let mut read = ReadSecretKeys::default();
-        for key in recipient_keys.iter() {
-            let key_id = try_from_options_with(&key, "keyId", |value| {
-                try_to_u32(value, "recipients[].keys[].keyId")
-            })?;
-            read.0
-                .push((key_id, secret_key_from_options(&key, "privateKey")?));
-        }
-        keys = keys.with_recipient(identity_id, &read.0);
+        read.recipients.push((
+            identity_id,
+            secret_keys_from_array(&keys, "recipients[].keys")?,
+        ));
     }
     let senders =
         try_from_options_optional_with(options, "senders", |value| try_to_array(value, "senders"))?;
     for sender in senders.iter().flat_map(|array| array.iter()) {
         let identity_id: Identifier =
             IdentifierWasm::try_from_options(&sender, "identityId")?.into();
-        let encryption_keys = try_from_options_with(&sender, "encryptionKeys", |value| {
+        let keys = try_from_options_with(&sender, "encryptionKeys", |value| {
             try_to_array(value, "senders[].encryptionKeys")
         })?;
-        for key in encryption_keys.iter() {
-            let key_id = try_from_options_with(&key, "keyId", |value| {
-                try_to_u32(value, "senders[].encryptionKeys[].keyId")
-            })?;
-            let read = ReadSecretKeys(vec![(key_id, secret_key_from_options(&key, "privateKey")?)]);
-            keys = keys.with_sender(
-                identity_id,
-                key_id,
-                private_contact_request_outgoing_viewing_key(&read.0[0].1),
-            );
-        }
+        read.senders.push((
+            identity_id,
+            secret_keys_from_array(&keys, "senders[].encryptionKeys")?,
+        ));
     }
-    Ok(keys)
+    Ok(read)
+}
+
+fn scan_keys_from_options(options: &JsValue) -> Result<PrivateDocumentScanKeys, WasmSdkError> {
+    Ok(scan_key_options(options)?.scan_keys())
+}
+
+impl WasmSdk {
+    /// The contract `data_contract_id` with its private type `document_type_name`, as the
+    /// SDK's context provider must hold it to verify the type's pages
+    /// ([`dash_sdk::Sdk::fetch_private_document_contract`]): one retained from before the type
+    /// was declared is replaced by the current one, which is also stored for the next page
+    /// load, as the contract cache stores every contract it fetches.
+    pub(crate) async fn private_document_contract(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+    ) -> Result<Arc<DataContract>, WasmSdkError> {
+        let contract = self
+            .as_ref()
+            .fetch_private_document_contract(data_contract_id, document_type_name)
+            .await?;
+        self.cache_contract((*contract).clone());
+        Ok(contract)
+    }
+
+    /// DashPay, with its `privateContactRequest` type ([`Self::private_document_contract`]).
+    async fn private_contact_request_contract(&self) -> Result<Arc<DataContract>, WasmSdkError> {
+        self.private_document_contract(
+            SystemDataContract::Dashpay.id(),
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+        )
+        .await
+    }
+
+    /// The proved page of the store of the private type `document_type_name` of
+    /// `data_contract_id` from `start_position`, verified against the contract with the type.
+    pub(crate) async fn private_document_page(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: String,
+        start_position: u64,
+    ) -> Result<PrivateDocumentEntries, WasmSdkError> {
+        self.private_document_contract(data_contract_id, &document_type_name)
+            .await?;
+        PrivateDocumentEntries::fetch(
+            self.as_ref(),
+            PrivateDocumentEntriesQuery::new(data_contract_id, document_type_name, start_position),
+        )
+        .await?
+        .ok_or_else(|| WasmSdkError::not_found("no page of the private document type"))
+    }
 }
 
 #[wasm_bindgen]
@@ -446,15 +535,9 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "startPosition")] start_position: u64,
     ) -> Result<JsValue, WasmSdkError> {
         let data_contract_id: Identifier = IdentifierWasm::try_from(data_contract_id)?.into();
-        // The page's proof is checked against the contract, which the context provider holds
-        // only once loaded.
-        self.get_or_fetch_contract(data_contract_id).await?;
-        let page = PrivateDocumentEntries::fetch(
-            self.as_ref(),
-            PrivateDocumentEntriesQuery::new(data_contract_id, document_type_name, start_position),
-        )
-        .await?
-        .ok_or_else(|| WasmSdkError::not_found("no page of the private document type"))?;
+        let page = self
+            .private_document_page(data_contract_id, document_type_name, start_position)
+            .await?;
         Ok(to_object(&EntriesPage {
             entries: page
                 .entries
@@ -501,6 +584,7 @@ impl WasmSdk {
             secret_key_from_options(&options, "senderEncryptionPrivateKey")?,
         )]);
 
+        self.private_contact_request_contract().await?;
         let sealed = self
             .as_ref()
             .seal_private_contact_request(
@@ -537,10 +621,100 @@ impl WasmSdk {
             try_to_u64(value, "startPosition")
         })?;
         let keys = scan_keys_from_options(&options)?;
+        self.private_contact_request_contract().await?;
         let scan = self
             .as_ref()
             .scan_private_contact_requests(start_position, &keys)
             .await?;
         Ok(to_object(&ScanResult::from(scan))?)
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
+    use dash_sdk::dpp::system_data_contracts::load_system_data_contract;
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::private_document_entries::PrivateDocumentEntry;
+    use dash_sdk::{Sdk, SdkBuilder};
+
+    /// DashPay as `platform_version` bundles it, under an id no system contract has, so the
+    /// trusted context does not resolve it itself.
+    fn dashpay_at(platform_version: &PlatformVersion) -> DataContract {
+        let mut contract = load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+            .expect("DashPay loads");
+        contract.set_id(Identifier::new([0x5D; 32]));
+        contract
+    }
+
+    /// A context provider that retains a contract from before its private type was declared,
+    /// as one restored from a page's storage may: the page is read once the current contract
+    /// is fetched and given to it, and the context then holds the current one.
+    #[tokio::test]
+    async fn should_read_a_private_page_once_a_retained_contract_without_the_type_is_replaced() {
+        let stale = dashpay_at(PlatformVersion::get(14).expect("protocol version 14"));
+        let current = dashpay_at(PlatformVersion::latest());
+        let contract_id = current.id();
+        assert!(stale
+            .document_type_for_name(PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
+            .is_err());
+        let context = WasmTrustedContext::for_testing(vec![]);
+        context.add_known_contract(stale);
+
+        let mut inner: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("a mock SDK");
+        inner
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
+        inner
+            .mock()
+            .expect_fetch(contract_id, Some(current.clone()))
+            .await
+            .expect("the contract fetch is expected");
+        let page = PrivateDocumentEntries {
+            entries: vec![PrivateDocumentEntry {
+                position: 0,
+                block_height: 1,
+                block_time_ms: 2,
+                data: vec![7; 4],
+            }],
+            total_count: 1,
+        };
+        inner
+            .mock()
+            .expect_fetch(
+                PrivateDocumentEntriesQuery::new(
+                    contract_id,
+                    PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                    0,
+                ),
+                Some(page.clone()),
+            )
+            .await
+            .expect("the page fetch is expected");
+        let sdk = WasmSdk::new_for_testing(inner, Some(context.clone()));
+
+        let read = sdk
+            .private_document_page(
+                contract_id,
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME.to_string(),
+                0,
+            )
+            .await
+            .expect("the page reads");
+        assert_eq!(read, page);
+        let held = context
+            .get_known_contract(&contract_id)
+            .expect("the context holds the contract");
+        assert!(held
+            .document_type_for_name(PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME)
+            .is_ok());
+        assert_eq!(held.version(), current.version());
     }
 }
