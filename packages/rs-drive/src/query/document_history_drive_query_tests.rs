@@ -373,3 +373,17 @@ fn should_reject_an_absent_reserved_metadata_element() {
 fn should_reject_an_absent_history_metadata_element() {
     assert_rejects_absent_metadata(DOCUMENT_HISTORY_TREE_KEY);
 }
+
+#[test]
+fn should_reject_a_v1_history_query_before_the_history_tree_is_active() {
+    let fixture = Fixture::new();
+    let query = fixture.query(DocumentHistoryFilter::StartAtTime(0), Some(1));
+    let error = query
+        .construct_path_query(PlatformVersion::get(14).unwrap())
+        .expect_err("query version 1 must not be lowered into method version 0");
+    assert!(
+        matches!(error, Error::Drive(DriveError::UnknownVersionMismatch {
+        method, known_versions, received: 0,
+    }) if method == "DocumentHistoryDriveQuery::construct_path_query" && known_versions == vec![1])
+    );
+}

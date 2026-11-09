@@ -1,5 +1,5 @@
 //! A page of a document's retained revisions with its lifecycle, read from
-//! whichever history layout the protocol version stores.
+//! the per-type composite-keyed history tree.
 
 use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
 use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
@@ -15,7 +15,6 @@ use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use grovedb::{Element, PathQuery, Query, SizedQuery};
-use std::collections::BTreeMap;
 
 /// The highest revision a revision filter can address. Revision `n` is read at
 /// the zero-based offset `n - 1` of the document's history tree, and GroveDB
@@ -91,32 +90,8 @@ pub struct DocumentHistoryEntry {
 pub struct DocumentHistoryDriveQueryExecutionResult {
     /// Ordered retained revisions in this page.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Metadata for the whole history, including empty pages. Absent when
-    /// the page was read from the layout that predates protocol version 15,
-    /// which keeps no lifecycle record.
+    /// Optional metadata for the whole history, including empty pages.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
-}
-
-impl DocumentHistoryDriveQueryExecutionResult {
-    /// Builds a page from revisions read from the per-document history
-    /// subtree used before protocol version 15, keyed by block time.
-    pub(crate) fn from_legacy(revisions: BTreeMap<u64, Document>) -> Result<Self, Error> {
-        let entries = revisions
-            .into_iter()
-            .map(|(time_ms, document)| {
-                let revision = document.revision().unwrap_or(1);
-                Ok(DocumentHistoryEntry {
-                    time_ms,
-                    revision,
-                    document,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(Self {
-            entries,
-            lifecycle: None,
-        })
-    }
 }
 
 pub(crate) fn invalid(message: &str) -> Error {
@@ -158,7 +133,7 @@ impl DocumentHistoryDriveQuery {
         }
     }
 
-    /// The page and its lifecycle in the layout the protocol version stores.
+    /// The page and its lifecycle in the per-type composite-keyed history tree.
     pub fn construct_path_query(
         &self,
         platform_version: &PlatformVersion,
@@ -170,45 +145,12 @@ impl DocumentHistoryDriveQuery {
             .query
             .fetch_document_history_query
         {
-            0 => {
-                let (start_at_ms, limit) = self.legacy_read()?;
-                Drive::fetch_document_history_query_v0_for_name(
-                    self.contract_id,
-                    &self.document_type_name,
-                    self.document_id,
-                    start_at_ms,
-                    limit,
-                    None,
-                )
-            }
             1 => self.merged_path_query(platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentHistoryDriveQuery::construct_path_query".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![1],
                 received: version,
             })),
-        }
-    }
-
-    /// Maps the query onto the per-document subtree used before protocol
-    /// version 15, which is keyed by block time only: a time filter and a
-    /// page length. Revision and cursor filters need the history tree.
-    ///
-    /// That layout's reader takes an exclusive time bound, so the inclusive
-    /// `StartAtTime` bound is lowered by one millisecond to keep the filter's
-    /// meaning the same on both sides of activation. A revision stored at
-    /// block time zero stays unreachable through it, as it always was.
-    pub(crate) fn legacy_read(&self) -> Result<(u64, Option<u16>), Error> {
-        self.validate()?;
-        match self.filter {
-            DocumentHistoryFilter::StartAtTime(time_ms) => {
-                Ok((time_ms.saturating_sub(1), self.limit))
-            }
-            DocumentHistoryFilter::StartAfter { .. }
-            | DocumentHistoryFilter::StartAtRevision(_)
-            | DocumentHistoryFilter::Revision(_) => Err(invalid(
-                "revision and cursor filters need the protocol version 15 history layout",
-            )),
         }
     }
 
@@ -458,29 +400,3 @@ impl DocumentHistoryDriveQuery {
 #[cfg(test)]
 #[path = "document_history_drive_query_tests.rs"]
 mod decode_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn should_use_sequence_one_for_a_legacy_immutable_document_without_a_revision() {
-        let document = Document::V0(Default::default());
-        assert_eq!(document.revision(), None);
-
-        let history = DocumentHistoryDriveQueryExecutionResult::from_legacy(BTreeMap::from([(
-            2000,
-            document.clone(),
-        )]))
-        .expect("an immutable legacy document has sequence one");
-
-        assert_eq!(
-            history.entries,
-            vec![DocumentHistoryEntry {
-                time_ms: 2000,
-                revision: 1,
-                document,
-            }]
-        );
-    }
-}

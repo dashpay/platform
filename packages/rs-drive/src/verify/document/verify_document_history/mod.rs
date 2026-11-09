@@ -66,8 +66,7 @@ impl Drive {
         }
     }
 
-    /// Verifies a proved page of a historical document's history in the
-    /// layout the protocol version stores.
+    /// Verifies a proved page and lifecycle from the per-type composite-keyed history tree.
     pub fn verify_document_history(
         query: &DocumentHistoryDriveQuery,
         proof: &[u8],
@@ -81,29 +80,10 @@ impl Drive {
             .document
             .verify_document_history
         {
-            0 => {
-                require_supported_grovedb_proof_envelope(proof, "document history proof")?;
-                let (start_at_ms, limit) = query.legacy_read()?;
-                let (root, revisions) = Drive::verify_document_history_v0(
-                    proof,
-                    query.contract_id,
-                    &query.document_type_name,
-                    document_type,
-                    query.document_id,
-                    start_at_ms,
-                    limit,
-                    None,
-                    platform_version,
-                )?;
-                let history = DocumentHistoryDriveQueryExecutionResult::from_legacy(
-                    revisions.unwrap_or_default(),
-                )?;
-                Ok((root, history))
-            }
             1 => Drive::verify_document_history_v1(query, proof, document_type, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_document_history".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![1],
                 received: version,
             })),
         }

@@ -652,29 +652,50 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
         if migrated && revision == 2 {
             let legacy_history = platform
                 .drive
-                .fetch_document_history(&query, document_type, None, initial_version)
+                .fetch_document_history_after_time(
+                    query.contract_id,
+                    document_type,
+                    query.document_id,
+                    None,
+                    0,
+                    query.limit,
+                    None,
+                    initial_version,
+                )
                 .unwrap();
             let legacy_proof = platform
                 .drive
-                .prove_document_history(&query, document_type, None, initial_version)
+                .prove_document_history_after_time(
+                    query.contract_id,
+                    document_type,
+                    query.document_id,
+                    None,
+                    0,
+                    query.limit,
+                    None,
+                    initial_version,
+                )
                 .unwrap();
-            assert!(legacy_history.lifecycle.is_none());
             assert_eq!(
                 legacy_history
-                    .entries
-                    .iter()
-                    .map(|entry| entry.revision)
+                    .values()
+                    .map(|document| document.revision().unwrap())
                     .collect::<Vec<_>>(),
                 vec![1, 2]
             );
-            let (_, verified_legacy) = drive::drive::Drive::verify_document_history(
-                &query,
+            let (_, verified_legacy) = drive::drive::Drive::verify_document_history_after_time(
                 &legacy_proof,
+                query.contract_id,
+                &query.document_type_name,
                 document_type,
+                query.document_id,
+                0,
+                query.limit,
+                None,
                 initial_version,
             )
             .unwrap();
-            assert_eq!(verified_legacy, legacy_history);
+            assert_eq!(verified_legacy, Some(legacy_history));
 
             let mut upgraded = platform.state.load().as_ref().clone();
             upgraded.set_current_protocol_version_in_consensus(15);

@@ -56,8 +56,7 @@ impl Drive {
         }
     }
 
-    /// Proves a page of a historical document's history in the layout the
-    /// protocol version stores.
+    /// Proves a page and lifecycle from the per-type composite-keyed history tree.
     pub fn prove_document_history(
         &self,
         query: &DocumentHistoryDriveQuery,
@@ -72,25 +71,12 @@ impl Drive {
             .query
             .prove_document_history
         {
-            0 => {
-                let (start_at_ms, limit) = query.legacy_read()?;
-                self.prove_document_history_v0(
-                    query.contract_id,
-                    document_type,
-                    query.document_id,
-                    transaction,
-                    start_at_ms,
-                    limit,
-                    None,
-                    platform_version,
-                )
-            }
             1 => {
                 self.prove_document_history_v1(query, document_type, transaction, platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_document_history".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![1],
                 received: version,
             })),
         }
