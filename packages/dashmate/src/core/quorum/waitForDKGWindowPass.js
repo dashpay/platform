@@ -1,6 +1,6 @@
 import wait from '../../util/wait.js';
 import checkMasternodeSafeToStop, { readCoreVersion } from './checkMasternodeSafeToStop.js';
-import { getBlockersAt } from './getDkgStopBlockers.js';
+import { getBlockersAt, isDkgKeyCurrent } from './getDkgStopBlockers.js';
 
 export const CHECK_INTERVAL_MS = 10000;
 
@@ -44,10 +44,8 @@ export default async function waitForDKGWindowPass(rpcClient) {
     }
 
     if (check.height !== null) {
-      // A key ends with the DKG's start block; one that has passed no longer
-      // matters.
       nonMemberDkgs = new Set([...nonMemberDkgs]
-        .filter((key) => Number(key.split(':').at(-1)) >= check.height));
+        .filter((key) => isDkgKeyCurrent(key, check.height)));
 
       check.blockers
         .filter(({ reason, until }) => reason === 'upcoming' && until !== null)

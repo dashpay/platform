@@ -575,4 +575,40 @@ describe('waitForDKGWindowPass', () => {
 
     await expectStillPolling(waiting, rpcClient);
   });
+
+  it('should not hold a session it saw announced without this node after its start block', async function it() {
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 1,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: false,
+        }],
+      },
+      dkgStatus: {
+        // Another session keeps the node busy until the announced one has started.
+        session: [{ llmqType: 'llmq_400_60', quorumIndex: 0, status: { quorumHeight: start - 12 } }],
+      },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    const connections = [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }];
+    core.height = start + 1;
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 23, upcoming_dkgs: [] };
+    core.dkgStatus = { ...core.dkgStatus, quorumConnections: connections };
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    // The other session has ended; the announced one is still running.
+    core.height = start + 8;
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 16, upcoming_dkgs: [] };
+    await clock.tickAsync(NEXT_POLL_MS * 2);
+
+    expect(waiting.resolved).to.be.true();
+  });
 });

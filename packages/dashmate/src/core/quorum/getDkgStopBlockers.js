@@ -256,6 +256,22 @@ function getDkgKey(llmqType, quorumIndex, start) {
 }
 
 /**
+ * Whether the DKG a key from {@link getAnnouncedNonMemberDkgs} names can
+ * still block at `height`: it has not started yet or has not finished its
+ * Commit phase.
+ *
+ * @param {string} key
+ * @param {number} height
+ * @return {boolean}
+ */
+export function isDkgKeyCurrent(key, height) {
+  const [llmqType, , start] = key.split(':');
+  const llmq = LLMQ_TYPES.find(({ name }) => name === llmqType);
+
+  return !llmq || Number(start) + getActiveDkgBlocks(llmq) > height;
+}
+
+/**
  * The DKGs Core announces this node is not a member of, as
  * `llmqType:quorumIndex:start` keys. Once such a DKG starts Core no longer
  * announces it, so a caller polling Core can remember these to tell a
