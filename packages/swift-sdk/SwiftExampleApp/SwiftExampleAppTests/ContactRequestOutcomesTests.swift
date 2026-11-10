@@ -10,6 +10,10 @@ import SwiftDashSDK
 /// and a pinned SDK (75) are configuration messages, an unfinished private
 /// store read (74) is a retry with no pending row, and a network that does
 /// not serve the private store yet is quiet while real failures are shown.
+/// A public request or accept that may have gone through (20), or one the
+/// wallet refuses while an earlier one awaits its outcome (76), shows
+/// "being checked" with no submission offered until the wallet's read of
+/// the pair says settled.
 final class ContactRequestOutcomesTests: XCTestCase {
 
     /// Code 18: a note spend whose broadcast may have reached a node, a
@@ -74,7 +78,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         let pendingContact = Data(repeating: 1, count: 32)
         let otherContact = Data(repeating: 2, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([pendingContact], for: [pendingContact, otherContact])
+        snapshot.record(privatelyHeld([pendingContact]), for: [pendingContact, otherContact])
         XCTAssertTrue(snapshot.isPending(pendingContact))
         XCTAssertFalse(snapshot.allowsSubmission(to: pendingContact))
         XCTAssertTrue(snapshot.allowsSubmission(to: otherContact))
@@ -85,7 +89,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertFalse(snapshot.allowsSubmission(to: pendingContact))
         XCTAssertFalse(snapshot.allowsSubmission(to: otherContact))
 
-        snapshot.record([], for: [pendingContact, otherContact])
+        snapshot.record(privatelyHeld([]), for: [pendingContact, otherContact])
         XCTAssertFalse(snapshot.isUnavailable)
         XCTAssertTrue(snapshot.allowsSubmission(to: pendingContact))
     }
@@ -97,7 +101,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
     func testShouldReEnableARefusedPairOnlyWhenThePerContactReadSaysFree() {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         snapshot.recordRefusal(of: contact)
         XCTAssertTrue(snapshot.isPending(contact))
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
@@ -113,13 +117,13 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
 
         // The pair's read says held: still pending.
-        snapshot.record([contact], for: [contact])
+        snapshot.record(privatelyHeld([contact]), for: [contact])
         XCTAssertTrue(snapshot.isPending(contact))
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
 
         // A payment that will never land frees the pair once the wallet
         // proves so; the next read says free and the controls come back.
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         XCTAssertFalse(snapshot.isPending(contact))
         XCTAssertTrue(snapshot.allowsSubmission(to: contact))
     }
@@ -130,7 +134,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         let other = Data(repeating: 2, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
         snapshot.recordRefusal(of: refused)
-        snapshot.record([], for: [other])
+        snapshot.record(privatelyHeld([]), for: [other])
         XCTAssertTrue(snapshot.isPending(refused))
         XCTAssertTrue(snapshot.allowsSubmission(to: other))
     }
@@ -145,7 +149,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
                 PlatformWalletError.privateContactStoreNotRead("not read to its end")),
             .privateStoreNotRead)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         XCTAssertFalse(snapshot.isPending(contact), "the view records no refusal for 74")
         XCTAssertTrue(snapshot.allowsSubmission(to: contact))
         XCTAssertNotEqual(
@@ -186,7 +190,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
     func testShouldShowWhyARestorationFailedUntilTheReadinessSaysRestored() {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         snapshot.recordReadiness(
             PrivateContactReadiness(
                 privatePaymentsRestored: false, privateStoreRead: false,
@@ -235,7 +239,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
         snapshot.recordRestoringRefusal()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         XCTAssertTrue(snapshot.isRestoringPrivatePayments)
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
 
@@ -261,7 +265,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
     func testShouldShowRestoringFromTheReadinessAlone() {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         snapshot.recordReadiness(PrivateContactReadiness(
             privatePaymentsRestored: false, privateStoreRead: false, unresolvedPrivatePayment: false))
         XCTAssertTrue(snapshot.isRestoringPrivatePayments)
@@ -273,7 +277,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
     func testShouldOfferEveryContactASuccessfulEmptyReadCovered() {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         XCTAssertFalse(snapshot.isUnavailable)
         XCTAssertFalse(snapshot.isPending(contact))
         XCTAssertTrue(snapshot.allowsSubmission(to: contact))
@@ -299,7 +303,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         var restorationFails = true
         var configures = 0
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         let read = { () -> (readiness: PrivateContactReadiness?, restoreFailure: String?) in
             restorationFails
                 ? (self.readiness(restored: false, failed: true), "the journal could not be read")
@@ -390,7 +394,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         let contact = Data(repeating: 1, count: 32)
         var deferredDone = false
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.record([], for: [contact])
+        snapshot.record(privatelyHeld([]), for: [contact])
         let read = { () -> (readiness: PrivateContactReadiness?, restoreFailure: String?) in
             (self.readiness(restored: deferredDone), nil)
         }
@@ -481,6 +485,159 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertEqual(
             PrivateContactRefreshNotice.notice(unpersistedIdentityCount: 2),
             "Private requests for 2 identities were read but not saved. Pull to refresh again."
+        )
+    }
+
+    /// Code 76: an earlier public request to the pair awaits its outcome, so
+    /// the wallet signed nothing. Not a failure to retry: the contact shows
+    /// "being checked" and no submission is offered.
+    func testShouldShowARefusedUnconfirmedPublicRequestAsBeingChecked() {
+        let contact = Data(repeating: 1, count: 32)
+        let outcome = ContactRequestSubmissionOutcome.of(
+            PlatformWalletError.publicContactRequestUnconfirmed("an earlier request awaits its outcome"))
+        XCTAssertEqual(outcome, .publicRequestUnconfirmed)
+
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record(privatelyHeld([]), for: [contact])
+        snapshot.recordOutcome(outcome, for: contact)
+        XCTAssertTrue(snapshot.isAwaitingOutcome(contact))
+        XCTAssertFalse(snapshot.isPending(contact), "not a private request pending")
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(rowMessage(snapshot, contact, error: nil),
+                       ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage)
+    }
+
+    /// The public accept, reload and retry sequence: an accept that may have
+    /// gone through (20) holds the row at once; a reload whose sync did not
+    /// settle it reads the wallet's public hold, with nothing held privately,
+    /// and keeps the row held; a second accept is not offered, and one made
+    /// anyway is refused (76) with no error to retry; a failed read keeps it
+    /// held; once the sync settles the hold the read frees the pair and the
+    /// accept comes back.
+    func testShouldHoldAPublicAcceptThatMayHaveGoneThroughThroughAReloadAndARetryUntilTheWalletSettlesIt() {
+        let contact = Data(repeating: 1, count: 32)
+        var wallet = FakeContactRequestHolds()
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record(wallet.read([contact]), for: [contact])
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact), "the accept is offered")
+
+        // The accept broadcasts and its result cannot be confirmed: the
+        // wallet holds the pair, the signed transition kept.
+        wallet.publicUnconfirmed.insert(contact)
+        let accepted = ContactRequestSubmissionOutcome.of(
+            PlatformWalletError.transactionBroadcastUnconfirmed("result could not be confirmed"))
+        XCTAssertEqual(accepted, .mayHaveGoneThrough)
+        snapshot.recordOutcome(accepted, for: contact)
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(rowMessage(snapshot, contact, error: nil),
+                       ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage)
+
+        // A reload whose sync did not settle it: nothing is held privately,
+        // the public hold stands, and the row stays held.
+        let reload = wallet.read([contact])
+        XCTAssertEqual(reload?.privatelyHeld, [], "the private-pending read is empty")
+        snapshot.record(reload, for: [contact])
+        XCTAssertTrue(snapshot.isAwaitingOutcome(contact))
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact), "a second accept is not offered")
+        XCTAssertEqual(rowMessage(snapshot, contact, error: nil),
+                       ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage)
+
+        // A second accept made anyway is refused before anything is signed.
+        let retried = ContactRequestSubmissionOutcome.of(
+            PlatformWalletError.publicContactRequestUnconfirmed("an earlier request awaits its outcome"))
+        snapshot.recordOutcome(retried, for: contact)
+        snapshot.record(wallet.read([contact]), for: [contact])
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(rowMessage(snapshot, contact, error: nil),
+                       ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage,
+                       "a refusal while held is not an error to retry")
+
+        // A read that fails keeps the row held, as the last read found it.
+        snapshot.record(nil, for: [contact])
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(rowMessage(snapshot, contact, error: nil),
+                       ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage)
+
+        // The sync settles the hold (a proved-used nonce frees the pair; a
+        // request found is recorded as sent and the row leaves the list):
+        // the next read says free and the accept comes back.
+        wallet.publicUnconfirmed.remove(contact)
+        snapshot.record(wallet.read([contact]), for: [contact])
+        XCTAssertFalse(snapshot.isAwaitingOutcome(contact))
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+        XCTAssertNil(rowMessage(snapshot, contact, error: nil))
+    }
+
+    /// An unconfirmed submission marks only its own contact, and a read that
+    /// does not cover it leaves the mark.
+    func testShouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {
+        let unconfirmed = Data(repeating: 1, count: 32)
+        let other = Data(repeating: 2, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.recordOutcome(.mayHaveGoneThrough, for: unconfirmed)
+        snapshot.record(privatelyHeld([]), for: [other])
+        XCTAssertTrue(snapshot.isAwaitingOutcome(unconfirmed))
+        XCTAssertTrue(snapshot.allowsSubmission(to: other))
+    }
+
+    /// The views' read covers both holds for every contact: the private one
+    /// and the public one. A sender the wallet does not manage (code 7) holds
+    /// nothing; any other failed read is nil, never "nothing held".
+    func testShouldReadBothHoldsAndTellAnUnmanagedIdentityFromAFailedRead() {
+        let privately = Data(repeating: 1, count: 32)
+        let publicly = Data(repeating: 2, count: 32)
+        let free = Data(repeating: 3, count: 32)
+        var wallet = FakeContactRequestHolds()
+        wallet.privatelyHeld = [privately]
+        wallet.publicUnconfirmed = [publicly]
+        XCTAssertEqual(
+            wallet.read([privately, publicly, free]),
+            ContactRequestHolds(privatelyHeld: [privately], publicUnconfirmed: [publicly]))
+
+        wallet.failure = PlatformWalletError.identityNotFound("not managed by this wallet")
+        XCTAssertEqual(wallet.read([privately]), ContactRequestHolds())
+
+        wallet.failure = PlatformWalletError.walletOperation("read failed")
+        XCTAssertNil(wallet.read([privately]))
+    }
+}
+
+/// A read of both holds that found `contacts` held for a private request and
+/// none awaiting a public request's outcome.
+private func privatelyHeld(_ contacts: Set<Data>) -> ContactRequestHolds {
+    ContactRequestHolds(privatelyHeld: contacts)
+}
+
+/// The message the views show for `contact`, from `snapshot`.
+private func rowMessage(_ snapshot: PrivateRepliesPendingSnapshot, _ contact: Data, error: String?) -> String? {
+    ContactRequestSubmissionOutcome.rowMessage(
+        pending: snapshot.isPending(contact),
+        awaitingOutcome: snapshot.isAwaitingOutcome(contact),
+        restoring: snapshot.isRestoringPrivatePayments,
+        restoreFailure: snapshot.restoreFailure,
+        unavailable: snapshot.isUnavailable,
+        error: error)
+}
+
+/// The wallet's two per-contact holds, read through the views' helper
+/// (`contactRequestHolds`) as the wallet answers them.
+private struct FakeContactRequestHolds {
+    var privatelyHeld: Set<Data> = []
+    var publicUnconfirmed: Set<Data> = []
+    /// Thrown by every read when set.
+    var failure: Error?
+
+    func read(_ contactIds: [Data]) -> ContactRequestHolds? {
+        contactRequestHolds(
+            contactIds: contactIds,
+            privatePairHeld: { contact in
+                if let failure { throw failure }
+                return privatelyHeld.contains(contact)
+            },
+            publicUnconfirmed: { contact in
+                if let failure { throw failure }
+                return publicUnconfirmed.contains(contact)
+            }
         )
     }
 }
