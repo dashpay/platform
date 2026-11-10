@@ -848,12 +848,12 @@ extension PlatformWalletManager {
     /// Heavy CPU work (Halo 2 proof + per-input signing) runs on a
     /// detached task so the caller's actor isn't blocked.
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the shield may already be on chain, so the caller
-    /// must NOT retry (a retry would rebuild the bundle and could
-    /// double-shield; the next sync reconciles the outcome). A shield
-    /// spends no notes, so nothing is reserved wallet-side.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// shield may have reached a node and its result is not proved (a
+    /// node's refusal or consensus verdict, stale nonce included): it may
+    /// already be on chain, so the caller must NOT retry (a retry signs a
+    /// second transition). Its activity row stays pending until the
+    /// shielded scan sees its note; nothing is reserved wallet-side.
     public func shieldedShield(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1006,12 +1006,12 @@ extension PlatformWalletManager {
     /// or Rust rejects it. The 36-byte on-chain encoding is done on the
     /// Rust side.
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the shield may already be on chain, so the caller
-    /// must NOT retry (a retry would rebuild the bundle and could
-    /// double-pay; the next sync reconciles the outcome). A shield
-    /// spends no notes, so nothing is reserved wallet-side.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// shield may have reached a node and its result is not proved (a
+    /// node's refusal or consensus verdict, stale nonce included): it may
+    /// already be on chain, so the caller must NOT retry (a retry signs a
+    /// second transition). Its activity row stays pending until the
+    /// shielded scan sees its note; nothing is reserved wallet-side.
     public func shieldedShieldToRecipient(
         walletId: Data,
         shieldedAccount: UInt32 = 0,

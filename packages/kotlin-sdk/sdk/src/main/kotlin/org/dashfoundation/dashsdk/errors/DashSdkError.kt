@@ -267,12 +267,13 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
-         * (transfer / unshield / withdraw / shield) was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already be on chain. Rust intentionally KEEPS the spent notes'
-         * reservations, so the caller must NOT retry (a retry would rebuild
-         * the bundle against other notes and could double-spend); the next
-         * shielded sync reconciles the outcome. The Android analog of
+         * (transfer / unshield / withdraw / shield from Platform addresses)
+         * may have reached a node and its result is not proved (a failed
+         * result wait, a node's refusal or a consensus verdict, stale address
+         * nonce included), so it may already be on chain. Do NOT retry: a
+         * retry signs a second transition. Spends keep their notes reserved
+         * for the wallet to resolve; a shield stays pending until the
+         * shielded scan observes its note. The Android analog of
          * Swift's `PlatformWalletError.shieldedSpendUnconfirmed`, which the
          * iOS send flow surfaces as a non-retryable "may have gone through"
          * outcome rather than an error.
@@ -287,11 +288,12 @@ sealed class DashSdkError(
 
         /**
          * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
-         * masternode (evonode) identity credit withdrawal was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already have executed, and the identity nonce was consumed for it,
-         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
-         * re-read the identity's claimable balance and reconcile first. The
+         * masternode (evonode) identity credit withdrawal may have reached a
+         * node and its remaining balance is not proved (a failed result wait,
+         * a node's refusal or a consensus verdict included). It may have
+         * executed; a retry signs a second withdrawal with the next identity
+         * nonce. Do NOT retry; re-read the claimable balance first. Only a
+         * failure before anything was sent keeps an ordinary code. The
          * Android analog of Swift's
          * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
          */
@@ -304,10 +306,10 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
-         * non-execution outcome — relay/CheckTx rejected the transaction
-         * before it entered the chain, and any note reservations were
-         * released. Safe to retry (the opposite of the ambiguous
-         * [ShieldedSpendUnconfirmed]).
+         * non-execution outcome: the transition never left the wallet
+         * (refused before anything was sent), so it can never execute, and
+         * any note reservations were released. Safe to retry (the opposite
+         * of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
