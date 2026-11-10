@@ -12,6 +12,8 @@ use rs_dapi_client::{
     update_address_ban_status, Address, AddressList, CanRetry, DapiClient, DapiClientError,
     DapiRequestExecutor, ExecutionError, ExecutionResult, RequestSettings,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 fn make_address() -> rs_dapi_client::Address {
@@ -488,6 +490,16 @@ fn rate_limited(reset_secs: &str) -> dapi_grpc::tonic::Status {
     status
 }
 
+/// What rs-dapi answers for a block whose results its Tenderdash has not stored yet.
+fn results_not_ready() -> dapi_grpc::tonic::Status {
+    let mut status =
+        dapi_grpc::tonic::Status::unavailable("the results of block 7 are not available yet");
+    status
+        .metadata_mut()
+        .insert("retry-after", MetadataValue::from(1u64));
+    status
+}
+
 /// A node refuses a block query when its limits are reached, which says nothing about its
 /// health. Any other failure does.
 #[test]
@@ -502,6 +514,7 @@ fn should_ban_a_node_that_fails_a_block_query_but_not_one_that_is_busy() {
         let busy = dapi_grpc::tonic::Status::resource_exhausted("too many requests in progress");
         assert!(!judge(busy, &settings).is_banned(&node));
         assert!(!judge(rate_limited("3600"), &settings).is_banned(&node));
+        assert!(!judge(results_not_ready(), &settings).is_banned(&node));
 
         let down = dapi_grpc::tonic::Status::unavailable("connection refused");
         assert!(judge(down, &settings).is_banned(&node));
@@ -544,6 +557,10 @@ fn should_tell_a_busy_node_through_every_error_wrapper() {
         address: None,
     }
     .is_node_busy());
+
+    // A node that asks to be tried again later is working too
+    assert!(results_not_ready().is_node_busy());
+    assert!(DapiClientError::Transport(TransportError::Grpc(results_not_ready())).is_node_busy());
 
     assert!(!dapi_grpc::tonic::Status::unavailable("down").is_node_busy());
     assert!(!DapiClientError::NoAvailableAddresses.is_node_busy());
@@ -616,4 +633,59 @@ async fn should_keep_a_busy_node_of_a_short_list_available() {
 
     assert!(!client.address_list().is_banned(&busy));
     assert!(asked > 1, "a busy node is asked again later");
+}
+
+/// The newest block can be without its results for a moment. A client with a single node
+/// has to get its answer from that node once they are stored, so the node must not be banned.
+#[tokio::test]
+async fn should_retry_one_node_until_its_block_results_are_ready() {
+    let node: Address = "http://127.0.0.1:10321".parse().expect("valid address");
+    let address_list: AddressList = "http://127.0.0.1:10321"
+        .parse()
+        .expect("valid address list");
+
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&attempts);
+    let request = ScriptedRequest::new(move |_uri| {
+        if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            Err(TransportError::Grpc(results_not_ready()))
+        } else {
+            Ok(common::FakeResponse)
+        }
+    });
+    let client = DapiClient::new(address_list, RequestSettings::default());
+
+    client
+        .execute(request, GetBlocksRequest::SETTINGS_OVERRIDES)
+        .await
+        .expect("the node answers once the results are stored");
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert!(!client.address_list().is_banned(&node));
+}
+
+/// The same single node, down: without the header its answer is a failure, and it is banned.
+#[tokio::test]
+async fn should_ban_one_node_that_is_unavailable_without_saying_when_to_retry() {
+    let node: Address = "http://127.0.0.1:10322".parse().expect("valid address");
+    let address_list: AddressList = "http://127.0.0.1:10322"
+        .parse()
+        .expect("valid address list");
+    let request = ScriptedRequest::new(|_uri| {
+        Err(TransportError::Grpc(dapi_grpc::tonic::Status::unavailable(
+            "connection refused",
+        )))
+    });
+    let client = DapiClient::new(address_list, RequestSettings::default());
+
+    let error = client
+        .execute(request, GetBlocksRequest::SETTINGS_OVERRIDES)
+        .await
+        .expect_err("the only node is down");
+
+    assert!(matches!(
+        error.inner,
+        DapiClientError::NoAvailableAddressesToRetry(_)
+    ));
+    assert!(client.address_list().is_banned(&node));
 }

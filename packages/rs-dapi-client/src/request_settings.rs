@@ -45,7 +45,8 @@ pub struct RequestSettings {
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,
     /// Ban a DAPI address whose node answered that it is busy or rate limited (gRPC
-    /// `ResourceExhausted`).
+    /// `ResourceExhausted`), or that what was asked is not ready yet (gRPC `Unavailable`
+    /// with a `retry-after` header).
     ///
     /// Such a node is working. A request to a method with a tight limit of its own sets this
     /// to `false`: the request then moves to another node, and this one stays available to

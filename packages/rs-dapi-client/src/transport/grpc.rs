@@ -228,7 +228,16 @@ impl CanRetry for dapi_grpc::tonic::Status {
     }
 
     fn is_node_busy(&self) -> bool {
-        self.code() == dapi_grpc::tonic::Code::ResourceExhausted
+        use dapi_grpc::tonic::Code;
+
+        match self.code() {
+            Code::ResourceExhausted => true,
+            // A node that asks to be tried again later is working: what was asked is not
+            // ready yet, such as the results of a block rs-dapi's node has just stored.
+            // A node that is down, or a proxy in front of one, sends no such header.
+            Code::Unavailable => self.metadata().contains_key("retry-after"),
+            _ => false,
+        }
     }
 }
 

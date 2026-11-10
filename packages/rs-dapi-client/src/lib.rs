@@ -105,7 +105,8 @@ pub trait CanRetry {
     }
 
     /// Returns true if the node answered that it is busy or rate limited (gRPC
-    /// `ResourceExhausted`): it is working, and only refuses more of this work for now.
+    /// `ResourceExhausted`), or that what was asked is not ready yet (gRPC `Unavailable`
+    /// with a `retry-after` header): it is working, and only cannot serve this for now.
     /// A request can ask that a node is not banned for it, see
     /// [RequestSettings::ban_busy_address].
     fn is_node_busy(&self) -> bool {

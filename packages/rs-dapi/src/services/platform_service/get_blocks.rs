@@ -11,7 +11,8 @@ use chrono::DateTime;
 use dapi_grpc::platform::v0::get_blocks_response::get_blocks_response_v0::{Block, Transaction};
 use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
 use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_request};
-use dapi_grpc::tonic::{Request, Response};
+use dapi_grpc::tonic::metadata::MetadataValue;
+use dapi_grpc::tonic::{Request, Response, Status};
 use drive_proof_verifier::block_proof::transaction_hash;
 use drive_proof_verifier::types::blocks::MAX_BLOCKS_PER_REQUEST;
 
@@ -158,6 +159,11 @@ fn read_block(
     Ok(Some(built))
 }
 
+/// Seconds after which a block whose results were not stored yet is worth asking for again,
+/// sent as the `retry-after` header. Tenderdash stores the results right after the block, so
+/// this is the smallest value the header can carry.
+const RESULTS_RETRY_AFTER_SECS: u64 = 1;
+
 /// The results of a block this node holds. Tenderdash stores a block before its results, so
 /// the newest block can be without them for a moment. That is answered as `Unavailable`,
 /// which a client retries, where a height the node lacks is `NotFound`.
@@ -167,11 +173,22 @@ pub(super) fn held_block_results(
 ) -> DAPIResult<Vec<BlockTxResult>> {
     match results {
         Ok(results) => Ok(results.txs_results),
-        Err(error) if error.is_missing_tenderdash_height() => Err(DapiError::Unavailable(format!(
-            "the results of block {height} are not available yet"
-        ))),
+        Err(error) if error.is_missing_tenderdash_height() => Err(results_not_stored_yet(height)),
         Err(error) => Err(error),
     }
+}
+
+/// The answer for a block whose results are not stored yet. The node is working, and the
+/// `retry-after` header says so: the SDK reads it and retries without banning the node, as
+/// it would for any other `Unavailable` answer.
+fn results_not_stored_yet(height: u64) -> DapiError {
+    let mut status = Status::unavailable(format!(
+        "the results of block {height} are not available yet"
+    ));
+    status
+        .metadata_mut()
+        .insert("retry-after", MetadataValue::from(RESULTS_RETRY_AFTER_SECS));
+    DapiError::Status(status)
 }
 
 /// Validate the request, returning the heights it asks for and whether to prove them.
@@ -592,9 +609,12 @@ mod tests {
             )
         });
 
-        let error = result.unwrap_err();
-        assert!(matches!(&error, DapiError::Unavailable(message) if message.contains("block 6")));
-        assert_eq!(error.to_status().code(), Code::Unavailable);
+        let status = result.unwrap_err().to_status();
+        assert_eq!(status.code(), Code::Unavailable);
+        assert!(status.message().contains("block 6"));
+        // The SDK tells this answer from a node that is down by the header
+        let retry_after = status.metadata().get("retry-after").unwrap();
+        assert_eq!(retry_after.to_str().unwrap(), "1");
     }
 
     #[test]
