@@ -83,12 +83,7 @@ impl<C> Platform<C> {
         // `SumMode` mirrors `CountMode` 1:1 — same four variants
         // computed via the same `compute_aggregate_mode_and_check_limit`
         // helper. Map across the isomorphism.
-        let sum_mode = match mode {
-            CountMode::Aggregate => SumMode::Aggregate,
-            CountMode::GroupByIn => SumMode::GroupByIn,
-            CountMode::GroupByRange => SumMode::GroupByRange,
-            CountMode::GroupByCompound => SumMode::GroupByCompound,
-        };
+        let sum_mode = SumMode::from(mode);
 
         let drive_request = DocumentSumRequest {
             contract: contract_ref,

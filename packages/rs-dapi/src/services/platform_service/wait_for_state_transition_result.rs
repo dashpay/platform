@@ -406,7 +406,7 @@ fn transition_owner_id(state_transition_bytes: &[u8]) -> Option<Identifier> {
         .owner_id()
 }
 
-fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
+pub(super) fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
     if hash.len() != STATE_TRANSITION_HASH_SIZE {
         return Err(DapiError::InvalidArgument(format!(
             "state transition hash must be {STATE_TRANSITION_HASH_SIZE} bytes, got {}",

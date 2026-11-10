@@ -41,7 +41,7 @@ fn migrated_fixture(
         let conn = persister.lock_conn_for_test();
         conn.execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-             DELETE FROM refinery_schema_history WHERE version >= 20;",
+             DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
         .unwrap();
         for line in fixture.lines() {
@@ -70,7 +70,7 @@ fn migrated_fixture(
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
     }
     drop(persister);
     let migrated = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -83,7 +83,7 @@ fn migrated_fixture(
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 20);
+        assert_eq!(version, 21);
     }
     let consumer = records.pop().unwrap();
     let funding = records.pop().unwrap();

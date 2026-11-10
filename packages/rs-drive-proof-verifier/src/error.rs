@@ -1,3 +1,4 @@
+use crate::block_proof::BlockProofError;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
@@ -152,6 +153,11 @@ pub enum Error {
         #[source]
         error: dash_context_provider::ContextProviderError,
     },
+
+    /// A Tenderdash block proof does not hold, or the answer it came with says something
+    /// about the block that the proof does not bear out.
+    #[error("invalid block proof: {0}")]
+    InvalidBlockProof(#[from] BlockProofError),
 }
 
 impl From<drive::error::Error> for Error {

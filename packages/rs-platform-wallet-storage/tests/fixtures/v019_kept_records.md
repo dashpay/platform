@@ -10,11 +10,11 @@ encoding. The serde types used by these rows are compatible with `d631aaca`:
 TransactionRecord gained methods without changing its fields; TransactionContext,
 AccountType and InstantLock stayed the same; TransactionPayload appended variants;
 Address serde stayed unchanged. These are generated compatibility fixtures for
-the pending record format that reaches V020.
+the pending record format that reaches V021.
 
 The writer uses `blob::encode(TransactionRecord)`. Both rows belong under SQL
 `height = NULL`. Live-codec tests decode these exact bytes and assert their
-values and unchanged re-encoding; the V020 test asserts literal indexed keys.
+values and unchanged re-encoding; the V021 test asserts literal indexed keys.
 An incompatible dependency update must supply a historical decoder at that point.
 
 - `mempool`: `TransactionContext::Mempool`, transaction lock time 17.

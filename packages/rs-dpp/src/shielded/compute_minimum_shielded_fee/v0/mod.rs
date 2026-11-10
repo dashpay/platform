@@ -364,6 +364,58 @@ pub fn compute_token_pool_paid_shielded_fee_v0(
         ))
 }
 
+/// v0 of the `PrivateDocumentCreateFromShieldedPool` fee formula:
+///
+///   `fee = compute_minimum_shielded_fee_v0(num_actions)
+///          + entry_count × ((entry_size + entry_overhead_bytes) × (disk + processing) credits/byte
+///                           + entry_processing_fee)`
+///
+/// with `entry_overhead_bytes` and `entry_processing_fee` from `fee_version.private_document`.
+/// The overhead covers Drive's 16-byte header and what GroveDB's append adds per entry, so the
+/// fee covers the store's metered storage at every position and for every chunk power a store
+/// can take, and `execute_event/v0`'s `storage = min(real_storage, fee)` split never zeroes the
+/// proposer's share. All arithmetic is checked.
+pub fn compute_private_document_create_from_shielded_pool_fee_v0(
+    num_actions: usize,
+    entry_count: usize,
+    entry_size: u32,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+    let private_document = &platform_version.fee_version.private_document;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let entry_bytes = (entry_size as u64)
+        .checked_add(private_document.entry_overhead_bytes)
+        .ok_or(ProtocolError::Overflow(
+            "private document entry bytes overflow",
+        ))?;
+    let entry_fee = entry_bytes
+        .checked_mul(per_byte_rate)
+        .and_then(|storage_fee| storage_fee.checked_add(private_document.entry_processing_fee))
+        .ok_or(ProtocolError::Overflow(
+            "private document entry fee overflow",
+        ))?;
+    let entries_fee =
+        (entry_count as u64)
+            .checked_mul(entry_fee)
+            .ok_or(ProtocolError::Overflow(
+                "private document entries fee overflow",
+            ))?;
+    base_fee
+        .checked_add(entries_fee)
+        .ok_or(ProtocolError::Overflow(
+            "private document create fee overflow",
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
