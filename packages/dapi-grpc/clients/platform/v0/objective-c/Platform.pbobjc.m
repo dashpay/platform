@@ -451,6 +451,13 @@ GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusRequest);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusResponse);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending);
+GPBObjCClassDeclaration(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown);
 GPBObjCClassDeclaration(GetShieldedAnchorsRequest);
 GPBObjCClassDeclaration(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0);
 GPBObjCClassDeclaration(GetShieldedAnchorsResponse);
@@ -16339,6 +16346,380 @@ void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetRecentStateTransitionStatusRequest
+
+@implementation GetRecentStateTransitionStatusRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentStateTransitionStatusRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 *v0;
+} GetRecentStateTransitionStatusRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0),
+        .number = GetRecentStateTransitionStatusRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentStateTransitionStatusRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentStateTransitionStatusRequest_ClearVersionOneOfCase(GetRecentStateTransitionStatusRequest *message) {
+  GPBDescriptor *descriptor = [GetRecentStateTransitionStatusRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0
+
+@implementation GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0
+
+@dynamic stateTransitionHash;
+
+typedef struct GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *stateTransitionHash;
+} GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "stateTransitionHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0_FieldNumber_StateTransitionHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0__storage_, stateTransitionHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentStateTransitionStatusRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse
+
+@implementation GetRecentStateTransitionStatusResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentStateTransitionStatusResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *v0;
+} GetRecentStateTransitionStatusResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0),
+        .number = GetRecentStateTransitionStatusResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentStateTransitionStatusResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentStateTransitionStatusResponse_ClearVersionOneOfCase(GetRecentStateTransitionStatusResponse *message) {
+  GPBDescriptor *descriptor = [GetRecentStateTransitionStatusResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0
+
+@implementation GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0
+
+@dynamic statusOneOfCase;
+@dynamic committed;
+@dynamic pending;
+@dynamic unknown;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed *committed;
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending *pending;
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown *unknown;
+  ResponseMetadata *metadata;
+} GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "committed",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed),
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Committed,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_, committed),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "pending",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending),
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Pending,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_, pending),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "unknown",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown),
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Unknown,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_, unknown),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "status",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentStateTransitionStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_ClearStatusOneOfCase(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed
+
+@implementation GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed
+
+@dynamic height;
+@dynamic hasError, error;
+
+typedef struct GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed__storage_ {
+  uint32_t _has_storage_[1];
+  StateTransitionBroadcastError *error;
+  uint64_t height;
+} GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "height",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Height,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed__storage_, height),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "error",
+        .dataTypeSpecific.clazz = GPBObjCClass(StateTransitionBroadcastError),
+        .number = GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Error,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed__storage_, error),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending
+
+@implementation GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending
+
+
+typedef struct GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending__storage_ {
+  uint32_t _has_storage_[1];
+} GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown
+
+@implementation GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown
+
+
+typedef struct GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown__storage_ {
+  uint32_t _has_storage_[1];
+} GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetConsensusParamsRequest
 
 @implementation GetConsensusParamsRequest

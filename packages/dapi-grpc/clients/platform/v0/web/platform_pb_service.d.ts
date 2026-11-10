@@ -292,6 +292,15 @@ type PlatformwaitForStateTransitionResult = {
   readonly responseType: typeof platform_pb.WaitForStateTransitionResultResponse;
 };
 
+type PlatformgetRecentStateTransitionStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentStateTransitionStatusRequest;
+  readonly responseType: typeof platform_pb.GetRecentStateTransitionStatusResponse;
+};
+
 type PlatformgetConsensusParams = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -740,6 +749,7 @@ export class Platform {
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
+  static readonly getRecentStateTransitionStatus: PlatformgetRecentStateTransitionStatus;
   static readonly getConsensusParams: PlatformgetConsensusParams;
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
@@ -1107,6 +1117,15 @@ export class PlatformClient {
   waitForStateTransitionResult(
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.WaitForStateTransitionResultResponse|null) => void
+  ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
+  ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
   ): UnaryResponse;
   getConsensusParams(
     requestMessage: platform_pb.GetConsensusParamsRequest,

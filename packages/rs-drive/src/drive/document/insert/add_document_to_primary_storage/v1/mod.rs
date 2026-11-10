@@ -120,6 +120,9 @@ impl Drive {
             );
         }
 
+        // Creates start at revision one and accepted edits advance it by one; migration
+        // preserves those revisions. Crossing the encoding's sign bit requires over
+        // 2^63-2 writes to one document, so time-and-revision keys order reachable edits.
         let mut revision_key = encode_u64(block_info.time_ms);
         revision_key.extend(encode_u64(document.and_then(|d| d.revision()).unwrap_or(1)));
         let summable = info.document_type.documents_summable();

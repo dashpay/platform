@@ -271,6 +271,7 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     retries: Some(3),
     timeout: None,
     ban_failed_address: None,
+    ban_busy_address: None,
     connect_timeout: None,
     max_decoding_message_size: None,
 };

@@ -9,6 +9,8 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Blocks of the Platform chain and the state transitions in them
+pub mod blocks;
 /// Contract groups: a group's information, its members and the groups a contract is in
 pub mod contract_groups;
 /// Contract moderation query results

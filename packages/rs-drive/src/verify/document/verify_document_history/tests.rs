@@ -814,7 +814,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
 }
 
 #[test]
-fn should_reject_point_in_time_history_reads_only_after_activation() {
+fn should_construct_single_document_point_in_time_history_reads_after_activation() {
     let query = SingleDocumentDriveQuery {
         contract_id: [1; 32],
         document_type_name: "note".into(),
@@ -830,7 +830,7 @@ fn should_reject_point_in_time_history_reads_only_after_activation() {
     }
     assert!(query
         .construct_path_query(PlatformVersion::get(15).unwrap())
-        .is_err());
+        .is_ok());
 }
 
 #[test]

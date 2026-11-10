@@ -177,6 +177,20 @@ fn should_preserve_public_merged_queries_and_their_bytes_across_grove_versions()
         previous.drive.grove_version = GROVE_V4;
         let mut current = selected.clone();
         current.drive.grove_version = GROVE_V5;
+        // The new Grove merge is selected with the newer single-document builder.
+        // Keep layout 0 here for the released producer's history-query byte comparison.
+        current
+            .drive
+            .methods
+            .document
+            .query
+            .single_document_path_query = PlatformVersion::get(15)
+            .unwrap()
+            .drive
+            .methods
+            .document
+            .query
+            .single_document_path_query;
         let previous_queries = merged_public_queries(&drive, &previous);
         let current_queries = merged_public_queries(&drive, &current);
         assert_eq!(previous_queries.len(), current_queries.len());

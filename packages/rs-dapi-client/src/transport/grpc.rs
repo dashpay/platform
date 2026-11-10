@@ -226,6 +226,19 @@ impl CanRetry for dapi_grpc::tonic::Status {
             secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
         ))
     }
+
+    fn is_node_busy(&self) -> bool {
+        use dapi_grpc::tonic::Code;
+
+        match self.code() {
+            Code::ResourceExhausted => true,
+            // A node that asks to be tried again later is working: what was asked is not
+            // ready yet, such as the results of a block rs-dapi's node has just stored.
+            // A node that is down, or a proxy in front of one, sends no such header.
+            Code::Unavailable => self.metadata().contains_key("retry-after"),
+            _ => false,
+        }
+    }
 }
 
 /// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.
@@ -568,10 +581,22 @@ impl_transport_request_grpc!(
         timeout: Some(Duration::from_secs(30)),
         retries: Some(3),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         max_decoding_message_size: None,
     },
     wait_for_state_transition_result
+);
+
+// rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetRecentStateTransitionStatusRequest,
+    platform_proto::GetRecentStateTransitionStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_state_transition_status
 );
 
 impl_transport_request_grpc!(
@@ -805,7 +830,8 @@ impl_transport_request_grpc!(
         timeout: Some(LARGE_RESPONSE_TIMEOUT),
         // rs-dapi refuses this method when too many are in progress. A busy node is not a
         // failed one, and a ban would take it away from the client's other requests too.
-        ban_failed_address: Some(false),
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
         ..RequestSettings::default()
     },
     get_owner_transactions_in_block
@@ -823,7 +849,8 @@ impl_transport_request_grpc!(
         timeout: Some(LARGE_RESPONSE_TIMEOUT),
         // The gateway limits this method far below every other one. A ban lasts until the
         // limit resets and would take the node away from the client's other requests too.
-        ban_failed_address: Some(false),
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
         ..RequestSettings::default()
     },
     get_blocks
@@ -1013,6 +1040,7 @@ impl_transport_request_grpc!(
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         retries: None,
         max_decoding_message_size: None,

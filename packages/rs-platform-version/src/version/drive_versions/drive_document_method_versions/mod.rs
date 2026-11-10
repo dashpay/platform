@@ -146,6 +146,14 @@ pub struct DriveDocumentQueryMethodVersions {
     /// on such a type (`DocumentQuery::required_protocol_version` in
     /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, shared by prover and
+    /// verifier. 0 preserves released producers' queries and reads the current pointer when
+    /// verifying a newer producer's composite-layout execution proof. 1 (protocol version 15)
+    /// also supports time-bounded reads: the newest retained revision at or before the time,
+    /// highest revision first at equal times, or absence before the first retained entry.
+    /// It states both caps of a maybe-contested query for merge generation 2, and refuses
+    /// history documents in that status at a block time because contests keep no history.
+    pub single_document_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

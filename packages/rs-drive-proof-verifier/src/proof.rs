@@ -1,3 +1,5 @@
+/// Blocks and the transactions in them, verified against Tenderdash block proofs
+pub mod blocks;
 /// Verified chained-document (provable semi-join) result: two grovedb
 /// proofs — the inner indexOnly page and the outer by-ids fetch derived
 /// from its proven values — bound to one quorum-signed root.

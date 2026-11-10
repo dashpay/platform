@@ -11,8 +11,10 @@ use chrono::DateTime;
 use dapi_grpc::platform::v0::get_blocks_response::get_blocks_response_v0::{Block, Transaction};
 use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
 use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_request};
-use dapi_grpc::tonic::{Request, Response};
-use sha2::{Digest, Sha256};
+use dapi_grpc::tonic::metadata::MetadataValue;
+use dapi_grpc::tonic::{Request, Response, Status};
+use drive_proof_verifier::block_proof::transaction_hash;
+use drive_proof_verifier::types::blocks::MAX_BLOCKS_PER_REQUEST;
 
 use super::block_proof::{build_block_proof, check_block_contents, check_block_fields};
 use super::error_mapping::base64_decode;
@@ -23,8 +25,6 @@ use crate::clients::tenderdash_client::{
 };
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::{PlatformServiceImpl, run_holding_permit};
-
-const MAX_BLOCKS_PER_REQUEST: u32 = 10;
 
 /// Keeps a response within the 4 MiB a gRPC client decodes by default. A block can hold
 /// 2 MiB, so ten full blocks would not fit, while any single block does.
@@ -159,6 +159,11 @@ fn read_block(
     Ok(Some(built))
 }
 
+/// Seconds after which a block whose results were not stored yet is worth asking for again,
+/// sent as the `retry-after` header. Tenderdash stores the results right after the block, so
+/// this is the smallest value the header can carry.
+const RESULTS_RETRY_AFTER_SECS: u64 = 1;
+
 /// The results of a block this node holds. Tenderdash stores a block before its results, so
 /// the newest block can be without them for a moment. That is answered as `Unavailable`,
 /// which a client retries, where a height the node lacks is `NotFound`.
@@ -168,11 +173,22 @@ pub(super) fn held_block_results(
 ) -> DAPIResult<Vec<BlockTxResult>> {
     match results {
         Ok(results) => Ok(results.txs_results),
-        Err(error) if error.is_missing_tenderdash_height() => Err(DapiError::Unavailable(format!(
-            "the results of block {height} are not available yet"
-        ))),
+        Err(error) if error.is_missing_tenderdash_height() => Err(results_not_stored_yet(height)),
         Err(error) => Err(error),
     }
+}
+
+/// The answer for a block whose results are not stored yet. The node is working, and the
+/// `retry-after` header says so: the SDK reads it and retries without banning the node, as
+/// it would for any other `Unavailable` answer.
+fn results_not_stored_yet(height: u64) -> DapiError {
+    let mut status = Status::unavailable(format!(
+        "the results of block {height} are not available yet"
+    ));
+    status
+        .metadata_mut()
+        .insert("retry-after", MetadataValue::from(RESULTS_RETRY_AFTER_SECS));
+    DapiError::Status(status)
 }
 
 /// Validate the request, returning the heights it asks for and whether to prove them.
@@ -258,7 +274,7 @@ fn build_block(
                 DapiError::Internal(format!("result {index} of block {height} is not base64"))
             })?;
             Ok(Transaction {
-                hash: Sha256::digest(&state_transition).to_vec(),
+                hash: transaction_hash(&state_transition).to_vec(),
                 state_transition,
                 code: result.code,
                 result_data,
@@ -309,6 +325,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use dapi_grpc::tonic::Code;
     use serde_json::json;
+    use sha2::{Digest, Sha256};
     use std::time::Duration;
 
     fn request(start_height: u64, count: u32) -> GetBlocksRequest {
@@ -592,9 +609,12 @@ mod tests {
             )
         });
 
-        let error = result.unwrap_err();
-        assert!(matches!(&error, DapiError::Unavailable(message) if message.contains("block 6")));
-        assert_eq!(error.to_status().code(), Code::Unavailable);
+        let status = result.unwrap_err().to_status();
+        assert_eq!(status.code(), Code::Unavailable);
+        assert!(status.message().contains("block 6"));
+        // The SDK tells this answer from a node that is down by the header
+        let retry_after = status.metadata().get("retry-after").unwrap();
+        assert_eq!(retry_after.to_str().unwrap(), "1");
     }
 
     #[test]

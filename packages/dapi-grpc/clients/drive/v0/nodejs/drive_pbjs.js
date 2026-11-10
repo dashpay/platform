@@ -1651,6 +1651,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getRecentStateTransitionStatus}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getRecentStateTransitionStatusCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} [response] GetRecentStateTransitionStatusResponse
+                         */
+
+                        /**
+                         * Calls getRecentStateTransitionStatus.
+                         * @function getRecentStateTransitionStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest} request GetRecentStateTransitionStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getRecentStateTransitionStatusCallback} callback Node-style callback called with the error, if any, and GetRecentStateTransitionStatusResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getRecentStateTransitionStatus = function getRecentStateTransitionStatus(request, callback) {
+                            return this.rpcCall(getRecentStateTransitionStatus, $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest, $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse, request, callback);
+                        }, "name", { value: "getRecentStateTransitionStatus" });
+
+                        /**
+                         * Calls getRecentStateTransitionStatus.
+                         * @function getRecentStateTransitionStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest} request GetRecentStateTransitionStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getConsensusParams}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getConsensusParamsCallback
@@ -59978,6 +60011,1480 @@ $root.org = (function() {
                         })();
 
                         return WaitForStateTransitionResultResponse;
+                    })();
+
+                    v0.GetRecentStateTransitionStatusRequest = (function() {
+
+                        /**
+                         * Properties of a GetRecentStateTransitionStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentStateTransitionStatusRequest
+                         * @property {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0|null} [v0] GetRecentStateTransitionStatusRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentStateTransitionStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentStateTransitionStatusRequest.
+                         * @implements IGetRecentStateTransitionStatusRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest=} [properties] Properties to set
+                         */
+                        function GetRecentStateTransitionStatusRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentStateTransitionStatusRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @instance
+                         */
+                        GetRecentStateTransitionStatusRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentStateTransitionStatusRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentStateTransitionStatusRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentStateTransitionStatusRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest} GetRecentStateTransitionStatusRequest instance
+                         */
+                        GetRecentStateTransitionStatusRequest.create = function create(properties) {
+                            return new GetRecentStateTransitionStatusRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentStateTransitionStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest} message GetRecentStateTransitionStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentStateTransitionStatusRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentStateTransitionStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusRequest} message GetRecentStateTransitionStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentStateTransitionStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentStateTransitionStatusRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest} GetRecentStateTransitionStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentStateTransitionStatusRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentStateTransitionStatusRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest} GetRecentStateTransitionStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentStateTransitionStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentStateTransitionStatusRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentStateTransitionStatusRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentStateTransitionStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest} GetRecentStateTransitionStatusRequest
+                         */
+                        GetRecentStateTransitionStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentStateTransitionStatusRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest} message GetRecentStateTransitionStatusRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentStateTransitionStatusRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentStateTransitionStatusRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentStateTransitionStatusRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentStateTransitionStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                             * @interface IGetRecentStateTransitionStatusRequestV0
+                             * @property {Uint8Array|null} [stateTransitionHash] GetRecentStateTransitionStatusRequestV0 stateTransitionHash
+                             */
+
+                            /**
+                             * Constructs a new GetRecentStateTransitionStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest
+                             * @classdesc Represents a GetRecentStateTransitionStatusRequestV0.
+                             * @implements IGetRecentStateTransitionStatusRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0=} [properties] Properties to set
+                             */
+                            function GetRecentStateTransitionStatusRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentStateTransitionStatusRequestV0 stateTransitionHash.
+                             * @member {Uint8Array} stateTransitionHash
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @instance
+                             */
+                            GetRecentStateTransitionStatusRequestV0.prototype.stateTransitionHash = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new GetRecentStateTransitionStatusRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0} GetRecentStateTransitionStatusRequestV0 instance
+                             */
+                            GetRecentStateTransitionStatusRequestV0.create = function create(properties) {
+                                return new GetRecentStateTransitionStatusRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentStateTransitionStatusRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0} message GetRecentStateTransitionStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentStateTransitionStatusRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.stateTransitionHash != null && Object.hasOwnProperty.call(message, "stateTransitionHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.stateTransitionHash);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentStateTransitionStatusRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.IGetRecentStateTransitionStatusRequestV0} message GetRecentStateTransitionStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentStateTransitionStatusRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentStateTransitionStatusRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0} GetRecentStateTransitionStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentStateTransitionStatusRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.stateTransitionHash = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentStateTransitionStatusRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0} GetRecentStateTransitionStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentStateTransitionStatusRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentStateTransitionStatusRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentStateTransitionStatusRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                    if (!(message.stateTransitionHash && typeof message.stateTransitionHash.length === "number" || $util.isString(message.stateTransitionHash)))
+                                        return "stateTransitionHash: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentStateTransitionStatusRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0} GetRecentStateTransitionStatusRequestV0
+                             */
+                            GetRecentStateTransitionStatusRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0();
+                                if (object.stateTransitionHash != null)
+                                    if (typeof object.stateTransitionHash === "string")
+                                        $util.base64.decode(object.stateTransitionHash, message.stateTransitionHash = $util.newBuffer($util.base64.length(object.stateTransitionHash)), 0);
+                                    else if (object.stateTransitionHash.length >= 0)
+                                        message.stateTransitionHash = object.stateTransitionHash;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentStateTransitionStatusRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0} message GetRecentStateTransitionStatusRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentStateTransitionStatusRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.stateTransitionHash = "";
+                                    else {
+                                        object.stateTransitionHash = [];
+                                        if (options.bytes !== Array)
+                                            object.stateTransitionHash = $util.newBuffer(object.stateTransitionHash);
+                                    }
+                                if (message.stateTransitionHash != null && message.hasOwnProperty("stateTransitionHash"))
+                                    object.stateTransitionHash = options.bytes === String ? $util.base64.encode(message.stateTransitionHash, 0, message.stateTransitionHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateTransitionHash) : message.stateTransitionHash;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentStateTransitionStatusRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentStateTransitionStatusRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentStateTransitionStatusRequestV0;
+                        })();
+
+                        return GetRecentStateTransitionStatusRequest;
+                    })();
+
+                    v0.GetRecentStateTransitionStatusResponse = (function() {
+
+                        /**
+                         * Properties of a GetRecentStateTransitionStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentStateTransitionStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0|null} [v0] GetRecentStateTransitionStatusResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentStateTransitionStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentStateTransitionStatusResponse.
+                         * @implements IGetRecentStateTransitionStatusResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusResponse=} [properties] Properties to set
+                         */
+                        function GetRecentStateTransitionStatusResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentStateTransitionStatusResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @instance
+                         */
+                        GetRecentStateTransitionStatusResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentStateTransitionStatusResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentStateTransitionStatusResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentStateTransitionStatusResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} GetRecentStateTransitionStatusResponse instance
+                         */
+                        GetRecentStateTransitionStatusResponse.create = function create(properties) {
+                            return new GetRecentStateTransitionStatusResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentStateTransitionStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusResponse} message GetRecentStateTransitionStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentStateTransitionStatusResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentStateTransitionStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentStateTransitionStatusResponse} message GetRecentStateTransitionStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentStateTransitionStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentStateTransitionStatusResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} GetRecentStateTransitionStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentStateTransitionStatusResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentStateTransitionStatusResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} GetRecentStateTransitionStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentStateTransitionStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentStateTransitionStatusResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentStateTransitionStatusResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentStateTransitionStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} GetRecentStateTransitionStatusResponse
+                         */
+                        GetRecentStateTransitionStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentStateTransitionStatusResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse} message GetRecentStateTransitionStatusResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentStateTransitionStatusResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentStateTransitionStatusResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentStateTransitionStatusResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentStateTransitionStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                             * @interface IGetRecentStateTransitionStatusResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted|null} [committed] GetRecentStateTransitionStatusResponseV0 committed
+                             * @property {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending|null} [pending] GetRecentStateTransitionStatusResponseV0 pending
+                             * @property {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown|null} [unknown] GetRecentStateTransitionStatusResponseV0 unknown
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetRecentStateTransitionStatusResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetRecentStateTransitionStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse
+                             * @classdesc Represents a GetRecentStateTransitionStatusResponseV0.
+                             * @implements IGetRecentStateTransitionStatusResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0=} [properties] Properties to set
+                             */
+                            function GetRecentStateTransitionStatusResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentStateTransitionStatusResponseV0 committed.
+                             * @member {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted|null|undefined} committed
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             */
+                            GetRecentStateTransitionStatusResponseV0.prototype.committed = null;
+
+                            /**
+                             * GetRecentStateTransitionStatusResponseV0 pending.
+                             * @member {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending|null|undefined} pending
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             */
+                            GetRecentStateTransitionStatusResponseV0.prototype.pending = null;
+
+                            /**
+                             * GetRecentStateTransitionStatusResponseV0 unknown.
+                             * @member {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown|null|undefined} unknown
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             */
+                            GetRecentStateTransitionStatusResponseV0.prototype.unknown = null;
+
+                            /**
+                             * GetRecentStateTransitionStatusResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             */
+                            GetRecentStateTransitionStatusResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetRecentStateTransitionStatusResponseV0 status.
+                             * @member {"committed"|"pending"|"unknown"|undefined} status
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetRecentStateTransitionStatusResponseV0.prototype, "status", {
+                                get: $util.oneOfGetter($oneOfFields = ["committed", "pending", "unknown"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetRecentStateTransitionStatusResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0} GetRecentStateTransitionStatusResponseV0 instance
+                             */
+                            GetRecentStateTransitionStatusResponseV0.create = function create(properties) {
+                                return new GetRecentStateTransitionStatusResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentStateTransitionStatusResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0} message GetRecentStateTransitionStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentStateTransitionStatusResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.committed != null && Object.hasOwnProperty.call(message, "committed"))
+                                    $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.encode(message.committed, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.pending != null && Object.hasOwnProperty.call(message, "pending"))
+                                    $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.encode(message.pending, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.unknown != null && Object.hasOwnProperty.call(message, "unknown"))
+                                    $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.encode(message.unknown, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentStateTransitionStatusResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.IGetRecentStateTransitionStatusResponseV0} message GetRecentStateTransitionStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentStateTransitionStatusResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentStateTransitionStatusResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0} GetRecentStateTransitionStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentStateTransitionStatusResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.committed = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.pending = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.unknown = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentStateTransitionStatusResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0} GetRecentStateTransitionStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentStateTransitionStatusResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentStateTransitionStatusResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentStateTransitionStatusResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.committed != null && message.hasOwnProperty("committed")) {
+                                    properties.status = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.verify(message.committed);
+                                        if (error)
+                                            return "committed." + error;
+                                    }
+                                }
+                                if (message.pending != null && message.hasOwnProperty("pending")) {
+                                    if (properties.status === 1)
+                                        return "status: multiple values";
+                                    properties.status = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.verify(message.pending);
+                                        if (error)
+                                            return "pending." + error;
+                                    }
+                                }
+                                if (message.unknown != null && message.hasOwnProperty("unknown")) {
+                                    if (properties.status === 1)
+                                        return "status: multiple values";
+                                    properties.status = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.verify(message.unknown);
+                                        if (error)
+                                            return "unknown." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentStateTransitionStatusResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0} GetRecentStateTransitionStatusResponseV0
+                             */
+                            GetRecentStateTransitionStatusResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0();
+                                if (object.committed != null) {
+                                    if (typeof object.committed !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.committed: object expected");
+                                    message.committed = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.fromObject(object.committed);
+                                }
+                                if (object.pending != null) {
+                                    if (typeof object.pending !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.pending: object expected");
+                                    message.pending = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.fromObject(object.pending);
+                                }
+                                if (object.unknown != null) {
+                                    if (typeof object.unknown !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.unknown: object expected");
+                                    message.unknown = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.fromObject(object.unknown);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentStateTransitionStatusResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0} message GetRecentStateTransitionStatusResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentStateTransitionStatusResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.committed != null && message.hasOwnProperty("committed")) {
+                                    object.committed = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.toObject(message.committed, options);
+                                    if (options.oneofs)
+                                        object.status = "committed";
+                                }
+                                if (message.pending != null && message.hasOwnProperty("pending")) {
+                                    object.pending = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.toObject(message.pending, options);
+                                    if (options.oneofs)
+                                        object.status = "pending";
+                                }
+                                if (message.unknown != null && message.hasOwnProperty("unknown")) {
+                                    object.unknown = $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.toObject(message.unknown, options);
+                                    if (options.oneofs)
+                                        object.status = "unknown";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentStateTransitionStatusResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentStateTransitionStatusResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetRecentStateTransitionStatusResponseV0.Committed = (function() {
+
+                                /**
+                                 * Properties of a Committed.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @interface ICommitted
+                                 * @property {number|Long|null} [height] Committed height
+                                 * @property {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null} [error] Committed error
+                                 */
+
+                                /**
+                                 * Constructs a new Committed.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @classdesc Represents a Committed.
+                                 * @implements ICommitted
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted=} [properties] Properties to set
+                                 */
+                                function Committed(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Committed height.
+                                 * @member {number|Long} height
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @instance
+                                 */
+                                Committed.prototype.height = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Committed error.
+                                 * @member {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null|undefined} error
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @instance
+                                 */
+                                Committed.prototype.error = null;
+
+                                /**
+                                 * Creates a new Committed instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed} Committed instance
+                                 */
+                                Committed.create = function create(properties) {
+                                    return new Committed(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Committed message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted} message Committed message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Committed.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.height != null && Object.hasOwnProperty.call(message, "height"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.height);
+                                    if (message.error != null && Object.hasOwnProperty.call(message, "error"))
+                                        $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.encode(message.error, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Committed message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.ICommitted} message Committed message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Committed.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Committed message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed} Committed
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Committed.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.height = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Committed message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed} Committed
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Committed.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Committed message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Committed.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (!$util.isInteger(message.height) && !(message.height && $util.isInteger(message.height.low) && $util.isInteger(message.height.high)))
+                                            return "height: integer|Long expected";
+                                    if (message.error != null && message.hasOwnProperty("error")) {
+                                        var error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.verify(message.error);
+                                        if (error)
+                                            return "error." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Committed message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed} Committed
+                                 */
+                                Committed.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed();
+                                    if (object.height != null)
+                                        if ($util.Long)
+                                            (message.height = $util.Long.fromValue(object.height)).unsigned = true;
+                                        else if (typeof object.height === "string")
+                                            message.height = parseInt(object.height, 10);
+                                        else if (typeof object.height === "number")
+                                            message.height = object.height;
+                                        else if (typeof object.height === "object")
+                                            message.height = new $util.LongBits(object.height.low >>> 0, object.height.high >>> 0).toNumber(true);
+                                    if (object.error != null) {
+                                        if (typeof object.error !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.error: object expected");
+                                        message.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.fromObject(object.error);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Committed message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed} message Committed
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Committed.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.height = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.height = options.longs === String ? "0" : 0;
+                                        object.error = null;
+                                    }
+                                    if (message.height != null && message.hasOwnProperty("height"))
+                                        if (typeof message.height === "number")
+                                            object.height = options.longs === String ? String(message.height) : message.height;
+                                        else
+                                            object.height = options.longs === String ? $util.Long.prototype.toString.call(message.height) : options.longs === Number ? new $util.LongBits(message.height.low >>> 0, message.height.high >>> 0).toNumber(true) : message.height;
+                                    if (message.error != null && message.hasOwnProperty("error"))
+                                        object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Committed to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Committed.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Committed;
+                            })();
+
+                            GetRecentStateTransitionStatusResponseV0.Pending = (function() {
+
+                                /**
+                                 * Properties of a Pending.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @interface IPending
+                                 */
+
+                                /**
+                                 * Constructs a new Pending.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @classdesc Represents a Pending.
+                                 * @implements IPending
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending=} [properties] Properties to set
+                                 */
+                                function Pending(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Creates a new Pending instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending} Pending instance
+                                 */
+                                Pending.create = function create(properties) {
+                                    return new Pending(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Pending message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending} message Pending message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Pending.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Pending message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IPending} message Pending message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Pending.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Pending message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending} Pending
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Pending.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Pending message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending} Pending
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Pending.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Pending message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Pending.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Pending message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending} Pending
+                                 */
+                                Pending.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending)
+                                        return object;
+                                    return new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending();
+                                };
+
+                                /**
+                                 * Creates a plain object from a Pending message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending} message Pending
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Pending.toObject = function toObject() {
+                                    return {};
+                                };
+
+                                /**
+                                 * Converts this Pending to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Pending.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Pending;
+                            })();
+
+                            GetRecentStateTransitionStatusResponseV0.Unknown = (function() {
+
+                                /**
+                                 * Properties of an Unknown.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @interface IUnknown
+                                 */
+
+                                /**
+                                 * Constructs a new Unknown.
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0
+                                 * @classdesc Represents an Unknown.
+                                 * @implements IUnknown
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown=} [properties] Properties to set
+                                 */
+                                function Unknown(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Creates a new Unknown instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown} Unknown instance
+                                 */
+                                Unknown.create = function create(properties) {
+                                    return new Unknown(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Unknown message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown} message Unknown message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Unknown.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Unknown message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.IUnknown} message Unknown message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Unknown.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an Unknown message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown} Unknown
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Unknown.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an Unknown message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown} Unknown
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Unknown.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an Unknown message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Unknown.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an Unknown message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown} Unknown
+                                 */
+                                Unknown.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown)
+                                        return object;
+                                    return new $root.org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown();
+                                };
+
+                                /**
+                                 * Creates a plain object from an Unknown message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown} message Unknown
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Unknown.toObject = function toObject() {
+                                    return {};
+                                };
+
+                                /**
+                                 * Converts this Unknown to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Unknown.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Unknown;
+                            })();
+
+                            return GetRecentStateTransitionStatusResponseV0;
+                        })();
+
+                        return GetRecentStateTransitionStatusResponse;
                     })();
 
                     v0.GetConsensusParamsRequest = (function() {

@@ -577,6 +577,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getIdentityByPublicKeyHash",
                 "getIdentityByNonUniquePublicKeyHash",
                 "waitForStateTransitionResult",
+                "getRecentStateTransitionStatus",
                 "getConsensusParams",
                 "getProtocolVersionUpgradeState",
                 "getProtocolVersionUpgradeVoteStatus",
