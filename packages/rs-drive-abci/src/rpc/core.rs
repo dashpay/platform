@@ -3,11 +3,12 @@ use dpp::dashcore::consensus::encode::deserialize_partial;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
+use dpp::dashcore::{Block, BlockHash, ProTxHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
-    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
-    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    AssetUnlockStatusResult, DMNState, ExtendedQuorumDetails, ExtendedQuorumListResult,
+    GetChainTipsResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
+    SoftforkInfo,
 };
 use dpp::dashcore_rpc::json::GetRawTransactionResult;
 use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
@@ -179,8 +180,14 @@ pub trait CoreRPCLike {
         block: u32,
     ) -> Result<MasternodeListDiff, Error>;
 
-    // /// Get the detailed information about a deterministic masternode
-    // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+    /// Get the state of the masternode `pro_tx_hash` in Core's masternode list at the block at
+    /// `height` (`protx info` at that block's hash). Only ask for a chain locked height: the
+    /// answer is then the same on every node.
+    fn get_masternode_state(
+        &self,
+        pro_tx_hash: &ProTxHash,
+        height: CoreHeight,
+    ) -> Result<DMNState, Error>;
 
     /// Verify Instant Lock signature
     /// If `max_height` is provided the chain lock will be verified
@@ -550,18 +557,67 @@ impl CoreRPCLike for DefaultCoreRPC {
         };
         coinbase_payload_version_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
     }
+
+    fn get_masternode_state(
+        &self,
+        pro_tx_hash: &ProTxHash,
+        height: CoreHeight,
+    ) -> Result<DMNState, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let args = [
+            Value::String("info".to_string()),
+            // Core's form of the hash. `ProTxHash::to_hex` reverses the bytes, and Core then
+            // finds no such masternode.
+            Value::String(pro_tx_hash.to_string()),
+            Value::String(block_hash.to_string()),
+        ];
+        let answer = retry!(self.inner.call::<Value>("protx", &args))?;
+        masternode_state_from_protx_info(pro_tx_hash, answer)
+    }
+}
+
+/// The `state` of Core's `protx info` answer for `pro_tx_hash`, read on its own.
+///
+/// The rest of the answer is not read: it carries fields the RPC client's typed answer cannot
+/// read for every masternode (`operatorReward` is a decimal such as `13.37`, read there as an
+/// integer) or that differ between nodes (`metaInfo`), and a failed read would fail the block.
+/// The state is the one `protx listdiff` lists, read the same way.
+fn masternode_state_from_protx_info(
+    pro_tx_hash: &ProTxHash,
+    mut answer: Value,
+) -> Result<DMNState, Error> {
+    let answered_for = answer.get("proTxHash").and_then(Value::as_str);
+    if answered_for != Some(pro_tx_hash.to_string().as_str()) {
+        return Err(Error::UnexpectedStructure(format!(
+            "protx info for {pro_tx_hash} answered for {answered_for:?}"
+        )));
+    }
+    let state = answer.get_mut("state").map(Value::take).ok_or_else(|| {
+        Error::UnexpectedStructure(format!("protx info for {pro_tx_hash} has no state"))
+    })?;
+    serde_json::from_value(state).map_err(|error| {
+        Error::UnexpectedStructure(format!(
+            "protx info for {pro_tx_hash} has a state that cannot be read: {error}"
+        ))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{coinbase_payload_version_from_coinbase, credit_pool_balance_from_coinbase};
+    use super::{
+        coinbase_payload_version_from_coinbase, credit_pool_balance_from_coinbase,
+        masternode_state_from_protx_info,
+    };
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::consensus::serialize;
     use dpp::dashcore::hash_types::{MerkleRootMasternodeList, MerkleRootQuorums};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
     use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::ProTxHash;
     use dpp::dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut};
+    use serde_json::json;
+    use std::str::FromStr;
 
     const BALANCE_DUFFS: u64 = 3_700_000_000_000;
 
@@ -712,13 +768,17 @@ mod tests {
     /// answers recorded from Dash Core v24.0.0-rc.3 and v23.1.8.
     mod fork_info {
         use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-        use dpp::dashcore_rpc::dashcore_rpc_json::{SoftforkInfo, SoftforkType};
+        use dpp::dashcore::ProTxHash;
+        use dpp::dashcore_rpc::dashcore_rpc_json::{
+            MasternodeListDiff, SoftforkInfo, SoftforkType,
+        };
         use dpp::dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
         use dpp::dashcore_rpc::jsonrpc::simple_http::Error as HttpError;
         use dpp::dashcore_rpc::Error;
         use serde_json::{json, Value};
         use std::io::{BufRead, BufReader, Read, Write};
         use std::net::{TcpListener, TcpStream};
+        use std::str::FromStr;
         use std::sync::{Arc, Mutex};
         use std::thread;
 
@@ -820,6 +880,7 @@ mod tests {
         struct MockCore {
             url: String,
             asked: Arc<Mutex<Vec<String>>>,
+            params: Arc<Mutex<Vec<(String, Value)>>>,
         }
 
         impl MockCore {
@@ -832,17 +893,20 @@ mod tests {
                     listener.local_addr().expect("mock core address")
                 );
                 let asked = Arc::new(Mutex::new(Vec::new()));
+                let params = Arc::new(Mutex::new(Vec::new()));
                 let recorder = Arc::clone(&asked);
+                let params_recorder = Arc::clone(&params);
                 let answers = Arc::new(Mutex::new(answers));
                 thread::spawn(move || {
                     for stream in listener.incoming() {
                         let Ok(stream) = stream else { return };
                         let answers = Arc::clone(&answers);
                         let recorder = Arc::clone(&recorder);
-                        thread::spawn(move || serve(stream, &answers, &recorder));
+                        let params_recorder = Arc::clone(&params_recorder);
+                        thread::spawn(move || serve(stream, &answers, &recorder, &params_recorder));
                     }
                 });
-                MockCore { url, asked }
+                MockCore { url, asked, params }
             }
 
             fn rpc(&self) -> DefaultCoreRPC {
@@ -853,6 +917,17 @@ mod tests {
             /// The methods asked so far, in order.
             fn asked(&self) -> Vec<String> {
                 self.asked.lock().expect("asked lock").clone()
+            }
+
+            /// The params of every request for `method` so far, in order.
+            fn params_of(&self, method: &str) -> Vec<Value> {
+                self.params
+                    .lock()
+                    .expect("params lock")
+                    .iter()
+                    .filter(|(asked, _)| asked == method)
+                    .map(|(_, params)| params.clone())
+                    .collect()
             }
         }
 
@@ -879,6 +954,7 @@ mod tests {
             stream: TcpStream,
             answers: &Mutex<Vec<(&'static str, Answer)>>,
             asked: &Mutex<Vec<String>>,
+            params: &Mutex<Vec<(String, Value)>>,
         ) {
             let mut writer = stream.try_clone().expect("clone mock core stream");
             let mut reader = BufReader::new(stream);
@@ -909,6 +985,10 @@ mod tests {
                     .expect("request method")
                     .to_string();
                 asked.lock().expect("asked lock").push(method.clone());
+                params
+                    .lock()
+                    .expect("params lock")
+                    .push((method.clone(), request["params"].clone()));
 
                 let json =
                     |text: &str| serde_json::from_str::<Value>(text).expect("answer is JSON");
@@ -941,6 +1021,76 @@ mod tests {
                 )
                 .expect("write response");
             }
+        }
+
+        /// A block hash `getblockhash` answers, as Core prints it.
+        const BLOCK_HASH: &str =
+            "\"74b4fb2caeeebbc7cd5dcc50b58532d983f0e5c87f3ac729c6d47f0ace76b97d\"";
+
+        /// MN_L2 of the legacy operator key recording, as Core prints its hash.
+        const MN_L2: &str = "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b";
+
+        /// A `protx info` answer for MN_L2 as Dash Core prints one, with an operator reward that
+        /// is not a whole percentage and the node's own meta info.
+        const PROTX_INFO: &str = r#"{
+          "type": "Regular",
+          "proTxHash": "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b",
+          "collateralHash": "2d3a9f3c4cfa3dfba1b2b2b6f6e0e4cbbd2f6a6a2f7f8b5f4c3a8b0c1d2e3f40",
+          "collateralIndex": 0,
+          "collateralAddress": "yMY3XstUm4p29eX3GLuRggyy9o8tQhp4HP",
+          "operatorReward": 13.37,
+          "state": {"version": 1, "service": "127.0.0.1:30002", "addresses": {"core_p2p": ["127.0.0.1:30002"]}, "registeredHeight": 302, "lastPaidHeight": 398, "consecutivePayments": 0, "PoSePenalty": 0, "PoSeRevivedHeight": -1, "PoSeBanHeight": -1, "revocationReason": 0, "ownerAddress": "yhKZ8Zy1243u88wFujwkScuW9Lkomo2NHZ", "votingAddress": "yhUTNhZjweRvHEJ43JUefpTuHavmDh3LjP", "payoutAddress": "yXCxDa7nTBA31La9SVxh2Dr5k9BrF6JBcJ", "pubKeyOperator": "910633a672392e26860cbff612b28d84f71beb34c2092d015b0d522905d628d38d746c1088c654632c65c6a7f008095d", "operatorPayoutAddress": "yMY3XstUm4p29eX3GLuRggyy9o8tQhp4HP"},
+          "confirmations": 48,
+          "metaInfo": {
+            "lastDSQ": 0,
+            "mixingTxCount": 0,
+            "outboundAttemptCount": 0,
+            "lastOutboundAttempt": 0,
+            "lastOutboundAttemptElapsed": 1762400000,
+            "lastOutboundSuccess": 0,
+            "lastOutboundSuccessElapsed": 1762400000
+          }
+        }"#;
+
+        /// The state of a masternode at a Core height is `protx info` for the masternode's hash
+        /// in Core's form at the hash of the block at that height, and its state is read whatever
+        /// the rest of the answer holds.
+        #[test]
+        fn should_ask_protx_info_for_the_masternode_at_the_block_of_the_height() {
+            let core = MockCore::start(vec![
+                ("getblockhash", Answer::Result(BLOCK_HASH)),
+                ("protx", Answer::Result(PROTX_INFO)),
+            ]);
+            // As Platform has the hash: decoded from Core's masternode list.
+            let listed: MasternodeListDiff = serde_json::from_str(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/supporting_files/core_v24_protx_list_diffs/legacy_operator_key/1-399.json"
+            )))
+            .expect("expected the recorded masternode list");
+            let pro_tx_hash = listed
+                .added_mns
+                .iter()
+                .map(|masternode| masternode.pro_tx_hash)
+                .find(|pro_tx_hash| {
+                    *pro_tx_hash == ProTxHash::from_str(MN_L2).expect("expected a pro tx hash")
+                })
+                .expect("expected MN_L2 in the recording");
+
+            let state = core
+                .rpc()
+                .get_masternode_state(&pro_tx_hash, 401)
+                .expect("expected the masternode's state");
+
+            assert!(state.operator_payout_address.is_some());
+            assert_eq!(core.params_of("getblockhash"), [json!([401])]);
+            assert_eq!(
+                core.params_of("protx"),
+                [json!([
+                    "info",
+                    MN_L2,
+                    "74b4fb2caeeebbc7cd5dcc50b58532d983f0e5c87f3ac729c6d47f0ace76b97d"
+                ])]
+            );
         }
 
         fn active_mn_rr() -> SoftforkInfo {
@@ -1084,6 +1234,73 @@ mod tests {
 
             assert_eq!(fork.expect("Core v24 answers"), None);
             assert_eq!(core.asked(), ["getdeploymentinfo"]);
+        }
+    }
+
+    /// A `protx info` answer as Dash Core prints it, for MN_L2 of the legacy operator key
+    /// recording, with an operator reward that is not a whole percentage.
+    fn protx_info_answer(pro_tx_hash: &str) -> serde_json::Value {
+        let recording: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/supporting_files/core_v24_protx_list_diffs/legacy_operator_key/1-399.json"
+        )))
+        .expect("expected the recording");
+        let listed = recording["addedMNs"]
+            .as_array()
+            .expect("expected the listed masternodes")
+            .iter()
+            .find(|masternode| masternode["proTxHash"] == pro_tx_hash)
+            .expect("expected the masternode in the recording")
+            .clone();
+        json!({
+            "type": listed["type"],
+            "proTxHash": pro_tx_hash,
+            "collateralHash": listed["collateralHash"],
+            "collateralIndex": listed["collateralIndex"],
+            "collateralAddress": listed["collateralAddress"],
+            "operatorReward": 13.37,
+            "state": listed["state"],
+            "confirmations": 12,
+            "metaInfo": {
+                "lastDSQ": 0,
+                "mixingTxCount": 0,
+                "outboundAttemptCount": 0,
+                "lastOutboundAttempt": 0,
+                "lastOutboundAttemptElapsed": 1762400000,
+                "lastOutboundSuccess": 0,
+                "lastOutboundSuccessElapsed": 1762400000,
+            },
+        })
+    }
+
+    const MN_L2: &str = "02cc32acbd70020b192abdddfd8ab6d682b0e75c6cbe225f60fe6cf9da08859b";
+
+    /// The state is read whatever the rest of the answer holds: an operator reward of 13.37 %
+    /// and the node's own meta info, which the typed answer of the RPC client cannot read for
+    /// every masternode, fail nothing.
+    #[test]
+    fn should_read_the_state_of_a_protx_info_answer() {
+        let pro_tx_hash = ProTxHash::from_str(MN_L2).expect("expected a pro tx hash");
+        let state = masternode_state_from_protx_info(&pro_tx_hash, protx_info_answer(MN_L2))
+            .expect("expected to read the state");
+        assert!(state.operator_payout_address.is_some());
+        assert_eq!(state.pub_key_operator.len(), 48);
+    }
+
+    /// An answer for another masternode, or without a state, is not read as this one's.
+    #[test]
+    fn should_refuse_a_protx_info_answer_for_another_masternode_or_without_a_state() {
+        let pro_tx_hash = ProTxHash::from_str(MN_L2).expect("expected a pro tx hash");
+        let other = "f18c25367cd4f2ba6e8cdf86d0ffcf2694b6206b75597fe1ab5b80b966dbdf4b";
+        let mut for_other = protx_info_answer(MN_L2);
+        for_other["proTxHash"] = json!(other);
+        let mut without_state = protx_info_answer(MN_L2);
+        without_state
+            .as_object_mut()
+            .expect("expected an object")
+            .remove("state");
+        for answer in [for_other, without_state] {
+            assert!(masternode_state_from_protx_info(&pro_tx_hash, answer).is_err());
         }
     }
 }

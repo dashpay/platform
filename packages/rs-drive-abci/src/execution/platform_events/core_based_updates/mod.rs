@@ -1,3 +1,4 @@
+mod reconcile_operator_payouts_with_core;
 mod update_core_info;
 mod update_masternode_identities;
 mod update_masternode_list;
