@@ -164,6 +164,20 @@ final class WalletManagerStore: ObservableObject {
     /// the cached one.
     private var managerSdks: [Network: SDK] = [:]
 
+    /// Networks with an `activate` call still running. A replacement
+    /// suspends while the manager it replaces shuts down.
+    private var activatingNetworks: Set<Network> = []
+
+    /// Thrown by `activate` while another activation for the same network is
+    /// still running. The refused call configured and published nothing.
+    struct ActivationInProgress: LocalizedError {
+        let network: Network
+
+        var errorDescription: String? {
+            "Another rebuild is already replacing the \(network.displayName) wallet manager, so this one was not applied."
+        }
+    }
+
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
     /// fetch to its own network so the shared store doesn't cause
@@ -196,8 +210,10 @@ final class WalletManagerStore: ObservableObject {
     /// stop. Until then the old manager stays cached, and active if it
     /// was, but its handle is already revoked: `manager(for:)` and
     /// `backgroundManager(for:)` still return it, and calls on it fail
-    /// with `invalidHandle`. Calls must not overlap for the same network:
-    /// callers run one rebuild at a time.
+    /// with `invalidHandle`. A call for a network whose activation is still
+    /// running throws `ActivationInProgress` before it configures anything:
+    /// both would replace the same cached manager, and the later one would
+    /// publish over the earlier one without shutting it down.
     ///
     /// `makeActive == false` materializes the manager into the cache
     /// without swapping `activeManager`, unless the manager it replaces is
@@ -206,6 +222,10 @@ final class WalletManagerStore: ObservableObject {
     /// a non-active network without triggering a user-visible network
     /// switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) async throws {
+        guard activatingNetworks.insert(network).inserted else {
+            throw ActivationInProgress(network: network)
+        }
+        defer { activatingNetworks.remove(network) }
         // Stale-cache check: the cached manager's Sdk clone is locked
         // in at `configure` time (the FFI is single-shot — see
         // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
