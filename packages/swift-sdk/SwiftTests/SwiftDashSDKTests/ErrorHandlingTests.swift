@@ -459,6 +459,187 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldRouteAPrivatelyReceivedRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestNeedsPrivateReply)
+        XCTAssertEqual(code.rawValue, 68)
+        let detail = "the contact requests with 9fRYTJZW came or went privately; "
+            + "reply to or rotate with it privately"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestNeedsPrivateReply(let message) = error else {
+            return XCTFail("lost typed private-reply error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldTellAPrivateReplyOnABuildWithoutShieldedSupportByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED
+        )
+        XCTAssertEqual(code, .errorShieldedBuildRequired)
+        XCTAssertEqual(code.rawValue, 69)
+        let detail = "this contact request needs a private reply, which is paid "
+            + "from the shielded pool; this build has no shielded support"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .shieldedBuildRequired(let message) = error else {
+            return XCTFail("lost typed shielded-build error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldTellARequestTheNetworkDoesNotServeYetByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE
+        )
+        XCTAssertEqual(code, .errorProtocolVersionNotActive)
+        XCTAssertEqual(code.rawValue, 70)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the network is proven at protocol version 14"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .protocolVersionNotActive(let message) = error else {
+            return XCTFail("lost typed protocol-version error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    func testShouldReportAPendingPrivateRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestPending)
+        XCTAssertEqual(code.rawValue, 71)
+        let detail = "a private contact request to 9fRYTJZW is in flight or not yet read "
+            + "back from the store; sync private contact requests to settle it"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestPending(let message) = error else {
+            return XCTFail("lost typed pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// Unrestored private payments are the wallet's hold, not one contact's
+    /// pending request: their own code and typed case, apart from 71.
+    func testShouldReportUnrestoredPrivatePaymentsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_PAYMENTS_NOT_RESTORED
+        )
+        XCTAssertEqual(code, .errorPrivateContactPaymentsNotRestored)
+        XCTAssertEqual(code.rawValue, 72)
+        let detail = "the wallet's private payments are not restored from the shielded store yet"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactPaymentsNotRestored(let message) = error else {
+            return XCTFail("lost typed not-restored error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A store that cannot keep a private payment's recovery state has its
+    /// own code and typed case.
+    func testShouldReportUnsupportedPrivateContactRecoveryByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_RECOVERY_UNSUPPORTED
+        )
+        XCTAssertEqual(code, .errorPrivateContactRecoveryUnsupported)
+        XCTAssertEqual(code.rawValue, 73)
+        let detail = "the persister does not keep the private contact request scan state atomically"
+        guard case .privateContactRecoveryUnsupported(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed recovery-unsupported error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A private store read that did not finish before a contact request was
+    /// decided has its own code and typed case, apart from a pending request
+    /// (71): nothing was reserved, and calling again continues the read.
+    func testShouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_STORE_NOT_READ
+        )
+        XCTAssertEqual(code, .errorPrivateContactStoreNotRead)
+        XCTAssertEqual(code.rawValue, 74)
+        let detail = "the private contact request store was not read to its end for 9fRYTJZW"
+        guard case .privateContactStoreNotRead(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed store-not-read error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// An SDK pinned below the protocol version a request needs has its own
+    /// code and typed case, apart from a network below it (70), which lifts by
+    /// itself.
+    func testShouldReportAnSdkPinnedBelowTheProtocolVersionByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SDK_PINNED_BELOW_PROTOCOL_VERSION
+        )
+        XCTAssertEqual(code, .errorSdkPinnedBelowProtocolVersion)
+        XCTAssertEqual(code.rawValue, 75)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the SDK is pinned at protocol version 14"
+        guard case .sdkPinnedBelowProtocolVersion(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed pinned-SDK error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A public contact request whose outcome is unconfirmed holds the pair by
+    /// its own code and typed case, apart from a private request pending (71).
+    func testShouldReportAnUnconfirmedPublicRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED
+        )
+        XCTAssertEqual(code, .errorPublicContactRequestUnconfirmed)
+        XCTAssertEqual(code.rawValue, 76)
+        let detail = "a public contact request to 9fRYTJZW was broadcast and its outcome is not proved"
+        guard case .publicContactRequestUnconfirmed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed public-unconfirmed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    func testShouldReadEveryFieldOfThePrivateContactReadiness() {
+        var ffi = PrivateContactReadinessFFI()
+        ffi.private_payments_restored = false
+        ffi.private_store_read = true
+        ffi.unresolved_private_payment = true
+        ffi.private_payments_restore_failed = true
+        XCTAssertEqual(
+            PrivateContactReadiness(ffi: ffi),
+            PrivateContactReadiness(
+                privatePaymentsRestored: false,
+                privateStoreRead: true,
+                unresolvedPrivatePayment: true,
+                privatePaymentsRestoreFailed: true))
+        // Each flag reaches its own field: clearing only the failure flag
+        // reads as a payment not restored yet.
+        ffi.private_payments_restore_failed = false
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestoreFailed)
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestored)
+    }
+
+    func testShouldReadEveryFieldOfAPrivateContact() {
+        var ffi = PrivateContactFFI()
+        ffi.received_privately = true
+        ffi.has_shielded_address = true
+        withUnsafeMutableBytes(of: &ffi.shielded_address) { raw in
+            for i in raw.indices { raw[i] = UInt8(i) }
+        }
+        let info = PrivateContactInfo(ffi: ffi)
+        XCTAssertTrue(info.receivedPrivately)
+        XCTAssertFalse(info.sentPrivately)
+        XCTAssertEqual(info.shieldedAddress, Data((0..<43).map { UInt8($0) }))
+
+        ffi.has_shielded_address = false
+        XCTAssertNil(PrivateContactInfo(ffi: ffi).shieldedAddress)
+    }
+
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING

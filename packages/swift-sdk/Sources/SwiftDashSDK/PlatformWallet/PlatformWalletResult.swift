@@ -270,6 +270,58 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// A shielded fund-from-asset-lock resume named a different Orchard
     /// recipient than the one its tracked lock recorded; nothing was paid.
     case errorAssetLockRecipientMismatch = 61
+    /// The contact requests with that identity came or went privately, so a
+    /// public request to it, in reply or as a rotation, would publish the
+    /// relationship. Nothing was sent; accept or send it privately.
+    case errorPrivateContactRequestNeedsPrivateReply = 68
+    /// The operation needs the shielded pool, and the native library was
+    /// built without shielded support. Nothing was sent; not retryable on
+    /// this build.
+    case errorShieldedBuildRequired = 69
+    /// The network is proven at a protocol version below the one that
+    /// serves the request (for example the private contact request store
+    /// before protocol version 15), so the SDK did not send it. Expected on
+    /// such a network; it lifts when the network upgrades. An SDK pinned
+    /// below the version is `errorSdkPinnedBelowProtocolVersion` (75).
+    case errorProtocolVersionNotActive = 70
+    /// A private contact request to that identity is pending: in flight, or
+    /// paid for and not yet read back from the store, or a private payment
+    /// the shielded store's journal keeps unresolved holds the pair. Nothing
+    /// new was paid. Do not submit it again: the entry read back by a private
+    /// sync, or the payment proven never to execute, frees it. An unfinished
+    /// private store read is `errorPrivateContactStoreNotRead` (74), not this.
+    case errorPrivateContactRequestPending = 71
+    /// The wallet, not one contact, is held: its private payments are not
+    /// restored from the shielded store's journal, so no contact request,
+    /// public or private, is sent or accepted. The wallet was published
+    /// with no shielded store configured (configure it when the manager is
+    /// activated, before loading or creating wallets), it bound a shielded
+    /// account in an earlier process, its last restoration failed or waits
+    /// for a busy store, or the identity was loaded marking a private payment
+    /// that may be unresolved. Configuring the shielded store or binding the
+    /// wallet's shielded account restores them; a private sync does not.
+    case errorPrivateContactPaymentsNotRestored = 72
+    /// The persister cannot keep a private payment's recovery state across
+    /// a restart (it does not declare the private contact request scan
+    /// state with atomic changesets), so a private send or reply is refused
+    /// before anything is sealed or paid. A configuration error, not
+    /// retryable as it is.
+    case errorPrivateContactRecoveryUnsupported = 73
+    /// DashPay's private contact request store could not be read to its end
+    /// for the identity before a contact request or acceptance, public or
+    /// private, was decided. Nothing was reserved, sent or paid; calling
+    /// again continues the read. Not a pending request.
+    case errorPrivateContactStoreNotRead = 74
+    /// The SDK is pinned below the protocol version the request needs, so it
+    /// did not send it, whatever the network runs. A network upgrade does not
+    /// lift it; only raising or removing the pin does.
+    case errorSdkPinnedBelowProtocolVersion = 75
+    /// A public contact request to that identity was broadcast and may have
+    /// been delivered (its own send or accept reported
+    /// `errorTransactionBroadcastUnconfirmed`, 20), and no proof settled its
+    /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
+    /// submit it again; a public contact request sync settles it.
+    case errorPublicContactRequestUnconfirmed = 76
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -403,6 +455,24 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockTooManyInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH:
             self = .errorAssetLockRecipientMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY:
+            self = .errorPrivateContactRequestNeedsPrivateReply
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED:
+            self = .errorShieldedBuildRequired
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE:
+            self = .errorProtocolVersionNotActive
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING:
+            self = .errorPrivateContactRequestPending
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_PAYMENTS_NOT_RESTORED:
+            self = .errorPrivateContactPaymentsNotRestored
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_RECOVERY_UNSUPPORTED:
+            self = .errorPrivateContactRecoveryUnsupported
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_STORE_NOT_READ:
+            self = .errorPrivateContactStoreNotRead
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SDK_PINNED_BELOW_PROTOCOL_VERSION:
+            self = .errorSdkPinnedBelowProtocolVersion
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
+            self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -602,6 +672,77 @@ public enum PlatformWalletError: LocalizedError {
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
     case assetLockRecipientMismatch(String)
+    /// The contact requests with that identity came or went privately
+    /// (protocol version 15): a public request to it, in reply or as a
+    /// rotation, would publish the relationship, so the public accept and
+    /// send refuse it and nothing was sent. Accept it with
+    /// `PlatformWalletManager.acceptContactRequestReplyingInKind` (which picks
+    /// the reply itself) or `acceptPrivateContactRequest`, or send with
+    /// `PlatformWalletManager.sendPrivateContactRequest`.
+    case privateContactRequestNeedsPrivateReply(String)
+    /// The operation needs the shielded pool, and the native library was
+    /// built without shielded support: today, accepting a contact request
+    /// that came privately with
+    /// `PlatformWalletManager.acceptContactRequestReplyingInKind`. Nothing
+    /// was sent; a public or adopted reply works on such a build.
+    case shieldedBuildRequired(String)
+    /// The network does not serve the request yet: it is proven at a protocol
+    /// version below the one that does, so the SDK did not send it. Expected
+    /// on such a network (for example the private contact request store before
+    /// protocol version 15); a host may stay quiet about it. An SDK pinned
+    /// below the version is `sdkPinnedBelowProtocolVersion` instead.
+    case protocolVersionNotActive(String)
+    /// A private contact request to that identity is pending (code 71): in
+    /// flight (another private send or reply reserved it), or paid for and
+    /// not yet read back from the store, or a private payment the shielded
+    /// store's journal keeps unresolved holds the pair. Nothing new was paid.
+    /// Pending, not failed: do not submit it again. A
+    /// `ManagedPlatformWallet.syncPrivateContactRequests` that reads the
+    /// entry back frees it, as does the payment proven never to execute; an
+    /// endpoint's refusal of the payment does not.
+    /// `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)` reads
+    /// whether the pair is still held.
+    case privateContactRequestPending(String)
+    /// The wallet's private payments are not restored from the shielded
+    /// store's journal, so its contact requests, public or private, sent or
+    /// accepted, are held (code 72). Nothing was signed or sent.
+    /// `PlatformWalletManager.configureShielded` (called when the manager is
+    /// activated, before loading or creating wallets, and again after a
+    /// failure) or binding the wallet's shielded account restores them; a
+    /// private sync does not.
+    /// `ManagedPlatformWallet.privateContactReadiness(identityId:)` reads
+    /// whether they are restored and whether the last restoration failed,
+    /// and `privatePaymentsRestoreFailure(identityId:)` why.
+    case privateContactPaymentsNotRestored(String)
+    /// The wallet's storage cannot keep a private payment's recovery state
+    /// across a restart (code 73): it does not declare the private contact
+    /// request scan state together with atomic changesets. A private send
+    /// or reply is refused before anything is sealed or paid. A
+    /// configuration error of the store, not something a retry fixes.
+    case privateContactRecoveryUnsupported(String)
+    /// DashPay's private contact request store could not be read to its end
+    /// for the identity before a contact request or acceptance, public or
+    /// private, was decided (code 74): a node behind the store already seen,
+    /// or keys that kept changing, stop the read. Nothing was reserved, sent
+    /// or paid; calling again continues the read. Not a pending request.
+    case privateContactStoreNotRead(String)
+    /// The SDK is pinned below the protocol version the request needs, so it
+    /// did not send it, whatever the network runs (code 75). Only raising or
+    /// removing the SDK's protocol version pin lifts it: a developer's
+    /// setting, not something the user or a network upgrade changes.
+    case sdkPinnedBelowProtocolVersion(String)
+    /// A public contact request to that identity was broadcast and may have
+    /// been delivered, and no proof settled its outcome yet (code 76): the
+    /// wallet holds the pair, keeping the signed transition, and refuses
+    /// every contact request or acceptance to it, public or private, with
+    /// nothing signed. The attempt that broadcast it reported
+    /// `transactionBroadcastUnconfirmed` (20). Unconfirmed, not failed: do not
+    /// submit it again. A public contact request sync (the DashPay sync)
+    /// settles it: the request proved on Platform is recorded as sent, and one
+    /// proved unable to write it frees the pair.
+    /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
+    /// reads whether the pair is still held so.
+    case publicContactRequestUnconfirmed(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -830,6 +971,12 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
+             .privateContactRequestNeedsPrivateReply(let m),
+             .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
+             .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
+             .privateContactRecoveryUnsupported(let m),
+             .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
+             .publicContactRequestUnconfirmed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -949,6 +1096,24 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
         case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
+        case .errorPrivateContactRequestNeedsPrivateReply:
+            self = .privateContactRequestNeedsPrivateReply(detail)
+        case .errorShieldedBuildRequired:
+            self = .shieldedBuildRequired(detail)
+        case .errorProtocolVersionNotActive:
+            self = .protocolVersionNotActive(detail)
+        case .errorPrivateContactRequestPending:
+            self = .privateContactRequestPending(detail)
+        case .errorPrivateContactPaymentsNotRestored:
+            self = .privateContactPaymentsNotRestored(detail)
+        case .errorPrivateContactRecoveryUnsupported:
+            self = .privateContactRecoveryUnsupported(detail)
+        case .errorPrivateContactStoreNotRead:
+            self = .privateContactStoreNotRead(detail)
+        case .errorSdkPinnedBelowProtocolVersion:
+            self = .sdkPinnedBelowProtocolVersion(detail)
+        case .errorPublicContactRequestUnconfirmed:
+            self = .publicContactRequestUnconfirmed(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

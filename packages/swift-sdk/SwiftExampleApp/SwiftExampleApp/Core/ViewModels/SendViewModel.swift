@@ -829,19 +829,31 @@ class SendViewModel: ObservableObject {
                     + "the recipient's next shielded sync."
             }
 
-        } catch PlatformWalletError.shieldedSpendUnconfirmed {
+        } catch let unconfirmed as PlatformWalletError where SendViewModel.mayHaveGoneThrough(unconfirmed) {
             // The shielded operation (shield / unshield / transfer / withdraw)
             // may have reached a node and its result is not proved (a node's
-            // refusal or verdict included), so it may already be on chain. Rust
-            // intentionally KEEPS any spent notes' reservations, so this must
-            // NOT be presented as a retryable failure: a retry signs a second
-            // transition. Surface it through the
-            // non-error (success) path so the UI doesn't invite a retry; the
-            // next shielded sync reconciles the outcome.
+            // refusal or verdict included, code 18), or the SDK could not
+            // confirm a transition it may have accepted (code 20), so it may
+            // already be on chain. Rust intentionally KEEPS any spent notes'
+            // reservations, so this must NOT be presented as a retryable
+            // failure: a retry signs a second transition. Surface it through
+            // the non-error (success) path so the UI doesn't invite a retry;
+            // the next shielded sync reconciles the outcome.
             successMessage = "Transaction may have gone through — waiting for "
                 + "the next shielded sync to confirm. Do not retry."
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Whether a shielded operation's error means it may already be on
+    /// chain, so no retry is offered: a spend whose result is not proved
+    /// (18) or a state transition the SDK could not confirm after it may
+    /// have been accepted (20).
+    nonisolated static func mayHaveGoneThrough(_ error: PlatformWalletError) -> Bool {
+        switch error {
+        case .shieldedSpendUnconfirmed, .transactionBroadcastUnconfirmed: return true
+        default: return false
         }
     }
 

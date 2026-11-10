@@ -563,7 +563,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// prune backstop); the pass outcome is logged, not surfaced.
 ///
 /// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
-fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
     let ambiguous = matches!(
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -787,7 +787,7 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
 /// in place, and the next nullifier sync reconciles whether the spend landed.
-fn catch_spend_panic(
+pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
@@ -2372,6 +2372,30 @@ pub(crate) fn resolve_wallet_and_coordinator(
     Ok((wallet, coordinator))
 }
 
+/// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
+/// errors. It blocks on the runtime, so it must not run on one of its async
+/// workers: call it from the export's thread or from `spawn_blocking`.
+pub(crate) fn resolve_shielded_coordinator(
+    handle: Handle,
+) -> Result<
+    std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    PlatformWalletFFIResult,
+> {
+    match PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_coordinator())
+    }) {
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured: call platform_wallet_manager_configure_shielded first",
+        )),
+        Some(Some(coordinator)) => Ok(coordinator),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3036,6 +3060,68 @@ mod tests {
         );
         assert_eq!(message_of(&result), rendered);
         assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A protocol-version refusal from the store read a private send or
+    /// accept makes before paying keeps the blanket conversion's split: a
+    /// lasting refusal is code 70, a transient one the catch-all.
+    #[test]
+    fn map_spend_result_keeps_a_protocol_version_refusal_typed() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            map_spend_result(
+                Err(PlatformWalletError::Sdk(
+                    dash_sdk::Error::ProtocolVersionNotActive {
+                        method: "get_private_document_entries",
+                        required: 15,
+                        feature: None,
+                        network: 14,
+                        pinned: false,
+                        cause,
+                    },
+                )),
+                "private contact request",
+            )
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as i32, 70);
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request",
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
+    }
+
+    /// A persister that cannot keep a private payment's recovery state is
+    /// refused by the explicit private send and accept before anything is
+    /// sealed or paid; the refusal keeps its own code (73) through the spend
+    /// mapper they use, as the in-kind accept's blanket conversion does.
+    #[test]
+    fn map_spend_result_keeps_the_storage_configuration_refusal_at_73() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+            "private contact request",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as i32, 73);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported)
+                .code
+        );
     }
 
     /// A private payment refused because its wallet was removed first keeps

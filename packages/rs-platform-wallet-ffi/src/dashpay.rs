@@ -190,7 +190,7 @@ impl ContactRequestHandleArray {
     }
 
     /// Copy a slice of contact requests into the global handle storage.
-    fn from_requests(requests: Vec<ContactRequest>) -> Self {
+    pub(crate) fn from_requests(requests: Vec<ContactRequest>) -> Self {
         if requests.is_empty() {
             return Self::empty();
         }
@@ -325,22 +325,9 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     } else {
         Some(unwrap_result_or_return!(CStr::from_ptr(account_label).to_str()).to_string())
     };
-    let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
-        None
-    } else {
-        // Defense-in-depth: bound the copy at the DIP-15 auto-accept proof
-        // ceiling (102 bytes) BEFORE allocating, so a malformed binding or a
-        // hostile (ptr, len) pair can't force an oversized allocation. The SDK
-        // re-validates the exact 38..=102 range after this.
-        if auto_accept_proof_len > 102 {
-            return crate::error::PlatformWalletFFIResult::err(
-                crate::error::PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "auto_accept_proof length {auto_accept_proof_len} exceeds the DIP-15 maximum of 102 bytes"
-                ),
-            );
-        }
-        Some(std::slice::from_raw_parts(auto_accept_proof, auto_accept_proof_len).to_vec())
+    let proof = match read_auto_accept_proof(auto_accept_proof, auto_accept_proof_len) {
+        Ok(proof) => proof,
+        Err(result) => return result,
     };
 
     let signer_addr = signer_handle as usize;
@@ -378,6 +365,31 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     let request = unwrap_result_or_return!(result);
     *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request);
     PlatformWalletFFIResult::ok()
+}
+
+/// Copy an optional auto-accept proof from `(ptr, len)`; `(null, 0)` omits it.
+///
+/// Defense-in-depth: the copy is bounded at the DIP-15 auto-accept proof
+/// ceiling (102 bytes) BEFORE allocating, so a malformed binding or a hostile
+/// (ptr, len) pair can't force an oversized allocation. The SDK re-validates
+/// the exact 38..=102 range after this.
+///
+/// # Safety
+/// A non-null `ptr` must point to `len` readable bytes.
+pub(crate) unsafe fn read_auto_accept_proof(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<Vec<u8>>, PlatformWalletFFIResult> {
+    if ptr.is_null() || len == 0 {
+        return Ok(None);
+    }
+    if len > 102 {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("auto_accept_proof length {len} exceeds the DIP-15 maximum of 102 bytes"),
+        ));
+    }
+    Ok(Some(std::slice::from_raw_parts(ptr, len).to_vec()))
 }
 
 /// Send a contact request from a scanned DIP-15 auto-accept QR
@@ -1754,6 +1766,84 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod private_store_scan_errors {
+        use super::*;
+        use platform_wallet::ContactCryptoProvider;
+        use rs_sdk_ffi::{
+            dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
+            mnemonic_resolver_result,
+        };
+        use std::ffi::c_void;
+        use std::str::FromStr;
+
+        unsafe extern "C" fn no_mnemonic(
+            _ctx: *const c_void,
+            _wallet_id_bytes: *const u8,
+            _out_buf: *mut c_char,
+            _out_capacity: usize,
+            _out_len: *mut usize,
+        ) -> i32 {
+            mnemonic_resolver_result::NOT_FOUND
+        }
+
+        unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
+
+        /// A scan of the private store whose resolver holds no mnemonic for the
+        /// wallet reaches the host as the key-unavailable outcome (code 31), as
+        /// a signer's missing key does, so the host routes it to key repair
+        /// instead of reading a generic failure.
+        #[test]
+        fn should_report_a_missing_mnemonic_while_scanning_as_key_unavailable() {
+            let resolver = unsafe {
+                dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), no_mnemonic, noop_destroy)
+            };
+            let provider = unsafe {
+                resolver_contact_crypto_provider(resolver, [0u8; 32], key_wallet::Network::Testnet)
+            };
+            let keys = PrivateDocumentKeyPaths {
+                recipients: vec![(
+                    Identifier::from([0xB0; 32]),
+                    vec![(
+                        2,
+                        key_wallet::bip32::DerivationPath::from_str("m/9'/1'/5'/0'/0'/1'/2'")
+                            .expect("valid path"),
+                    )],
+                )],
+                senders: Vec::new(),
+            };
+            let page = PrivateDocumentEntries {
+                chunk_power: None,
+                entries: Vec::new(),
+                total_count: 0,
+            };
+            let error = runtime()
+                .block_on(provider.scan_private_document_page(
+                    &keys,
+                    Identifier::from([0xD0; 32]),
+                    "privateContactRequest",
+                    0,
+                    &page,
+                ))
+                .expect_err("no mnemonic, no keys");
+            let result = PlatformWalletFFIResult::from(error);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+
+            // Another resolver failure keeps the code it had.
+            let other = PlatformWalletFFIResult::from(private_document_signer_error(
+                MnemonicResolverSignerError::BufferTooSmall,
+            ));
+            assert_ne!(
+                other.code,
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            );
+
+            unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+        }
+    }
 
     /// A test wallet's mnemonic, counting how often the resolver reads it.
     unsafe extern "C" fn counting_resolve(

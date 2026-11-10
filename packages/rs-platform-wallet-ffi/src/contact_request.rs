@@ -254,8 +254,8 @@ pub struct PrivateContactReadinessFFI {
     pub unresolved_private_payment: bool,
     /// Whether the last restoration of the wallet's private payments failed,
     /// while `private_payments_restored` is false for it: then 72 holds until
-    /// a restoration succeeds, not only until one runs. The reason is in the
-    /// wallet's log; an export for it is left to the FFI PR.
+    /// a restoration succeeds, not only until one runs. The reason is
+    /// `platform_wallet_get_private_payments_restore_failure`.
     pub private_payments_restore_failed: bool,
 }
 
