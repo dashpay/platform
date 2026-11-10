@@ -2621,7 +2621,7 @@ mod tests {
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
-        ShieldedNote, ShieldedStore, SubwalletId,
+        PrivatePaymentRecord, ShieldedNote, ShieldedStore, SubwalletId,
     };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
@@ -3570,8 +3570,6 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_read_the_store_for_an_expiry_from_the_position_the_record_kept() {
-        use crate::wallet::shielded::PrivatePaymentRecord;
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let fixture = ExpiryFixture::new().await;
@@ -9563,7 +9561,6 @@ mod tests {
     #[tokio::test]
     async fn should_discharge_a_reopened_heightless_journal_record_only_once_the_pool_reached_its_tree(
     ) {
-        use crate::wallet::shielded::PrivatePaymentRecord;
         const TREE: u64 = 4;
 
         let alice = identity(ALICE_PHRASE, ALICE);
@@ -9973,8 +9970,6 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_hold_the_journaled_pairs_of_a_wallet_re_created_under_its_id() {
-        use crate::wallet::shielded::PrivatePaymentRecord;
-
         let alice = identity(ALICE_PHRASE, ALICE);
         let bob = identity(BOB_PHRASE, BOB);
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
@@ -10095,8 +10090,6 @@ mod tests {
     /// Bob made by wallet `wallet_id` that may still execute.
     #[cfg(feature = "shielded")]
     fn journal_alice_to_bob(path: &std::path::Path, wallet_id: WalletId) {
-        use crate::wallet::shielded::PrivatePaymentRecord;
-
         let (alice, bob) = (identity(ALICE_PHRASE, ALICE), identity(BOB_PHRASE, BOB));
         FileBackedShieldedStore::open_path(path, 100)
             .expect("the store")
