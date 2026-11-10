@@ -3930,7 +3930,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             let _ = platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                false,
+                platform_wallet_ffi::TXO_RECONCILE_FINISH_NOT_RUN,
             );
         });
         if env
@@ -3995,7 +3995,9 @@ impl<F: FnOnce()> Drop for UntilHandedOver<F> {
 
 /// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted,
 /// and, as a backstop, any engine guard the run still holds; `ran` is
-/// whether the run went ahead, which restarts the wallet's cadence. Bridges
+/// whether the run went ahead, which restarts the wallet's cadence, and is
+/// passed on as `TXO_RECONCILE_FINISH_RAN` or `TXO_RECONCILE_FINISH_NOT_RUN`
+/// (Kotlin never defers a run). Bridges
 /// `platform_wallet_manager_txo_reconcile_finish`. Resolves the manager
 /// handle, so Kotlin frees the last page's guard first
 /// (`txoReconcileHeldVerdictsFree`).
@@ -4015,7 +4017,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
                 manager_handle as Handle,
                 wid.as_ptr(),
-                ran != JNI_FALSE,
+                if ran != JNI_FALSE {
+                    platform_wallet_ffi::TXO_RECONCILE_FINISH_RAN
+                } else {
+                    platform_wallet_ffi::TXO_RECONCILE_FINISH_NOT_RUN
+                },
             )
         };
         let _ = take_pwffi_error(env, result);
