@@ -91,7 +91,7 @@ These are shipped ABI. Do not renumber.
 | 17 | `ErrorShieldedBroadcastUnconfirmed` | |
 | 18 | `ErrorShieldedSpendUnconfirmed` | Also, since #5810, what note spends (shielded transfers, unshields, withdrawals, identity top-ups and private document creations from the pool) reported as 16 before: an endpoint's verdict and any transport failure after a dispatch, as the transition may have been delivered. Also `ShieldedBroadcastMaybeDelivered`. The notes and the redrive record are kept, the record saved before the broadcast and the reservation restored from it after a restart; a host must not pay again with other notes. Also what a shield from Platform addresses returns once a dispatch may have reached a node and its result is not proved, an endpoint's refusal or consensus verdict included |
 | 19 | `ErrorShieldedNoRecordedAnchor` | |
-| 20 | `ErrorTransactionBroadcastUnconfirmed` | |
+| 20 | `ErrorTransactionBroadcastUnconfirmed` | Since #5556 also a Platform state transition the SDK reports unconfirmed after a possible acceptance (`dash_sdk::Error::StateTransitionResultUnconfirmed`), through the blanket conversion and the shielded spend contract (`map_spend_result`) alike: the host reconciles the original operation and does not retry |
 | 21 | `ErrorAddressNonceMismatch` | No longer returned by a shield from Platform addresses: an endpoint's nonce verdict on a dispatched shield is 18. Transfers and withdrawals from Platform addresses, and identity registrations and top-ups from them, still return it |
 | 22 | `ErrorCoreInsufficientFunds` | |
 | 23 | `ErrorAssetLockNotTracked` | |
