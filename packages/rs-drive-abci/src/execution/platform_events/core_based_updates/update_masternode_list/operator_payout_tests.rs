@@ -983,6 +983,41 @@ fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_withou
     );
 }
 
+/// Core prints every change to a non-empty operator payout, so a key change printed without a
+/// payout, of a masternode whose stored payout is empty, means it has none: Core is asked about
+/// such a key change only when the masternode has a stored payout.
+#[test]
+fn should_ask_core_for_the_payout_of_a_key_change_only_when_a_payout_is_stored() {
+    let with_payout = masternode_with_operator_payout(0x7e);
+    let mut without_payout = masternode_with_operator_payout(0x7f);
+    without_payout.state.operator_payout_address = None;
+    let (platform, state, reads) = masternode_list_after_diffs_with_core_payouts(
+        PlatformVersion::latest(),
+        vec![with_payout.clone(), without_payout.clone()],
+        vec![vec![
+            operator_key_change(&with_payout, &[0x8e; 48], None),
+            operator_key_change(&without_payout, &[0x8f; 48], None),
+        ]],
+        &[(with_payout.pro_tx_hash, 1001, Some([0x9e; 20]))],
+        |_, _| {},
+    );
+
+    assert_eq!(
+        *reads.lock().unwrap(),
+        vec![(with_payout.pro_tx_hash, 1001)]
+    );
+    assert_eq!(
+        transfer_keys(&platform, &with_payout, &[0x8e; 48]),
+        [(vec![0x9e; 20], false)]
+    );
+    assert_eq!(
+        stored_operator_payout(&state, &with_payout),
+        Some([0x9e; 20])
+    );
+    assert_eq!(transfer_keys(&platform, &without_payout, &[0x8f; 48]), []);
+    assert_eq!(stored_operator_payout(&state, &without_payout), None);
+}
+
 /// The payout of an operator key change printed without one comes only from Core: a Core that
 /// cannot answer fails the update, instead of the payout being read as cleared, and leaves the
 /// stored list as it was.

@@ -174,8 +174,10 @@ where
     /// locked height), `Some(None)` when it has none: the new operator never starts with the
     /// previous operator's payout, nor without its own. Core is asked about no other entry, and
     /// not about a masternode Platform does not list, whose entry applies nothing; a Core error
-    /// fails the update. A diff applies with `DMNState::apply_diff`, which keeps a stored revived
-    /// height the diff does not print.
+    /// fails the update. Nor is it asked about a masternode without a stored payout, whose payout
+    /// is `Some(None)`: the stored payout is Core's at the diff's base height, and Core prints
+    /// every change to a non-empty payout. A diff applies with `DMNState::apply_diff`, which
+    /// keeps a stored revived height the diff does not print.
     ///
     /// An operator key Core only re-encoded is the stored key, and is dropped from its entry
     /// first, so a re-encode is never read as a key change.
@@ -214,8 +216,14 @@ where
             for (pro_tx_hash, state_diff) in &mut masternode_diff.updated_mns {
                 if state_diff.pub_key_operator.is_none()
                     || state_diff.operator_payout_address.is_some()
-                    || !state.full_masternode_list().contains_key(pro_tx_hash)
                 {
+                    continue;
+                }
+                let Some(masternode) = state.full_masternode_list().get(pro_tx_hash) else {
+                    continue;
+                };
+                if masternode.state.operator_payout_address.is_none() {
+                    state_diff.operator_payout_address = Some(None);
                     continue;
                 }
                 let core_state = self
