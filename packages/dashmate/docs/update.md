@@ -54,7 +54,7 @@ $  dashmate update --format=json --config local_1 | jq
     "name": "core",
     "title": "Core",
     "updated": "up to date",
-    "image": "dashpay/dashd:23"
+    "image": "dashpay/dashd:24"
   },
   {
     "name": "drive_abci",

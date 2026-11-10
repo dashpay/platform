@@ -706,6 +706,39 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should keep a local network or devnet already set up on Core 23', async () => {
+    // Core 24 discards the sporks Core 23 stored. On a network whose nodes all
+    // move to Core 24 at once no peer has them anymore, and dashmate signs a
+    // local network's sporks only while setting it up.
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    for (const name of ['local_seed', 'local_1']) {
+      configFileData.configs[name] = structuredClone(configFileData.configs.local);
+      configFileData.configs[name].group = 'local';
+    }
+    configFileData.configs.devnet_1 = structuredClone(configFileData.configs.testnet);
+    configFileData.configs.devnet_1.network = 'devnet';
+    configFileData.configs.devnet_1.core.devnet.name = 'one';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.local_seed.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.local_1.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.devnet_1.core.docker.image).to.equal('dashpay/dashd:23');
+    // The preset a new local network is set up from moves, as do public networks.
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.testnet.core.docker.image).to.equal('dashpay/dashd:24');
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
