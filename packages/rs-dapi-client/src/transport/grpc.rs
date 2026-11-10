@@ -569,6 +569,17 @@ impl_transport_request_grpc!(
     wait_for_state_transition_result
 );
 
+// rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetRecentStateTransitionStatusRequest,
+    platform_proto::GetRecentStateTransitionStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_state_transition_status
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetIdentityByPublicKeyHashRequest,
     platform_proto::GetIdentityByPublicKeyHashResponse,

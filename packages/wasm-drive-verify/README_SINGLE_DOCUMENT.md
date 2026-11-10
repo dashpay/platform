@@ -74,10 +74,17 @@ A `MaybeContested` query looks in both places at once, so its proof has to cover
 made for a `NotContested` or a `Contested` query does not verify against it. Such a proof
 verifies from protocol version 15.
 
-The block time selects a version only for a document type that keeps history. For a type
-without history there is one version, and the block time is ignored in every status. From
-protocol version 15, a `MaybeContested` query for a type that keeps history is refused when it
-has a block time.
+## Block Time
+
+In a document type that keeps history, a query with a block time asks for the newest version of
+the document stored at or before that time. It answers with no document for a time before the
+document was first stored. Without a block time the query asks for the latest version.
+
+A `NotContested` query with a block time verifies from protocol version 15. A contest's area
+keeps no history: it holds each contender as it was submitted. So a `Contested` query ignores the
+block time, and a `MaybeContested` query with a block time is refused, since a contender
+submitted after that time would be found there. A query in a document type that keeps no
+history ignores the block time in every status.
 
 ## API Reference
 
