@@ -821,6 +821,12 @@ impl FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("PRAGMA synchronous=FULL: {e}"))
             })?;
+        // On Apple platforms `synchronous=FULL` syncs with `fsync`, which does
+        // not flush the drive's own cache; `fullfsync` makes it `F_FULLFSYNC`,
+        // so a record that returned durable survives a power loss there too.
+        // Elsewhere SQLite ignores it.
+        conn.pragma_update(None, "fullfsync", "ON")
+            .map_err(|e| FileShieldedStoreError::Storage(format!("PRAGMA fullfsync=ON: {e}")))?;
         Ok(conn)
     }
 
@@ -3122,6 +3128,26 @@ mod tests {
             .private_payment_journal(wallet_id)
             .expect("journal")
             .is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The connection the durable records are written through syncs to the
+    /// drive itself on Apple platforms (`fullfsync`), not only to the OS, with
+    /// `synchronous=FULL`.
+    #[test]
+    fn should_open_the_recovery_connection_with_full_syncs() {
+        let path = temp_tree_path("recovery_pragmas");
+        let conn =
+            FileBackedShieldedStore::open_recovery_connection(&path).expect("the connection");
+        let fullfsync: i64 = conn
+            .pragma_query_value(None, "fullfsync", |row| row.get(0))
+            .expect("fullfsync");
+        let synchronous: i64 = conn
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("synchronous");
+        assert_eq!(fullfsync, 1);
+        assert_eq!(synchronous, 2, "FULL");
+        drop(conn);
         let _ = std::fs::remove_file(&path);
     }
 
