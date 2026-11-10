@@ -162,14 +162,16 @@ class FfiSmokeTest {
      * The private contact request scan state needs every override it
      * depends on, and atomic changesets: JNI wires its slots only for a
      * bridge that overrides the contact upsert native calls, the
-     * scan-state store and the scan-state load (a read position vouches
-     * for the requests an inherited no-op contact writer never stored), and
+     * scan-state store, the scan-state load and the scan-state wallet list
+     * (a read position vouches for the requests an inherited no-op contact
+     * writer never stored, and a record kept marked after its wallet's
+     * removal reaches the wallet only through that list), and
      * the wallet keeps the state only with `ATOMIC_CHANGESETS` too (an
      * un-ignore stores the sender's removal and the position rewind in one
      * changeset). JNI always wires the changeset begin and end callbacks,
      * so the atomic half is the bridge's declaration. A bridge declaring
      * both but leaving any override inherited, or declaring the scan state
-     * without atomic rounds, has neither; one implementing all three and
+     * without atomic rounds, has neither; one implementing all four and
      * declaring both, and the Room handler, keep both.
      */
     @Test
@@ -184,6 +186,10 @@ class FfiSmokeTest {
         assertFalse("no contact upsert", effective(ScanStateBridge.WithoutContactUpsert()))
         assertFalse("no scan-state store", effective(ScanStateBridge.WithoutScanStateStore()))
         assertFalse("no scan-state load", effective(ScanStateBridge.WithoutScanStateLoad()))
+        assertFalse(
+            "no scan-state wallet list",
+            effective(ScanStateBridge.WithoutScanStateWalletList()),
+        )
         assertFalse(
             "every override, not declared",
             effective(object : ScanStateBridge.Full() {
@@ -282,6 +288,8 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
 
         override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
             arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
     }
 
     class WithoutContactUpsert : ScanStateBridge() {
@@ -295,6 +303,8 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
 
         override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
             arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
     }
 
     class WithoutScanStateStore : ScanStateBridge() {
@@ -324,6 +334,8 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
 
         override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
             arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
     }
 
     class WithoutScanStateLoad : ScanStateBridge() {
@@ -358,6 +370,45 @@ private abstract class ScanStateBridge : NativePersistenceBridge() {
             removedAddresses: ByteArray,
             clearedIdentities: ByteArray,
         ): Int = 0
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+    }
+
+    class WithoutScanStateWalletList : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
     }
 }
 
