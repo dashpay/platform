@@ -584,13 +584,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V11`), so the moderator pays for the bytes the change
 ///     adds and a document a sponsor paid for stays the sponsor's.
 ///
-/// 29. **A chain asset lock proof is not held to the input cap**: an asset lock transaction
-///     may carry at most `max_asset_lock_transaction_inputs` (100) inputs, so that an instant
-///     proof, which embeds it with its InstantSend lock, fits a state transition.
-///     `validate_asset_lock_transaction_structure` 0 checked the cap, and Drive runs it on the
-///     transaction it fetches from Core for a chain proof too, though a chain proof carries
-///     only an outpoint and a height: a mined asset lock of more than 100 inputs, which no
-///     instant proof may carry either, could not be redeemed at all
+/// 29. **A chain asset lock proof is not held to the input cap**: the asset lock transaction
+///     an instant proof embeds, with its InstantSend lock, may carry at most
+///     `max_asset_lock_transaction_inputs` (100) inputs, so that the proof fits a state
+///     transition. `validate_asset_lock_transaction_structure` 0 checked the cap, and Drive
+///     runs it on the transaction it fetches from Core for a chain proof too, though a chain
+///     proof carries only an outpoint and a height: a mined asset lock of more than 100
+///     inputs, which no instant proof may carry either, could not be redeemed at all
 ///     (`IdentityAssetLockTransactionTooManyInputsError`, 10534). `STATE_TRANSITION_VERSIONS_V5`
 ///     selects `validate_asset_lock_transaction_structure` 1, which drops the cap, and
 ///     `validate_instant_asset_lock_proof_structure` 1, which checks it after the instant

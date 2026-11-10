@@ -74,8 +74,9 @@ pub struct IdentityTransitionAssetLockVersions {
     /// `validate_asset_lock_transaction_structure` 0 for the input cap, so a table selecting
     /// instant 0 must also select transaction 0; 1 (protocol 15) checks the cap itself.
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
-    /// The most inputs an asset lock transaction may carry, so that an instant proof embedding
-    /// it fits a state transition. Read by `validate_asset_lock_transaction_structure` 0 and by
+    /// The most inputs the asset lock transaction an instant proof embeds may carry, so that the
+    /// proof fits a state transition; before protocol 15 every asset lock transaction, a chain
+    /// proof's included. Read by `validate_asset_lock_transaction_structure` 0 and by
     /// `validate_asset_lock_transaction_inputs`, which `validate_instant_asset_lock_proof_structure`
     /// 1 calls; wallets also read it as Dash Core's relay bound. `u16::MAX`, effectively no cap,
     /// before protocol version 11.
