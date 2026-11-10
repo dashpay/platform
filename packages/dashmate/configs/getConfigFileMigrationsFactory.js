@@ -1868,8 +1868,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      // Keyed at the first 5.1 prerelease rather than 5.1.0: a build stamps configs with
-      // its newest key, so a 5.1.0 key would make every later 5.1 prerelease migration skip.
+      // At or below every 5.1 dev/beta/rc build (semver: beta < dev < rc), so it runs for each
+      // and, as builds stamp their newest key, never hides a later 5.1 prerelease key.
       '5.1.0-beta.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
