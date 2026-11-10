@@ -7334,6 +7334,190 @@ export namespace WaitForStateTransitionResultResponse {
   }
 }
 
+export class GetRecentStateTransitionStatusRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0 | undefined;
+  setV0(value?: GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0): void;
+
+  getVersionCase(): GetRecentStateTransitionStatusRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentStateTransitionStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentStateTransitionStatusRequest): GetRecentStateTransitionStatusRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentStateTransitionStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentStateTransitionStatusRequest;
+  static deserializeBinaryFromReader(message: GetRecentStateTransitionStatusRequest, reader: jspb.BinaryReader): GetRecentStateTransitionStatusRequest;
+}
+
+export namespace GetRecentStateTransitionStatusRequest {
+  export type AsObject = {
+    v0?: GetRecentStateTransitionStatusRequest.GetRecentStateTransitionStatusRequestV0.AsObject,
+  }
+
+  export class GetRecentStateTransitionStatusRequestV0 extends jspb.Message {
+    getStateTransitionHash(): Uint8Array | string;
+    getStateTransitionHash_asU8(): Uint8Array;
+    getStateTransitionHash_asB64(): string;
+    setStateTransitionHash(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentStateTransitionStatusRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentStateTransitionStatusRequestV0): GetRecentStateTransitionStatusRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentStateTransitionStatusRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentStateTransitionStatusRequestV0;
+    static deserializeBinaryFromReader(message: GetRecentStateTransitionStatusRequestV0, reader: jspb.BinaryReader): GetRecentStateTransitionStatusRequestV0;
+  }
+
+  export namespace GetRecentStateTransitionStatusRequestV0 {
+    export type AsObject = {
+      stateTransitionHash: Uint8Array | string,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetRecentStateTransitionStatusResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0 | undefined;
+  setV0(value?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0): void;
+
+  getVersionCase(): GetRecentStateTransitionStatusResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentStateTransitionStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentStateTransitionStatusResponse): GetRecentStateTransitionStatusResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentStateTransitionStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentStateTransitionStatusResponse;
+  static deserializeBinaryFromReader(message: GetRecentStateTransitionStatusResponse, reader: jspb.BinaryReader): GetRecentStateTransitionStatusResponse;
+}
+
+export namespace GetRecentStateTransitionStatusResponse {
+  export type AsObject = {
+    v0?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.AsObject,
+  }
+
+  export class GetRecentStateTransitionStatusResponseV0 extends jspb.Message {
+    hasCommitted(): boolean;
+    clearCommitted(): void;
+    getCommitted(): GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed | undefined;
+    setCommitted(value?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed): void;
+
+    hasPending(): boolean;
+    clearPending(): void;
+    getPending(): GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending | undefined;
+    setPending(value?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending): void;
+
+    hasUnknown(): boolean;
+    clearUnknown(): void;
+    getUnknown(): GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown | undefined;
+    setUnknown(value?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getStatusCase(): GetRecentStateTransitionStatusResponseV0.StatusCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentStateTransitionStatusResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentStateTransitionStatusResponseV0): GetRecentStateTransitionStatusResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentStateTransitionStatusResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentStateTransitionStatusResponseV0;
+    static deserializeBinaryFromReader(message: GetRecentStateTransitionStatusResponseV0, reader: jspb.BinaryReader): GetRecentStateTransitionStatusResponseV0;
+  }
+
+  export namespace GetRecentStateTransitionStatusResponseV0 {
+    export type AsObject = {
+      committed?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Committed.AsObject,
+      pending?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Pending.AsObject,
+      unknown?: GetRecentStateTransitionStatusResponse.GetRecentStateTransitionStatusResponseV0.Unknown.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class Committed extends jspb.Message {
+      getHeight(): string;
+      setHeight(value: string): void;
+
+      hasError(): boolean;
+      clearError(): void;
+      getError(): StateTransitionBroadcastError | undefined;
+      setError(value?: StateTransitionBroadcastError): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Committed.AsObject;
+      static toObject(includeInstance: boolean, msg: Committed): Committed.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Committed, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Committed;
+      static deserializeBinaryFromReader(message: Committed, reader: jspb.BinaryReader): Committed;
+    }
+
+    export namespace Committed {
+      export type AsObject = {
+        height: string,
+        error?: StateTransitionBroadcastError.AsObject,
+      }
+    }
+
+    export class Pending extends jspb.Message {
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Pending.AsObject;
+      static toObject(includeInstance: boolean, msg: Pending): Pending.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Pending, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Pending;
+      static deserializeBinaryFromReader(message: Pending, reader: jspb.BinaryReader): Pending;
+    }
+
+    export namespace Pending {
+      export type AsObject = {
+      }
+    }
+
+    export class Unknown extends jspb.Message {
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Unknown.AsObject;
+      static toObject(includeInstance: boolean, msg: Unknown): Unknown.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Unknown, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Unknown;
+      static deserializeBinaryFromReader(message: Unknown, reader: jspb.BinaryReader): Unknown;
+    }
+
+    export namespace Unknown {
+      export type AsObject = {
+      }
+    }
+
+    export enum StatusCase {
+      STATUS_NOT_SET = 0,
+      COMMITTED = 1,
+      PENDING = 2,
+      UNKNOWN = 3,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetConsensusParamsRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

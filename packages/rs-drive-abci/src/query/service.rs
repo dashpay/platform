@@ -64,16 +64,17 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
     GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
     GetRecentCompactedAddressBalanceChangesRequest,
-    GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
-    GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
-    GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
-    GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
-    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
-    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetRecentCompactedAddressBalanceChangesResponse, GetRecentStateTransitionStatusRequest,
+    GetRecentStateTransitionStatusResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
+    GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
+    GetShieldedNotesCountRequest, GetShieldedNotesCountResponse, GetShieldedNullifiersRequest,
+    GetShieldedNullifiersResponse, GetShieldedPoolStateRequest, GetShieldedPoolStateResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest, GetTokenContractInfoResponse,
+    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
+    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
+    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     GetYesNoVotePollStateRequest, GetYesNoVotePollStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
@@ -614,6 +615,13 @@ impl PlatformService for QueryService {
         _request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
         respond_with_unimplemented("wait_for_state_transition_result")
+    }
+
+    async fn get_recent_state_transition_status(
+        &self,
+        _request: Request<GetRecentStateTransitionStatusRequest>,
+    ) -> Result<Response<GetRecentStateTransitionStatusResponse>, Status> {
+        respond_with_unimplemented("get_recent_state_transition_status")
     }
 
     async fn get_owner_transactions_in_block(
