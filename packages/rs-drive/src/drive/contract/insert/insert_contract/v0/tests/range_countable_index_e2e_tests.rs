@@ -3298,7 +3298,7 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
 /// ascending order: `c, d, e, f, g`.
 ///
 /// Pins two things at once: (1) the limit is plumbed end-to-end
-/// through `execute_document_count_range_distinct_proof` →
+/// through `execute_document_count_proof` →
 /// `execute_distinct_count_with_proof` →
 /// `distinct_count_path_query`, and (2) the prover and verifier
 /// build the *exact same* `PathQuery` with that limit so the
@@ -3451,7 +3451,7 @@ fn distinct_count_proof_honors_request_limit() {
 /// in-range). With `LIMIT = 5` and descending iteration the
 /// proof should cover `z, y, x, w, v` — pinning that:
 /// (1) `left_to_right = false` propagates end-to-end through
-/// `execute_document_count_range_distinct_proof` →
+/// `execute_document_count_proof` →
 /// `execute_distinct_count_with_proof` →
 /// `distinct_count_path_query`;
 /// (2) the prover and verifier agree on the descending path

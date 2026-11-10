@@ -123,6 +123,28 @@ fn reference_tree_type_for_index(
 }
 
 impl Drive {
+    /// Generation 1: the references of the indexes an update leaves unchanged stay with the
+    /// owner they name, unless the document has no storage flags.
+    pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.update_document_for_contract_operations_v1_body(
+            document_and_contract_info,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            false,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// Gathers operations for updating a document.
     ///
     /// v1 (platform v14+) applies the shared-prefix aggregate fix to the
@@ -168,12 +190,14 @@ impl Drive {
     ///
     /// The `[0]` reference-bucket tree-type dispatch and everything
     /// else match v0.
-    pub(in crate::drive::document::update) fn update_document_for_contract_operations_v1(
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn update_document_for_contract_operations_v1_body(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        references_follow_the_owner: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -187,6 +211,7 @@ impl Drive {
         self.update_stored_document_operations_v1(
             document_and_contract_info,
             false,
+            references_follow_the_owner,
             block_info,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
@@ -198,20 +223,22 @@ impl Drive {
     /// Gathers operations for rewriting a stored document with `document_and_contract_info`'s
     /// document: its primary storage, and each index entry whose values changed, moved from
     /// the stored document's position to the new one. The body of
-    /// [`Self::update_document_for_contract_operations_v1`] after its refusal of document
-    /// types a client cannot update, split out unchanged (the refusal reads only the document
-    /// type, which dropping storage flags leaves as it is), so an update gathers the same
-    /// operations as before at every protocol version. `draw_random_document_properties`
-    /// calls it to fill the `sys.random` properties of a document of any type, and
-    /// `settle_random_token_amounts` to fill the drawn amount into a token history document,
-    /// both with `index_trees_as_inserted`: the index trees it creates then carry storage
-    /// flags only where an insert's do (`index_trees_carry_storage_flags`). The primary
-    /// storage and the references keep the document's flags either way, as an insert's do.
+    /// [`Self::update_document_for_contract_operations_v1_body`] after its refusal of
+    /// document types a client cannot update, split out unchanged (the refusal reads only the
+    /// document type, which dropping storage flags leaves as it is), so an update gathers the
+    /// same operations as before at every protocol version, `references_follow_the_owner`
+    /// being the generation's. `draw_random_document_properties` calls it to fill the
+    /// `sys.random` properties of a document of any type, and `settle_random_token_amounts`
+    /// to fill the drawn amount into a token history document, both keeping its owner and
+    /// with `index_trees_as_inserted`: the index trees it creates then carry storage flags
+    /// only where an insert's do (`index_trees_carry_storage_flags`). The primary storage and
+    /// the references keep the document's flags either way, as an insert's do.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_stored_document_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         index_trees_as_inserted: bool,
+        references_follow_the_owner: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
@@ -421,6 +448,20 @@ impl Drive {
             )));
         };
 
+        // An update naming a new owner moves the references of the indexes it leaves unchanged
+        // too. An untrusted refresh writes the stored flags back, so those are refreshed as
+        // trusted: what they point at is unchanged.
+        //
+        // The document's stored owner decides, not each reference's. Earlier generations could
+        // leave a reference with whoever paid for it while the document went to a new owner;
+        // such a reference stays with its payer until an update names another owner. No gas
+        // sponsor holds one: flags name a sponsor only from the generation that follows owners.
+        let references_take_new_owner = references_follow_the_owner
+            && old_document_info
+                .get_storage_flags_ref()
+                .and_then(|flags| flags.owner_id())
+                != document_storage_flags.and_then(|flags| flags.owner_id());
+
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // Pre-built tree of every index path in the doctype. Walking
         // this in parallel with each `index.properties` chain below
@@ -595,6 +636,7 @@ impl Drive {
                     current_index_level,
                     &index_document_reference,
                     index_storage_flags,
+                    references_take_new_owner,
                     &mut batch_insertion_cache,
                     previous_batch_operations,
                     index_batch_operations,
@@ -1130,7 +1172,8 @@ impl Drive {
                 // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
-                let trust_refresh_reference = document_storage_flags.is_none();
+                let trust_refresh_reference =
+                    document_storage_flags.is_none() || references_take_new_owner;
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
@@ -1282,6 +1325,7 @@ impl Drive {
         top_index_level: &IndexLevel,
         index_document_reference: &Element,
         storage_flags: Option<&StorageFlags>,
+        references_take_new_owner: bool,
         batch_insertion_cache: &mut HashSet<Vec<Vec<u8>>>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -1474,7 +1518,7 @@ impl Drive {
                     refresh_path,
                     refresh_key,
                     index_document_reference.clone(),
-                    storage_flags.is_none(),
+                    storage_flags.is_none() || references_take_new_owner,
                     batch_operations,
                     drive_version,
                 )?;
