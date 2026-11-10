@@ -1,70 +1,204 @@
-import checkMasternodeSafeToStop from '../../../../src/core/quorum/checkMasternodeSafeToStop.js';
+import checkMasternodeSafeToStop, {
+  readCoreVersion,
+  SAFE_STOP_CONFIRMATION_DELAY_MS,
+} from '../../../../src/core/quorum/checkMasternodeSafeToStop.js';
+import { MIN_BLOCKS_BEFORE_DKG } from '../../../../src/constants.js';
+import getCoreRpcMock from '../../../../src/test/mock/getCoreRpcMock.js';
+
+const CORE_23 = 230110;
+const CORE_24_0_PATCH = 240099;
+const CORE_24_1 = 240100;
 
 describe('checkMasternodeSafeToStop', () => {
+  let core;
   let rpcClient;
+  let clock;
 
   beforeEach(function beforeEach() {
-    rpcClient = { quorum: this.sinon.stub(), getBlockCount: this.sinon.stub() };
+    clock = this.sinon.useFakeTimers();
+    core = {
+      version: CORE_23,
+      height: 1012,
+      dkgInfo: { active_dkgs: 0, next_dkg: 12 },
+      dkgStatus: { session: [] },
+    };
+    rpcClient = getCoreRpcMock(this.sinon, core);
   });
 
-  it('should allow a non-member immediately using one membership response', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({
-      result: {
-        active_dkgs: 0,
-        next_dkg: 1,
-        upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
-      },
+  /**
+   * Start a check and run the fake clock until the first check has finished
+   * and, on Core older than 24.1, is waiting to be confirmed.
+   */
+  async function startCheck() {
+    const state = {};
+    checkMasternodeSafeToStop(rpcClient, core.version).then((result) => { state.result = result; });
+    await clock.tickAsync(0);
+
+    return state;
+  }
+
+  describe('readCoreVersion', () => {
+    it('should return the numeric version Core reports', async () => {
+      expect(await readCoreVersion(rpcClient)).to.equal(CORE_23);
     });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(true);
-    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
-    expect(rpcClient.getBlockCount).to.not.have.been.called();
-  });
 
-  it('should block a positive active_dkgs without inspecting dkgstatus', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({
-      result: {
-        active_dkgs: 1,
-        next_dkg: 24,
-        upcoming_dkgs: [],
-      },
+    it('should return null when Core reports no integer version', async () => {
+      core.version = '23.1.10';
+
+      expect(await readCoreVersion(rpcClient)).to.be.null();
     });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
-    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
-    expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
-  it('should block a member of an imminent DKG', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({
-      result: {
-        active_dkgs: 0,
-        next_dkg: 1,
-        upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
-      },
-    });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
-    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
+  it('should read the chain tip before and after the DKG state', async () => {
+    core.version = CORE_24_1;
+
+    await startCheck();
+
+    const [tipBefore, tipAfter] = rpcClient.getBlockchainInfo.getCalls();
+    const dkgInfo = rpcClient.quorum.withArgs('dkginfo').getCall(0);
+    const dkgStatus = rpcClient.quorum.withArgs('dkgstatus').getCall(0);
+
+    expect(tipBefore.calledBefore(dkgInfo)).to.be.true();
+    expect(tipBefore.calledBefore(dkgStatus)).to.be.true();
+    expect(dkgInfo.calledBefore(tipAfter)).to.be.true();
+    expect(dkgStatus.calledBefore(tipAfter)).to.be.true();
   });
 
-  it('should retain the imminent-DKG guard without upcoming_dkgs', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({ result: { active_dkgs: 0, next_dkg: 1 } });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
-    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
+  it('should report unsettled when a block connects during the reads', async () => {
+    core.version = CORE_24_1;
+    core.beforeDkgInfo = () => { core.height += 1; };
+
+    const { result } = await startCheck();
+
+    expect(result.status).to.equal('unsettled');
   });
 
-  it('should allow a legacy response with no active or imminent DKG', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({ result: { active_dkgs: 0, next_dkg: 24 } });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(true);
-    expect(rpcClient.quorum).to.have.been.calledOnceWith('dkginfo');
+  it('should report unsettled when Core changes its session records between the reads', async () => {
+    // Core older than 24.1 counts the records dkgstatus lists; it erases a
+    // record when the next session of its type starts.
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 12 };
+
+    const { result } = await startCheck();
+
+    expect(result.status).to.equal('unsettled');
   });
 
-  it('should inspect active sessions for older Core', async () => {
-    rpcClient.quorum.withArgs('dkginfo').resolves({ result: { active_dkgs: 1, next_dkg: 24 } });
-    rpcClient.quorum.withArgs('dkgstatus').resolves({
-      result: { session: [{ llmqType: 'llmq_60_75', status: { quorumHeight: 1000 } }] },
-    });
-    rpcClient.getBlockCount.resolves({ result: 1001 });
-    expect(await checkMasternodeSafeToStop(rpcClient)).to.equal(false);
-    expect(rpcClient.quorum.withArgs('dkgstatus')).to.have.been.calledOnce();
-    expect(rpcClient.getBlockCount).to.have.been.calledOnce();
+  it('should report blocked at once without waiting for confirmation', async () => {
+    core.dkgInfo = { active_dkgs: 0, next_dkg: MIN_BLOCKS_BEFORE_DKG };
+
+    const { result } = await startCheck();
+
+    expect(result.status).to.equal('blocked');
+    expect(result.height).to.equal(1012);
+    expect(result.blockers[0].reason).to.equal('imminent');
+    expect(rpcClient.getBlockchainInfo).to.have.been.calledTwice();
+  });
+
+  it('should confirm a safe result after the confirmation delay on Core older than 24.1', async () => {
+    const state = await startCheck();
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS - 1);
+
+    expect(state.result).to.be.undefined();
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+
+    await clock.tickAsync(1);
+
+    expect(state.result.status).to.equal('safe');
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+  });
+
+  it('should confirm a safe result on a Core 24.0 patch release', async () => {
+    core.version = CORE_24_0_PATCH;
+
+    const state = await startCheck();
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('safe');
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+  });
+
+  it('should start the confirmation delay once the first check has finished', async () => {
+    // Every block the first check saw must be old enough for Core to have
+    // recorded its sessions.
+    const dkgStatusDelayMs = 10000;
+    core.dkgStatusDelayMs = dkgStatusDelayMs;
+
+    await startCheck();
+    await clock.tickAsync(dkgStatusDelayMs + SAFE_STOP_CONFIRMATION_DELAY_MS - 1);
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+
+    await clock.tickAsync(1);
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+  });
+
+  it('should return the confirming check when it finds a session', async () => {
+    const state = await startCheck();
+
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 12 };
+    core.dkgStatus = {
+      session: [{ llmqType: 'llmq_test_platform', quorumIndex: 0, status: { quorumHeight: 1012 } }],
+    };
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('blocked');
+    expect(state.result.blockers.find(({ reason }) => reason === 'session'))
+      .to.include({ from: 1012, until: 1022 });
+  });
+
+  it('should accept up to MIN_BLOCKS_BEFORE_DKG new blocks during the confirmation', async () => {
+    const state = await startCheck();
+    core.height += MIN_BLOCKS_BEFORE_DKG;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('safe');
+  });
+
+  it('should report unsettled when more blocks arrive during the confirmation than the first check covered', async () => {
+    // The first check only ruled out DKGs of this node within
+    // MIN_BLOCKS_BEFORE_DKG blocks of its tip.
+    const state = await startCheck();
+    core.height += MIN_BLOCKS_BEFORE_DKG + 1;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('unsettled');
+  });
+
+  it('should report unsettled when the confirming check finds another block at the same height', async () => {
+    // A reorg replaced the first check's tip, so that block may be new.
+    const state = await startCheck();
+    core.hash = 'reorganized';
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('unsettled');
+  });
+
+  it('should report unsettled when the confirming check finds a lower tip', async () => {
+    const state = await startCheck();
+    core.height -= 1;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('unsettled');
+  });
+
+  it('should not wait for confirmation on Core 24.1', async () => {
+    core.version = CORE_24_1;
+
+    const { result } = await startCheck();
+
+    expect(result.status).to.equal('safe');
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+  });
+
+  it('should treat Core in initial block download as safe without confirmation', async () => {
+    // Core takes no part in DKGs until it has synced.
+    core.isSyncing = true;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 1 };
+
+    const { result } = await startCheck();
+
+    expect(result).to.include({ status: 'safe', isSyncing: true });
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
   });
 });
