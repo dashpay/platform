@@ -19,7 +19,7 @@ const query = createSingleDocumentQuery(
   'myDocumentType',  // string - The document type name
   false,             // boolean - Whether the document type keeps history
   documentId,        // Uint8Array(32) - The document ID
-  Date.now()         // number (optional) - Block time in milliseconds
+  Date.now()         // number (optional) - Block time in milliseconds, ignored unless the type keeps history
 );
 
 // For a maybe contested document
