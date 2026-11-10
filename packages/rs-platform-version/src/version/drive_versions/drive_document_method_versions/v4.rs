@@ -113,6 +113,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // from any item element, so a `documentsSummable` type (stored as
             // `ItemWithSumItem`) can be paginated.
             start_at_document: 1,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
