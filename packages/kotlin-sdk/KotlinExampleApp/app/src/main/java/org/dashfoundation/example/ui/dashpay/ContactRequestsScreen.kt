@@ -92,15 +92,17 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var removedOverlayIds by remember { mutableStateOf(emptySet<String>()) }
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
     var isRefreshing by remember { mutableStateOf(false) }
-    // Hex ids with a private reply in flight, or paid and not yet read back,
-    // as the wallet records it (`privateRepliesPending`): the row stays
-    // pending, without its buttons, until a private sync settles it. Read
-    // from the wallet, not kept by this screen, so leaving and reopening it
-    // keeps the state. Re-read on composition and row changes, after an
-    // accept, on refresh and after each sync pass. A failed read keeps the
-    // last snapshot and leaves every row without its buttons until a read
-    // succeeds.
+    // Hex ids whose pair the wallet holds for a private request, as a send
+    // decides it (`privateRepliesPending`): the row stays pending, without its
+    // buttons, until the wallet's read says the pair is free. Read from the
+    // wallet, not kept by this screen, so leaving and reopening it keeps the
+    // state. Re-read on composition and row changes, after an accept, on
+    // refresh and after each sync pass. A failed read keeps the last snapshot
+    // and leaves every row without its buttons until a read succeeds.
     var walletPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
+    // Why the shielded store could not be opened, as last read with the
+    // pending state; null when it is open.
+    var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     // What the last private-store refresh has to tell the user, if anything.
     var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
@@ -166,8 +168,10 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             ourIdentityId = idBytes,
             contactIds = contactIds,
         )
+        val readiness = privateContactReadiness(wallet, idBytes)
         walletPending = walletPending.recorded(read, contactIds.map { it.toHex() })
-            .withReadiness(privateContactReadiness(wallet, idBytes))
+            .withReadiness(readiness?.readiness, readiness?.restoreFailure)
+        shieldedStoreFailure = container.shieldedStoreFailureRetrying()
     }
     // Binding the shielded account restores the wallet's private payments:
     // read the readiness again then.
@@ -207,10 +211,9 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                         kickDashPaySync(scope, m)
                     }
                     ContactRequestSubmissionOutcome.PrivateRequestPending -> {
-                        // Nothing was sent, and the wallet may hold nothing
-                        // for it (the store was not read to its end): the row
-                        // stays pending until the wallet's readiness says the
-                        // store was read (pull to refresh reads it).
+                        // Nothing was sent: the wallet holds the pair. The
+                        // row stays pending until its per-contact read says
+                        // free.
                         walletPending = walletPending.withRefusal(hex)
                         kickDashPaySync(scope, m)
                     }
@@ -218,6 +221,12 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                         // The wallet is held until its private payments are
                         // restored; every row waits for the readiness to say so.
                         walletPending = walletPending.withRestoringRefusal()
+                    }
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead -> {
+                        // Nothing was sent and nothing is pending: the user may
+                        // accept again, which continues the read.
+                        rowErrors = rowErrors +
+                            (hex to ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE)
                     }
                     is ContactRequestSubmissionOutcome.Failed ->
                         rowErrors = rowErrors + (hex to "Accept failed: ${outcome.message}")
@@ -307,6 +316,8 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                                 errorMessage = ContactRequestSubmissionOutcome.rowMessage(
                                     pending = walletPending.isPending(hex),
                                     restoring = walletPending.isRestoringPrivatePayments,
+                                    restoreFailure = walletPending.restoreFailure,
+                                    shieldedStoreFailure = shieldedStoreFailure,
                                     unavailable = walletPending.isUnavailable,
                                     error = rowErrors[hex],
                                 ),

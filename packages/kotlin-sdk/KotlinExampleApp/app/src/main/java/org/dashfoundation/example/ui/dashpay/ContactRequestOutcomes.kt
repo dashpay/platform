@@ -6,27 +6,36 @@ import org.dashfoundation.dashsdk.tokens.Dashpay
 /**
  * How a contact request send or accept that threw ended, for the DashPay
  * screens. Follows the send screen (and iOS `SendViewModel.swift`): a shielded
- * spend whose result could not be confirmed may already be on chain (Rust
- * keeps its notes reserved), so the screen keeps it pending and never offers a
- * fresh submission; the next sync settles it. A private request Rust reports
- * as pending (one to the same contact in flight, or paid and not yet read
- * back), which a public send or accept can also meet, sent nothing new: the
- * screen shows it as pending and offers a private sync, which settles it,
- * after which the user may try again. Unrestored private payments (code 72)
- * hold the wallet, not one contact: the screen shows "restoring private
- * payments" until the wallet's readiness reads restored; no private sync
- * lifts it. Every other error is an ordinary failure the user may retry.
+ * spend whose result could not be confirmed (code 18) may already be on chain
+ * (Rust keeps its notes reserved), so the screen keeps it pending and never
+ * offers a fresh submission; the next sync settles it. A pair Rust reports as
+ * held for a private request (code 71), which a public send or accept can
+ * also meet, sent nothing new: the screen shows it as pending until the
+ * wallet's per-contact read says the pair is free. Unrestored private
+ * payments (code 72) hold the wallet, not one contact: the screen shows
+ * "setting up" until the wallet's readiness reads restored, or why the last
+ * restoration failed; no private sync lifts it. A private store read that did
+ * not finish (code 74) sent nothing and is not pending: the user may try
+ * again. Every other error is an ordinary failure the user may retry; a
+ * storage backend that cannot protect private payments (73) and an SDK
+ * pinned below the protocol version (75) are shown as configuration problems.
  * ← Swift `ContactRequestSubmissionOutcome` (`ContactRequestOutcomes.swift`).
  */
 sealed interface ContactRequestSubmissionOutcome {
     /** The private reply may have gone through: do not submit again. */
     data object MayHaveGoneThrough : ContactRequestSubmissionOutcome
 
-    /** A private request to the contact is pending in the wallet; nothing was sent. */
+    /** The wallet holds the pair for a private request; nothing was sent. */
     data object PrivateRequestPending : ContactRequestSubmissionOutcome
 
     /** The wallet's private payments are not restored yet; nothing was sent. */
     data object PrivatePaymentsNotRestored : ContactRequestSubmissionOutcome
+
+    /**
+     * The private store read every contact request runs first did not
+     * finish; nothing was sent, and trying again continues it.
+     */
+    data object PrivateStoreNotRead : ContactRequestSubmissionOutcome
 
     /** It failed; the message is the error's. */
     data class Failed(val message: String) : ContactRequestSubmissionOutcome
@@ -36,11 +45,15 @@ sealed interface ContactRequestSubmissionOutcome {
             "after the next sync confirms it; do not submit it again."
 
         const val PRIVATE_REQUEST_PENDING_MESSAGE = "A private request to this contact is " +
-            "pending. Sync private requests to settle it, then try again if it did not " +
-            "go through."
+            "pending. It clears once the request is read back from the private store, " +
+            "or once its payment can no longer land, which can take a while. Sync " +
+            "private requests to check."
 
-        const val RESTORING_PRIVATE_PAYMENTS_MESSAGE = "Restoring this wallet's private " +
-            "payments. Contact requests wait until they are restored."
+        const val SETTING_UP_PRIVATE_PAYMENTS_MESSAGE = "Setting up this wallet's private " +
+            "payments. Contact requests wait until it finishes."
+
+        const val PRIVATE_STORE_NOT_READ_MESSAGE = "Still reading private contact requests. " +
+            "Nothing was sent; try again in a moment."
 
         /**
          * Code 73 is a configuration error of the app's storage, which
@@ -49,29 +62,62 @@ sealed interface ContactRequestSubmissionOutcome {
         const val RECOVERY_UNSUPPORTED_MESSAGE = "This storage backend can't protect " +
             "private payments, so private contact requests are off."
 
+        /**
+         * Code 75 is the developer's setting: only raising or removing the
+         * SDK's protocol version pin lifts it.
+         */
+        const val SDK_PINNED_MESSAGE = "This build's SDK is pinned below the protocol " +
+            "version private contact requests need. Raise or remove the SDK's protocol " +
+            "version pin."
+
+        /** The wallet's last restoration of its private payments failed. */
+        fun restoreFailedMessage(reason: String): String =
+            "Restoring this wallet's private payments failed: $reason. Contact requests " +
+                "wait until a restore succeeds."
+
+        /** The app could not open the shielded store, which restores the wallet's private payments. */
+        fun shieldedStoreFailedMessage(reason: String): String =
+            "The shielded store could not be opened: $reason. Contact requests wait " +
+                "until it opens."
+
+        /**
+         * The notice shown while the wallet's private payments are not
+         * restored: why opening the shielded store failed, why the last
+         * restoration failed, or that they are being set up.
+         */
+        fun restoringMessage(restoreFailure: String?, shieldedStoreFailure: String?): String = when {
+            shieldedStoreFailure != null -> shieldedStoreFailedMessage(shieldedStoreFailure)
+            restoreFailure != null -> restoreFailedMessage(restoreFailure)
+            else -> SETTING_UP_PRIVATE_PAYMENTS_MESSAGE
+        }
+
         fun of(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
             is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed -> MayHaveGoneThrough
             is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
             is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored -> PrivatePaymentsNotRestored
+            is DashSdkError.PlatformWallet.PrivateContactStoreNotRead -> PrivateStoreNotRead
             is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported ->
                 Failed(RECOVERY_UNSUPPORTED_MESSAGE)
+            is DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion -> Failed(SDK_PINNED_MESSAGE)
             else -> Failed(error.message ?: "unknown error")
         }
 
         /**
          * The message a request row shows: the restoring notice while the
          * wallet's private payments are not restored, the pending notice
-         * while the wallet has a private request to the contact pending, the
-         * unavailable notice while the wallet could not be read, and
-         * whatever error an earlier attempt left otherwise.
+         * while the wallet holds the pair, the unavailable notice while the
+         * wallet could not be read, and whatever error an earlier attempt
+         * left otherwise.
          */
         fun rowMessage(
             pending: Boolean,
             restoring: Boolean = false,
+            restoreFailure: String? = null,
+            shieldedStoreFailure: String? = null,
             unavailable: Boolean = false,
             error: String?,
         ): String? = when {
-            restoring -> RESTORING_PRIVATE_PAYMENTS_MESSAGE
+            restoring -> restoringMessage(restoreFailure, shieldedStoreFailure)
             pending -> PRIVATE_REQUEST_PENDING_MESSAGE
             unavailable -> PrivateRepliesPendingSnapshot.UNAVAILABLE_MESSAGE
             else -> error
@@ -80,39 +126,41 @@ sealed interface ContactRequestSubmissionOutcome {
 }
 
 /**
- * Which contacts (lower hex ids) have a private request pending in the
- * wallet, as the screens last read it (`privateRepliesPending`). While one
- * is, Rust refuses another send or reply to that contact, so the screens turn
- * off what would submit one (Accept, Ignore, Send). A failed read is not
- * "nothing pending": the last successful snapshot stays, and those controls
- * stay off for every contact until a read covering it succeeds.
+ * Which contacts (lower hex ids) the wallet holds a pair with for a private
+ * request, as the screens last read it (`privateRepliesPending`, one pair
+ * read per contact, which answers as a send decides it). While one is held,
+ * Rust refuses another send or reply to that contact, so the screens turn off
+ * what would submit one (Accept, Ignore, Send). A failed read is not "nothing
+ * pending": the last successful snapshot stays, and those controls stay off
+ * for every contact until a read covering it succeeds.
  *
- * A send or accept Rust refused as pending (code 71) is kept apart from the
- * read: code 71 also means the private store could not be read to its end
- * before the first send or accept since load, with nothing reserved, so the
- * read may find nothing pending. That contact stays pending, with the
- * private sync offered, until the wallet's readiness says the store was
- * read to its end.
+ * A send or accept Rust refused as pending (code 71) marks the contact
+ * pending at once; the next successful read covering it decides, as it reads
+ * what the refusal read. Controls for a pair re-enable only when that read
+ * says it is free: a payment that will never land frees it only once the
+ * wallet proves so, which the read shows.
  *
  * Whether the wallet's private payments are restored is the wallet's
  * readiness (`Dashpay.privateContactReadiness`), not anything the screens
  * conclude: a code 72 refusal, or a readiness read that says not restored,
- * shows "restoring private payments" for every contact, and only a
- * readiness read that says restored lifts it. A private sync changes
- * neither on its own.
+ * shows "setting up" (or why the last restoration failed) for every contact,
+ * and only a readiness read that says restored lifts it. A private sync
+ * changes neither on its own.
  * ← Swift `PrivateRepliesPendingSnapshot` (`ContactRequestOutcomes.swift`).
  */
 data class PrivateRepliesPendingSnapshot(
-    /** The pending contacts the last successful read found. */
+    /** The held contacts the last successful read found. */
     val pending: Set<String> = emptySet(),
     /** The contacts the last successful read covered. */
     val covered: Set<String> = emptySet(),
     /** False after a failed read, until a read succeeds. */
     val available: Boolean = true,
-    /** Contacts a send or accept was refused for as pending (code 71), until the store is read to its end. */
+    /** Contacts a send or accept was refused for as pending (code 71) since the last successful read covering them. */
     val refused: Set<String> = emptySet(),
     /** The wallet's readiness for the identity, as last read; null until a read succeeds. */
     val readiness: Dashpay.PrivateContactReadiness? = null,
+    /** Why the last restoration failed, as last read with the readiness; null when none failed or it could not be read. */
+    val restoreFailure: String? = null,
     /** Set by a code 72 refusal; cleared only by a readiness read that says restored. */
     val restoringRefused: Boolean = false,
 ) {
@@ -120,14 +168,15 @@ data class PrivateRepliesPendingSnapshot(
     val isUnavailable: Boolean get() = !available
 
     /**
-     * This snapshot after a read of [contactIds]: [read] holds the pending
-     * ones, or is null when the read failed.
+     * This snapshot after a read of [contactIds]: [read] holds the held
+     * ones, or is null when the read failed. A successful read decides each
+     * contact it covered, a code 71 refusal included.
      */
     fun recorded(read: Set<String>?, contactIds: Collection<String>): PrivateRepliesPendingSnapshot =
         if (read == null) {
             copy(available = false)
         } else {
-            copy(pending = read, covered = contactIds.toSet(), available = true)
+            copy(pending = read, covered = contactIds.toSet(), refused = refused - contactIds.toSet(), available = true)
         }
 
     /** This snapshot after a send or accept to [contactId] was refused as pending (code 71). */
@@ -137,19 +186,22 @@ data class PrivateRepliesPendingSnapshot(
     fun withRestoringRefusal(): PrivateRepliesPendingSnapshot = copy(restoringRefused = true)
 
     /**
-     * This snapshot after a read of the wallet's readiness, or null when it
-     * failed, which keeps what the last read said. A readiness that says
-     * restored lifts a code 72 refusal; one that says the private store was
-     * read to its end leaves a contact's pending state to the pending read.
+     * This snapshot after a read of the wallet's readiness and, when it flags
+     * a failed restoration, the reason read with it; a null readiness (the
+     * read failed) keeps what the last read said. A readiness that says
+     * restored lifts a code 72 refusal and its failure.
      */
-    fun withReadiness(read: Dashpay.PrivateContactReadiness?): PrivateRepliesPendingSnapshot =
+    fun withReadiness(
+        read: Dashpay.PrivateContactReadiness?,
+        restoreFailure: String? = null,
+    ): PrivateRepliesPendingSnapshot =
         if (read == null) {
             this
         } else {
             copy(
                 readiness = read,
+                restoreFailure = restoreFailure.takeIf { read.privatePaymentsRestoreFailed },
                 restoringRefused = restoringRefused && !read.privatePaymentsRestored,
-                refused = if (read.privateStoreRead) emptySet() else refused,
             )
         }
 
@@ -162,15 +214,14 @@ data class PrivateRepliesPendingSnapshot(
         get() = restoringRefused || readiness?.privatePaymentsRestored == false
 
     /**
-     * Whether [contactId] is pending: the last successful read found a
-     * private request to it, or a send or accept to it was refused as
-     * pending and the store has not been read to its end since.
+     * Whether [contactId] is pending: the last successful read found the
+     * pair held, or a send or accept to it was refused as pending since.
      */
     fun isPending(contactId: String): Boolean = contactId in pending || contactId in refused
 
     /**
      * Whether a send or reply to [contactId] may be offered: a successful
-     * read covered it and found nothing pending.
+     * read covered it and found the pair free.
      */
     fun allowsSubmission(contactId: String): Boolean =
         available && contactId in covered && !isPending(contactId) && !isRestoringPrivatePayments
@@ -198,10 +249,10 @@ object PrivateContactRefreshNotice {
     }
 
     /** The notice a pass that failed leaves, or null when the network does not serve the private store yet. */
-    fun notice(error: Throwable): String? =
-        if (error is DashSdkError.PlatformWallet.ProtocolVersionNotActive) {
-            null
-        } else {
-            "Private requests could not be read: ${error.message ?: "unknown error"}"
-        }
+    fun notice(error: Throwable): String? = when (error) {
+        is DashSdkError.PlatformWallet.ProtocolVersionNotActive -> null
+        is DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion ->
+            ContactRequestSubmissionOutcome.SDK_PINNED_MESSAGE
+        else -> "Private requests could not be read: ${error.message ?: "unknown error"}"
+    }
 }

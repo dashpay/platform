@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.util.toHex
@@ -37,14 +38,15 @@ fun kickDashPaySync(scope: CoroutineScope, manager: PlatformWalletManager) {
 }
 
 /**
- * The hex ids of the contacts among [contactIds] that [ourIdentityId] has a
- * private request to in flight, or paid and not yet read back, as the wallet
- * records it (one snapshot). While one is, Rust refuses another send or reply
- * to it, so the screens show it as pending and offer neither; a private sync
- * settles it. Empty when the identity is not managed, as the wallet then
- * holds nothing for it. Null when the wallet could not be read (no wallet,
- * or a read failed), which the screens keep apart from "nothing pending"
- * ([PrivateRepliesPendingSnapshot]).
+ * The hex ids of the contacts among [contactIds] whose pair with
+ * [ourIdentityId] the wallet holds for a private request, as a send decides
+ * it (`Dashpay.privateRepliesPending`, one pair read per contact): a private
+ * request in flight, paid and not yet read back, or kept by the shielded
+ * store's journal. While a pair is held, Rust refuses another send or reply
+ * to it, so the screens show it as pending and offer neither. Empty when the
+ * identity is not managed, as the wallet then holds nothing for it. Null when
+ * the wallet could not be read (no wallet, or a read failed), which the
+ * screens keep apart from "nothing pending" ([PrivateRepliesPendingSnapshot]).
  * ← Swift `privateRepliesPending` (`ContactsView.swift`).
  */
 suspend fun privateRepliesPending(
@@ -63,24 +65,40 @@ suspend fun privateRepliesPending(
     }
 }
 
+/** The wallet's readiness for an identity's contact requests and, when it flags a failed restoration, why. */
+data class PrivateContactReadinessRead(
+    val readiness: Dashpay.PrivateContactReadiness,
+    val restoreFailure: String?,
+)
+
 /**
- * The wallet's readiness for [ourIdentityId]'s contact requests, or null
- * when it could not be read ([PrivateRepliesPendingSnapshot.withReadiness]
- * keeps the last one then).
+ * The wallet's readiness for [ourIdentityId]'s contact requests and, when it
+ * flags a failed restoration, why it failed; null when the readiness could
+ * not be read ([PrivateRepliesPendingSnapshot.withReadiness] keeps the last
+ * one then).
  * ← Swift `privateContactReadiness(wallet:identityId:)` (`ContactsView.swift`).
  */
 suspend fun privateContactReadiness(
     wallet: ManagedPlatformWallet?,
     ourIdentityId: ByteArray,
-): org.dashfoundation.dashsdk.tokens.Dashpay.PrivateContactReadiness? {
+): PrivateContactReadinessRead? {
     if (wallet == null) return null
-    return try {
+    val readiness = try {
         wallet.dashpay.privateContactReadiness(ourIdentityId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        return null
+    }
+    if (!readiness.privatePaymentsRestoreFailed) return PrivateContactReadinessRead(readiness, null)
+    val reason = try {
+        wallet.dashpay.privatePaymentsRestoreFailure(ourIdentityId)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         null
     }
+    return PrivateContactReadinessRead(readiness, reason)
 }
 
 /**

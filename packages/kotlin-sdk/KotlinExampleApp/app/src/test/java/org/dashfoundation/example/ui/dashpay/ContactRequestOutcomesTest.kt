@@ -1,6 +1,7 @@
 package org.dashfoundation.example.ui.dashpay
 
 import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -8,9 +9,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Port of `ContactRequestOutcomesTests.swift`: an unconfirmed private reply
- * stays pending (no fresh submission is offered), and a network that does
- * not serve the private store yet is quiet while real failures are shown.
+ * Port of `ContactRequestOutcomesTests.swift`, code by code: an unconfirmed
+ * private send or reply (18) stays pending with no fresh submission offered,
+ * a held pair (71) is pending until the per-contact read says free,
+ * unrestored payments (72) show "setting up" or why the restoration failed,
+ * an unsupported store (73) and a pinned SDK (75) are configuration messages,
+ * an unfinished private store read (74) is a retry with no pending row, and a
+ * network that does not serve the private store yet is quiet while real
+ * failures are shown.
  */
 class ContactRequestOutcomesTest {
 
@@ -83,17 +89,16 @@ class ContactRequestOutcomesTest {
     }
 
     /**
-     * A send refused as pending (code 71) when the wallet reserved nothing
-     * (its store was not read to its end): the following read finds nothing
-     * pending, yet the contact stays pending, with the private sync offered,
-     * until the wallet's readiness says the store was read.
+     * A send refused as pending (code 71) marks the contact pending at once;
+     * the next read of the pair, which reads what the refusal read, decides:
+     * held keeps it pending, free re-enables it. The readiness alone never
+     * re-enables it.
      */
     @Test
-    fun shouldKeepARefusedContactPendingUntilTheReadinessSaysTheStoreWasRead() {
+    fun shouldReEnableARefusedPairOnlyWhenThePerContactReadSaysFree() {
         var snapshot = PrivateRepliesPendingSnapshot()
-            .withRefusal("01")
             .recorded(emptySet(), listOf("01"))
-        assertFalse(snapshot.isUnavailable)
+            .withRefusal("01")
         assertTrue(snapshot.isPending("01"))
         assertFalse(snapshot.allowsSubmission("01"))
         assertEquals(
@@ -101,21 +106,77 @@ class ContactRequestOutcomesTest {
             ContactRequestSubmissionOutcome.rowMessage(pending = snapshot.isPending("01"), error = null),
         )
 
-        // A pending read that finds nothing does not lift it; the wallet's
-        // readiness saying the store was read to its end does.
-        snapshot = snapshot.recorded(emptySet(), listOf("01"))
-        assertTrue(snapshot.isPending("01"))
+        // A readiness that says the store was read and nothing is held for
+        // the wallet does not free one pair.
         snapshot = snapshot.withReadiness(readiness(restored = true, storeRead = true))
+        assertFalse(snapshot.allowsSubmission("01"))
+
+        // The pair's read says held: still pending.
+        snapshot = snapshot.recorded(setOf("01"), listOf("01"))
+        assertTrue(snapshot.isPending("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+
+        // A payment that will never land frees the pair once the wallet
+        // proves so; the next read says free and the controls come back.
+        snapshot = snapshot.recorded(emptySet(), listOf("01"))
         assertFalse(snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("01"))
     }
 
-    private fun readiness(restored: Boolean, storeRead: Boolean, unresolved: Boolean = false) =
-        org.dashfoundation.dashsdk.tokens.Dashpay.PrivateContactReadiness(
-            privatePaymentsRestored = restored,
-            privateStoreRead = storeRead,
-            unresolvedPrivatePayment = unresolved,
+    /** A read that does not cover a refused contact leaves its refusal. */
+    @Test
+    fun shouldKeepARefusalAReadDidNotCover() {
+        val snapshot = PrivateRepliesPendingSnapshot()
+            .withRefusal("01")
+            .recorded(emptySet(), listOf("02"))
+        assertTrue(snapshot.isPending("01"))
+        assertTrue(snapshot.allowsSubmission("02"))
+    }
+
+    /**
+     * Code 74: the private store read every contact request runs first did
+     * not finish. Nothing was sent and nothing is pending: its own outcome,
+     * with a retry message, and no pending row.
+     */
+    @Test
+    fun shouldOfferARetryForAnUnfinishedPrivateStoreRead() {
+        assertEquals(
+            ContactRequestSubmissionOutcome.PrivateStoreNotRead,
+            ContactRequestSubmissionOutcome.of(
+                DashSdkError.PlatformWallet.PrivateContactStoreNotRead("not read to its end"),
+            ),
         )
+        val snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        assertFalse("the screen records no refusal for 74", snapshot.isPending("01"))
+        assertTrue(snapshot.allowsSubmission("01"))
+        assertTrue(
+            ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE !=
+                ContactRequestSubmissionOutcome.PRIVATE_REQUEST_PENDING_MESSAGE,
+        )
+    }
+
+    /** Code 75 is the developer's setting, shown as such, on a send and on a refresh alike. */
+    @Test
+    fun shouldShowAPinnedSdkAsADeveloperMessage() {
+        val error = DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion("pinned at 14")
+        assertEquals(
+            ContactRequestSubmissionOutcome.Failed(ContactRequestSubmissionOutcome.SDK_PINNED_MESSAGE),
+            ContactRequestSubmissionOutcome.of(error),
+        )
+        assertEquals(ContactRequestSubmissionOutcome.SDK_PINNED_MESSAGE, PrivateContactRefreshNotice.notice(error))
+    }
+
+    private fun readiness(
+        restored: Boolean,
+        storeRead: Boolean,
+        unresolved: Boolean = false,
+        restoreFailed: Boolean = false,
+    ) = Dashpay.PrivateContactReadiness(
+        privatePaymentsRestored = restored,
+        privateStoreRead = storeRead,
+        unresolvedPrivatePayment = unresolved,
+        privatePaymentsRestoreFailed = restoreFailed,
+    )
 
     /** A store that cannot protect private payments (code 73) is a configuration error, shown as such. */
     @Test
@@ -138,9 +199,53 @@ class ContactRequestOutcomesTest {
             ),
         )
         assertEquals(
-            ContactRequestSubmissionOutcome.RESTORING_PRIVATE_PAYMENTS_MESSAGE,
+            ContactRequestSubmissionOutcome.SETTING_UP_PRIVATE_PAYMENTS_MESSAGE,
             ContactRequestSubmissionOutcome.rowMessage(pending = true, restoring = true, error = null),
         )
+    }
+
+    /**
+     * Code 72 after a failed restoration shows why it failed, read with the
+     * readiness, until a readiness says restored; a shielded store that did
+     * not open is shown over both.
+     */
+    @Test
+    fun shouldShowWhyARestorationFailedUntilTheReadinessSaysRestored() {
+        var snapshot = PrivateRepliesPendingSnapshot()
+            .recorded(emptySet(), listOf("01"))
+            .withReadiness(
+                readiness(restored = false, storeRead = false, restoreFailed = true),
+                "the journal does not read",
+            )
+        assertTrue(snapshot.isRestoringPrivatePayments)
+        assertEquals("the journal does not read", snapshot.restoreFailure)
+        assertEquals(
+            ContactRequestSubmissionOutcome.restoreFailedMessage("the journal does not read"),
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending = false,
+                restoring = snapshot.isRestoringPrivatePayments,
+                restoreFailure = snapshot.restoreFailure,
+                error = null,
+            ),
+        )
+        assertEquals(
+            ContactRequestSubmissionOutcome.shieldedStoreFailedMessage("disk full"),
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending = false,
+                restoring = true,
+                restoreFailure = snapshot.restoreFailure,
+                shieldedStoreFailure = "disk full",
+                error = null,
+            ),
+        )
+
+        // A readiness that no longer flags a failure drops the reason.
+        snapshot = snapshot.withReadiness(readiness(restored = false, storeRead = false), "stale")
+        assertNull(snapshot.restoreFailure)
+
+        snapshot = snapshot.withReadiness(readiness(restored = true, storeRead = false))
+        assertFalse(snapshot.isRestoringPrivatePayments)
+        assertTrue(snapshot.allowsSubmission("01"))
     }
 
     /**

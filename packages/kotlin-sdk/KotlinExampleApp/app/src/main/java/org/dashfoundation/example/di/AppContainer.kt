@@ -153,23 +153,17 @@ class AppContainer(private val context: Context) {
             network = sdk.network,
             loadWallets = {
                 val activatedManager = walletManagerStore.activate(sdk.network, sdk)
+                // Open the shielded store before any wallet is loaded or
+                // created: this app's persister keeps the private contact
+                // request scan state, so Rust holds every wallet published
+                // while no store is configured (code 72) until its private
+                // payment journal is read, and a later bind may never come (no
+                // mnemonic, declined biometric). With the store open first,
+                // each wallet's journal is read as it is published, and the
+                // binds' own calls on the same path are no-ops. A failure is
+                // recorded and retried; the wallets stay held meanwhile.
+                configureShieldedStore(activatedManager)
                 activatedManager.loadPersistedWallets()
-                // Open the shielded store right after the load: Rust then
-                // restores, with no keys, the unconfirmed private contact
-                // request payments of every wallet that bound a shielded
-                // account in an earlier process. Until it does, their public
-                // contact requests are refused (code 71), and a later bind
-                // may never come (no mnemonic, declined biometric). The same
-                // path the bind opens, so the bind's call is a no-op.
-                if (shieldedService.isAvailable) {
-                    try {
-                        activatedManager.configureShielded(shieldedDbPath(activatedManager.network))
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        android.util.Log.w(TAG, "Failed to configure the shielded store after the load", e)
-                    }
-                }
                 org.dashfoundation.example.ui.dashpay.DashPayWalletLoad(
                     value = activatedManager,
                     loadedWalletIdsHex = activatedManager.wallets.value.keys,
@@ -214,6 +208,46 @@ class AppContainer(private val context: Context) {
                 )
             }
         }
+    }
+
+    private val _shieldedStoreFailure = MutableStateFlow<String?>(null)
+
+    /**
+     * Why opening the active network's shielded store failed, until a later
+     * attempt succeeds. The DashPay screens show it while the wallet's private
+     * payments wait for that store, and retry it ([shieldedStoreFailureRetrying]).
+     * ← Swift `WalletManagerStore.shieldedStoreFailures`.
+     */
+    val shieldedStoreFailure: StateFlow<String?> = _shieldedStoreFailure.asStateFlow()
+
+    /**
+     * Open [manager]'s network's shielded store, recording why it failed, or
+     * clearing that once it opens. A repeat on the same path does not wait
+     * on the store.
+     */
+    private suspend fun configureShieldedStore(manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager) {
+        if (!shieldedService.isAvailable) return
+        try {
+            manager.configureShielded(shieldedDbPath(manager.network))
+            _shieldedStoreFailure.value = null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _shieldedStoreFailure.value = e.message ?: e.toString()
+            android.util.Log.w(TAG, "Failed to configure the shielded store", e)
+        }
+    }
+
+    /**
+     * Why the active network's shielded store could not be opened, after
+     * trying it again, or null when it is open.
+     * ← Swift `WalletManagerStore.shieldedStoreFailure(retrying:)`.
+     */
+    suspend fun shieldedStoreFailureRetrying(): String? {
+        if (_shieldedStoreFailure.value == null) return null
+        val manager = walletManagerStore.activeManager.value ?: return _shieldedStoreFailure.value
+        configureShieldedStore(manager)
+        return _shieldedStoreFailure.value
     }
 
     /**

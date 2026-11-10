@@ -102,12 +102,18 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // could not be confirmed): the screen only offers to close, never to
     // submit again, as the send screen does for an unconfirmed spend.
     var unconfirmedNotice by remember { mutableStateOf<String?>(null) }
-    // Whether the wallet has a private request to the resolved recipient in
-    // flight, or paid and not yet read back (`privateRepliesPending`). While
-    // it does, Send and the collision accept are off and the screen offers a
-    // private sync, which settles it. Read from the wallet, so reopening this
-    // screen keeps it. A failed read keeps them off until a read succeeds.
+    // Whether the wallet holds the pair with the resolved recipient for a
+    // private request, as a send decides it (`privateRepliesPending`): in
+    // flight, paid and not yet read back, or kept by the shielded store's
+    // journal until the payment is proven never to land. While it does, Send
+    // and the collision accept are off and the screen offers a private sync,
+    // which reads a landed request back. Read from the wallet, so reopening
+    // this screen keeps it. A failed read keeps them off until a read
+    // succeeds.
     var recipientPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
+    // Why the shielded store could not be opened, as last read with the
+    // pending state; null when it is open.
+    var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
     var isSyncingPrivate by remember { mutableStateOf(false) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
@@ -189,10 +195,11 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     val recipientHex = resolvedRecipient?.toHex()
     LaunchedEffect(recipientHex, wallet, pendingReadVersion) {
         val contactIds = listOfNotNull(resolvedRecipient)
-        recipientPending = recipientPending.recorded(
-            privateRepliesPending(wallet, idBytes, contactIds),
-            contactIds.map { it.toHex() },
-        ).withReadiness(privateContactReadiness(wallet, idBytes))
+        val pendingRead = privateRepliesPending(wallet, idBytes, contactIds)
+        val readiness = privateContactReadiness(wallet, idBytes)
+        recipientPending = recipientPending.recorded(pendingRead, contactIds.map { it.toHex() })
+            .withReadiness(readiness?.readiness, readiness?.restoreFailure)
+        shieldedStoreFailure = container.shieldedStoreFailureRetrying()
     }
     // Binding the shielded account restores the wallet's private payments:
     // read the readiness again then.
@@ -236,15 +243,19 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                 navController.popBackStack()
             } catch (e: Exception) {
                 when (val outcome = ContactRequestSubmissionOutcome.of(e)) {
-                    // Nothing was sent, and the wallet may hold nothing for
-                    // it: the screen shows it as pending and offers the
-                    // private sync that settles it.
+                    // Nothing was sent: the wallet holds the pair. The screen
+                    // shows it as pending, with the private sync, until the
+                    // per-contact read says it is free.
                     ContactRequestSubmissionOutcome.PrivateRequestPending ->
                         recipientPending = recipientPending.withRefusal(recipient.toHex())
-                    // Nothing was sent: the screen shows the wallet restoring
+                    // Nothing was sent: the screen shows the wallet setting up
                     // its private payments until its readiness says restored.
                     ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored ->
                         recipientPending = recipientPending.withRestoringRefusal()
+                    // Nothing was sent and nothing is pending: Send stays on,
+                    // and sending again continues the read.
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead ->
+                        errorMessage = ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE
                     ContactRequestSubmissionOutcome.MayHaveGoneThrough -> {
                         kickDashPaySync(scope, m)
                         unconfirmedNotice = ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
@@ -311,6 +322,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         recipientPending = recipientPending.withRefusal(recipient.toHex())
                     ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored ->
                         recipientPending = recipientPending.withRestoringRefusal()
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead ->
+                        errorMessage = ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE
                     is ContactRequestSubmissionOutcome.Failed ->
                         errorMessage = "Accept failed: ${outcome.message}"
                 }
@@ -421,6 +434,8 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
                         ContactRequestSubmissionOutcome.rowMessage(
                             pending = recipientPending.isPending(recipient.toHex()),
                             restoring = recipientPending.isRestoringPrivatePayments,
+                            restoreFailure = recipientPending.restoreFailure,
+                            shieldedStoreFailure = shieldedStoreFailure,
                             unavailable = recipientPending.isUnavailable,
                             error = null,
                         ).orEmpty(),
