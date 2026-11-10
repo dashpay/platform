@@ -18,14 +18,15 @@ use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     ANY_PROPERTY_NAME, DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     DocumentTypeRequirements, IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey,
-    LookupKeyParam, LookupKeySource, PropertyReference, SlotPropertyName, SlotRequirement,
+    LookupKeyParam, LookupKeySource, PropertyReference, SLOT_CONDITION_KIND, SLOT_CONDITION_SELF,
+    SlotCondition, SlotConditionValue, SlotConditions, SlotPropertyName, SlotRequirement,
     SlotRequirementTerm, SlotValue, WhereCondition, WhereContainsBound, WhereLiteral,
     WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -279,9 +280,14 @@ export type DocumentPropertyReferenceTarget =
        * since the contract and the type are read from the referring
        * document when it is written, where consensus checks that both
        * exist, that the type is of this kind and that it meets
-       * `documentTypeRequirements` (code 40153 when it does not).
+       * `documentTypeRequirements` (code 40153 when it does not). A list
+       * of both kinds admits a type of either: the reference is then
+       * checked as one of the kind the named type is.
        */
-      type: 'permanentDocument' | 'moderatedDocument';
+      type:
+        | 'permanentDocument'
+        | 'moderatedDocument'
+        | ['permanentDocument', 'moderatedDocument'];
       /**
        * The top-level identifier property of the referring document
        * holding the id of the contract the referenced document type lives
@@ -332,7 +338,55 @@ export type DocumentTypeRequirementSlot = {
   maxBytes?: number;
   /** The other slots this one is filled by a different property than. */
   distinctFrom?: Array<string>;
+  /**
+   * What the referenced type must say of the property: one the condition
+   * does not hold for does not fill the slot.
+   */
+  when?: DocumentTypeSlotCondition;
 };
+
+/**
+ * A string a slot's `when` compares: `'$kind'`, the kind of the referenced
+ * document type (`'permanentDocument'` or `'moderatedDocument'`), `'$self'`,
+ * the name of the property tried for the slot, or a constant.
+ */
+export type DocumentTypeSlotConditionString =
+  | '$kind'
+  | '$self'
+  | { const: string };
+
+/**
+ * A condition of a slot's `when`, in the forms of a `propertyConstraints`
+ * condition, read against the referenced document type instead of a
+ * document. `contains` looks into the type's
+ * `moderatorAbilities.deleteKeepsFields` or `moderatorAbilities.changeFields`,
+ * empty where the type declares none.
+ */
+export type DocumentTypeSlotCondition =
+  | { equal: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { notEqual: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { in: ['$kind' | '$self', Array<string>] }
+  | { notIn: ['$kind' | '$self', Array<string>] }
+  | {
+      contains: [
+        (
+          | '$moderatorAbilities.deleteKeepsFields'
+          | '$moderatorAbilities.changeFields'
+        ),
+        '$self' | { const: string },
+      ];
+    }
+  | { not: DocumentTypeSlotCondition }
+  | { anyOf: Array<DocumentTypeSlotCondition> }
+  | { allOf: Array<DocumentTypeSlotCondition> }
+  | { ifThen: [DocumentTypeSlotCondition, DocumentTypeSlotCondition] }
+  | {
+      ifThenElse: [
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+      ];
+    };
 
 export type DocumentTypeSlotRequirement =
   | { anyOf: Array<string | { allOf: Array<string> }> }
@@ -896,15 +950,32 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
-        // Permanent or moderated, as declared
-        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference.wire_name(),
+        // Permanent or moderated, as declared; both are listed below when it admits either
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference
+            .wire_names()
+            .first()
+            .copied()
+            .unwrap_or("permanentDocument"),
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
                 "the reference expression declared at '{path}' has no single target kind"
             )));
         }
     };
-    set_field(object, "type", &JsValue::from_str(kind), path)?;
+    let declared_type: JsValue = match target {
+        DocumentPropertyReferenceTarget::DynamicDocument(reference)
+            if reference.wire_names().len() > 1 =>
+        {
+            reference
+                .wire_names()
+                .iter()
+                .map(|name| JsValue::from_str(name))
+                .collect::<Array>()
+                .into()
+        }
+        _ => JsValue::from_str(kind),
+    };
+    set_field(object, "type", &declared_type, path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
@@ -1131,6 +1202,9 @@ fn document_type_requirements_to_js(
             let others: Vec<String> = slot.distinct_from.iter().cloned().collect();
             set_field(&fields, "distinctFrom", &names(&others), path)?;
         }
+        if let Some(when) = &slot.when {
+            set_field(&fields, "when", &slot_condition_to_js(when, path)?, path)?;
+        }
         set_schema_field(&properties, slot_name, fields.into(), path)?;
     }
     let object = Object::new();
@@ -1179,6 +1253,61 @@ fn document_type_requirements_to_js(
         set_field(&object, "require", &require, path)?;
     }
     Ok(object)
+}
+
+/// A condition of a slot's `when` as the schema declares it: an object of one key.
+fn slot_condition_to_js(condition: &SlotCondition, path: &str) -> WasmDppResult<JsValue> {
+    let string = |value: &SlotConditionValue| -> WasmDppResult<JsValue> {
+        Ok(match value {
+            SlotConditionValue::Kind => JsValue::from_str(SLOT_CONDITION_KIND),
+            SlotConditionValue::PropertyName => JsValue::from_str(SLOT_CONDITION_SELF),
+            SlotConditionValue::Constant(constant) => {
+                let object = Object::new();
+                set_field(&object, "const", &JsValue::from_str(constant), path)?;
+                object.into()
+            }
+        })
+    };
+    let pair = |left: JsValue, right: JsValue| -> JsValue { Array::of2(&left, &right).into() };
+    let among = |values: &BTreeSet<String>| -> JsValue {
+        values
+            .iter()
+            .map(|value| JsValue::from_str(value))
+            .collect::<Array>()
+            .into()
+    };
+    let listed = |conditions: &SlotConditions| -> WasmDppResult<JsValue> {
+        let operands = Array::new();
+        for condition in conditions.conditions() {
+            operands.push(&slot_condition_to_js(condition, path)?);
+        }
+        Ok(operands.into())
+    };
+    let (key, operand) = match condition {
+        SlotCondition::Equal(left, right) => ("equal", pair(string(left)?, string(right)?)),
+        SlotCondition::NotEqual(left, right) => ("notEqual", pair(string(left)?, string(right)?)),
+        SlotCondition::In(value, values) => ("in", pair(string(value)?, among(values))),
+        SlotCondition::NotIn(value, values) => ("notIn", pair(string(value)?, among(values))),
+        SlotCondition::Contains(list, value) => (
+            "contains",
+            pair(JsValue::from_str(list.wire_name()), string(value)?),
+        ),
+        // `not` holds its one condition bare, not in a list
+        SlotCondition::Not(conditions) => (
+            "not",
+            match conditions.conditions() {
+                [negated] => slot_condition_to_js(negated, path)?,
+                _ => listed(conditions)?,
+            },
+        ),
+        SlotCondition::AnyOf(conditions) => ("anyOf", listed(conditions)?),
+        SlotCondition::AllOf(conditions) => ("allOf", listed(conditions)?),
+        SlotCondition::IfThen(conditions) => ("ifThen", listed(conditions)?),
+        SlotCondition::IfThenElse(conditions) => ("ifThenElse", listed(conditions)?),
+    };
+    let object = Object::new();
+    set_field(&object, key, &operand, path)?;
+    Ok(object.into())
 }
 
 /// Collect every reference declaration of one document type: its

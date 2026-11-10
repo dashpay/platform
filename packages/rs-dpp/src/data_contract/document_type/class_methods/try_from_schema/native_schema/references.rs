@@ -11,6 +11,31 @@ const DYNAMIC_TARGET_KEYS: [&str; 3] = [
     "documentTypeRequirements",
 ];
 
+/// The kinds of document a `refersTo` naming its target through the referring document
+/// points at.
+const DYNAMIC_TARGET_KINDS: [&str; 2] = ["permanentDocument", "moderatedDocument"];
+
+/// The operands a slot's `when` reads as a string, and the two lists it looks into.
+const SLOT_CONDITION_STRINGS: [&str; 2] = ["$kind", "$self"];
+const SLOT_CONDITION_LISTS: [&str; 2] = [
+    "$moderatorAbilities.deleteKeepsFields",
+    "$moderatorAbilities.changeFields",
+];
+
+/// The keys of a condition of a slot's `when`, each the one key of its object.
+const SLOT_CONDITION_KEYS: [&str; 10] = [
+    "equal",
+    "notEqual",
+    "in",
+    "notIn",
+    "contains",
+    "not",
+    "anyOf",
+    "allOf",
+    "ifThen",
+    "ifThenElse",
+];
+
 /// The keys of a `refersTo` declaration.
 const REFERS_TO_KEYS: [&str; 17] = [
     "type",
@@ -43,8 +68,16 @@ impl Checker<'_> {
         } else {
             self.required(map, &["type"])?;
         }
+        let names_its_target = DYNAMIC_TARGET_KEYS.iter().any(|key| has(key));
         for (key, keyword) in map {
-            self.at(key, |c| c.refers_to_keyword(key, keyword))?;
+            self.at(key, |c| {
+                // Both kinds, which only a reference naming its target through the
+                // referring document lists
+                if key == "type" && names_its_target && keyword.is_array() {
+                    return c.reference_kind_list(keyword);
+                }
+                c.refers_to_keyword(key, keyword)
+            })?;
         }
         let target = map.get("type").and_then(JsonValue::as_str);
         if has("constraints") || has("consume") {
@@ -67,10 +100,13 @@ impl Checker<'_> {
         // A reference naming its target through the referring document: a permanent or
         // moderated document found by its id, with nothing beside it that needs the
         // referenced type at registration
-        if DYNAMIC_TARGET_KEYS.iter().any(|key| has(key)) {
+        if names_its_target {
             self.required(map, &["type", "contractIdProperty", "documentTypeProperty"])?;
             self.member(map, "type", |c, target| {
-                c.one_of_strings(target, &["permanentDocument", "moderatedDocument"])
+                if target.is_array() {
+                    return Ok(());
+                }
+                c.one_of_strings(target, &DYNAMIC_TARGET_KINDS)
             })?;
             for name in [
                 "contractId",
@@ -133,6 +169,21 @@ impl Checker<'_> {
             self.absent(map, "contractRequirements")?;
         }
         Ok(())
+    }
+
+    /// A `type` listing both kinds a reference naming its target through the referring
+    /// document points at.
+    fn reference_kind_list(&self, value: &JsonValue) -> Checked {
+        let kinds = self.array(value)?;
+        for (index, kind) in kinds.iter().enumerate() {
+            self.at(index, |c| c.one_of_strings(kind, &DYNAMIC_TARGET_KINDS))?;
+        }
+        self.item_count(
+            kinds,
+            Some(DYNAMIC_TARGET_KINDS.len()),
+            Some(DYNAMIC_TARGET_KINDS.len()),
+        )?;
+        self.unique(kinds)
     }
 
     fn refers_to_keyword(&self, key: &str, value: &JsonValue) -> Checked {
@@ -310,7 +361,14 @@ impl Checker<'_> {
         let map = self.object(value)?;
         self.closed(
             map,
-            &["name", "type", "byteArray", "maxBytes", "distinctFrom"],
+            &[
+                "name",
+                "type",
+                "byteArray",
+                "maxBytes",
+                "distinctFrom",
+                "when",
+            ],
         )?;
         self.required(map, &["name", "type"])?;
         self.member(map, "name", |c, name| {
@@ -348,6 +406,85 @@ impl Checker<'_> {
                 c.at(index, |c| c.word(other))?;
             }
             Ok(())
+        })?;
+        self.member(map, "when", |c, when| c.slot_condition(when))
+    }
+
+    /// A slot's `when`, or a condition inside one: the shape of a `propertyConstraints`
+    /// condition over what the referenced document type says of a property. What each
+    /// comparison may pair, and how many conditions one `when` holds, is the parser's to
+    /// check.
+    fn slot_condition(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.closed(map, &SLOT_CONDITION_KEYS)?;
+        self.property_count(map, Some(1), Some(1))?;
+        for (key, operand) in map {
+            self.at(key, |c| match key.as_str() {
+                "equal" | "notEqual" => c.tuple(operand, 2, 2, |c, _, item| {
+                    c.slot_condition_string(item, &SLOT_CONDITION_STRINGS)
+                }),
+                "in" | "notIn" => c.tuple(operand, 2, 2, |c, index, item| {
+                    if index == 0 {
+                        return c.one_of_strings(item, &SLOT_CONDITION_STRINGS);
+                    }
+                    let members = c.array(item)?;
+                    for (index, member) in members.iter().enumerate() {
+                        c.at(index, |c| {
+                            c.string_of_length(member, 1, Some(256)).map(drop)
+                        })?;
+                    }
+                    c.item_count(members, Some(2), None)?;
+                    c.unique(members)
+                }),
+                "contains" => c.tuple(operand, 2, 2, |c, index, item| {
+                    if index == 0 {
+                        c.one_of_strings(item, &SLOT_CONDITION_LISTS)
+                    } else {
+                        c.slot_condition_string(item, &["$self"])
+                    }
+                }),
+                "anyOf" | "allOf" => {
+                    let items = c.array(operand)?;
+                    for (index, item) in items.iter().enumerate() {
+                        c.at(index, |c| {
+                            c.slot_condition(item)?;
+                            match item.as_object() {
+                                Some(item) => c.absent(item, key),
+                                None => Ok(()),
+                            }
+                        })?;
+                    }
+                    c.item_count(items, Some(2), None)?;
+                    c.unique(items)
+                }
+                "not" => {
+                    c.slot_condition(operand)?;
+                    match operand.as_object() {
+                        Some(negated) => {
+                            c.absent(negated, "not")?;
+                            c.absent(negated, "notIn")
+                        }
+                        None => Ok(()),
+                    }
+                }
+                "ifThen" => c.tuple(operand, 2, 2, |c, _, item| c.slot_condition(item)),
+                "ifThenElse" => c.tuple(operand, 3, 3, |c, _, item| c.slot_condition(item)),
+                _ => Ok(()),
+            })?;
+        }
+        Ok(())
+    }
+
+    /// A string a slot's `when` compares: one of `operands`, or `{ "const": <string> }`.
+    fn slot_condition_string(&self, value: &JsonValue, operands: &[&str]) -> Checked {
+        if value.is_string() {
+            return self.one_of_strings(value, operands);
+        }
+        let constant = self.object(value)?;
+        self.closed(constant, &["const"])?;
+        self.required(constant, &["const"])?;
+        self.member(constant, "const", |c, text| {
+            c.string_of_length(text, 1, Some(256)).map(drop)
         })
     }
 

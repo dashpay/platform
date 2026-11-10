@@ -7,14 +7,17 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::{
     DocumentPropertyType, DocumentTypeRequirements, DynamicDocumentReference,
     DynamicDocumentReferenceKind, PropertyReference, ReferenceHolder, RequiredPropertySlot,
-    SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME,
+    SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions, SlotPropertyName,
+    SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME,
+    SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND,
+    SLOT_CONDITION_SELF,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
 /// The keys only a dynamic reference carries.
 const DYNAMIC_KEYS: [&str; 3] = [
@@ -24,7 +27,23 @@ const DYNAMIC_KEYS: [&str; 3] = [
 ];
 
 /// The keys of a slot of `documentTypeRequirements.properties`.
-const SLOT_KEYS: [&str; 5] = ["name", "type", "byteArray", "maxBytes", "distinctFrom"];
+const SLOT_KEYS: [&str; 6] = [
+    "name",
+    "type",
+    "byteArray",
+    "maxBytes",
+    "distinctFrom",
+    "when",
+];
+
+/// The kinds of document type a reference naming its target through the referring document
+/// points into, by the `refersTo` `type` each is written with: what `$kind` reads in a
+/// slot's `when` for a type the reference admits.
+const DYNAMIC_KIND_NAMES: [&str; 2] = ["permanentDocument", "moderatedDocument"];
+
+/// The most characters a `{ "const": ... }` of a slot's `when` holds: a property path, or
+/// the name of a kind.
+const MAX_SLOT_CONDITION_CONSTANT_LENGTH: usize = 256;
 
 fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
@@ -101,19 +120,43 @@ pub(super) fn parse_dynamic_document_reference(
     refers_to_map: &BTreeMap<String, &Value>,
     platform_version: &PlatformVersion,
 ) -> Result<DynamicDocumentReference, DataContractError> {
-    let reference_type = refers_to_map
-        .get_str(property_names::TYPE)
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-    let kind = match reference_type {
-        "permanentDocument" => DynamicDocumentReferenceKind::Permanent,
-        "moderatedDocument" => DynamicDocumentReferenceKind::Moderated,
-        other => {
-            return Err(refused(format!(
-                "{other} refersTo does not take contractIdProperty, documentTypeProperty or \
-                 documentTypeRequirements: only a permanentDocument or a moderatedDocument \
-                 reference names its target through the referring document, since only those \
-                 document types promise their documents stay"
-            )))
+    // One kind, or the list of both: a type of either is then admitted
+    let (kind, reference_type) = match refers_to_map.get(property_names::TYPE) {
+        Some(Value::Text(reference_type)) => match reference_type.as_str() {
+            "permanentDocument" => (DynamicDocumentReferenceKind::Permanent, "permanentDocument"),
+            "moderatedDocument" => (DynamicDocumentReferenceKind::Moderated, "moderatedDocument"),
+            other => {
+                return Err(refused(format!(
+                    "{other} refersTo does not take contractIdProperty, documentTypeProperty \
+                     or documentTypeRequirements: only a permanentDocument or a \
+                     moderatedDocument reference names its target through the referring \
+                     document, since only those document types promise their documents stay"
+                )))
+            }
+        },
+        Some(Value::Array(kinds)) => {
+            let listed: BTreeSet<&str> = kinds.iter().filter_map(|kind| kind.as_text()).collect();
+            if kinds.len() != DYNAMIC_KIND_NAMES.len()
+                || listed != BTreeSet::from(DYNAMIC_KIND_NAMES)
+            {
+                return Err(refused(
+                    "a refersTo type list holds permanentDocument and moderatedDocument, once \
+                     each: a reference naming its target through the referring document \
+                     points into a type of either kind, or names one kind alone"
+                        .to_string(),
+                ));
+            }
+            (
+                DynamicDocumentReferenceKind::PermanentOrModerated,
+                "permanentDocument or moderatedDocument",
+            )
+        }
+        _ => {
+            return Err(DataContractError::ValueWrongType(
+                "refersTo type must be a string, or the list of permanentDocument and \
+                 moderatedDocument"
+                    .to_string(),
+            ))
         }
     };
 
@@ -203,7 +246,10 @@ fn parse_document_type_requirements(
                      letters, digits or underscores"
                 )));
             }
-            Ok((slot_name.clone(), parse_slot(slot_name, slot_value)?))
+            Ok((
+                slot_name.clone(),
+                parse_slot(slot_name, slot_value, platform_version)?,
+            ))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
 
@@ -228,7 +274,11 @@ fn parse_document_type_requirements(
     Ok(DocumentTypeRequirements { slots, require })
 }
 
-fn parse_slot(slot_name: &str, value: &Value) -> Result<RequiredPropertySlot, DataContractError> {
+fn parse_slot(
+    slot_name: &str,
+    value: &Value,
+    platform_version: &PlatformVersion,
+) -> Result<RequiredPropertySlot, DataContractError> {
     let at = || format!("documentTypeRequirements slot \"{slot_name}\"");
     let slot = value
         .to_btree_ref_string_map()
@@ -347,12 +397,270 @@ fn parse_slot(slot_name: &str, value: &Value) -> Result<RequiredPropertySlot, Da
         }
     };
 
+    let when = slot
+        .get("when")
+        .map(|when| {
+            let max_nodes = usize::from(
+                platform_version
+                    .system_limits
+                    .max_document_type_requirement_condition_nodes,
+            );
+            let mut nodes = 0;
+            parse_slot_condition(when, &at(), &mut nodes, max_nodes)
+        })
+        .transpose()?;
+
     Ok(RequiredPropertySlot {
         name,
         value: value_kind,
         max_bytes,
         distinct_from,
+        when,
     })
+}
+
+/// A string a slot's `when` compares: `$kind`, `$self` or `{ "const": <string> }`.
+fn slot_condition_value(value: &Value, at: &str) -> Result<SlotConditionValue, DataContractError> {
+    let shape = || {
+        refused(format!(
+            "{at} when compares \"{SLOT_CONDITION_KIND}\", \"{SLOT_CONDITION_SELF}\" or {{ \
+             \"const\": <a string of 1 to {MAX_SLOT_CONDITION_CONSTANT_LENGTH} characters> }}, \
+             got {value}"
+        ))
+    };
+    match value {
+        Value::Text(operand) if operand == SLOT_CONDITION_KIND => Ok(SlotConditionValue::Kind),
+        Value::Text(operand) if operand == SLOT_CONDITION_SELF => {
+            Ok(SlotConditionValue::PropertyName)
+        }
+        Value::Map(_) => {
+            let constant = value.to_btree_ref_string_map().map_err(|_| shape())?;
+            match (constant.len(), constant.get("const")) {
+                (1, Some(Value::Text(constant)))
+                    if (1..=MAX_SLOT_CONDITION_CONSTANT_LENGTH)
+                        .contains(&constant.chars().count()) =>
+                {
+                    Ok(SlotConditionValue::Constant(constant.clone()))
+                }
+                _ => Err(shape()),
+            }
+        }
+        _ => Err(shape()),
+    }
+}
+
+/// Refuses a constant `$kind` is compared with that names no kind the reference admits: the
+/// comparison could never hold, or always would.
+fn kind_name(constant: &str, at: &str) -> Result<(), DataContractError> {
+    if DYNAMIC_KIND_NAMES.contains(&constant) {
+        return Ok(());
+    }
+    Err(refused(format!(
+        "{at} when compares \"{SLOT_CONDITION_KIND}\" with \"{constant}\": the kind of the \
+         referenced document type is permanentDocument or moderatedDocument"
+    )))
+}
+
+/// The conditions of an `anyOf`, `allOf`, `ifThen` or `ifThenElse`, or the one of a `not`.
+fn parse_slot_conditions(
+    values: &[Value],
+    at: &str,
+    nodes: &mut usize,
+    max_nodes: usize,
+) -> Result<SlotConditions, DataContractError> {
+    values
+        .iter()
+        .map(|value| parse_slot_condition(value, at, nodes, max_nodes))
+        .collect::<Result<Vec<_>, _>>()
+        .map(SlotConditions::new)
+}
+
+/// Parses a slot's `when`, or a condition inside one. `nodes` counts the conditions read so
+/// far, refused past `max_nodes`
+/// (`SystemLimits::max_document_type_requirement_condition_nodes`) before anything is read
+/// of the one that passes it, so the count also bounds how deep this recurses.
+fn parse_slot_condition(
+    value: &Value,
+    at: &str,
+    nodes: &mut usize,
+    max_nodes: usize,
+) -> Result<SlotCondition, DataContractError> {
+    *nodes += 1;
+    if *nodes > max_nodes {
+        return Err(refused(format!(
+            "{at} when is made of more than {max_nodes} conditions"
+        )));
+    }
+    let condition = value
+        .to_btree_ref_string_map()
+        .ok()
+        .filter(|condition| condition.len() == 1)
+        .ok_or_else(|| {
+            refused(format!(
+                "{at} when, and every condition inside it, is an object of one key: equal, \
+                 notEqual, in, notIn, contains, not, anyOf, allOf, ifThen or ifThenElse"
+            ))
+        })?;
+    let Some((key, operand)) = condition.iter().next() else {
+        return Err(refused(format!("{at} when holds an empty condition")));
+    };
+    let key = key.as_str();
+    let items =
+        |count: RangeInclusive<usize>, what: &str| -> Result<&Vec<Value>, DataContractError> {
+            operand
+                .as_array()
+                .filter(|items| count.contains(&items.len()))
+                .ok_or_else(|| refused(format!("{at} when {key} takes {what}")))
+        };
+
+    match key {
+        "equal" | "notEqual" => {
+            let pair = items(2..=2, "two strings")?;
+            let left = slot_condition_value(&pair[0], at)?;
+            let right = slot_condition_value(&pair[1], at)?;
+            match (&left, &right) {
+                (SlotConditionValue::Kind, SlotConditionValue::Constant(constant))
+                | (SlotConditionValue::Constant(constant), SlotConditionValue::Kind) => {
+                    kind_name(constant, at)?
+                }
+                (SlotConditionValue::PropertyName, SlotConditionValue::Constant(_))
+                | (SlotConditionValue::Constant(_), SlotConditionValue::PropertyName) => {}
+                _ => {
+                    return Err(refused(format!(
+                        "{at} when {key} compares \"{SLOT_CONDITION_KIND}\" or \
+                         \"{SLOT_CONDITION_SELF}\" with a {{ \"const\": ... }}"
+                    )))
+                }
+            }
+            Ok(if key == "equal" {
+                SlotCondition::Equal(left, right)
+            } else {
+                SlotCondition::NotEqual(left, right)
+            })
+        }
+        "in" | "notIn" => {
+            let pair = items(2..=2, "a string and a list of two or more distinct strings")?;
+            let value = slot_condition_value(&pair[0], at)?;
+            let among = pair[1]
+                .as_array()
+                .filter(|among| among.len() >= 2)
+                .and_then(|among| {
+                    let texts = among
+                        .iter()
+                        .map(|text| {
+                            text.as_text()
+                                .filter(|text| {
+                                    (1..=MAX_SLOT_CONDITION_CONSTANT_LENGTH)
+                                        .contains(&text.chars().count())
+                                })
+                                .map(str::to_string)
+                        })
+                        .collect::<Option<BTreeSet<String>>>()?;
+                    (texts.len() == among.len()).then_some(texts)
+                })
+                .ok_or_else(|| {
+                    refused(format!(
+                        "{at} when {key} takes a string and a list of two or more distinct \
+                         strings of 1 to {MAX_SLOT_CONDITION_CONSTANT_LENGTH} characters"
+                    ))
+                })?;
+            match value {
+                SlotConditionValue::Kind => {
+                    for constant in &among {
+                        kind_name(constant, at)?;
+                    }
+                }
+                SlotConditionValue::PropertyName => {}
+                SlotConditionValue::Constant(_) => {
+                    return Err(refused(format!(
+                        "{at} when {key} looks for \"{SLOT_CONDITION_KIND}\" or \
+                         \"{SLOT_CONDITION_SELF}\" in the list, not for a constant"
+                    )))
+                }
+            }
+            Ok(if key == "in" {
+                SlotCondition::In(value, among)
+            } else {
+                SlotCondition::NotIn(value, among)
+            })
+        }
+        "contains" => {
+            let pair = items(2..=2, "a list of the referenced type and a string")?;
+            let list = match pair[0].as_text() {
+                Some(SLOT_CONDITION_DELETE_KEEPS_FIELDS) => SlotConditionList::DeletionKeptFields,
+                Some(SLOT_CONDITION_CHANGE_FIELDS) => SlotConditionList::ModeratorChangeableFields,
+                _ => {
+                    return Err(refused(format!(
+                        "{at} when contains looks into \"{SLOT_CONDITION_DELETE_KEEPS_FIELDS}\" \
+                         or \"{SLOT_CONDITION_CHANGE_FIELDS}\", got {}",
+                        pair[0]
+                    )))
+                }
+            };
+            let needle = slot_condition_value(&pair[1], at)?;
+            if needle == SlotConditionValue::Kind {
+                return Err(refused(format!(
+                    "{at} when contains looks for \"{SLOT_CONDITION_SELF}\" or a {{ \"const\": \
+                     ... }} in {}, which lists properties, not for the kind of the type",
+                    list.wire_name()
+                )));
+            }
+            Ok(SlotCondition::Contains(list, needle))
+        }
+        "not" => {
+            // As in `propertyConstraints`: `not` of `not` says what the inner condition
+            // says, and `not` of `notIn` what `in` says
+            if operand
+                .to_btree_ref_string_map()
+                .is_ok_and(|negated| negated.contains_key("not") || negated.contains_key("notIn"))
+            {
+                return Err(refused(format!(
+                    "{at} when not holds a not or a notIn: write the condition it negates, or in"
+                )));
+            }
+            parse_slot_conditions(std::slice::from_ref(operand), at, nodes, max_nodes)
+                .map(SlotCondition::Not)
+        }
+        "anyOf" | "allOf" => {
+            let operands = items(2..=usize::MAX, "two or more conditions")?;
+            // One directly inside itself says what one flat list says
+            if operands.iter().any(|operand| {
+                operand
+                    .to_btree_ref_string_map()
+                    .is_ok_and(|operand| operand.contains_key(key))
+            }) {
+                return Err(refused(format!(
+                    "{at} when {key} holds another {key}: list its conditions in the outer one"
+                )));
+            }
+            let conditions = parse_slot_conditions(operands, at, nodes, max_nodes)?;
+            let listed = conditions.conditions();
+            if listed
+                .iter()
+                .enumerate()
+                .any(|(index, condition)| listed[..index].contains(condition))
+            {
+                return Err(refused(format!(
+                    "{at} when {key} lists the same condition twice"
+                )));
+            }
+            Ok(if key == "anyOf" {
+                SlotCondition::AnyOf(conditions)
+            } else {
+                SlotCondition::AllOf(conditions)
+            })
+        }
+        "ifThen" => parse_slot_conditions(items(2..=2, "two conditions")?, at, nodes, max_nodes)
+            .map(SlotCondition::IfThen),
+        "ifThenElse" => {
+            parse_slot_conditions(items(3..=3, "three conditions")?, at, nodes, max_nodes)
+                .map(SlotCondition::IfThenElse)
+        }
+        other => Err(refused(format!(
+            "{at} when does not take {other}: a condition is equal, notEqual, in, notIn, \
+             contains, not, anyOf, allOf, ifThen or ifThenElse"
+        ))),
+    }
 }
 
 /// The one key of a combinator object and its operands, at least two of them.

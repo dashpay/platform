@@ -1174,7 +1174,9 @@ fn validate_reference_target_v1(
                         document_type_name: &named_document_type,
                         property_agreement: &no_agreement,
                         where_conditions: &no_conditions,
-                        kind: dynamic.kind.into(),
+                        // Settled below, once the named type is known: a declaration
+                        // listing both kinds is of the kind the type is
+                        kind: dynamic.kind.checked_as(DocumentReferenceKind::Permanent),
                         lookup: None,
                         in_list: None,
                     })
@@ -1278,7 +1280,17 @@ fn validate_reference_target_v1(
             // write that checks it: the type is not private, whose documents are encrypted
             // entries the chain never reads, and it has the properties the reference's
             // `documentTypeRequirements` ask for. A slot naming its property through the
-            // referring document reads the name there
+            // referring document reads the name there, and a slot's `when` is judged
+            // against what the type says of each property that could fill it
+            let kind = match reference_target.as_dynamic_document_reference() {
+                // The kind it declares or, declaring both, a moderated reference into a
+                // moderated type and a permanent one into any other, which the kind check
+                // below refuses for a type whose documents can be deleted
+                Some(dynamic) => dynamic
+                    .kind
+                    .checked_as(referenced_document_type.document_reference_kind()),
+                None => kind,
+            };
             if let Some(dynamic) = reference_target.as_dynamic_document_reference() {
                 if referenced_document_type.is_private() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(

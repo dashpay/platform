@@ -1,18 +1,23 @@
 //! References whose target the referring document names (`contractIdProperty`,
 //! `documentTypeProperty`, `documentTypeRequirements`, protocol version 15): the parse of
 //! the declaration, where it may sit, the checks of the properties it reads, the protocol
-//! version gate, what a document type must look like to meet the requirements, and the
-//! platform serialization round trip.
+//! version gate, what a document type must look like to meet the requirements, a `type`
+//! listing both kinds, a slot's `when`, and the platform serialization round trip.
 
 use super::reference_test_helpers::{
     assert_refused, assert_refused_by_the_parser, contract, contract_on, identifier, CONTRACT_ID,
 };
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRequirements,
-    DynamicDocumentReference, DynamicDocumentReferenceKind, RequiredPropertySlot, SlotPropertyName,
-    SlotRequirement, SlotRequirementTerm, SlotValue,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceKind, DocumentType,
+    DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
+    RequiredPropertySlot, SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions,
+    SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue,
 };
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -151,7 +156,86 @@ fn slot(name: SlotPropertyName, value: SlotValue) -> RequiredPropertySlot {
         value,
         max_bytes: None,
         distinct_from: BTreeSet::new(),
+        when: None,
     }
+}
+
+/// A dynamic reference to a document of either kind, with `requirements`.
+fn either_kind_requiring(requirements: serde_json::Value) -> serde_json::Value {
+    json!({
+        "type": ["permanentDocument", "moderatedDocument"],
+        "contractIdProperty": "descriptionContractId",
+        "documentTypeProperty": "descriptionDocumentType",
+        "documentTypeRequirements": requirements
+    })
+}
+
+/// "When the type is moderated, a removal takes the property and its author writes it."
+fn removed_with_the_document() -> serde_json::Value {
+    json!({
+        "ifThen": [
+            { "equal": ["$kind", { "const": "moderatedDocument" }] },
+            { "allOf": [
+                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
+                { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+            ] }
+        ]
+    })
+}
+
+/// One slot, `body`, any string property `when` holds for.
+fn body_when(when: serde_json::Value) -> serde_json::Value {
+    json!({ "properties": { "body": { "name": "$any", "type": "string", "when": when } } })
+}
+
+/// The `when` of the slot `body` as the parser reads it.
+fn parsed_when(when: serde_json::Value) -> SlotCondition {
+    requirements(body_when(when))
+        .slots
+        .remove("body")
+        .expect("body")
+        .when
+        .expect("when")
+}
+
+/// A `post` of a contract its owner moderates, holding the strings `text`, `tags` and
+/// `label`, with `extra` merged into its schema.
+fn moderated_post(extra: serde_json::Value) -> DocumentType {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        }));
+    let mut schema = json!({
+        "type": "object",
+        "properties": {
+            "text": { "type": "string", "maxLength": 50, "position": 0 },
+            "tags": { "type": "string", "maxLength": 50, "position": 1 },
+            "label": { "type": "string", "maxLength": 50, "position": 2 }
+        },
+        "additionalProperties": false
+    });
+    for (key, value) in extra.as_object().expect("an object") {
+        schema[key] = value.clone();
+    }
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "post",
+        platform_value::to_value(schema).expect("the schema should convert"),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+    .expect("the post type parses")
 }
 
 #[test]
@@ -182,7 +266,7 @@ fn should_parse_a_reference_naming_its_target_through_the_referring_document() {
             }),
         }
     );
-    assert_eq!(reference.wire_name(), "moderatedDocument");
+    assert_eq!(reference.wire_names(), ["moderatedDocument"]);
     assert_eq!(
         reference.target_properties().collect::<Vec<_>>(),
         ["descriptionContractId", "descriptionDocumentType"]
@@ -756,4 +840,483 @@ fn should_refuse_a_rule_or_an_index_reading_through_a_dynamic_reference() {
         { "name": "byDescriptionOwner", "properties": [{ "descriptionId.$ownerId": "asc" }] }
     ]);
     contract(with_an_index).expect_err("an index reads no value through a dynamic reference");
+}
+
+#[test]
+fn should_parse_a_type_listing_both_kinds() {
+    for kinds in [
+        json!(["permanentDocument", "moderatedDocument"]),
+        json!(["moderatedDocument", "permanentDocument"]),
+    ] {
+        let parsed = contract(note_contract(json!({
+            "type": kinds,
+            "contractIdProperty": "descriptionContractId",
+            "documentTypeProperty": "descriptionDocumentType"
+        })))
+        .expect("parses");
+        let reference = dynamic_reference(&parsed);
+        assert_eq!(
+            reference.kind,
+            DynamicDocumentReferenceKind::PermanentOrModerated
+        );
+        assert_eq!(
+            reference.wire_names(),
+            ["permanentDocument", "moderatedDocument"]
+        );
+        assert_eq!(
+            DocumentPropertyReferenceTarget::DynamicDocument(reference).to_string(),
+            "permanent or moderated document (contract named by descriptionContractId, document \
+             type named by descriptionDocumentType)"
+        );
+    }
+    assert_eq!(
+        DynamicDocumentReferenceKind::Moderated.wire_names(),
+        ["moderatedDocument"]
+    );
+
+    // A list is the two kinds, once each
+    for kinds in [
+        json!(["permanentDocument"]),
+        json!(["permanentDocument", "permanentDocument"]),
+        json!(["permanentDocument", "deletableDocument"]),
+        json!([
+            "permanentDocument",
+            "moderatedDocument",
+            "deletableDocument"
+        ]),
+        json!(["permanentDocument", 1]),
+        json!([]),
+    ] {
+        assert_refused_by_the_parser(
+            note_contract(json!({
+                "type": kinds,
+                "contractIdProperty": "descriptionContractId",
+                "documentTypeProperty": "descriptionDocumentType"
+            })),
+            "holds permanentDocument and moderatedDocument, once each",
+        );
+    }
+    // and only a reference naming its target through the referring document lists them
+    for full_validation in [true, false] {
+        contract_on(
+            note_contract(json!({
+                "type": ["permanentDocument", "moderatedDocument"],
+                "documentType": "post"
+            })),
+            full_validation,
+            PlatformVersion::latest(),
+        )
+        .expect_err("a reference naming its target in the schema is of one kind");
+    }
+}
+
+#[test]
+fn should_check_a_reference_as_the_kind_the_named_type_is() {
+    let (permanent, moderated, deletable) = (
+        DocumentReferenceKind::Permanent,
+        DocumentReferenceKind::Moderated,
+        DocumentReferenceKind::Deletable,
+    );
+    // A declaration of one kind is that kind, whatever the type
+    for actual in [permanent, moderated, deletable] {
+        assert_eq!(
+            DynamicDocumentReferenceKind::Permanent.checked_as(actual),
+            permanent
+        );
+        assert_eq!(
+            DynamicDocumentReferenceKind::Moderated.checked_as(actual),
+            moderated
+        );
+    }
+    // A declaration of either kind is the kind of the type, and a permanent reference into
+    // a type whose documents can be deleted, which the kind check then refuses
+    let either = DynamicDocumentReferenceKind::PermanentOrModerated;
+    assert_eq!(either.checked_as(permanent), permanent);
+    assert_eq!(either.checked_as(moderated), moderated);
+    assert_eq!(either.checked_as(deletable), permanent);
+}
+
+#[test]
+fn should_parse_every_form_of_a_slot_condition() {
+    let constant = |text: &str| SlotConditionValue::Constant(text.to_string());
+    let list = SlotConditions::new;
+    let not_listed = |listed: SlotConditionList| {
+        SlotCondition::Not(list(vec![SlotCondition::Contains(
+            listed,
+            SlotConditionValue::PropertyName,
+        )]))
+    };
+
+    assert_eq!(
+        parsed_when(removed_with_the_document()),
+        SlotCondition::IfThen(list(vec![
+            SlotCondition::Equal(SlotConditionValue::Kind, constant("moderatedDocument")),
+            SlotCondition::AllOf(list(vec![
+                not_listed(SlotConditionList::DeletionKeptFields),
+                not_listed(SlotConditionList::ModeratorChangeableFields),
+            ])),
+        ]))
+    );
+
+    // A comparison reads either way round
+    assert_eq!(
+        parsed_when(json!({ "notEqual": [{ "const": "permanentDocument" }, "$kind"] })),
+        SlotCondition::NotEqual(constant("permanentDocument"), SlotConditionValue::Kind)
+    );
+    assert_eq!(
+        parsed_when(json!({ "in": ["$self", ["body", "summary"]] })),
+        SlotCondition::In(
+            SlotConditionValue::PropertyName,
+            BTreeSet::from(["body".to_string(), "summary".to_string()])
+        )
+    );
+    assert_eq!(
+        parsed_when(json!({ "notIn": ["$kind", ["moderatedDocument", "permanentDocument"]] })),
+        SlotCondition::NotIn(
+            SlotConditionValue::Kind,
+            BTreeSet::from([
+                "moderatedDocument".to_string(),
+                "permanentDocument".to_string()
+            ])
+        )
+    );
+    assert_eq!(
+        parsed_when(json!({
+            "contains": ["$moderatorAbilities.changeFields", { "const": "label" }]
+        })),
+        SlotCondition::Contains(
+            SlotConditionList::ModeratorChangeableFields,
+            constant("label")
+        )
+    );
+    assert_eq!(
+        parsed_when(json!({ "ifThenElse": [
+            { "equal": ["$kind", { "const": "permanentDocument" }] },
+            { "anyOf": [
+                { "equal": ["$self", { "const": "body" }] },
+                { "equal": ["$self", { "const": "summary" }] }
+            ] },
+            { "notEqual": ["$self", { "const": "title" }] }
+        ] })),
+        SlotCondition::IfThenElse(list(vec![
+            SlotCondition::Equal(SlotConditionValue::Kind, constant("permanentDocument")),
+            SlotCondition::AnyOf(list(vec![
+                SlotCondition::Equal(SlotConditionValue::PropertyName, constant("body")),
+                SlotCondition::Equal(SlotConditionValue::PropertyName, constant("summary")),
+            ])),
+            SlotCondition::NotEqual(SlotConditionValue::PropertyName, constant("title")),
+        ]))
+    );
+}
+
+#[test]
+fn should_refuse_a_malformed_slot_condition() {
+    let refused = |when: serde_json::Value, fragment: &str| {
+        assert_refused_by_the_parser(note_contract(requiring(body_when(when))), fragment);
+    };
+    let is_body = || json!({ "equal": ["$self", { "const": "body" }] });
+
+    // The shape of a condition
+    refused(json!("$self"), "is an object of one key");
+    refused(json!({}), "is an object of one key");
+    refused(
+        json!({ "equal": ["$self", { "const": "a" }], "not": is_body() }),
+        "is an object of one key",
+    );
+    refused(json!({ "present": "$self" }), "does not take present");
+    refused(
+        json!({ "greaterThan": ["$self", { "const": "a" }] }),
+        "does not take greaterThan",
+    );
+
+    // What a comparison reads
+    refused(json!({ "equal": ["$self"] }), "equal takes two strings");
+    refused(
+        json!({ "equal": ["title", { "const": "title" }] }),
+        "when compares \"$kind\", \"$self\" or",
+    );
+    refused(
+        json!({ "equal": ["$self", { "const": "" }] }),
+        "when compares \"$kind\", \"$self\" or",
+    );
+    refused(
+        json!({ "equal": ["$self", { "const": 1 }] }),
+        "when compares \"$kind\", \"$self\" or",
+    );
+    refused(
+        json!({ "equal": ["$self", { "const": "a", "other": "b" }] }),
+        "when compares \"$kind\", \"$self\" or",
+    );
+    refused(
+        json!({ "equal": ["$self", "$kind"] }),
+        "equal compares \"$kind\" or \"$self\" with a",
+    );
+    refused(
+        json!({ "notEqual": [{ "const": "a" }, { "const": "b" }] }),
+        "notEqual compares \"$kind\" or \"$self\" with a",
+    );
+    refused(
+        json!({ "equal": ["$self", "$self"] }),
+        "equal compares \"$kind\" or \"$self\" with a",
+    );
+    // The kind is one a reference of this sort admits
+    refused(
+        json!({ "equal": ["$kind", { "const": "moderated" }] }),
+        "the kind of the referenced document type is permanentDocument or moderatedDocument",
+    );
+    refused(
+        json!({ "equal": ["$kind", { "const": "deletableDocument" }] }),
+        "the kind of the referenced document type is permanentDocument or moderatedDocument",
+    );
+    refused(
+        json!({ "in": ["$kind", ["permanentDocument", "post"]] }),
+        "the kind of the referenced document type is permanentDocument or moderatedDocument",
+    );
+
+    // `in` and `notIn`
+    refused(
+        json!({ "in": ["$self", ["body"]] }),
+        "in takes a string and a list of two or more distinct strings",
+    );
+    refused(
+        json!({ "notIn": ["$self", ["body", "body"]] }),
+        "notIn takes a string and a list of two or more distinct strings",
+    );
+    refused(
+        json!({ "in": ["$self", ["body", 1]] }),
+        "in takes a string and a list of two or more distinct strings",
+    );
+    refused(
+        json!({ "in": [{ "const": "body" }, ["body", "title"]] }),
+        "not for a constant",
+    );
+
+    // `contains`
+    refused(
+        json!({ "contains": ["$self", "$self"] }),
+        "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
+    );
+    refused(
+        json!({ "contains": ["$moderatorAbilities.delete", "$self"] }),
+        "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
+    );
+    refused(
+        json!({ "contains": ["$moderatorAbilities.changeFields", "$kind"] }),
+        "not for the kind of the type",
+    );
+
+    // The combinators
+    refused(
+        json!({ "not": { "not": is_body() } }),
+        "not holds a not or a notIn",
+    );
+    refused(
+        json!({ "not": { "notIn": ["$self", ["a", "b"]] } }),
+        "not holds a not or a notIn",
+    );
+    refused(
+        json!({ "anyOf": [is_body()] }),
+        "anyOf takes two or more conditions",
+    );
+    refused(
+        json!({ "allOf": [is_body(), is_body()] }),
+        "allOf lists the same condition twice",
+    );
+    refused(
+        json!({ "anyOf": [is_body(), { "anyOf": [
+            { "equal": ["$self", { "const": "a" }] },
+            { "equal": ["$self", { "const": "b" }] }
+        ] }] }),
+        "anyOf holds another anyOf",
+    );
+    refused(
+        json!({ "ifThen": [is_body()] }),
+        "ifThen takes two conditions",
+    );
+    refused(
+        json!({ "ifThenElse": [is_body(), is_body()] }),
+        "ifThenElse takes three conditions",
+    );
+}
+
+#[test]
+fn should_hold_a_slot_condition_to_the_node_limit() {
+    let max_nodes = usize::from(
+        PlatformVersion::latest()
+            .system_limits
+            .max_document_type_requirement_condition_nodes,
+    );
+    // `allOf` over `count - 1` comparisons: `count` conditions
+    let of = |count: usize| {
+        json!({ "allOf": (1..count)
+            .map(|index| json!({ "notEqual": ["$self", { "const": format!("p{index}") }] }))
+            .collect::<Vec<_>>() })
+    };
+    assert_eq!(parsed_when(of(max_nodes)).node_count(), max_nodes);
+    assert_refused_by_the_parser(
+        note_contract(requiring(body_when(of(max_nodes + 1)))),
+        &format!("when is made of more than {max_nodes} conditions"),
+    );
+
+    // The limit also holds what nests: `not` and `ifThen` in turn, as deep as it allows
+    let mut deepest = json!({ "equal": ["$self", { "const": "body" }] });
+    let mut nodes = 1;
+    while nodes * 2 + 2 <= max_nodes {
+        deepest = json!({ "not": { "ifThen": [deepest.clone(), deepest] } });
+        nodes = nodes * 2 + 2;
+    }
+    assert!(parsed_when(deepest.clone()).node_count() <= max_nodes);
+    let too_many = json!({ "ifThen": [deepest.clone(), deepest] });
+    assert_refused_by_the_parser(
+        note_contract(requiring(body_when(too_many))),
+        &format!("when is made of more than {max_nodes} conditions"),
+    );
+}
+
+#[test]
+fn should_fill_a_slot_only_with_a_property_its_condition_holds_for() {
+    // The fixture's `post` is permanent: `title`, `body` and `summary` are its strings
+    assert!(post_meets(
+        body_when(json!({ "in": ["$self", ["body", "content"]] })),
+        None
+    ));
+    assert!(!post_meets(
+        body_when(json!({ "in": ["$self", ["content", "text"]] })),
+        None
+    ));
+    // A condition on the kind decides for every property at once
+    assert!(post_meets(
+        body_when(json!({ "equal": ["$kind", { "const": "permanentDocument" }] })),
+        None
+    ));
+    assert!(!post_meets(
+        body_when(json!({ "equal": ["$kind", { "const": "moderatedDocument" }] })),
+        None
+    ));
+    // The condition narrows the candidates distinct slots are filled from: three strings,
+    // of which the two slots may not take `summary`
+    let two_of = |excluded: &[&str]| {
+        let when = json!({ "notIn": ["$self", excluded] });
+        json!({ "properties": {
+            "first": { "name": "$any", "type": "string", "when": when },
+            "second": { "name": "$any", "type": "string", "when": when, "distinctFrom": "first" }
+        } })
+    };
+    assert!(post_meets(two_of(&["summary", "none"]), None));
+    assert!(!post_meets(two_of(&["summary", "body"]), None));
+    // A named property is held to it too
+    assert!(!post_meets(
+        json!({ "properties": { "body": {
+            "name": "title",
+            "type": "string",
+            "when": { "notEqual": ["$self", { "const": "title" }] }
+        } } }),
+        None
+    ));
+    assert!(!post_meets(
+        json!({ "properties": { "body": {
+            "name": { "property": "bodyProperty" },
+            "type": "string",
+            "when": { "notEqual": ["$self", { "const": "title" }] }
+        } } }),
+        Some("title")
+    ));
+}
+
+#[test]
+fn should_ask_of_a_moderated_type_what_it_does_not_ask_of_a_permanent_one() {
+    let slot_requirements = |name: serde_json::Value| {
+        dynamic_reference(
+            &contract(note_contract(either_kind_requiring(
+                json!({ "properties": { "body": {
+                "name": name,
+                "type": "string",
+                "when": removed_with_the_document()
+            } } }),
+            )))
+            .expect("parses"),
+        )
+        .requirements
+        .expect("requirements")
+    };
+    let met = |name: serde_json::Value, post: &DocumentType| {
+        slot_requirements(name).met_by(post.as_ref(), |_| None)
+    };
+
+    // Moderators delete posts, the removal record keeping `tags`, and they alone write
+    // `label`: `text` is the one string a removal takes and the author writes
+    let moderated = moderated_post(json!({
+        "canBeDeleted": false,
+        "moderatorAbilities": {
+            "delete": true,
+            "deleteKeepsFields": ["tags"],
+            "changeFields": ["label"]
+        }
+    }));
+    assert_eq!(
+        moderated.document_reference_kind(),
+        DocumentReferenceKind::Moderated
+    );
+    assert!(met(json!("$any"), &moderated));
+    assert!(met(json!("text"), &moderated));
+    assert!(!met(json!("tags"), &moderated));
+    assert!(!met(json!("label"), &moderated));
+
+    // Every string is kept or is the moderators': nothing fills the slot
+    let all_kept = moderated_post(json!({
+        "canBeDeleted": false,
+        "moderatorAbilities": {
+            "delete": true,
+            "deleteKeepsFields": ["text", "tags"],
+            "changeFields": ["label"]
+        }
+    }));
+    assert!(!met(json!("$any"), &all_kept));
+
+    // A permanent type whose moderators write `label`: the condition asks nothing of it
+    let permanent = moderated_post(json!({
+        "canBeDeleted": false,
+        "documentsMutable": false,
+        "moderatorAbilities": { "changeFields": ["label"] }
+    }));
+    assert_eq!(
+        permanent.document_reference_kind(),
+        DocumentReferenceKind::Permanent
+    );
+    assert!(met(json!("label"), &permanent));
+    assert!(met(json!("tags"), &permanent));
+}
+
+#[test]
+fn should_round_trip_a_contract_through_platform_serialization_with_a_slot_condition() {
+    let platform_version = PlatformVersion::latest();
+    let original = contract(note_contract(either_kind_requiring(json!({
+        "properties": {
+            "body": { "name": "$any", "type": "string", "when": removed_with_the_document() },
+            "bytes": {
+                "name": "$any",
+                "type": "array",
+                "byteArray": true,
+                "when": { "ifThenElse": [
+                    { "in": ["$kind", ["permanentDocument", "moderatedDocument"]] },
+                    { "notIn": ["$self", ["blob", "raw"]] },
+                    { "notEqual": ["$self", { "const": "blob" }] }
+                ] }
+            }
+        },
+        "require": { "anyOf": ["body", "bytes"] }
+    }))))
+    .expect("parses");
+    let bytes = original
+        .serialize_to_bytes_with_platform_version(platform_version)
+        .expect("the contract should serialize");
+    let recovered = DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+        .expect("the contract should deserialize");
+    assert_eq!(original, recovered);
+    let reference = dynamic_reference(&recovered);
+    assert_eq!(
+        reference.kind,
+        DynamicDocumentReferenceKind::PermanentOrModerated
+    );
+    assert_eq!(dynamic_reference(&original), reference);
 }

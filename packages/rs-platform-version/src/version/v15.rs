@@ -668,9 +668,20 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     slots, each a top-level property the named type must have (`name`: `"$any"`, a
 ///     property name, or `{ "property": <a string property of the referring document> }`;
 ///     `type`; `maxBytes`; `distinctFrom`, one or several other slots it is filled by a
-///     different property than), and `require`, `anyOf` / `allOf` over slot names, every
-///     slot when absent. The native schema check of note 7 admits the keys and meta-schema
-///     v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     different property than; `when`, a condition on what the named type says of the
+///     property), and `require`, `anyOf` / `allOf` over slot names, every slot when absent.
+///     `type` may list both kinds, `["permanentDocument", "moderatedDocument"]`: the named
+///     type is then either, and the reference is checked as one of the kind the type is (a
+///     moderated reference into a moderated type, a permanent one into any other). A
+///     slot's `when` is written like a `propertyConstraints` condition (`equal`,
+///     `notEqual`, `in`, `notIn`, `contains`, `not`, `anyOf`, `allOf`, `ifThen`,
+///     `ifThenElse`) over `$kind` (the kind of the named type), `$self` (the name of the
+///     property tried for the slot), `$moderatorAbilities.deleteKeepsFields` and
+///     `$moderatorAbilities.changeFields` (the type's lists) and `{ "const": <string> }`,
+///     of at most `max_document_type_requirement_condition_nodes` conditions (16,
+///     `SYSTEM_LIMITS_V5`, backfilled); a property it does not hold for does not fill the
+///     slot. The native schema check of note 7 admits the keys and meta-schema v3 refuses
+///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
