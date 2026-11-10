@@ -25,7 +25,7 @@ use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DapiClient, DumpData, ExecutionResponse,
+    DapiClient, ExecutionResponse,
 };
 use std::{collections::BTreeMap, convert::identity, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -657,15 +657,74 @@ fn load_expectation<T: TransportRequest>(
     dapi_guard: &mut OwnedMutexGuard<MockDapiClient>,
     path: &PathBuf,
 ) -> Result<(), Error> {
-    let data = DumpData::<T>::load(path)
-        .map_err(|e| {
-            Error::Config(format!(
-                "cannot load mock expectations from {}: {}",
-                path.display(),
-                e
-            ))
-        })?
-        .deserialize();
-    dapi_guard.expect(&data.0, &data.1)?;
+    let _ = dapi_guard.load::<T, _>(path).map_err(|e| {
+        Error::Config(format!(
+            "cannot load mock expectations from {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod recording_tests {
+    use super::*;
+    use crate::SdkBuilder;
+    use dapi_grpc::tonic::metadata::MetadataValue;
+    use dapi_grpc::tonic::{ConnectError, Status};
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::DumpData;
+    use rs_dapi_client::{DapiClientError, DapiRequestExecutor, ExecutionError, RequestSettings};
+    use std::io;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn should_preserve_recorded_submission_classification_through_sdk_loaders() {
+        let connector = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        )))));
+        let mut refusal = Status::unavailable("application refusal");
+        refusal.metadata_mut().insert_bin(
+            "dash-serialized-consensus-error-bin",
+            MetadataValue::from_bytes(&[1]),
+        );
+        for status in [connector, refusal] {
+            for possibly_accepted in [false, true] {
+                let request = proto::BroadcastStateTransitionRequest::default();
+                let directory = tempfile::tempdir().unwrap();
+                let dump = DumpData::new(
+                    &request,
+                    &Err(ExecutionError {
+                        inner: DapiClientError::Transport(TransportError::Grpc(status.clone())),
+                        possibly_accepted,
+                        address: None,
+                        retries: 0,
+                    }),
+                );
+                dump.save(&directory.path().join(dump.filename().unwrap()))
+                    .unwrap();
+                for builder in [false, true] {
+                    let sdk = if builder {
+                        SdkBuilder::new_mock()
+                            .with_dump_dir(directory.path())
+                            .build()
+                            .unwrap()
+                    } else {
+                        let mut sdk = Sdk::new_mock();
+                        sdk.mock().load_expectations_sync(directory.path()).unwrap();
+                        sdk
+                    };
+                    let error = sdk
+                        .mock_dapi()
+                        .lock()
+                        .await
+                        .execute(request.clone(), RequestSettings::default())
+                        .await
+                        .unwrap_err();
+                    assert_eq!(error.possibly_accepted, possibly_accepted);
+                }
+            }
+        }
+    }
 }
