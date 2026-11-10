@@ -62,11 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Delegate data contract requests to MyFallbackProvider
     // 3. Delegate token configuration requests to MyFallbackProvider
 
-    // In a real application, you would build the SDK with this provider:
-    // SdkBuilder::new(addresses)
-    //     .with_network(Network::Testnet)
-    //     .with_context_provider(trusted_provider)
-    //     .build()?;
+    // In a real application, you would use this provider with the SDK:
+    // sdk.set_context_provider(trusted_provider);
 
     Ok(())
 }

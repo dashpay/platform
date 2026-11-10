@@ -678,9 +678,11 @@ mod tests {
         let mut inner: Sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
-            .with_context_provider(context.clone())
             .build()
             .expect("a mock SDK");
+        inner
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
         inner
             .mock()
             .expect_fetch(contract_id, Some(current.clone()))
@@ -738,9 +740,11 @@ mod tests {
 
         let mut inner: Sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
-            .with_context_provider(context.clone())
             .build()
             .expect("a mock SDK");
+        inner
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
         inner
             .mock()
             .expect_fetch(contract_id, Some(current.clone()))
