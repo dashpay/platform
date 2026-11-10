@@ -381,6 +381,9 @@ mod tests {
         }
     }
 
+    /// A person stored at time 1000 and changed at time 2000 has no version before 1000, the
+    /// first from 1000 and the second from 2000, outside a contest and when it may be
+    /// contested, as a whole proof and as a subset
     #[test]
     fn should_find_the_version_of_a_document_stored_at_or_before_a_block_time() {
         let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
@@ -441,6 +444,8 @@ mod tests {
         }
     }
 
+    /// A proof shows the newest version at or before its own block time: it does not verify
+    /// at a time that answers otherwise, as a whole proof or as a subset
     #[test]
     fn should_refuse_a_proof_made_for_another_block_time() {
         let platform_version = PlatformVersion::latest();
@@ -494,7 +499,7 @@ mod tests {
     }
 
     /// Protocol version 14 selects generation 0 of the query and of this verifier, which a
-    /// lookup at a block time never passed.
+    /// lookup at a block time never passed, as a whole proof or as a subset
     #[test]
     fn should_leave_a_lookup_at_a_block_time_refused_at_protocol_version_14() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
