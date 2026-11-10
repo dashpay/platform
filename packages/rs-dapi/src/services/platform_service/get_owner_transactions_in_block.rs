@@ -276,10 +276,8 @@ fn attach_results(
 mod tests {
     use super::*;
     use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
+    use crate::services::platform_service::MAX_CONCURRENT_GET_OWNER_TRANSACTIONS;
     use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
-    use crate::services::platform_service::{
-        BLOCK_QUERY_ANSWER_DEADLINE, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
-    };
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
@@ -463,15 +461,11 @@ mod tests {
             .wait_for_requests(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS)
             .await;
 
-        // From here the clock moves only as far as the next deadline someone waits on
+        // Every caller goes away, and the clock runs far past the deadline of an ordinary
+        // call to Tenderdash, which is still busy
+        drop(handlers);
         tokio::time::pause();
-        for handler in handlers {
-            assert!(matches!(handler.await, Err(DapiError::Timeout(_))));
-        }
-
-        // Every caller has its answer and Tenderdash is still busy, long past the deadline
-        // of an ordinary call to it
-        tokio::time::advance(10 * BLOCK_QUERY_ANSWER_DEADLINE).await;
+        tokio::time::advance(Duration::from_secs(3600)).await;
         for _ in 0..100 {
             tokio::task::yield_now().await;
         }

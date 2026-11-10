@@ -30,7 +30,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
@@ -47,14 +47,11 @@ const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
 /// answer differs per owner.
 const MAX_CONCURRENT_GET_OWNER_TRANSACTIONS: usize = 16;
 
-/// How long the caller of a block query waits for its answer.
-const BLOCK_QUERY_ANSWER_DEADLINE: Duration = Duration::from_secs(30);
-
 /// Run backend work in a task of its own, which keeps `permit` until the work ends.
 ///
-/// A handler is dropped when its caller goes away, and it stops waiting here after
-/// `BLOCK_QUERY_ANSWER_DEADLINE`, while the request it sent to Tenderdash carries on there.
-/// Work run here is not dropped with its handler and has no deadline of its own, so it counts
+/// A handler is dropped when its caller goes away or its deadline passes, while the request
+/// it sent to Tenderdash carries on there. Work run here is not dropped with its handler,
+/// and what a block query asks of Tenderdash has no deadline of its own, so it counts
 /// against its limit for as long as the backend is busy with it, and what it read can still
 /// be cached.
 async fn run_holding_permit<T, F>(permit: OwnedSemaphorePermit, work: F) -> DAPIResult<T>
@@ -62,18 +59,11 @@ where
     T: Send + 'static,
     F: Future<Output = DAPIResult<T>> + Send + 'static,
 {
-    let task = tokio::spawn(async move {
+    tokio::spawn(async move {
         let _permit = permit;
         work.await
-    });
-
-    match timeout(BLOCK_QUERY_ANSWER_DEADLINE, task).await {
-        Ok(result) => result?,
-        Err(_) => Err(DapiError::Timeout(format!(
-            "Tenderdash did not answer within {} seconds",
-            BLOCK_QUERY_ANSWER_DEADLINE.as_secs()
-        ))),
-    }
+    })
+    .await?
 }
 
 const MAX_PATH_COMPONENTS: usize = 256;

@@ -285,11 +285,9 @@ fn parse_time_ms(time: &str) -> DAPIResult<u64> {
 mod tests {
     use super::*;
     use crate::clients::tenderdash_client::BlockHeader;
+    use crate::services::platform_service::MAX_CONCURRENT_GET_BLOCKS;
     use crate::services::platform_service::block_proof::tenderdash_commit;
     use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
-    use crate::services::platform_service::{
-        BLOCK_QUERY_ANSWER_DEADLINE, MAX_CONCURRENT_GET_BLOCKS,
-    };
     use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use dapi_grpc::tonic::Code;
@@ -420,17 +418,11 @@ mod tests {
             .wait_for_requests(MAX_CONCURRENT_GET_BLOCKS)
             .await;
 
-        // From here the clock moves only as far as the next deadline someone waits on
+        // Every caller goes away, and the clock runs far past the deadline of an ordinary
+        // call to Tenderdash, which is still busy
+        drop(handlers);
         tokio::time::pause();
-        let started = tokio::time::Instant::now();
-        for handler in handlers {
-            assert!(matches!(handler.await, Err(DapiError::Timeout(_))));
-        }
-        assert!(started.elapsed() <= BLOCK_QUERY_ANSWER_DEADLINE);
-
-        // Every caller has its answer and Tenderdash is still busy, long past the deadline
-        // of an ordinary call to it
-        tokio::time::advance(10 * BLOCK_QUERY_ANSWER_DEADLINE).await;
+        tokio::time::advance(Duration::from_secs(3600)).await;
         for _ in 0..100 {
             tokio::task::yield_now().await;
         }
