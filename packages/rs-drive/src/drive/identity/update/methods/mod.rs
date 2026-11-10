@@ -1,4 +1,5 @@
 mod add_new_keys_to_identity;
+mod add_new_keys_to_masternode_identity;
 mod add_new_non_unique_keys_to_identity;
 mod add_new_unique_keys_to_identity;
 mod add_to_identity_balance;
