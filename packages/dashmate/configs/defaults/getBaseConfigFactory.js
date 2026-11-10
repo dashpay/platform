@@ -379,7 +379,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.8',
+              image: 'dashpay/tenderdash:2.0.0-dev.1',
             },
             p2p: {
               host: '0.0.0.0',

@@ -1868,6 +1868,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      // Keyed at the first 5.1 prerelease rather than 5.1.0: a build stamps configs with
+      // its newest key, so a 5.1.0 key would make every later 5.1 prerelease migration skip.
+      '5.1.0-beta.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const tenderdash = options.platform?.drive?.tenderdash;
+
+            if (tenderdash?.docker) {
+              tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
+            // Tenderdash 2.0 validates the P2P section on start and refuses to run
+            // with an empty packet payload or more outgoing than total connections.
+            const p2p = tenderdash?.p2p;
+            if (p2p?.maxPacketMsgPayloadSize === 0) {
+              p2p.maxPacketMsgPayloadSize = getDefaultConfigByNetwork(options.network)
+                .get('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
+            }
+            if (p2p?.maxOutgoingConnections > p2p?.maxConnections) {
+              p2p.maxOutgoingConnections = p2p.maxConnections;
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

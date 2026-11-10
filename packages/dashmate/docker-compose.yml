@@ -131,7 +131,8 @@ services:
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
-    stop_grace_period: 10s
+    # Longer than Tenderdash's 30s --shutdown-timeout, so cleanup can finish before SIGKILL
+    stop_grace_period: 40s
     profiles:
       - platform
 
