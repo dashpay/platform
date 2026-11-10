@@ -94,7 +94,6 @@ mod tests {
                     &BlockInfo::default(),
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("store asset-lock state");
 
