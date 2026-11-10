@@ -347,7 +347,8 @@ impl Drive {
         // too. An untrusted refresh writes the stored flags back, so those are refreshed as
         // trusted: what they point at is unchanged.
         //
-        // The document's stored owner decides, not each reference's. Earlier generations could
+        // The document's stored owner decides, not each reference's. For keep-history types
+        // it is the current revision's flags, read through the primary pointer. Earlier generations could
         // leave a reference with whoever paid for it while the document went to a new owner;
         // such a reference stays with its payer until an update names another owner. No gas
         // sponsor holds one: flags name a sponsor only from the generation that follows owners.

@@ -9,6 +9,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_factory::DocumentFactory;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::Document;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::platform_value;
 use dpp::version::PlatformVersion;
@@ -17,16 +19,21 @@ use std::borrow::Cow;
 
 #[test]
 fn should_hand_over_history_indexes_without_changing_retained_revision_owners() {
-    assert_history_handover(false);
+    assert_history_handover(false, false);
 }
 
 #[test]
 fn should_use_the_current_revision_owner_after_migrating_a_transferred_history() {
-    assert_history_handover(true);
+    assert_history_handover(true, false);
 }
 
-fn assert_history_handover(migrated: bool) {
-    let current = PlatformVersion::latest();
+#[test]
+fn should_hand_every_unchanged_indexed_array_member_to_the_new_history_document_owner() {
+    assert_history_handover(false, true);
+}
+
+fn assert_history_handover(migrated: bool, indexed_array: bool) {
+    let current = PlatformVersion::get(15).unwrap();
     let initial = if migrated {
         PlatformVersion::get(14).unwrap()
     } else {
@@ -42,25 +49,44 @@ fn assert_history_handover(migrated: bool) {
     )
     .unwrap();
     drive.create_initial_state_structure(None, initial).unwrap();
-    let contract = DataContractFactory::new(initial.protocol_version).unwrap()
-        .create_with_value_config([7; 32].into(), 0, platform_value!({"note": {
+    let schema = if indexed_array {
+        platform_value!({
+            "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
+            "properties": {"tags": {"type": "array", "maxItems": 4, "items": {"type": "string", "minLength": 1, "maxLength": 10}, "position": 0}},
+            "required": ["tags"], "additionalProperties": false,
+            "indices": [{"name": "tags", "properties": [{"tags": "asc"}]}]
+        })
+    } else {
+        platform_value!({
             "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
             "properties": {"amount": {"type": "integer", "minimum": 0, "maximum": 100, "position": 0}},
             "required": ["amount"], "additionalProperties": false,
             "indices": [{"name": "amount", "properties": [{"amount": "asc"}]}]
-        }}), Some(platform_value!({"canBeDeleted": true})), None).unwrap().data_contract_owned();
+        })
+    };
+    let properties = if indexed_array {
+        platform_value!({"tags": ["alpha", "beta", "gamma"]})
+    } else {
+        platform_value!({"amount": 1})
+    };
+    let contract = DataContractFactory::new(initial.protocol_version)
+        .unwrap()
+        .create_with_value_config(
+            [7; 32].into(),
+            0,
+            platform_value!({"note": schema}),
+            Some(platform_value!({"canBeDeleted": true})),
+            None,
+        )
+        .unwrap()
+        .data_contract_owned();
     drive
         .apply_contract(&contract, BlockInfo::default(), true, None, None, initial)
         .unwrap();
     let document_type = contract.document_type_for_name("note").unwrap();
     let mut document = DocumentFactory::new(initial.protocol_version)
         .unwrap()
-        .create_document(
-            &contract,
-            [7; 32].into(),
-            "note".into(),
-            platform_value!({"amount": 1}),
-        )
+        .create_document(&contract, [7; 32].into(), "note".into(), properties)
         .unwrap();
     let first_owner = [7; 32];
     let next_owner = [8; 32];
@@ -154,28 +180,56 @@ fn assert_history_handover(migrated: bool) {
         owner(&raw(&primary, document.id().as_slice())),
         Some(next_owner)
     );
-    let mut index_path = primary[..4].to_vec();
-    let amount = document_type
-        .serialize_value_for_key("amount", &1.into(), current)
-        .unwrap();
-    index_path.extend([b"amount".as_slice(), amount.as_slice(), &[0]]);
-    let index_reference = raw(&index_path, document.id().as_slice());
-    assert!(index_reference.is_reference());
-    assert_eq!(
-        owner(&index_reference),
-        Some(if migrated { first_owner } else { next_owner })
-    );
-    let resolved = drive
-        .grove
-        .get(
-            index_path.as_slice(),
-            document.id().as_slice(),
-            None,
-            &current.drive.grove_version,
+    let (property, values) = if indexed_array {
+        (
+            "tags",
+            vec![
+                platform_value!("alpha"),
+                platform_value!("beta"),
+                platform_value!("gamma"),
+            ],
         )
-        .unwrap()
-        .unwrap();
-    assert_eq!(owner(&resolved), Some(next_owner));
+    } else {
+        ("amount", vec![platform_value!(1)])
+    };
+    for value in values {
+        let mut index_path = primary[..4].to_vec();
+        let encoded = document_type
+            .serialize_value_for_key(property, &value, current)
+            .unwrap();
+        index_path.extend([property.as_bytes(), encoded.as_slice(), &[0]]);
+        let index_reference = raw(&index_path, document.id().as_slice());
+        assert!(index_reference.is_reference());
+        // Migration preserves the earliest index payer; the current revision already names the new owner.
+        assert_eq!(
+            owner(&index_reference),
+            Some(if migrated { first_owner } else { next_owner })
+        );
+        let resolved = drive
+            .grove
+            .get(
+                index_path.as_slice(),
+                document.id().as_slice(),
+                None,
+                &current.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(owner(&resolved), Some(next_owner));
+        let bytes = resolved.into_item_bytes().unwrap();
+        assert_eq!(
+            bytes,
+            document
+                .serialize(document_type, &contract, current)
+                .unwrap()
+        );
+        assert_eq!(
+            Document::from_bytes(&bytes, document_type, current)
+                .unwrap()
+                .revision(),
+            Some(if migrated { 3 } else { 2 })
+        );
+    }
     let history = document_history_path(contract.id().as_slice(), "note", document.id().as_slice());
     let history_refs = history.iter().map(Vec::as_slice).collect::<Vec<_>>();
     let key = |time: u64, revision: u64| [encode_u64(time), encode_u64(revision)].concat();
