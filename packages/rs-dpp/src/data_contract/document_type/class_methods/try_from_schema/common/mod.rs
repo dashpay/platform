@@ -1143,7 +1143,11 @@ fn parse_indices(
                     // produced — which is what `TryFrom<&[(Value, Value)]> for
                     // Index` does, so without generation 3 this whole call
                     // collapses back to `.as_slice().try_into()`.
-                    let mut index: Index = Index::try_from_value_map(
+                    // A contested index's `resolution` is read as the platform version's
+                    // tables say (`ContestedIndexResolution::try_from_schema_value`): that
+                    // is a method version, not a property of the generation, since
+                    // protocol versions 14 and 15 both parse generation 3
+                    let mut index: Index = Index::try_from_value_map_for_platform_version(
                         index_value
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
@@ -1163,20 +1167,9 @@ fn parse_indices(
                                 .generation
                                 .admit_range_countable_implies_countable,
                             no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
-                            // Not a property of the generation: protocol versions 14 and
-                            // 15 both parse generation 3, and only the tables setting this
-                            // version admit a contest among documents
-                            documents_resolution: ctx
-                                .platform_version
-                                .dpp
-                                .contract_versions
-                                .document_type_versions
-                                .schema
-                                .parse_contested_documents_resolution
-                                .is_some(),
                         },
-                    )
-                    .map_err(consensus_or_protocol_data_contract_error)?;
+                        ctx.platform_version,
+                    )?;
 
                     // INTEGER RANGE: the index grammar cannot see property
                     // types, so the source's key encoding is resolved here,

@@ -33,9 +33,10 @@ pub mod document_types {
     }
 
     /// A question put to the masternodes whose answers are the choices entered for it. Any
-    /// identity may enter one [`choice`] when it is open, and only its owner when it is not. Its
-    /// owner may edit the title, description and url for two hours after creating it, and every
-    /// version is kept; whether it is open never changes. Undeletable.
+    /// identity may enter [`choice`]s when it is open, and only its owner when it is not; whoever
+    /// may enter them may enter several. Its owner may edit the title, description and url for
+    /// two hours after creating it, and every version is kept; whether it is open never changes.
+    /// Undeletable.
     pub mod multiple_choice_proposal {
         pub const NAME: &str = "multipleChoiceProposal";
 
@@ -58,9 +59,11 @@ pub mod document_types {
 
     /// An answer to a multiple choice proposal. The choices entered for one proposal contend
     /// in a masternode vote on the contested `byProposal` index: entering the first opens the
-    /// vote, a later one joins it, and an identity enters at most one. Only the owner of a
-    /// proposal that is not open enters a choice for it. The choice with the most votes is kept, unless
-    /// the lock votes (none of the choices) outnumber it. Immutable and undeletable.
+    /// vote and a later one joins it. Each choice is a contender of its own, named by its
+    /// document id, so an identity may enter several, each paying the contest fund. Anyone
+    /// enters choices for an open proposal, and only its owner for one that is not. The
+    /// choice with the most votes is kept, unless the lock votes (none of the choices)
+    /// outnumber it. Immutable and undeletable.
     pub mod choice {
         pub const NAME: &str = "choice";
 

@@ -132,11 +132,21 @@ impl DataContractInSerializationFormat {
                             // while the identical index parses fine during
                             // validation — the fee must cover every index the
                             // contract actually registers.
-                            let admissions =
-                                IndexGrammarAdmissions::for_platform_version(platform_version);
-                            if let Ok(index) =
-                                Index::try_from_value_map(index_value_map.as_slice(), admissions)
-                            {
+                            let admissions = IndexGrammarAdmissions::for_schema_generation(
+                                platform_version
+                                    .dpp
+                                    .contract_versions
+                                    .document_type_versions
+                                    .schema
+                                    .document_type_schema,
+                            );
+                            // and the same reading of a contested index's `resolution`,
+                            // which the platform version's tables decide
+                            if let Ok(index) = Index::try_from_value_map_for_platform_version(
+                                index_value_map.as_slice(),
+                                admissions,
+                                platform_version,
+                            ) {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee
                                 } else if index.unique {

@@ -157,7 +157,10 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 
 /// Multiple contenders for a vote resolution.
 ///
-/// Mapping between the contenders identity IDs and their info.
+/// Mapping between the ids a contest names its contenders by and their info: identity ids,
+/// or, in a vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`),
+/// document ids, where a contender's owner is its document's `owner_id` and one identity
+/// may own several contenders.
 /// If a contender is not found, it is represented as `None`.
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(
@@ -168,7 +171,8 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 pub struct Contenders {
     /// The winner if the contest is finished
     pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
-    /// Contenders indexed by their identity IDs.
+    /// Contenders indexed by the ids the contest names them by: identity ids, or document
+    /// ids in a vote among documents.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
     pub abstain_vote_tally: Option<u32>,
@@ -177,7 +181,8 @@ pub struct Contenders {
 }
 
 impl Contenders {
-    /// Return a map of deserialized [Contender] objects indexed by their identity IDs.
+    /// Return a map of deserialized [Contender] objects indexed by the ids the contest
+    /// names them by: identity ids, or document ids in a vote among documents.
     pub fn to_contenders(
         &self,
         document_type: &DocumentType,

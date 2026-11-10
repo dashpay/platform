@@ -20,7 +20,6 @@ fn admissions(integer_range: bool) -> IndexGrammarAdmissions {
         summable_off_count_index: false,
         range_countable_implies_countable: true,
         no_locking_resolution: false,
-        documents_resolution: false,
     }
 }
 

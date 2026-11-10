@@ -13,6 +13,15 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
+use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{
+    get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0,
+};
+use dapi_grpc::platform::v0::{
+    get_contested_resource_vote_state_request, get_contested_resource_vote_state_response,
+    GetContestedResourceVoteStateRequest,
+};
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::basic::BasicError;
@@ -23,10 +32,12 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::decision_proposal::DECISION_PROPOSALS_CONTRACT_ID;
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, TimestampMillis};
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::{Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
@@ -42,6 +53,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
 };
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -49,7 +61,13 @@ use dpp::voting::votes::Vote;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::document::ContestWindows;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+use drive::query::vote_poll_vote_state_query::{
+    ContestedDocumentVotePollDriveQueryExecutionResult, ContestedDocumentVotePollDriveQueryResultType,
+    ResolvedContestedDocumentVotePollDriveQuery,
+};
 use drive::query::DriveDocumentQuery;
+use drive::util::object_size_info::DataContractResolvedInfo;
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -545,6 +563,78 @@ async fn edit_transition(
     .expect("expected to serialize the edit")
 }
 
+/// The vote among the choices of `proposal_id` as a client reads it: proved by the vote state
+/// query and verified, the verified root being Drive's.
+fn proved_vote_state(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    proposal_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> ContestedDocumentVotePollDriveQueryExecutionResult {
+    const LIMIT: u16 = 10;
+    let index_value = Value::Identifier(proposal_id.to_buffer());
+    let platform_state = platform.state.load();
+    let response = platform
+        .query_contested_resource_vote_state(
+            GetContestedResourceVoteStateRequest {
+                version: Some(get_contested_resource_vote_state_request::Version::V0(
+                    GetContestedResourceVoteStateRequestV0 {
+                        contract_id: contract.id().to_vec(),
+                        document_type_name: choice::NAME.to_string(),
+                        index_name: choice::indexes::BY_PROPOSAL.to_string(),
+                        index_values: vec![bincode::encode_to_vec(
+                            &index_value,
+                            PLATFORM_BINCODE_CONFIG,
+                        )
+                        .expect("expected to encode the proposal id")],
+                        result_type: ResultType::DocumentsAndVoteTally as i32,
+                        allow_include_locked_and_abstaining_vote_tally: true,
+                        start_at_identifier_info: None,
+                        count: Some(LIMIT as u32),
+                        prove: true,
+                    },
+                )),
+            },
+            &platform_state,
+            platform_version,
+        )
+        .expect("expected to execute the query")
+        .into_data()
+        .expect("expected the query to be valid");
+    let get_contested_resource_vote_state_response::Version::V0(
+        GetContestedResourceVoteStateResponseV0 { result, .. },
+    ) = response.version.expect("expected a version");
+    let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result else {
+        panic!("expected a proof")
+    };
+    let (root_hash, result) = ResolvedContestedDocumentVotePollDriveQuery {
+        vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract: DataContractResolvedInfo::BorrowedDataContract(contract),
+            document_type_name: choice::NAME.to_string(),
+            index_name: choice::indexes::BY_PROPOSAL.to_string(),
+            index_values: vec![index_value],
+        },
+        result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+        offset: None,
+        limit: Some(LIMIT),
+        start_at: None,
+        allow_include_locked_and_abstaining_vote_tally: true,
+    }
+    .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
+    .expect("expected to verify the proof");
+    assert_eq!(
+        root_hash,
+        platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected Drive's root"),
+        "the proof verifies against Drive's root"
+    );
+    result
+}
+
 fn windows(
     platform: &TempPlatform<MockCoreRPCLike>,
     platform_version: &PlatformVersion,
@@ -931,6 +1021,126 @@ async fn should_let_an_identity_enter_several_choices_and_vote_on_each() {
     for other in [owl, heron] {
         assert!(stored_choice(&platform, &contract, other).is_none());
     }
+}
+
+#[tokio::test]
+async fn should_prove_the_choices_of_one_identity_as_contenders_of_their_own() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let poll_duration = windows(&platform, platform_version).poll_duration_ms;
+    let mut proposer = writer(&mut platform, &mut rng);
+    let mut alice = writer(&mut platform, &mut rng);
+    let mut bob = writer(&mut platform, &mut rng);
+    let proposal_id = ask(
+        &platform,
+        &contract,
+        &mut proposer,
+        "Which mascot?",
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let poll = choice_poll(proposal_id);
+    let start = 20_000;
+    let owl = enter(
+        &platform,
+        &contract,
+        &mut alice,
+        proposal_id,
+        "An owl",
+        start,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let fox = enter(
+        &platform,
+        &contract,
+        &mut alice,
+        proposal_id,
+        "A fox",
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let heron = enter(
+        &platform,
+        &contract,
+        &mut bob,
+        proposal_id,
+        "A heron",
+        start + 120_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    for (seed, vote_choice) in [
+        (1, ResourceVoteChoice::TowardsIdentity(fox)),
+        (2, ResourceVoteChoice::TowardsIdentity(owl)),
+        (3, ResourceVoteChoice::TowardsIdentity(fox)),
+        (4, ResourceVoteChoice::Lock),
+    ] {
+        vote(
+            &mut platform,
+            &poll,
+            vote_choice,
+            seed,
+            start + 200_000,
+            platform_version,
+        )
+        .await;
+    }
+
+    // While the vote runs, the proof holds a contender under each choice's document id, each
+    // with its own tally, and the two Alice entered are both hers
+    let running = proved_vote_state(&platform, &contract, proposal_id, platform_version);
+    assert_eq!(running.winner, None);
+    assert_eq!(running.locked_vote_tally, Some(1));
+    let document_type = contract
+        .document_type_for_name(choice::NAME)
+        .expect("expected the choice document type");
+    let proved: BTreeMap<Identifier, (Option<u32>, Identifier, Identifier)> = running
+        .contenders
+        .iter()
+        .map(|contender| {
+            let document = Document::from_bytes(
+                contender
+                    .serialized_document()
+                    .as_ref()
+                    .expect("the proof holds the contender's document"),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to deserialize the choice");
+            (
+                contender.identity_id(),
+                (contender.vote_tally(), document.id(), document.owner_id()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        proved,
+        BTreeMap::from([
+            (owl, (Some(1), owl, alice.id())),
+            (fox, (Some(2), fox, alice.id())),
+            (heron, (Some(0), heron, bob.id())),
+        ])
+    );
+
+    // Once it has ended, the proof names the winning choice by its document id
+    end_polls_at(&platform, start + poll_duration, 11, platform_version);
+    let ended = proved_vote_state(&platform, &contract, proposal_id, platform_version);
+    assert!(
+        matches!(
+            ended.winner,
+            Some((ContestedDocumentVotePollWinnerInfo::WonByIdentity(winner), _)) if winner == fox
+        ),
+        "{:?}",
+        ended.winner
+    );
+    let kept = stored_choice(&platform, &contract, fox).expect("the fox is kept");
+    assert_eq!(kept.owner_id(), alice.id());
 }
 
 #[tokio::test]
