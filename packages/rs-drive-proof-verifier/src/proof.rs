@@ -442,11 +442,11 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
-// The producer's signed version selects how the producer laid out its proof, while
-// security checks keep the caller's verifier version. For the non-unique identity
-// lookup it selects the GroveDB version its merged queries are built with and, for a
-// two-proof answer, the tables that decode the identity after the strict checks. For a
-// state transition outcome it selects only whether the proof carries the owner balance:
+// The producer's signed version selects its proof layout. History verifiers also use
+// the producer's signed tables; other security checks keep the caller's version.
+// For the non-unique identity lookup it selects the GroveDB version for merged queries
+// and the tables that decode the identity in a two-proof answer after strict checks.
+// For a state transition outcome it selects only whether the proof carries the owner balance:
 // every key and query is rebuilt with the caller's rules. Metadata is untrusted until
 // the signature binds it to the root. A producer newer than this build is read with the
 // newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess

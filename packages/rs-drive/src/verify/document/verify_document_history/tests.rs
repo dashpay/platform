@@ -384,7 +384,7 @@ fn should_preserve_non_history_roots_fees_and_proofs_after_grove_upgrade() {
         PlatformVersion::get(14).unwrap(),
         PlatformVersion::get(15).unwrap(),
     ] {
-        // Current upstream commitments pin replay compatibility independently of agreement
+        // Pinned roots and proofs check replay compatibility independently of agreement
         // between GroveDB engines. Protocol 15 stores contracts compiled.
         let (expected_root, expected_proof) = if selected.protocol_version == 14 {
             (

@@ -30,10 +30,10 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   on its own hands storage over as one in a batch of drive operations does.
 /// * `insert_contested.add_contested_document_for_contract_operations` is 2: a poll's end date
 ///   entries name whoever the document's storage flags name.
-/// * `query.single_document_path_query` is 1: in a document type that keeps history, the lookup
-///   of a single document at a block time selects the latest retained revision at or before it, and
-///   the lookup of a document that may be contested states its cap itself and is refused at a
-///   block time.
+/// * `query.single_document_path_query` is 1: a lookup of a document that may be contested
+///   states both branch caps for every type. In a type that keeps history, a single-document
+///   lookup at a block time selects the latest retained revision at or before it, and the
+///   maybe-contested status is refused at a block time.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         document_history_storage_layout: 1,

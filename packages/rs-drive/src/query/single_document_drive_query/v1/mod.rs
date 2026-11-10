@@ -23,7 +23,8 @@ impl SingleDocumentDriveQuery {
     /// preserves the legacy semantics for clients comparing layouts.
     ///
     /// The lookup of a document that may be contested states both branch caps itself
-    /// for merge generation 2, giving the same merged bytes as the preceding limit lift.
+    /// for merge generation 2, giving the same merged bytes as GroveDB merge generation 1's
+    /// derived cap.
     ///
     /// Such a lookup at a block time is refused. A contest's area keeps no history: it holds
     /// each contender as it was submitted, with no time to compare, so a document submitted

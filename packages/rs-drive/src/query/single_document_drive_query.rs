@@ -111,11 +111,11 @@ impl SingleDocumentDriveQuery {
     ///
     /// In a document type that keeps history, a query with no block time asks for the latest
     /// version, and one with a block time for the newest retained revision at or before that
-    /// time, taking the highest revision when times match. A lookup at a block time answers
-    /// so from protocol version 15: before it, a time
-    /// before the document was first stored answers with the latest version, and no proof of
-    /// such a lookup verifies. From protocol version 15 a document with history that may be
-    /// contested is refused at a block time, as a contest's area keeps no history.
+    /// time, taking the highest revision when times match. This behavior is selected from
+    /// protocol version 15. Before it, a time before the document was first stored answers
+    /// with the latest version, and no proof of such a lookup verifies. From protocol version
+    /// 15 a document with history that may be contested is refused at a block time, as a
+    /// contest's area keeps no history.
     ///
     /// # Parameters
     ///

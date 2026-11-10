@@ -178,7 +178,8 @@ fn should_preserve_public_merged_queries_and_their_bytes_across_grove_versions()
         let mut current = selected.clone();
         current.drive.grove_version = GROVE_V5;
         // The new Grove merge is selected with the newer single-document builder.
-        // Keep layout 0 here for the released producer's history-query byte comparison.
+        // Keep the selected version's layout for the released producer's history-query
+        // byte comparison.
         current
             .drive
             .methods

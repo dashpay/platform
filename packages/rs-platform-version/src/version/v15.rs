@@ -554,7 +554,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     and worst case estimators), so a contract create or update adding a private type is
 ///     estimated no lower than it costs; and a batch may carry the same keyless append more
 ///     than once (`apply_batch.keyless_append_repeats` 1), which the batch consistency check
-///     Drive runs for estimates and partial batches used to refuse. Retained history selects `merge` 2,
+///     Drive runs for estimates and partial batches used to refuse. `GROVE_V5` selects `merge` 2,
 ///     `per_instance_query_offsets` 1, `element.path_query_push` 2, and
 ///     `proof.count_offset_reference_empty_tree_rows` 1: branch-local count pages, raw
 ///     parent-tree echoes and faithful merged queries share one ordinary proof.
@@ -596,8 +596,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     so refused every such query. The query states both branch caps itself
 ///     (`single_document_path_query` 1, `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`), as the merge of
 ///     `GROVE_V5` (note 26) no longer derives one above a subquery. The ordinary branch follows
-///     the current-revision pointer in the composite history layout (note 32), or the legacy
-///     history pointer when verifying a producer that used the earlier layout. No state
+///     the current-revision pointer in the composite history layout (note 32). No state
 ///     transition is proved in this status, so block execution and its proofs are unchanged.
 ///
 /// 30. **A chain asset lock proof is not held to the input cap**: the asset lock transaction
@@ -644,7 +643,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after other activation work (note 32); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22)
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3,
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
