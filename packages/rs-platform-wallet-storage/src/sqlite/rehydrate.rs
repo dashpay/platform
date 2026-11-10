@@ -799,23 +799,43 @@ fn gap_refills_bounded(
 }
 
 /// The DashPay contact accounts of `wallet_info` whose xpub in `manifest`
-/// derives none of the funds accounts' scripts: its key and chain code are
-/// none of theirs. A contact account with no manifest entry is not one.
+/// derives none of the funds accounts' scripts. A contact pool derives `C/i`
+/// from its xpub `C`, and a funds pool `R/i` from its account xpub `X` or
+/// from `X/0` or `X/1` (a Standard account's external and internal chains),
+/// so `C` is foreign when its key and chain code are those of none of these
+/// roots for any funds account. A contact account with no manifest entry is
+/// not foreign, and none is when a funds account has no manifest entry or a
+/// root can't be derived.
 fn foreign_contact_accounts(
     wallet_info: &ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
 ) -> Vec<OwningAccount> {
-    let key_material = |account: &key_wallet::managed_account::ManagedCoreFundsAccount| {
+    use key_wallet::bip32::ChildNumber;
+
+    let xpub_of = |account: &key_wallet::managed_account::ManagedCoreFundsAccount| {
         let account_type = account.managed_account_type().to_account_type();
         (manifest.iter())
             .find(|e| e.account_type == account_type)
-            .map(|e| (e.account_xpub.public_key, e.account_xpub.chain_code))
+            .map(|e| e.account_xpub)
     };
-    let funds: Vec<_> = (wallet_info.accounts.all_funding_accounts().into_iter())
-        .filter_map(key_material)
-        .collect();
+    let mut funds_roots = Vec::new();
+    for account in wallet_info.accounts.all_funding_accounts() {
+        let Some(xpub) = xpub_of(account) else {
+            return Vec::new();
+        };
+        funds_roots.push((xpub.public_key, xpub.chain_code));
+        for chain in [0, 1] {
+            let Ok(child) = ChildNumber::from_normal_idx(chain).and_then(|i| xpub.ckd_pub(i))
+            else {
+                return Vec::new();
+            };
+            funds_roots.push((child.public_key, child.chain_code));
+        }
+    }
     (wallet_info.accounts.dashpay_external_accounts.values())
-        .filter(|contact| key_material(contact).is_some_and(|key| !funds.contains(&key)))
+        .filter(|contact| {
+            xpub_of(contact).is_some_and(|c| !funds_roots.contains(&(c.public_key, c.chain_code)))
+        })
         .map(owning_account_of)
         .collect()
 }
@@ -4840,6 +4860,75 @@ mod tests {
                 "{sites:?}"
             );
             assert!(outside_funds_pools(&info, [&deep]).contains(&deep));
+        }
+
+        /// Loads a used address two past the window of the BIP44 `pool_type`
+        /// pool, under the row of a DashPay contact account whose xpub is
+        /// that pool's chain root (`X/0` external, `X/1` internal), with
+        /// nothing used between: the contact pool derives the BIP44 pool's
+        /// scripts, so the address may be ours and stays counted unresolved
+        /// past discovery's probe, as well as orphaned.
+        fn assert_chain_root_contact_address_stays_unresolved(
+            seed: u8,
+            pool_type: AddressPoolType,
+            chain: u32,
+        ) {
+            let (mut wallet, manifest) = fixture(seed);
+            let root = (manifest.iter())
+                .find(|e| e.account_type == bip44())
+                .map(|e| e.account_xpub)
+                .unwrap();
+            let child = key_wallet::bip32::ChildNumber::from_normal_idx(chain).unwrap();
+            wallet
+                .add_account(contact(), Some(root.ckd_pub(child).unwrap()))
+                .unwrap();
+            let manifest = manifest_for(&wallet);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            let funds = info.accounts.funds_account(&bip44()).unwrap();
+            let pools = funds.managed_account_type().address_pools();
+            let mut probe = (pools.into_iter())
+                .find(|p| p.pool_type == pool_type)
+                .unwrap()
+                .clone();
+            let index = probe.highest_generated.unwrap() + 2;
+            let key_source = wallet.key_source_for_account(bip44());
+            let ours = ensure_derived(&mut probe, &key_source, index).unwrap();
+            assert_eq!(first_pool_address(&wallet, &contact(), index), ours);
+            let account = info.accounts.dashpay_external_accounts.values().next();
+            let used = HashMap::from([(ours.clone(), Some(owning_account_of(account.unwrap())))]);
+            let ctx = LoadCtx::strict();
+            load_into(
+                &mut info,
+                &manifest,
+                Vec::new(),
+                &HashMap::new(),
+                &used,
+                &ctx,
+            )
+            .unwrap();
+
+            let sites = &ctx.degradation().by_site;
+            assert_eq!(
+                sites.get(&LoadSite::UnresolvedUtxoAddress),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert_eq!(
+                sites.get(&LoadSite::OrphanedUtxoOwner),
+                Some(&1),
+                "{sites:?}"
+            );
+            assert!(outside_funds_pools(&info, [&ours]).contains(&ours));
+        }
+
+        #[test]
+        fn a_contact_on_a_standard_external_chain_root_stays_unresolved() {
+            assert_chain_root_contact_address_stays_unresolved(53, AddressPoolType::External, 0);
+        }
+
+        #[test]
+        fn a_contact_on_a_standard_internal_chain_root_stays_unresolved() {
+            assert_chain_root_contact_address_stays_unresolved(54, AddressPoolType::Internal, 1);
         }
 
         /// After discovery derives something every coin is offered to
