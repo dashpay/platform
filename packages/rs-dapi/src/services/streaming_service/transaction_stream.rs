@@ -11,6 +11,7 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::Decodable as _;
+use dashcore_rpc::dashcore::consensus::encode::deserialize;
 use dashcore_rpc::dashcore::{Block, InstantLock, Transaction};
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
@@ -41,6 +42,7 @@ type TxResponseSender = mpsc::Sender<TxResponseResult>;
 type TxResponseStream = ReceiverStream<TxResponseResult>;
 type TxResponse = Response<TxResponseStream>;
 type DeliveredTxSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
+type DeliveredTxInstanceSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
 type DeliveredBlockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
 type DeliveredInstantLockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
 type GateSender = watch::Sender<bool>;
@@ -87,6 +89,23 @@ impl BoundedDeliveredIds {
     }
 }
 
+/// Marks `transaction` delivered: its txid in `delivered_txs` and, when the txid does not tell
+/// its instances apart, the hash of its full serialization in `delivered_tx_instances`. Returns
+/// false if this instance was already delivered.
+fn mark_transaction_instance_delivered(
+    delivered_txs: &mut BoundedDeliveredIds,
+    delivered_tx_instances: &mut BoundedDeliveredIds,
+    transaction: &Transaction,
+) -> bool {
+    let txid = transaction.txid();
+    let txid_is_new = delivered_txs.mark_delivered(txid.to_byte_array().to_vec());
+    let instance_hash = transaction.instance_hash();
+    if instance_hash == txid {
+        return txid_is_new;
+    }
+    delivered_tx_instances.mark_delivered(instance_hash.to_byte_array().to_vec())
+}
+
 fn validate_transaction_from_block_shape(
     from_block: &dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
 ) -> Result<(), Status> {
@@ -106,6 +125,7 @@ fn validate_transaction_from_block_shape(
 #[derive(Clone)]
 struct TransactionStreamState {
     delivered_txs: DeliveredTxSet,
+    delivered_tx_instances: DeliveredTxInstanceSet,
     delivered_blocks: DeliveredBlockSet,
     delivered_instant_locks: DeliveredInstantLockSet,
     gate_sender: GateSender,
@@ -120,6 +140,9 @@ impl TransactionStreamState {
         let (cancellation_sender, cancellation_receiver) = watch::channel(false);
         Self {
             delivered_txs: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
+            delivered_tx_instances: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
                 MAX_DELIVERED_IDS_PER_STREAM,
             ))),
             delivered_blocks: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
@@ -195,27 +218,44 @@ impl TransactionStreamState {
         }
     }
 
-    /// Marks a transaction as delivered. Returns false if it was already delivered.
-    async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
+    /// Marks an instance of a transaction as delivered. Returns false if this instance was
+    /// already delivered.
+    ///
+    /// The txid tells instances apart for every transaction except an asset unlock with payload
+    /// version 2 or higher, whose txid leaves out the quorum signing info: Platform re-signs such
+    /// an unlock when it expires, every instance up to the mined one shares the txid, and Core
+    /// relays each. Those instances are told apart by the hash of their full serialization. The
+    /// txid is kept either way, for the instant locks and merkle blocks that name a transaction
+    /// by it.
+    async fn mark_transaction_delivered(&self, transaction: &Transaction) -> bool {
         tracing::trace!(
-            txid = txid_to_hex(txid),
+            txid = %transaction.txid(),
             "transaction_stream=mark_transaction_delivered"
         );
-        let mut guard = self.delivered_txs.lock().await;
-        guard.mark_delivered(txid.to_vec())
+        let mut delivered_txs = self.delivered_txs.lock().await;
+        let mut delivered_tx_instances = self.delivered_tx_instances.lock().await;
+        mark_transaction_instance_delivered(
+            &mut delivered_txs,
+            &mut delivered_tx_instances,
+            transaction,
+        )
     }
 
-    async fn mark_transactions_delivered<I>(&self, txids: I)
-    where
-        I: IntoIterator<Item = Vec<u8>>,
-    {
-        let mut guard = self.delivered_txs.lock().await;
-        for txid in txids {
+    /// Marks instances of transactions as delivered, as [`Self::mark_transaction_delivered`]
+    /// does.
+    async fn mark_transactions_delivered(&self, transactions: &[Transaction]) {
+        let mut delivered_txs = self.delivered_txs.lock().await;
+        let mut delivered_tx_instances = self.delivered_tx_instances.lock().await;
+        for transaction in transactions {
             tracing::trace!(
-                txid = txid_to_hex(&txid),
+                txid = %transaction.txid(),
                 "transaction_stream=mark_transaction_delivered"
             );
-            guard.mark_delivered(txid);
+            mark_transaction_instance_delivered(
+                &mut delivered_txs,
+                &mut delivered_tx_instances,
+                transaction,
+            );
         }
     }
 
@@ -517,15 +557,13 @@ impl StreamingServiceImpl {
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
-                let (Some(txid_bytes), Some(txid_hex)) = (
-                    super::txid_bytes_from_bytes(&data),
-                    super::txid_hex_from_bytes(&data),
-                ) else {
+                let Ok(transaction) = deserialize::<Transaction>(&data) else {
                     tracing::debug!("transactions_with_proofs=transaction_no_txid");
                     return true;
                 };
+                let txid_hex = transaction.txid().to_string();
 
-                let already_delivered = !state.mark_transaction_delivered(&txid_bytes).await;
+                let already_delivered = !state.mark_transaction_delivered(&transaction).await;
                 if already_delivered {
                     trace!(
                         subscriber_id,
@@ -1116,9 +1154,8 @@ impl StreamingServiceImpl {
                 .ok_or_else(|| {
                     Status::resource_exhausted("mempool snapshot exceeds the per-stream byte limit")
                 })?;
-            let txid_bytes = transaction.txid().to_byte_array();
 
-            if !state.mark_transaction_delivered(&txid_bytes).await {
+            if !state.mark_transaction_delivered(&transaction).await {
                 trace!(
                     txid = %transaction.txid(),
                     "transactions_with_proofs=skip_duplicate_mempool_transaction"
@@ -1219,7 +1256,7 @@ impl StreamingServiceImpl {
                 <dashcore_rpc::dashcore::BlockHash as AsRef<[u8]>>::as_ref(&hash).to_vec();
 
             let mut matching: Vec<Vec<u8>> = Vec::new();
-            let mut matching_hashes: Vec<Vec<u8>> = Vec::new();
+            let mut matching_transactions: Vec<CoreTx> = Vec::new();
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
 
             for tx_bytes in txs_bytes.iter() {
@@ -1257,8 +1294,8 @@ impl StreamingServiceImpl {
                 match_flags.push(matches_for_merkle);
                 // Only send raw transactions when they matched the bloom filter
                 if filter_matched {
-                    if let Some(hash_bytes) = super::txid_bytes_from_bytes(tx_bytes) {
-                        matching_hashes.push(hash_bytes);
+                    if let Ok(transaction) = deserialize::<CoreTx>(tx_bytes.as_slice()) {
+                        matching_transactions.push(transaction);
                     }
                     matching.push(tx_bytes.clone());
                 }
@@ -1266,7 +1303,9 @@ impl StreamingServiceImpl {
 
             if !matching.is_empty() {
                 if let Some(state) = state.as_ref() {
-                    state.mark_transactions_delivered(matching_hashes).await;
+                    state
+                        .mark_transactions_delivered(&matching_transactions)
+                        .await;
                 }
 
                 let raw_transactions = RawTransactions {
@@ -1408,11 +1447,19 @@ fn txid_to_hex(txid: &[u8]) -> String {
 mod tests {
     use super::*;
     use dashcore_rpc::dashcore::{
-        Block, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction as CoreTx, TxIn,
-        TxMerkleNode, TxOut, Txid, Witness,
+        Block, BlockHash, CompactTarget, OutPoint, PubkeyHash, QuorumHash, ScriptBuf,
+        Transaction as CoreTx, TxIn, TxMerkleNode, TxOut, Txid, Witness,
         block::{Header as BlockHeader, Version},
+        bls_sig_utils::BLSSignature,
         consensus::encode::{deserialize, serialize},
         merkle_tree::MerkleBlock,
+        transaction::special_transaction::{
+            TransactionPayload,
+            asset_unlock::{
+                qualified_asset_unlock::AssetUnlockPayload, request_info::AssetUnlockRequestInfo,
+                unqualified_asset_unlock::AssetUnlockBasePayload,
+            },
+        },
     };
     use std::time::Duration;
     use tokio::time::{sleep, timeout};
@@ -1495,10 +1542,14 @@ mod tests {
     #[tokio::test]
     async fn should_dedupe_transactions_blocks_and_instant_locks() {
         let state = TransactionStreamState::new();
-        let txid = vec![1u8; 32];
-        assert!(state.mark_transaction_delivered(&txid).await);
-        assert!(!state.mark_transaction_delivered(&txid).await);
-        assert!(state.has_transaction_been_delivered(&txid).await);
+        let transaction = sample_tx(1);
+        assert!(state.mark_transaction_delivered(&transaction).await);
+        assert!(!state.mark_transaction_delivered(&transaction).await);
+        assert!(
+            state
+                .has_transaction_been_delivered(&transaction.txid().to_byte_array())
+                .await
+        );
 
         let block_hash = vec![2u8; 32];
         assert!(state.mark_block_delivered(&block_hash).await);
@@ -1812,5 +1863,117 @@ mod tests {
             ]
         );
         assert_eq!(indexes, vec![0, 1]);
+    }
+
+    /// The instance of withdrawal 101's version 2 asset unlock signed at `request_height` by a
+    /// quorum named after it. Its txid leaves out the request height, quorum hash and signature.
+    fn version_2_asset_unlock(request_height: u32) -> CoreTx {
+        let quorum = request_height.to_le_bytes()[0];
+        CoreTx {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x11; 20])),
+            }],
+            special_transaction_payload: Some(TransactionPayload::AssetUnlockPayloadType(
+                AssetUnlockPayload {
+                    base: AssetUnlockBasePayload {
+                        version: 2,
+                        index: 101,
+                        fee: 70_000,
+                    },
+                    request_info: AssetUnlockRequestInfo {
+                        request_height,
+                        quorum_hash: QuorumHash::from_byte_array([quorum; 32]),
+                    },
+                    quorum_sig: BLSSignature::from([quorum; 96]),
+                },
+            )),
+        }
+    }
+
+    /// Platform re-signs a version 2 asset unlock when it expires, and every instance it signs
+    /// shares one txid. Core relays each instance, so a subscriber that got an earlier one must
+    /// still get each later one, up to the instance Core mines: the earlier signature can never
+    /// be mined once its height is past. The same instance again is still a duplicate.
+    #[tokio::test]
+    async fn should_stream_every_instance_of_a_re_signed_asset_unlock() {
+        let first = version_2_asset_unlock(500);
+        let re_signed = version_2_asset_unlock(549);
+        assert_eq!(first.txid(), re_signed.txid(), "the instances share a txid");
+        assert_ne!(first.instance_hash(), re_signed.instance_hash());
+
+        let state = TransactionStreamState::new();
+        let (tx_sender, mut rx) = mpsc::channel(8);
+        let mut pending: Vec<(StreamingEvent, String)> = [&first, &re_signed, &first]
+            .into_iter()
+            .map(|instance| {
+                (
+                    StreamingEvent::CoreRawTransaction {
+                        data: serialize(instance),
+                    },
+                    "tx_handle".to_string(),
+                )
+            })
+            .collect();
+
+        assert!(
+            StreamingServiceImpl::flush_transaction_pending(
+                &FilterType::CoreAllTxs,
+                "subscriber",
+                &tx_sender,
+                &state,
+                &mut pending,
+            )
+            .await
+        );
+        drop(tx_sender);
+
+        let mut streamed = Vec::new();
+        while let Some(response) = rx.recv().await {
+            match response.expect("status ok").responses {
+                Some(Responses::RawTransactions(raw)) => streamed.extend(raw.transactions),
+                other => panic!("unexpected response: {:?}", other),
+            }
+        }
+        let streamed_instances: Vec<Txid> = streamed
+            .iter()
+            .map(|bytes| {
+                deserialize::<CoreTx>(bytes)
+                    .expect("a transaction")
+                    .instance_hash()
+            })
+            .collect();
+        assert_eq!(
+            streamed_instances,
+            vec![first.instance_hash(), re_signed.instance_hash()],
+            "each instance is streamed once, in order"
+        );
+        assert!(
+            state
+                .has_transaction_been_delivered(&first.txid().to_byte_array())
+                .await,
+            "an instant lock or a merkle block still finds the asset unlock by its txid"
+        );
+    }
+
+    /// The instances a history replay delivered are not streamed again when Core reports them
+    /// live, while an instance the replay did not deliver still is.
+    #[tokio::test]
+    async fn should_not_stream_again_the_asset_unlock_instances_a_replay_delivered() {
+        let state = TransactionStreamState::new();
+        let replayed = [version_2_asset_unlock(500), version_2_asset_unlock(549)];
+        state.mark_transactions_delivered(&replayed).await;
+
+        for instance in &replayed {
+            assert!(!state.mark_transaction_delivered(instance).await);
+        }
+        assert!(
+            state
+                .mark_transaction_delivered(&version_2_asset_unlock(598))
+                .await
+        );
     }
 }
