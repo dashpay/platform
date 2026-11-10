@@ -89,21 +89,40 @@ impl BoundedDeliveredIds {
     }
 }
 
-/// Marks `transaction` delivered: its txid in `delivered_txs` and, when the txid does not tell
-/// its instances apart, the hash of its full serialization in `delivered_tx_instances`. Returns
-/// false if this instance was already delivered.
+/// What a stream records about a transaction it delivered: the txid and, when the txid does not
+/// tell the transaction's instances apart, the hash of its full serialization.
+struct TransactionDeliveryIds {
+    txid: [u8; 32],
+    instance_hash: Option<[u8; 32]>,
+}
+
+impl TransactionDeliveryIds {
+    fn of(transaction: &Transaction) -> Self {
+        let txid = transaction.txid();
+        let instance_hash = transaction.instance_hash();
+        Self {
+            txid: txid.to_byte_array(),
+            instance_hash: (instance_hash != txid).then(|| instance_hash.to_byte_array()),
+        }
+    }
+}
+
+/// Marks a transaction delivered: its txid in `delivered_txs` and its instance hash, if it has
+/// one, in `delivered_tx_instances`. Returns false if this instance was already delivered.
 fn mark_transaction_instance_delivered(
     delivered_txs: &mut BoundedDeliveredIds,
     delivered_tx_instances: &mut BoundedDeliveredIds,
-    transaction: &Transaction,
+    ids: &TransactionDeliveryIds,
 ) -> bool {
-    let txid = transaction.txid();
-    let txid_is_new = delivered_txs.mark_delivered(txid.to_byte_array().to_vec());
-    let instance_hash = transaction.instance_hash();
-    if instance_hash == txid {
-        return txid_is_new;
+    tracing::trace!(
+        txid = txid_to_hex(&ids.txid),
+        "transaction_stream=mark_transaction_delivered"
+    );
+    let txid_is_new = delivered_txs.mark_delivered(ids.txid.to_vec());
+    match ids.instance_hash {
+        Some(instance_hash) => delivered_tx_instances.mark_delivered(instance_hash.to_vec()),
+        None => txid_is_new,
     }
-    delivered_tx_instances.mark_delivered(instance_hash.to_byte_array().to_vec())
 }
 
 fn validate_transaction_from_block_shape(
@@ -228,33 +247,25 @@ impl TransactionStreamState {
     /// txid is kept either way, for the instant locks and merkle blocks that name a transaction
     /// by it.
     async fn mark_transaction_delivered(&self, transaction: &Transaction) -> bool {
-        tracing::trace!(
-            txid = %transaction.txid(),
-            "transaction_stream=mark_transaction_delivered"
-        );
         let mut delivered_txs = self.delivered_txs.lock().await;
         let mut delivered_tx_instances = self.delivered_tx_instances.lock().await;
         mark_transaction_instance_delivered(
             &mut delivered_txs,
             &mut delivered_tx_instances,
-            transaction,
+            &TransactionDeliveryIds::of(transaction),
         )
     }
 
     /// Marks instances of transactions as delivered, as [`Self::mark_transaction_delivered`]
     /// does.
-    async fn mark_transactions_delivered(&self, transactions: &[Transaction]) {
+    async fn mark_transactions_delivered(&self, transactions: &[TransactionDeliveryIds]) {
         let mut delivered_txs = self.delivered_txs.lock().await;
         let mut delivered_tx_instances = self.delivered_tx_instances.lock().await;
-        for transaction in transactions {
-            tracing::trace!(
-                txid = %transaction.txid(),
-                "transaction_stream=mark_transaction_delivered"
-            );
+        for ids in transactions {
             mark_transaction_instance_delivered(
                 &mut delivered_txs,
                 &mut delivered_tx_instances,
-                transaction,
+                ids,
             );
         }
     }
@@ -558,7 +569,7 @@ impl StreamingServiceImpl {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
                 let Ok(transaction) = deserialize::<Transaction>(&data) else {
-                    tracing::debug!("transactions_with_proofs=transaction_no_txid");
+                    tracing::debug!("transactions_with_proofs=transaction_deserialize_failed");
                     return true;
                 };
                 let txid_hex = transaction.txid().to_string();
@@ -1256,37 +1267,34 @@ impl StreamingServiceImpl {
                 <dashcore_rpc::dashcore::BlockHash as AsRef<[u8]>>::as_ref(&hash).to_vec();
 
             let mut matching: Vec<Vec<u8>> = Vec::new();
-            let mut matching_transactions: Vec<CoreTx> = Vec::new();
+            let mut matching_ids: Vec<TransactionDeliveryIds> = Vec::new();
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
 
             for tx_bytes in txs_bytes.iter() {
+                let transaction = deserialize::<CoreTx>(tx_bytes.as_slice());
                 let filter_matched = match &filter {
                     FilterType::CoreAllTxs => true,
-                    FilterType::CoreBloomFilter(bloom, flags) => {
-                        match deserialize::<CoreTx>(tx_bytes.as_slice()) {
-                            Ok(tx) => {
-                                let matches = super::bloom::matches_transaction(
-                                    Arc::clone(bloom),
-                                    &tx,
-                                    *flags,
-                                );
-                                trace!(height,matches, txid = %tx.txid(), "transactions_with_proofs=bloom_match");
-                                matches
-                            }
-                            Err(e) => {
-                                debug!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, checking raw-bytes contains()");
-                                let guard = bloom.read().unwrap();
-                                guard.contains(tx_bytes)
-                            }
+                    FilterType::CoreBloomFilter(bloom, flags) => match &transaction {
+                        Ok(tx) => {
+                            let matches =
+                                super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags);
+                            trace!(height,matches, txid = %tx.txid(), "transactions_with_proofs=bloom_match");
+                            matches
                         }
-                    }
+                        Err(e) => {
+                            debug!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, checking raw-bytes contains()");
+                            let guard = bloom.read().unwrap();
+                            guard.contains(tx_bytes)
+                        }
+                    },
                     _ => false,
                 };
+                let ids = transaction.as_ref().ok().map(TransactionDeliveryIds::of);
                 // Include previously delivered transactions in PMT regardless of bloom match
                 let mut matches_for_merkle = filter_matched;
                 if let Some(state) = state.as_ref()
-                    && let Some(hash_bytes) = super::txid_bytes_from_bytes(tx_bytes)
-                    && state.has_transaction_been_delivered(&hash_bytes).await
+                    && let Some(ids) = &ids
+                    && state.has_transaction_been_delivered(&ids.txid).await
                 {
                     matches_for_merkle = true;
                 }
@@ -1294,18 +1302,14 @@ impl StreamingServiceImpl {
                 match_flags.push(matches_for_merkle);
                 // Only send raw transactions when they matched the bloom filter
                 if filter_matched {
-                    if let Ok(transaction) = deserialize::<CoreTx>(tx_bytes.as_slice()) {
-                        matching_transactions.push(transaction);
-                    }
+                    matching_ids.extend(ids);
                     matching.push(tx_bytes.clone());
                 }
             }
 
             if !matching.is_empty() {
                 if let Some(state) = state.as_ref() {
-                    state
-                        .mark_transactions_delivered(&matching_transactions)
-                        .await;
+                    state.mark_transactions_delivered(&matching_ids).await;
                 }
 
                 let raw_transactions = RawTransactions {
@@ -1965,7 +1969,9 @@ mod tests {
     async fn should_not_stream_again_the_asset_unlock_instances_a_replay_delivered() {
         let state = TransactionStreamState::new();
         let replayed = [version_2_asset_unlock(500), version_2_asset_unlock(549)];
-        state.mark_transactions_delivered(&replayed).await;
+        state
+            .mark_transactions_delivered(&replayed.each_ref().map(TransactionDeliveryIds::of))
+            .await;
 
         for instance in &replayed {
             assert!(!state.mark_transaction_delivered(instance).await);
