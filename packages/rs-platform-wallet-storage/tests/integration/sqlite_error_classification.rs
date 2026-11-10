@@ -213,6 +213,10 @@ fn samples() -> Vec<WalletStorageError> {
             typed_height: Some(100),
             blob_height: Some(101),
         },
+        WalletStorageError::HistoryAliasContextConflict {
+            wallet_id: [0x33; 32],
+            txid: dashcore::Txid::from_byte_array([0x44; 32]),
+        },
         WalletStorageError::TransactionBodyConflict {
             wallet_id: [0x33; 32],
             txid: dashcore::Txid::from_byte_array([0x44; 32]),
@@ -448,6 +452,9 @@ fn tc_p2_005_is_transient_table() {
             }
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")
+            }
+            WalletStorageError::HistoryAliasContextConflict { .. } => {
+                (false, "history_alias_context_conflict")
             }
             WalletStorageError::TransactionBodyConflict { .. } => {
                 (false, "transaction_body_conflict")

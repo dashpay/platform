@@ -571,9 +571,7 @@ fn fold_groups(records: &mut Vec<TransactionRecord>) {
             // The funding slice is not necessarily the newest one — a
             // group can pair a stale `Mempool` sighting with the
             // confirmed snapshot of the same transaction.
-            if context_rank(&r.context) > context_rank(&merged.context) {
-                merged.context = r.context.clone();
-            }
+            merged.context = most_advanced_transaction_context(&merged.context, &r.context).clone();
         }
         // The base record's own index was skipped by the `i != base_pos`
         // guard above; drop every group member except the fold's output
@@ -664,6 +662,21 @@ pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
             positions.insert(key, records.len());
             records.push(record);
         }
+    }
+}
+
+/// Select the more advanced observation of the same transaction, retaining
+/// `current` on a tie. This merges metadata only; it does not verify finality or
+/// resolve conflicting blocks. Callers must establish transaction identity and
+/// compatible block observations before using it.
+pub fn most_advanced_transaction_context<'a>(
+    current: &'a key_wallet::transaction_checking::TransactionContext,
+    incoming: &'a key_wallet::transaction_checking::TransactionContext,
+) -> &'a key_wallet::transaction_checking::TransactionContext {
+    if context_rank(incoming) > context_rank(current) {
+        incoming
+    } else {
+        current
     }
 }
 

@@ -1620,13 +1620,17 @@ impl PlatformWalletPersistence for SqlitePersister {
         Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
         PersistenceError,
     > {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         // Tally deliberately dropped — see `last_load_degradation`. The
         // policy still decides whether drift is fatal, and `tolerate` still
         // logs it.
         let ctx = LoadCtx::new(self.config.load_policy);
-        schema::core_state::get_tx_record(&conn, &wallet_id, txid, &ctx)
-            .map_err(PersistenceError::from)
+        // Alias evidence and its active canonical record must belong to one
+        // SQLite snapshot, including when another connection writes the file.
+        let tx = conn.transaction().map_err(WalletStorageError::from)?;
+        let record = schema::core_history_aliases::get_record(&tx, &wallet_id, txid, &ctx)?;
+        tx.commit().map_err(WalletStorageError::from)?;
+        Ok(record)
     }
 
     /// Served from the `dpns_name_states` table this persister already
@@ -1720,9 +1724,11 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
+    let (mut core_state, utxo_accounts) =
         schema::core_state::load_state(conn, &wallet_id, network, ctx)
             .map_err(PersistenceError::from)?;
+    schema::core_history_aliases::project_records(conn, &wallet_id, &mut core_state.records, ctx)
+        .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load

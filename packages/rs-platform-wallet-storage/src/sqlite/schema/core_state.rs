@@ -18,7 +18,7 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
-use crate::sqlite::schema::{blob, core_history};
+use crate::sqlite::schema::{blob, core_history, core_history_aliases};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -95,7 +95,7 @@ pub fn apply(
         )?;
         for incoming in &cs.records {
             ensure_current_transaction_identity(incoming)?;
-            let record = core_history::preserve_known_details(tx, wallet_id, incoming)?;
+            let record = core_history_aliases::adopt(tx, wallet_id, incoming)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
             let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
