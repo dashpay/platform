@@ -1,6 +1,8 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
-use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
+use crate::clients::{
+    BLOCK_QUERY_KEEPALIVE, BLOCK_QUERY_KEEPALIVE_RETRIES, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
+};
 use crate::error::{DAPIResult, DapiError};
 use crate::utils::{
     deserialize_null_as_default, deserialize_string_number_or_null, deserialize_string_or_number,
@@ -35,6 +37,9 @@ pub const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
 /// - Service errors (HTTP error codes) are logged with `tracing::debug!`
 pub struct TenderdashClient {
     client: ClientWithMiddleware,
+    /// Sends what a block query asks of Tenderdash, with no deadline: see
+    /// [`block_query_http_client`].
+    block_query_client: ClientWithMiddleware,
     base_url: String,
     websocket_client: Arc<TenderdashWebSocketClient>,
     /// The network's validator quorum type, read from Tenderdash the first time it is needed.
@@ -46,7 +51,8 @@ impl TenderdashClient {
     /// Construct an unused fixture client without probing HTTP or WebSocket endpoints.
     pub(crate) fn without_test_connection() -> Self {
         Self {
-            client: ClientBuilder::new(Client::new()).build(),
+            client: http_client().expect("Tenderdash HTTP client"),
+            block_query_client: block_query_http_client().expect("Tenderdash block query client"),
             base_url: "http://tenderdash.invalid".to_owned(),
             websocket_client: Arc::new(TenderdashWebSocketClient::new(
                 "ws://tenderdash.invalid".to_owned(),
@@ -591,6 +597,43 @@ struct ResultValidators {
     quorum_type: u32,
 }
 
+/// The HTTP client for ordinary Tenderdash calls, each of which fails after `REQUEST_TIMEOUT`.
+fn http_client() -> DAPIResult<ClientWithMiddleware> {
+    with_tracing(
+        Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT),
+    )
+}
+
+/// The HTTP client for what a block query asks of Tenderdash, which has no deadline.
+///
+/// Tenderdash does not stop work whose caller has gone away, so giving up on a call would
+/// only hide that it is still running there. This client waits until Tenderdash answers or
+/// closes the connection, which is when the work is over, so a caller can count a call
+/// against a limit for as long as Tenderdash is busy with it. Keepalive probes close the
+/// connection to a peer that died without saying so.
+fn block_query_http_client() -> DAPIResult<ClientWithMiddleware> {
+    with_tracing(
+        Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .tcp_keepalive(BLOCK_QUERY_KEEPALIVE)
+            .tcp_keepalive_interval(BLOCK_QUERY_KEEPALIVE)
+            .tcp_keepalive_retries(BLOCK_QUERY_KEEPALIVE_RETRIES),
+    )
+}
+
+fn with_tracing(builder: reqwest::ClientBuilder) -> DAPIResult<ClientWithMiddleware> {
+    let http_client = builder.build().map_err(|e| {
+        error!("Failed to build Tenderdash HTTP client: {}", e);
+        DapiError::Client(format!("Failed to build Tenderdash HTTP client: {}", e))
+    })?;
+
+    Ok(ClientBuilder::new(http_client)
+        .with(TracingMiddleware::default())
+        .build())
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -599,9 +642,26 @@ impl TenderdashClient {
         T: serde::de::DeserializeOwned + Debug,
         R: Serialize + Debug,
     {
+        self.post_with(&self.client, request).await
+    }
+
+    /// `post` for a block query: the call has no deadline, see [`block_query_http_client`].
+    async fn post_for_block_query<T, R>(&self, request: &R) -> DAPIResult<T>
+    where
+        T: serde::de::DeserializeOwned + Debug,
+        R: Serialize + Debug,
+    {
+        self.post_with(&self.block_query_client, request).await
+    }
+
+    async fn post_with<T, R>(&self, client: &ClientWithMiddleware, request: &R) -> DAPIResult<T>
+    where
+        T: serde::de::DeserializeOwned + Debug,
+        R: Serialize + Debug,
+    {
         let start = tokio::time::Instant::now();
 
-        let response_body = self.post_for_body(request).await?;
+        let response_body = self.post_for_body(client, request).await?;
 
         let response: TenderdashResponse<T> =
             serde_json::from_str(&response_body).map_err(|e| {
@@ -629,11 +689,15 @@ impl TenderdashClient {
     }
 
     /// Send a request or a batch of them, returning the body Tenderdash answered with.
-    async fn post_for_body<R>(&self, request: &R) -> DAPIResult<String>
+    async fn post_for_body<R>(
+        &self,
+        client: &ClientWithMiddleware,
+        request: &R,
+    ) -> DAPIResult<String>
     where
         R: Serialize + Debug,
     {
-        self.client
+        client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .json(request)
@@ -666,23 +730,11 @@ impl TenderdashClient {
             "Creating Tenderdash client with WebSocket support"
         );
 
-        let http_client = Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .map_err(|e| {
-                error!("Failed to build Tenderdash HTTP client: {}", e);
-                DapiError::Client(format!("Failed to build Tenderdash HTTP client: {}", e))
-            })?;
-
-        let client = ClientBuilder::new(http_client)
-            .with(TracingMiddleware::default())
-            .build();
-
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 256));
 
         let tenderdash_client = Self {
-            client,
+            client: http_client()?,
+            block_query_client: block_query_http_client()?,
             base_url: uri.to_string(),
             websocket_client: websocket_client.clone(),
             validator_quorum_type: OnceCell::new(),
@@ -796,14 +848,14 @@ impl TenderdashClient {
     pub async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
         let request = JsonRpcRequest::new("block", BlockHeightParams { height });
 
-        self.post(&request).await
+        self.post_for_block_query(&request).await
     }
 
     /// Get the execution results of the block at a height
     pub async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
         let request = JsonRpcRequest::new("block_results", BlockHeightParams { height });
 
-        self.post(&request).await
+        self.post_for_block_query(&request).await
     }
 
     /// Read the block, results and optionally commit of each height in one HTTP request.
@@ -817,7 +869,9 @@ impl TenderdashClient {
         with_commit: bool,
     ) -> DAPIResult<Vec<BlockBatchEntry>> {
         let (requests, ids) = block_batch_requests(heights, with_commit);
-        let body = self.post_for_body(&requests).await?;
+        let body = self
+            .post_for_body(&self.block_query_client, &requests)
+            .await?;
         let mut responses = parse_batch_response(&body)?;
 
         Ok(ids
@@ -834,7 +888,7 @@ impl TenderdashClient {
     pub async fn commit(&self, height: u64) -> DAPIResult<ResultCommit> {
         let request = JsonRpcRequest::new("commit", BlockHeightParams { height });
 
-        self.post(&request).await
+        self.post_for_block_query(&request).await
     }
 
     /// Get the network's validator quorum type, which Tenderdash fixes at genesis.
@@ -842,7 +896,7 @@ impl TenderdashClient {
         self.validator_quorum_type
             .get_or_try_init(|| async {
                 let request = JsonRpcRequest::new("validators", ValidatorsParams { per_page: 1 });
-                let result: ResultValidators = self.post(&request).await?;
+                let result: ResultValidators = self.post_for_block_query(&request).await?;
                 Ok(result.quorum_type)
             })
             .await

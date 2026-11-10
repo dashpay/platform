@@ -276,8 +276,10 @@ fn attach_results(
 mod tests {
     use super::*;
     use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
-    use crate::services::platform_service::MAX_CONCURRENT_GET_OWNER_TRANSACTIONS;
     use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
+    use crate::services::platform_service::{
+        BLOCK_QUERY_ANSWER_DEADLINE, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+    };
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
@@ -429,6 +431,62 @@ mod tests {
         assert!(matches!(error, DapiError::ResourceExhausted(_)));
         assert_eq!(tenderdash.requests(), MAX_CONCURRENT_GET_OWNER_TRANSACTIONS);
 
+        tenderdash.hang_up();
+        let freed = tokio::time::timeout(
+            Duration::from_secs(10),
+            service
+                .get_owner_transactions_permits
+                .acquire_many(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u32),
+        )
+        .await;
+        assert!(freed.is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_count_a_request_against_the_limit_past_every_deadline() {
+        let tenderdash = StalledTenderdash::start().await;
+        let service = tenderdash.service();
+        let mut handlers = (1..=MAX_CONCURRENT_GET_OWNER_TRANSACTIONS as u64)
+            .map(|height| {
+                Box::pin(
+                    service.get_owner_transactions_in_block_impl(Request::new(request(
+                        height,
+                        ALICE.to_vec(),
+                    ))),
+                )
+            })
+            .collect::<Vec<_>>();
+        for handler in &mut handlers {
+            assert!(futures::poll!(handler).is_pending());
+        }
+        tenderdash
+            .wait_for_requests(MAX_CONCURRENT_GET_OWNER_TRANSACTIONS)
+            .await;
+
+        // From here the clock moves only as far as the next deadline someone waits on
+        tokio::time::pause();
+        for handler in handlers {
+            assert!(matches!(handler.await, Err(DapiError::Timeout(_))));
+        }
+
+        // Every caller has its answer and Tenderdash is still busy, long past the deadline
+        // of an ordinary call to it
+        tokio::time::advance(10 * BLOCK_QUERY_ANSWER_DEADLINE).await;
+        for _ in 0..100 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            service.get_owner_transactions_permits.available_permits(),
+            0
+        );
+        let error = service
+            .get_owner_transactions_in_block_impl(Request::new(request(100, ALICE.to_vec())))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, DapiError::ResourceExhausted(_)));
+        assert_eq!(tenderdash.requests(), MAX_CONCURRENT_GET_OWNER_TRANSACTIONS);
+
+        tokio::time::resume();
         tenderdash.hang_up();
         let freed = tokio::time::timeout(
             Duration::from_secs(10),

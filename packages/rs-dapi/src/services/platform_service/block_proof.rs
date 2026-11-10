@@ -152,8 +152,8 @@ fn check_root(name: &str, root: &[u8], header_root: &[u8]) -> DAPIResult<()> {
     Ok(())
 }
 
-/// Check that a block's contents are the ones its header commits to. `results` is empty
-/// when the block has no transactions, and then nothing was read to compare.
+/// Check that a block's contents are the ones its header commits to. A block without
+/// transactions has no results, and its header commits to that too: the root of nothing.
 pub(super) fn check_block_contents(
     proof: &TenderdashBlockProof,
     transaction_hashes: &[Vec<u8>],
@@ -165,14 +165,11 @@ pub(super) fn check_block_contents(
         &merkle_root(transaction_hashes),
         &header.data_hash,
     )?;
-    if !results.is_empty() {
-        check_root(
-            "results",
-            &merkle_root(&encode_results(results)?),
-            &header.results_hash,
-        )?;
-    }
-    Ok(())
+    check_root(
+        "results",
+        &merkle_root(&encode_results(results)?),
+        &header.results_hash,
+    )
 }
 
 /// Check that the fields a block repeats from its header are the signed ones. They were
@@ -992,9 +989,24 @@ mod tests {
     }
 
     #[test]
-    fn should_not_compare_results_of_a_block_without_transactions() {
-        let proof = prove(7, tenderdash_commit(7, &[], &[])).unwrap();
+    fn should_accept_a_block_without_transactions_whose_header_has_the_empty_results_root() {
+        let commit = tenderdash_commit(7, &[], &[]);
+        assert_eq!(
+            commit.signed_header.header.results_hash,
+            hex::encode_upper(Sha256::digest([]))
+        );
+        let proof = prove(7, commit).unwrap();
 
         check_block_contents(&proof, &[], &[]).unwrap();
+    }
+
+    #[test]
+    fn should_refuse_a_block_without_transactions_whose_header_has_another_results_root() {
+        let proof = prove(7, tenderdash_commit(7, &[], &sample_results())).unwrap();
+
+        let Err(DapiError::Internal(message)) = check_block_contents(&proof, &[], &[]) else {
+            panic!("an empty block was accepted under a results root that is not the empty one");
+        };
+        assert!(message.contains("the block's results"), "{message}");
     }
 }
