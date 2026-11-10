@@ -25,6 +25,7 @@ use crate::{ProtocolError, SerdeParsingError};
 
 pub mod chain;
 pub mod instant;
+pub mod validate_asset_lock_transaction_inputs;
 pub mod validate_asset_lock_transaction_structure;
 
 // TODO: Serialization with bincode

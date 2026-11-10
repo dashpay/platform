@@ -99,7 +99,7 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets `single_document.verify_proof_keep_serialized` to
 ///   1, which verifies the proof of a single document query in its "maybe contested" status.
 ///
-/// * **A single document at a block time** (protocol v15 note 30):
+/// * **A single document at a block time** (protocol v15 note 31):
 ///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets `query.single_document_path_query` to 1, which
 ///   stops a lookup in a document's history above the pointer to the latest version, and
 ///   `verify_proof_keep_serialized` 1 verifies its proof outside a contest. A document with

@@ -26,6 +26,8 @@ describe('PlatformPromiseClient', () => {
       getYesNoVotePollState: this.sinon.stub().resolves(response),
       getMasternodeYesNoVote: this.sinon.stub().resolves(response),
       getPrivateDocumentEntries: this.sinon.stub().resolves(response),
+      getOwnerTransactionsInBlock: this.sinon.stub().resolves(response),
+      getBlocks: this.sinon.stub().resolves(response),
     };
   });
 
@@ -255,6 +257,81 @@ describe('PlatformPromiseClient', () => {
     it('should throw an error when metadata is not an object', async () => {
       try {
         platformPromiseClient.getPrivateDocumentEntries({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getOwnerTransactionsInBlock', () => {
+    it('should get the transactions of an owner in a block', async () => {
+      const result = await platformPromiseClient.getOwnerTransactionsInBlock(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getOwnerTransactionsInBlock)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should keep the message conversion when the caller passes interceptors', async () => {
+      const passThrough = (options, nextCall) => nextCall(options);
+
+      await platformPromiseClient.getOwnerTransactionsInBlock(
+        request,
+        {},
+        { interceptors: [passThrough], deadline: 5 },
+      );
+
+      const [, , callOptions] = platformPromiseClient.client.getOwnerTransactionsInBlock
+        .firstCall.args;
+      expect(callOptions.deadline).to.equal(5);
+      expect(callOptions.interceptors).to.have.lengthOf(2);
+      expect(callOptions.interceptors[0]).to.equal(passThrough);
+      expect(callOptions.interceptors[1]).to.be.a('function');
+      expect(callOptions.interceptors[1]).to.not.equal(passThrough);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getOwnerTransactionsInBlock({}, 'metadata');
+
+        expect.fail('Error was not thrown');
+      } catch (e) {
+        expect(e.message).to.equal('metadata must be an object');
+      }
+    });
+  });
+
+  describe('#getBlocks', () => {
+    it('should get blocks', async () => {
+      const result = await platformPromiseClient.getBlocks(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getBlocks)
+        .to.be.calledOnceWith(request);
+    });
+
+    it('should keep the message conversion when the caller passes interceptors', async () => {
+      const passThrough = (options, nextCall) => nextCall(options);
+
+      await platformPromiseClient.getBlocks(
+        request,
+        {},
+        { interceptors: [passThrough], deadline: 5 },
+      );
+
+      const [, , callOptions] = platformPromiseClient.client.getBlocks.firstCall.args;
+      expect(callOptions.deadline).to.equal(5);
+      expect(callOptions.interceptors).to.have.lengthOf(2);
+      expect(callOptions.interceptors[0]).to.equal(passThrough);
+      expect(callOptions.interceptors[1]).to.be.a('function');
+      expect(callOptions.interceptors[1]).to.not.equal(passThrough);
+    });
+
+    it('should throw an error when metadata is not an object', async () => {
+      try {
+        platformPromiseClient.getBlocks({}, 'metadata');
 
         expect.fail('Error was not thrown');
       } catch (e) {
