@@ -196,7 +196,6 @@ fn insert(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -219,7 +218,6 @@ fn delete(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 

@@ -121,8 +121,30 @@ pub struct DashPayState {
     /// held back. Until then a private send or accept reads it first: a
     /// request paid for in an earlier process may be in the store unread, and
     /// the reservation that kept it from being paid twice did not survive.
-    /// In memory only; a cursor rewind leaves it set.
+    /// In memory only; a rewind of the read clears it
+    /// (`ManagedIdentity::rewind_private_store_read`).
     pub(super) private_contact_requests_read: bool,
+
+    /// The highest height a read of a page of DashPay's private contact
+    /// request store was proved at, among the pages a private sync read for
+    /// this identity since load, a page completed from several reads counting
+    /// its highest: what `private_contact_requests_read` rests on. A request sealed
+    /// to one of its keys is in such a page only if the key was added at or
+    /// below it, so the store read covers the identity's keys as proved at or
+    /// above it, and a public request is decided only with those
+    /// (`DashPayView::read_private_store_before_deciding`). `None` before any
+    /// page was read with the identity's keys since its read was last rewound
+    /// (`ManagedIdentity::rewind_private_store_read`). In memory only.
+    pub(super) private_store_read_height: Option<u64>,
+
+    /// The highest `private_store_read_height` a rewind of the read reset:
+    /// the store was seen at that height, so a read since, with the keys the
+    /// rewind was for, counts as read to the end
+    /// (`private_contact_requests_read`) only once it reaches it. A read from
+    /// a node behind it would otherwise pass over entries the wallet already
+    /// saw, which the earlier keys could not open. `None` before any rewind of
+    /// a read. In memory only; never lowered.
+    pub(super) private_store_read_floor: Option<u64>,
 
     /// The fingerprint of the scanning keys `private_contact_requests_position`
     /// and `private_contact_requests_read` hold for
@@ -342,6 +364,25 @@ impl DashPayState {
         self.pending_private_replies.contains_key(contact)
     }
 
+    /// Whether any private request this identity sent is reserved as
+    /// pending ([`Self::private_reply_pending`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn private_replies_pending(&self) -> bool {
+        !self.pending_private_replies.is_empty()
+    }
+
+    /// A recipient this identity holds a contact request in flight to, if
+    /// any: a private request it is paying for or has not read back
+    /// ([`Self::private_reply_pending`]), or a public one claimed and not yet
+    /// recorded ([`Self::public_contact_request_claimed`]).
+    pub fn contact_request_in_flight(&self) -> Option<Identifier> {
+        self.pending_private_replies
+            .keys()
+            .chain(self.public_contact_request_claims.keys())
+            .next()
+            .copied()
+    }
+
     /// Whether this identity was loaded with a private contact request payment
     /// that may be unresolved, and no restoration from the shielded store has
     /// restored its reservations since: its public contact requests are held.
@@ -375,6 +416,12 @@ impl DashPayState {
     /// to its end for this identity since load; see the field doc.
     pub fn private_contact_requests_read(&self) -> bool {
         self.private_contact_requests_read
+    }
+
+    /// The highest proved height of a store page a private sync read for this
+    /// identity since load, if one did ([`Self::private_contact_requests_read`]).
+    pub(crate) fn private_store_read_height(&self) -> Option<u64> {
+        self.private_store_read_height
     }
 
     /// How this identity and `contact` exchanged private requests, from the

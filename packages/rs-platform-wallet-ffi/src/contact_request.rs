@@ -233,22 +233,30 @@ pub extern "C" fn contact_request_destroy(request_handle: Handle) -> PlatformWal
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PrivateContactReadinessFFI {
-    /// Whether the wallet's private payments from an earlier process are
-    /// restored for the identity. While false, its public sends and accepts,
-    /// the in-kind accept included, are refused with
-    /// `ErrorPrivateContactPaymentsNotRestored` (72) until the shielded store
-    /// is configured or the wallet's shielded account bound; no private sync
-    /// lifts it. A build without the `shielded` feature never does.
+    /// Whether the wallet's private payments are restored for the identity.
+    /// While false, its contact requests and acceptances, public or private,
+    /// are refused with `ErrorPrivateContactPaymentsNotRestored` (72) until
+    /// the shielded store is configured or the wallet's shielded account
+    /// bound, or a contact request's own retry of a failed restoration
+    /// succeeds; no private sync lifts it. A build without the `shielded`
+    /// feature never does.
     pub private_payments_restored: bool,
     /// Whether a private sync read DashPay's private contact request store to
-    /// its end for the identity since load. Until then its first send or
-    /// accept reads it first, and is refused with
-    /// `ErrorPrivateContactRequestPending` (71) while that read cannot finish.
+    /// its end for the identity with its current keys. Every contact request
+    /// and acceptance reads it again from the cursor before it is decided, and
+    /// is refused with `ErrorPrivateContactStoreNotRead` (74) while that read
+    /// cannot finish.
     pub private_store_read: bool,
     /// Whether a private contact request the identity paid for may still be
-    /// unresolved: the marker its private scan state stores. A contact's own
-    /// pending request is `managed_identity_get_private_reply_pending`.
+    /// unresolved: the marker its private scan state stores, or a payment the
+    /// shielded store's journal keeps unresolved. A journal record discharged
+    /// since is applied before the read.
     pub unresolved_private_payment: bool,
+    /// Whether the last restoration of the wallet's private payments failed,
+    /// while `private_payments_restored` is false for it: then 72 holds until
+    /// a restoration succeeds, not only until one runs. The reason is
+    /// `platform_wallet_get_private_payments_restore_failure`.
+    pub private_payments_restore_failed: bool,
 }
 
 impl From<PrivateContactReadiness> for PrivateContactReadinessFFI {
@@ -257,6 +265,7 @@ impl From<PrivateContactReadiness> for PrivateContactReadinessFFI {
             private_payments_restored: readiness.private_payments_restored,
             private_store_read: readiness.private_store_read,
             unresolved_private_payment: readiness.unresolved_private_payment,
+            private_payments_restore_failed: readiness.private_payments_restore_failure.is_some(),
         }
     }
 }
@@ -265,7 +274,12 @@ impl From<PrivateContactReadiness> for PrivateContactReadinessFFI {
 /// waits for, as the wallet decides it, into `out_readiness`
 /// ([`PrivateContactReadinessFFI`]): so a host tells "restoring private
 /// payments" from "reading the private store" and from a contact's pending
-/// request by the wallet's own state. A pure read of live wallet state.
+/// request by the wallet's own state. Not a pure read: a journal record
+/// discharged since (a payment proven never to execute) is applied first,
+/// briefly taking the wallet's write lock, as a send would see it; then it
+/// reads live wallet state. Why a failed restoration failed is
+/// `platform_wallet_get_private_payments_restore_failure`; one pair's hold is
+/// `platform_wallet_get_private_pair_held`.
 ///
 /// `out_readiness` is reset to all false first. An unknown `wallet_handle` is
 /// `NotFound`; an identity the wallet does not hold is refused as its lookup
@@ -301,12 +315,80 @@ pub unsafe extern "C" fn platform_wallet_get_private_contact_readiness(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each readiness flag reaches its own FFI field, alone: a conversion
+    /// that swapped or cleared one would show here.
+    #[test]
+    fn should_convert_each_readiness_flag_to_its_own_field() {
+        let restored = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: true,
+            private_store_read: false,
+            unresolved_private_payment: false,
+            private_payments_restore_failure: None,
+        });
+        assert_eq!(
+            restored,
+            PrivateContactReadinessFFI {
+                private_payments_restored: true,
+                private_store_read: false,
+                unresolved_private_payment: false,
+                private_payments_restore_failed: false,
+            }
+        );
+        let read = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: false,
+            private_store_read: true,
+            unresolved_private_payment: false,
+            private_payments_restore_failure: None,
+        });
+        assert_eq!(
+            read,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: true,
+                unresolved_private_payment: false,
+                private_payments_restore_failed: false,
+            }
+        );
+        let unresolved = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: false,
+            private_store_read: false,
+            unresolved_private_payment: true,
+            private_payments_restore_failure: None,
+        });
+        assert_eq!(
+            unresolved,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: false,
+                unresolved_private_payment: true,
+                private_payments_restore_failed: false,
+            }
+        );
+        let failed = PrivateContactReadinessFFI::from(PrivateContactReadiness {
+            private_payments_restored: false,
+            private_store_read: false,
+            unresolved_private_payment: false,
+            private_payments_restore_failure: Some("the journal does not read".to_string()),
+        });
+        assert_eq!(
+            failed,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: false,
+                unresolved_private_payment: false,
+                private_payments_restore_failed: true,
+            }
+        );
+    }
     use dpp::prelude::Identifier;
 
     /// The readiness of a fresh wallet's identity: nothing held, the store not
-    /// read yet, no private payment. A null out pointer, an unknown wallet and
-    /// an identity the wallet does not hold are refused, with the out value
-    /// reset.
+    /// read yet, no private payment; then the identity's own state, once a
+    /// private sync read the store and once it was loaded with a private
+    /// payment that may be unresolved. A null out pointer, an unknown wallet
+    /// and an identity the wallet does not hold are refused, with the out
+    /// value reset.
     #[test]
     fn should_read_a_wallet_identity_s_private_contact_readiness() {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -330,6 +412,7 @@ mod tests {
             private_payments_restored: true,
             private_store_read: true,
             unresolved_private_payment: true,
+            private_payments_restore_failed: false,
         };
         let unknown = unsafe {
             platform_wallet_get_private_contact_readiness(
@@ -398,6 +481,67 @@ mod tests {
                 private_payments_restored: true,
                 private_store_read: false,
                 unresolved_private_payment: false,
+                private_payments_restore_failed: false,
+            }
+        );
+        // The identity's own state, not a fresh identity's: once a private
+        // sync read the store to its end, and once loaded with a private
+        // payment that may be unresolved.
+        let readiness_now = |readiness: &mut PrivateContactReadinessFFI| {
+            let read = unsafe {
+                platform_wallet_get_private_contact_readiness(
+                    handle,
+                    identity_id.to_buffer().as_ptr(),
+                    readiness,
+                )
+            };
+            assert_eq!(read.code, PlatformWalletFFIResultCode::Success);
+        };
+        let with_identity =
+            |change: &dyn Fn(&mut platform_wallet::wallet::identity::ManagedIdentity)| {
+                PLATFORM_WALLET_STORAGE
+                    .with_item(handle, |wallet| {
+                        crate::runtime::runtime().block_on(async {
+                            let mut wm = wallet.wallet_manager().write().await;
+                            change(
+                                wm.get_wallet_info_mut(&wallet.wallet_id())
+                                    .expect("the wallet's info")
+                                    .identity_manager
+                                    .managed_identity_mut(&identity_id)
+                                    .expect("the identity"),
+                            );
+                        })
+                    })
+                    .expect("the wallet");
+            };
+        with_identity(&|managed| managed.note_private_contact_requests_read_for_tests());
+        readiness_now(&mut readiness);
+        assert_eq!(
+            readiness,
+            PrivateContactReadinessFFI {
+                private_payments_restored: true,
+                private_store_read: true,
+                unresolved_private_payment: false,
+                private_payments_restore_failed: false,
+            }
+        );
+        with_identity(&|managed| {
+            managed.apply_private_contact_requests_position(
+                platform_wallet::changeset::PrivateContactRequestsPosition {
+                    position: 0,
+                    key_fingerprint: [0; 32],
+                    private_payments_unresolved: true,
+                },
+            )
+        });
+        readiness_now(&mut readiness);
+        assert_eq!(
+            readiness,
+            PrivateContactReadinessFFI {
+                private_payments_restored: false,
+                private_store_read: true,
+                unresolved_private_payment: true,
+                private_payments_restore_failed: false,
             }
         );
         let stranger = unsafe {

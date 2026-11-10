@@ -3,11 +3,17 @@ import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Pins how the DashPay views read a failed contact request submission and a
-/// private-store refresh: an unconfirmed private send or reply stays pending
-/// (no fresh submission is offered), and a network that does not serve the
-/// private store yet is quiet while real failures are shown.
+/// private-store refresh, code by code: an unconfirmed private send or reply
+/// (18) stays pending with no fresh submission offered, a held pair (71) is
+/// pending until the per-contact read says free, unrestored payments (72)
+/// show "setting up" or why the restoration failed, an unsupported store (73)
+/// and a pinned SDK (75) are configuration messages, an unfinished private
+/// store read (74) is a retry with no pending row, and a network that does
+/// not serve the private store yet is quiet while real failures are shown.
 final class ContactRequestOutcomesTests: XCTestCase {
 
+    /// Code 18: a note spend whose broadcast may have reached a node, a
+    /// verdict included, may still land; nothing is offered again.
     func testShouldKeepAnUnconfirmedPrivateSubmissionPending() {
         let outcome = ContactRequestSubmissionOutcome.of(
             PlatformWalletError.shieldedSpendUnconfirmed("result could not be confirmed")
@@ -16,9 +22,8 @@ final class ContactRequestOutcomesTests: XCTestCase {
     }
 
     /// A pending private request (code 71), which a public send or accept
-    /// can meet too, sent nothing: it is shown as pending, with a private
-    /// sync to settle it, rather than as a submission that may have gone
-    /// through.
+    /// can meet too, sent nothing: it is shown as pending rather than as a
+    /// submission that may have gone through.
     func testShouldKeepAPendingPrivateRequestPending() {
         let outcome = ContactRequestSubmissionOutcome.of(
             PlatformWalletError.privateContactRequestPending("not yet read back from the store")
@@ -66,16 +71,15 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertTrue(snapshot.allowsSubmission(to: pendingContact))
     }
 
-    /// A send refused as pending (code 71) when the wallet reserved
-    /// nothing (its store was not read to its end): the following read finds
-    /// nothing pending, yet the contact stays pending, with the private sync
-    /// offered, until the wallet's readiness says the store was read.
-    func testShouldKeepARefusedContactPendingUntilTheReadinessSaysTheStoreWasRead() {
+    /// A send refused as pending (code 71) marks the contact pending at once;
+    /// the next read of the pair, which reads what the refusal read, decides:
+    /// held keeps it pending, free re-enables it. The readiness alone never
+    /// re-enables it.
+    func testShouldReEnableARefusedPairOnlyWhenThePerContactReadSaysFree() {
         let contact = Data(repeating: 1, count: 32)
         var snapshot = PrivateRepliesPendingSnapshot()
-        snapshot.recordRefusal(of: contact)
         snapshot.record([], for: [contact])
-        XCTAssertFalse(snapshot.isUnavailable)
+        snapshot.recordRefusal(of: contact)
         XCTAssertTrue(snapshot.isPending(contact))
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
         XCTAssertEqual(
@@ -83,14 +87,63 @@ final class ContactRequestOutcomesTests: XCTestCase {
                 pending: snapshot.isPending(contact), error: nil),
             ContactRequestSubmissionOutcome.privateRequestPendingMessage)
 
-        // A pending read that finds nothing does not lift it; the wallet's
-        // readiness saying the store was read to its end does.
-        snapshot.record([], for: [contact])
-        XCTAssertTrue(snapshot.isPending(contact))
+        // A readiness that says the store was read and nothing is held for
+        // the wallet does not free one pair.
         snapshot.recordReadiness(PrivateContactReadiness(
             privatePaymentsRestored: true, privateStoreRead: true, unresolvedPrivatePayment: false))
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+
+        // The pair's read says held: still pending.
+        snapshot.record([contact], for: [contact])
+        XCTAssertTrue(snapshot.isPending(contact))
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+
+        // A payment that will never land frees the pair once the wallet
+        // proves so; the next read says free and the controls come back.
+        snapshot.record([], for: [contact])
         XCTAssertFalse(snapshot.isPending(contact))
         XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+    }
+
+    /// A read that does not cover a refused contact leaves its refusal.
+    func testShouldKeepARefusalAReadDidNotCover() {
+        let refused = Data(repeating: 1, count: 32)
+        let other = Data(repeating: 2, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.recordRefusal(of: refused)
+        snapshot.record([], for: [other])
+        XCTAssertTrue(snapshot.isPending(refused))
+        XCTAssertTrue(snapshot.allowsSubmission(to: other))
+    }
+
+    /// Code 74: the private store read every contact request runs first did
+    /// not finish. Nothing was sent and nothing is pending: its own outcome,
+    /// with a retry message, and no pending row.
+    func testShouldOfferARetryForAnUnfinishedPrivateStoreRead() {
+        let contact = Data(repeating: 1, count: 32)
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.privateContactStoreNotRead("not read to its end")),
+            .privateStoreNotRead)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([], for: [contact])
+        XCTAssertFalse(snapshot.isPending(contact), "the view records no refusal for 74")
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+        XCTAssertNotEqual(
+            ContactRequestSubmissionOutcome.privateStoreNotReadMessage,
+            ContactRequestSubmissionOutcome.privateRequestPendingMessage)
+    }
+
+    /// Code 75 is the developer's setting, shown as such, on a send and on a
+    /// refresh alike.
+    func testShouldShowAPinnedSdkAsADeveloperMessage() {
+        let error = PlatformWalletError.sdkPinnedBelowProtocolVersion("pinned at 14")
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(error),
+            .failed(ContactRequestSubmissionOutcome.sdkPinnedMessage))
+        XCTAssertEqual(
+            PrivateContactRefreshNotice.notice(for: error),
+            ContactRequestSubmissionOutcome.sdkPinnedMessage)
     }
 
     /// Unrestored private payments (code 72) are their own outcome, apart
@@ -102,10 +155,49 @@ final class ContactRequestOutcomesTests: XCTestCase {
             .privatePaymentsNotRestored)
         XCTAssertEqual(
             ContactRequestSubmissionOutcome.rowMessage(pending: true, restoring: true, error: nil),
-            ContactRequestSubmissionOutcome.restoringPrivatePaymentsMessage)
+            ContactRequestSubmissionOutcome.settingUpPrivatePaymentsMessage)
         XCTAssertNotEqual(
-            ContactRequestSubmissionOutcome.restoringPrivatePaymentsMessage,
+            ContactRequestSubmissionOutcome.settingUpPrivatePaymentsMessage,
             ContactRequestSubmissionOutcome.privateRequestPendingMessage)
+    }
+
+    /// Code 72 after a failed restoration shows why it failed, read with the
+    /// readiness, until a readiness says restored; a shielded store that did
+    /// not open is shown over both.
+    func testShouldShowWhyARestorationFailedUntilTheReadinessSaysRestored() {
+        let contact = Data(repeating: 1, count: 32)
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([], for: [contact])
+        snapshot.recordReadiness(
+            PrivateContactReadiness(
+                privatePaymentsRestored: false, privateStoreRead: false,
+                unresolvedPrivatePayment: false, privatePaymentsRestoreFailed: true),
+            restoreFailure: "the journal does not read")
+        XCTAssertTrue(snapshot.isRestoringPrivatePayments)
+        XCTAssertEqual(snapshot.restoreFailure, "the journal does not read")
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending: false, restoring: snapshot.isRestoringPrivatePayments,
+                restoreFailure: snapshot.restoreFailure, error: nil),
+            ContactRequestSubmissionOutcome.restoreFailedMessage("the journal does not read"))
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.rowMessage(
+                pending: false, restoring: true, restoreFailure: snapshot.restoreFailure,
+                shieldedStoreFailure: "disk full", error: nil),
+            ContactRequestSubmissionOutcome.shieldedStoreFailedMessage("disk full"))
+
+        // A readiness that no longer flags a failure drops the reason.
+        snapshot.recordReadiness(
+            PrivateContactReadiness(
+                privatePaymentsRestored: false, privateStoreRead: false,
+                unresolvedPrivatePayment: false),
+            restoreFailure: "stale")
+        XCTAssertNil(snapshot.restoreFailure)
+
+        snapshot.recordReadiness(PrivateContactReadiness(
+            privatePaymentsRestored: true, privateStoreRead: false, unresolvedPrivatePayment: false))
+        XCTAssertFalse(snapshot.isRestoringPrivatePayments)
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
     }
 
     /// A store that cannot protect private payments (code 73) is a

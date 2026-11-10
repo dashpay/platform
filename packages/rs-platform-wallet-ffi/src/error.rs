@@ -136,9 +136,15 @@ pub enum PlatformWalletFFIResultCode {
     ErrorWalletAlreadyExists = 15,
     /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
     /// transition (identity-create, unshield, transfer, or withdrawal) was
-    /// DEFINITIVELY not executed — either the relay/CheckTx rejected the
-    /// broadcast, or Platform reported the transition's own execution error.
-    /// Any note reservations were released and the caller is free to retry.
+    /// DEFINITIVELY not executed. For a shielded spend that consumes notes, it
+    /// never left the wallet: it was refused before anything was sent (no
+    /// address to send it to, or the SDK's own refusal). An endpoint's verdict
+    /// proves nothing for such a spend, as no proof backs it: that is
+    /// [`Self::ErrorShieldedSpendUnconfirmed`] ([`Self::ErrorShieldedBroadcastUnconfirmed`]
+    /// for an identity create), as is any broadcast that may have been
+    /// delivered. A shield into the pool also reports here a CheckTx
+    /// or execution verdict. Any note reservations were released and the
+    /// caller is free to retry.
     /// For identity-create, the new identity does NOT exist and
     /// `out_identity_id` is left untouched (still zeroed).
     ErrorShieldedBroadcastFailed = 16,
@@ -152,14 +158,19 @@ pub enum PlatformWalletFFIResultCode {
     /// the caller can hold the slot and surface the pending identity.
     ErrorShieldedBroadcastUnconfirmed = 17,
     /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (unshield /
-    /// shielded transfer / shielded withdrawal). The spend transition was
-    /// ACCEPTED by the relay but its execution result could not be confirmed
-    /// (DAPI wait timeout, result-proof fetch/verify failure, …). The spend
-    /// may have executed on chain, so the wallet intentionally KEEPS the
-    /// notes reserved: the next nullifier sync promotes them to spent if the
-    /// spend landed, and an app restart frees them if it never did. The host
-    /// must NOT auto-retry — a retry would select different unreserved notes
-    /// and could double-send if the original spend landed.
+    /// shielded transfer / shielded withdrawal / identity top-up / private
+    /// document create from the pool; an identity created from the pool
+    /// reports [`Self::ErrorShieldedBroadcastUnconfirmed`] (17) instead), and
+    /// `PlatformWalletError::ShieldedBroadcastMaybeDelivered`. The spend
+    /// transition was accepted by the relay, or may have been delivered, but
+    /// its execution result could not be confirmed (a broadcast attempt that
+    /// failed in transport, a DAPI wait timeout, a result-proof fetch/verify
+    /// failure, …). The spend may have executed on chain, so the wallet
+    /// intentionally KEEPS the notes reserved and its recovery record: the
+    /// next nullifier sync promotes them to spent if the spend landed, and the
+    /// redrive and anchor-prune passes release them once it provably never
+    /// can. The host must NOT auto-retry — a retry would select different
+    /// unreserved notes and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
     /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
     /// not build the spend against any Platform-recorded anchor yet: its local
@@ -622,62 +633,86 @@ pub enum PlatformWalletFFIResultCode {
     /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. Nothing
+    /// was submitted and nothing was paid; resume with the recorded recipient
+    /// (the row exposes it). Rows tracked before the recipient was recorded
+    /// carry none and accept the caller's.
+    ErrorAssetLockRecipientMismatch = 61,
+
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
     /// the contact requests with that identity came or went privately
     /// (protocol version 15), so a public `contactRequest` to it, in reply or
     /// as a rotation, would publish the relationship. The public send and the
-    /// public accept refuse it, and nothing was sent. Send it with
+    /// public accept refuse it, and nothing was sent: the request goes
+    /// privately instead, and the in-kind accept picks the private reply
+    /// itself. The shielded spend contract (`map_spend_result`) keeps the code,
+    /// as the in-kind accept can raise it. Send it with
     /// `platform_wallet_manager_send_private_contact_request`, or accept it
     /// with `platform_wallet_manager_accept_contact_request_replying_in_kind`
-    /// (which replies privately itself) or
-    /// `platform_wallet_manager_accept_private_contact_request`, instead.
-    /// 61 to 67 are claimed by open branches, so this takes 68.
+    /// or `platform_wallet_manager_accept_private_contact_request`. 62 to 67
+    /// are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The operation needs the shielded pool, and this library was built
-    /// without the `shielded` feature: today, accepting a contact request
-    /// that came privately with
-    /// `platform_wallet_manager_accept_contact_request_replying_in_kind`,
-    /// whose private reply is paid from the pool. Nothing was sent. Not
-    /// retryable on this build; a build with shielded support accepts it.
+    /// without the `shielded` feature: accepting a contact request that came
+    /// privately with
+    /// `platform_wallet_manager_accept_contact_request_replying_in_kind`
+    /// (exported in every build), whose private reply is paid from the pool.
+    /// Nothing was sent. Not retryable on this build; a build with shielded
+    /// support accepts it.
     ErrorShieldedBuildRequired = 69,
 
     /// The SDK refused the request without sending it: the network is proven
     /// at a protocol version below the one that serves it (for example
-    /// DashPay's private contact request store before protocol version 15),
-    /// or the SDK is pinned below it. Expected on such a network; it lifts
-    /// when the network upgrades. A refusal that may lift sooner, because the
-    /// network's version could not be confirmed, keeps the catch-all code.
+    /// DashPay's private contact request store before protocol version 15).
+    /// Expected on such a network, and lifts when the network upgrades. A
+    /// refusal from an SDK pinned below the required version is
+    /// [`Self::ErrorSdkPinnedBelowProtocolVersion`] (75). A refusal whose
+    /// query for the network's version failed keeps the catch-all code,
+    /// whether that may pass or comes from the SDK's own setup (a context
+    /// provider that cannot give quorum keys at all), as neither shows the
+    /// network runs an earlier version.
     ErrorProtocolVersionNotActive = 70,
 
     /// Maps `PlatformWalletError::PrivateContactRequestPending`: a private
     /// contact request to that identity is in flight (another send or reply
-    /// reserved it), or was paid for and is not yet read back from the store;
-    /// or this identity's private store could not be read to its end before
-    /// its first private send or accept since load (the wallet reads it first,
-    /// so a reply paid for in an earlier process is adopted rather than paid
-    /// for again). Nothing new was paid. Do not submit it again: a later
-    /// private contact request sync
-    /// (`platform_wallet_sync_private_contact_requests`) or a retry settles
-    /// it.
+    /// reserved it), or was paid for and is not yet read back from the store,
+    /// or a private payment the shielded store's journal keeps unresolved
+    /// holds the pair. Nothing new was paid. Pending, not failed: do not
+    /// submit it again. A later private contact request sync settles it once
+    /// the entry is read back, and the shielded sync once the payment provably
+    /// never executes. A read of the private store that did not finish before
+    /// the request was decided is not pending: it is
+    /// [`Self::ErrorPrivateContactStoreNotRead`] (74).
     ErrorPrivateContactRequestPending = 71,
 
     /// Maps `PlatformWalletError::PrivateContactPaymentsNotRestored`: the
-    /// wallet, not one contact, is held. It was loaded after binding a
-    /// shielded account in an earlier process, or the identity was loaded with
-    /// its private scan state marking a private payment that may be
-    /// unresolved, so its unconfirmed private payments may hold pairs no
-    /// reservation shows yet: no public contact request is sent or accepted,
-    /// nothing signed or broadcast, until they are restored from the shielded
-    /// store. Configuring the shielded store restores them with no keys; so
-    /// does binding the wallet's shielded account. A private sync does not.
+    /// wallet, not one contact, is held, as its unconfirmed private payments
+    /// may hold pairs no reservation shows yet, which only a restoration from
+    /// the shielded store's journal shows. No contact request, public or
+    /// private, is sent or accepted, nothing signed or broadcast, until they
+    /// are restored. In a build with the `shielded` feature: the wallet was
+    /// published (created or loaded) while no shielded store was configured,
+    /// its persister declaring the private scan state (bit 15); it was loaded
+    /// after binding a shielded account in an earlier process; or its last
+    /// restoration failed, or waits for a busy store. In every build: the
+    /// identity was loaded with its private scan state marking a private
+    /// payment that may be unresolved. Configuring the shielded store restores
+    /// them with no keys, as binding the wallet's shielded account does, and a
+    /// contact request retries a failed restoration once without waiting; a
+    /// private sync does not. A host whose persister declares the private
+    /// scan state configures the shielded store when the manager is
+    /// activated, before loading or creating wallets: until it does, and
+    /// while a failed configure is not retried, 72 holds.
     /// `platform_wallet_get_private_contact_readiness` reads whether they are
-    /// restored. A build without the `shielded` feature never restores them.
+    /// restored and whether the last restoration failed. A build without the
+    /// `shielded` feature never restores them.
     ErrorPrivateContactPaymentsNotRestored = 72,
 
     /// Maps `PlatformWalletError::PrivateContactRecoveryUnsupported`: the
     /// persister does not declare that it keeps the private contact request
-    /// scan state (`PRIVATE_CONTACT_REQUEST_SCAN_STATE`, bit 14) in atomic
+    /// scan state (`PRIVATE_CONTACT_REQUEST_SCAN_STATE`, bit 15) in atomic
     /// changesets (`ATOMIC_CHANGESETS`, bit 0, with the changeset begin and end
     /// callbacks wired), so a private contact request is not paid for, nothing
     /// sealed or paid. Its recovery
@@ -685,6 +720,23 @@ pub enum PlatformWalletFFIResultCode {
     /// could then publish the pair while the payment may still execute. Not
     /// retryable as it is: a host persisting the scan state declares both.
     ErrorPrivateContactRecoveryUnsupported = 73,
+
+    /// Maps `PlatformWalletError::PrivateContactStoreNotRead`: DashPay's
+    /// private contact request store was not read to its end for the sending
+    /// identity, with the keys Platform proves it holds, before a contact
+    /// request or acceptance, public or private, was decided. Nothing was
+    /// reserved, sealed, paid or broadcast. Calling again continues the read
+    /// from where it stopped: a node behind the store the wallet already saw,
+    /// or keys that kept changing, stop it. Not a pending request (71).
+    ErrorPrivateContactStoreNotRead = 74,
+
+    /// The SDK refused the request without sending it because the SDK itself
+    /// is pinned below the protocol version the request needs
+    /// (`dash_sdk::Error::ProtocolVersionNotActive` with `pinned`), whatever
+    /// the network runs. A network upgrade does not lift it: only raising or
+    /// removing the pin does. A network proven below the version is
+    /// [`Self::ErrorProtocolVersionNotActive`] (70).
+    ErrorSdkPinnedBelowProtocolVersion = 75,
 
     /// The named thing does not exist.
     ///
@@ -974,14 +1026,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // slot-holding contract. A blanket conversion can't write
             // `out_identity_id` (it has no out-param), so the most it can do is
             // keep the typed code alive — which is what these arms guarantee.
-            PlatformWalletError::ShieldedBroadcastFailed(..)
-            | PlatformWalletError::ShieldedBroadcastMaybeDelivered(..) => {
+            PlatformWalletError::ShieldedBroadcastFailed(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
             }
             PlatformWalletError::ShieldedBroadcastUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
             }
-            PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
+            // A broadcast that may have been delivered may still execute: it
+            // reads as unconfirmed, never as failed, so a host does not pay
+            // again with other notes.
+            PlatformWalletError::ShieldedSpendUnconfirmed { .. }
+            | PlatformWalletError::ShieldedBroadcastMaybeDelivered(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
             PlatformWalletError::ShieldedIdentityDebitPending { .. } => {
@@ -1115,6 +1170,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
             }
+            PlatformWalletError::AssetLockRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+            }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
             // callback context alive and skip any paired persistence wipe.
@@ -1144,6 +1202,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // The persister cannot keep a private payment's recovery marker.
             PlatformWalletError::PrivateContactRecoveryUnsupported => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+            }
+            // The private store read before deciding did not finish: nothing
+            // reserved or sent, and calling again continues it.
+            PlatformWalletError::PrivateContactStoreNotRead(..) => {
+                PlatformWalletFFIResultCode::ErrorPrivateContactStoreNotRead
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -1255,14 +1318,23 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // `MessageSigningFailed` reason exists, any marker in it sits
             // mid-string and is deliberately not matched.
             // The network does not serve the request yet, as its proven
-            // protocol version shows. A refusal that may lift soon (the query
-            // for the version failed for a reason that can pass) stays on the
-            // catch-all: that is the network failing, which a host surfaces.
-            PlatformWalletError::Sdk(
-                sdk_error @ dash_sdk::Error::ProtocolVersionNotActive { .. },
-            ) if !sdk_error.is_transient_protocol_version_refusal() => {
-                PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
-            }
+            // protocol version shows, or the SDK is pinned below it. A
+            // refusal whose query for the version failed stays on the
+            // catch-all, whether that may pass (the network failing) or not
+            // (a context provider configured so it cannot give quorum keys:
+            // this SDK's own setup), as neither says the network runs an
+            // earlier version.
+            // A pin below the required version is the host's own setting, which
+            // only it can lift: its own code, whatever the network's query
+            // showed.
+            PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                pinned: true,
+                ..
+            }) => PlatformWalletFFIResultCode::ErrorSdkPinnedBelowProtocolVersion,
+            PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive {
+                cause: None,
+                ..
+            }) => PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         let result = PlatformWalletFFIResult::err(code, error.to_string());
@@ -2345,6 +2417,35 @@ mod tests {
     /// starts emitting it. The message must carry the typed `Display` —
     /// including the spender's finality — since that is the only detail
     /// channel the frozen `{ code, message }` ABI has.
+    /// The recipient-mismatch refusal a shielded resume raises, pinned so the
+    /// Swift/Kotlin mirrors decode it, together with the conversion that keeps
+    /// it from flattening to `ErrorUnknown`.
+    #[test]
+    fn asset_lock_recipient_mismatch_code_is_pinned_at_61() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch as i32,
+            61
+        );
+        let recorded = [1u8; 43];
+        let requested = [2u8; 43];
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockRecipientMismatch {
+            out_point: dashcore::OutPoint::null(),
+            recorded,
+            requested,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("cannot be resumed to"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(message.contains(&hex::encode(recorded)));
+    }
+
     #[test]
     fn asset_lock_input_conflict_code_is_pinned_at_47() {
         use dashcore::OutPoint;
@@ -2797,7 +2898,9 @@ mod private_contact_request_error_tests {
     /// A store the network does not serve yet (DashPay's private contact
     /// requests before protocol version 15) is told apart from a failure, so
     /// a host can stay quiet about it; a refusal that may lift soon, because
-    /// the version could not be confirmed, is still the network failing.
+    /// the version could not be confirmed, is still the network failing; and
+    /// an SDK pinned below the version, which only the host lifts, has its own
+    /// code.
     #[test]
     fn should_tell_a_store_the_network_does_not_serve_yet_by_its_own_code() {
         let refused = |cause: Option<Box<dash_sdk::Error>>| {
@@ -2823,6 +2926,42 @@ mod private_contact_request_error_tests {
             "no node answered".to_string(),
         ))));
         assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+
+        // A pinned SDK refuses whatever its query for the network's version
+        // showed, with or without a cause: its own code, which a network
+        // upgrade does not lift.
+        for cause in [
+            None,
+            Some(Box::new(dash_sdk::Error::Generic(
+                "no node answered".to_string(),
+            ))),
+        ] {
+            let pinned = PlatformWalletFFIResult::from(PlatformWalletError::Sdk(
+                dash_sdk::Error::ProtocolVersionNotActive {
+                    method: "get_private_document_entries",
+                    required: 15,
+                    feature: None,
+                    network: 14,
+                    pinned: true,
+                    cause,
+                },
+            ));
+            assert_eq!(
+                pinned.code,
+                PlatformWalletFFIResultCode::ErrorSdkPinnedBelowProtocolVersion
+            );
+            assert_eq!(pinned.code as u32, 75);
+        }
+
+        // A provider that cannot give quorum keys at all is this SDK's setup,
+        // not the network's version: the catch-all too.
+        let misconfigured = refused(Some(Box::new(dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::Config("no quorum source".to_string()),
+        ))));
+        assert_eq!(
+            misconfigured.code,
+            PlatformWalletFFIResultCode::ErrorUnknown
+        );
     }
 
     #[test]
@@ -2869,6 +3008,15 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
         );
         assert_eq!(result.code as u32, 72);
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request"
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
     }
 
     /// A private payment over a persister that cannot keep its recovery marker
@@ -2883,12 +3031,85 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
         );
         assert_eq!(result.code as u32, 73);
+        // A broadcast that may have been delivered reads as unconfirmed.
         let delivered = PlatformWalletFFIResult::from(
             PlatformWalletError::ShieldedBroadcastMaybeDelivered("unavailable".to_string()),
         );
         assert_eq!(
             delivered.code,
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
+        // The explicit private send and accept report them through the spend
+        // contract alike.
+        #[cfg(feature = "shielded")]
+        {
+            assert_eq!(
+                map_spend_result(
+                    Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+                    "private contact request"
+                )
+                .code,
+                PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+            );
+            assert_eq!(
+                map_spend_result(
+                    Err(PlatformWalletError::ShieldedBroadcastMaybeDelivered(
+                        "unavailable".to_string()
+                    )),
+                    "private contact request"
+                )
+                .code,
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            );
+        }
+    }
+
+    /// The private store read that did not finish before a contact request
+    /// was decided reaches the host by its own code, not as a pending request,
+    /// through the blanket conversion and the spend contract alike; and so
+    /// does a pair whose requests went privately, which the in-kind accept
+    /// raises, beside the codes the spend contract already kept.
+    #[test]
+    fn should_report_an_unfinished_private_store_read_by_its_own_code() {
+        let not_read = || PlatformWalletError::PrivateContactStoreNotRead([7; 32].into());
+        let result = PlatformWalletFFIResult::from(not_read());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactStoreNotRead
+        );
+        assert_eq!(result.code as u32, 74);
+        #[cfg(feature = "shielded")]
+        {
+            let through_spend = |error: PlatformWalletError| {
+                map_spend_result(Err(error), "private contact request").code as u32
+            };
+            assert_eq!(through_spend(not_read()), 74);
+            assert_eq!(
+                through_spend(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
+                    [7; 32].into()
+                )),
+                68
+            );
+            assert_eq!(
+                through_spend(PlatformWalletError::PrivateContactRequestPending(
+                    [7; 32].into()
+                )),
+                71
+            );
+            assert_eq!(
+                through_spend(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                72
+            );
+            assert_eq!(
+                through_spend(PlatformWalletError::PrivateContactRecoveryUnsupported),
+                73
+            );
+            assert_eq!(
+                through_spend(PlatformWalletError::WalletRemovedBeforeSend(
+                    "removed".to_string()
+                )),
+                98
+            );
+        }
     }
 }

@@ -55,7 +55,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("to apply batch");
 
@@ -77,7 +76,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("to apply batch");
 
@@ -101,7 +99,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("to apply batch");
 

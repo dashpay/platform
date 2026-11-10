@@ -459,7 +459,7 @@ fn tc023_one_flush_is_one_transaction() {
     let commits = Arc::new(AtomicUsize::new(0));
     {
         let commits_clone = Arc::clone(&commits);
-        let conn = persister.lock_conn_for_test();
+        let mut conn = persister.lock_conn_for_test();
         conn.commit_hook(Some(move || {
             commits_clone.fetch_add(1, Ordering::SeqCst);
             false
@@ -471,7 +471,7 @@ fn tc023_one_flush_is_one_transaction() {
 
     // Remove the hook so the persister is reusable elsewhere.
     {
-        let conn = persister.lock_conn_for_test();
+        let mut conn = persister.lock_conn_for_test();
         conn.commit_hook(None::<fn() -> bool>)
             .expect("remove commit hook");
     }
@@ -515,7 +515,7 @@ fn install_commit_counter(
     use std::sync::Arc;
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counter_clone = Arc::clone(&counter);
-    let conn = persister.lock_conn_for_test();
+    let mut conn = persister.lock_conn_for_test();
     conn.commit_hook(Some(move || {
         counter_clone.fetch_add(1, Ordering::SeqCst);
         false

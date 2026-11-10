@@ -1572,6 +1572,18 @@ pub struct AssetLockChangeSet {
     pub removed: BTreeSet<OutPoint>,
 }
 
+/// Byte length of a raw Orchard payment address (`OrchardAddress::to_raw_bytes`).
+pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
+
+/// The raw bytes of an Orchard payment address, as `OrchardAddress::to_raw_bytes`
+/// gives them and every FFI surface carries them (`recipient_raw_43`).
+///
+/// The changeset, the tracked locks and the persistence backends are built
+/// without the `shielded` feature, where `dpp::address_funds::OrchardAddress`
+/// does not exist, so they carry the recipient raw. Only shielded code
+/// converts it back into an address, and the resume check compares bytes.
+pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1606,17 +1618,30 @@ pub struct AssetLockEntry {
         serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
     )]
     pub proof: Option<AssetLockProof>,
+    /// The Orchard recipient a shielded funding was built to pay (raw 43-byte
+    /// address); `None` for other funding types and for legacy rows. Like
+    /// `operation_id`, immutable once recorded.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
+        )
+    )]
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association when folding or replaying
-    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
-    /// caller must discard the whole snapshot so its lifecycle cannot be
-    /// attached to a different operation.
+    /// Preserve the immutable operation association and shielded recipient
+    /// when folding or replaying a possibly stale snapshot. Returns false for
+    /// a conflicting UUID or recipient: the caller must discard the whole
+    /// snapshot so its lifecycle cannot be attached to a different operation
+    /// or redirect a pending shielded funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
+        previous_shielded_recipient: Option<ShieldedRecipientRaw>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1627,6 +1652,16 @@ impl AssetLockEntry {
                 return false;
             }
             self.operation_id = Some(previous_id);
+        }
+        if let Some(previous_recipient) = previous_shielded_recipient {
+            if self
+                .shielded_recipient
+                .is_some_and(|incoming| incoming != previous_recipient)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting shielded recipient");
+                return false;
+            }
+            self.shielded_recipient = Some(previous_recipient);
         }
         true
     }
@@ -1649,15 +1684,18 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry
+                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
                     || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
                     // Terminality guards lifecycle state, never the operation
-                    // association carried by a delayed snapshot.
+                    // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
+                    existing.shielded_recipient = entry.shielded_recipient;
                     continue;
                 }
             }
@@ -2816,6 +2854,7 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            shielded_recipient: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2883,6 +2922,34 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
+
+        // The recorded shielded recipient survives a later snapshot without
+        // one (reconstruction, a status advance) and vetoes a conflicting one.
+        let recipient = [0x71u8; SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some(recipient);
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].shielded_recipient,
+            Some(recipient)
+        );
+        assert_eq!(
+            recorded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
 
         // Non-terminal transitions stay last-write-wins in both
         // directions (live advances overwrite RecoveredFromChain, and
@@ -3531,6 +3598,7 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            shielded_recipient: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

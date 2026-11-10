@@ -144,7 +144,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 version,
-                None,
             )
             .expect("expected to count the actions");
         assert_eq!(

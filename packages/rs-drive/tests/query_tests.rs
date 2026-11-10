@@ -68,7 +68,6 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
@@ -78,12 +77,10 @@ use dpp::serialization::ValueConvertible;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use once_cell::sync::Lazy;
 use rand::prelude::StdRng;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
@@ -280,7 +277,6 @@ pub fn setup_family_tests(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -355,7 +351,6 @@ fn setup_family_tests_with_people(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -430,7 +425,6 @@ pub fn setup_countable_family_tests(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -502,7 +496,6 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -575,7 +568,6 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -935,7 +927,6 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -977,7 +968,6 @@ pub fn add_withdrawals_to_contract(
                 true,
                 transaction,
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -1232,7 +1222,6 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -2235,7 +2224,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -2280,7 +2268,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -3582,7 +3569,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -3627,7 +3613,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -4046,9 +4031,6 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_family_tests(10, 73509, platform_version);
 
-        let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-            Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
         let db_transaction = drive.grove.start_transaction();
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
@@ -4095,7 +4077,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -4125,7 +4106,6 @@ mod tests {
                 storage_flags,
                 Some(&db_transaction),
                 platform_version,
-                Some(&epoch_change_fee_version_test),
             )
             .expect("expected to override document");
         assert!(fee.storage_fee > 0);
@@ -5051,9 +5031,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-            Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
         let db_transaction = drive.grove.start_transaction();
 
         let root_hash = drive
@@ -5162,7 +5139,6 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to be able to delete the document");
         }
@@ -6603,7 +6579,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6647,7 +6622,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6811,7 +6785,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6858,7 +6831,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -7034,7 +7006,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -7079,7 +7050,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -8182,7 +8152,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should add document");
 
@@ -8417,7 +8386,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should add document");
         }
@@ -9633,7 +9601,6 @@ mod gapped_index_query_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should add document");
         }
@@ -9957,7 +9924,6 @@ mod dpns_identity_records_paging {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to insert a domain document");
         }

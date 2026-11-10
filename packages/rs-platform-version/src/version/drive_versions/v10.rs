@@ -3,6 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
@@ -13,9 +14,10 @@ use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERI
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveInitializationMethodVersions, DriveMethodVersions,
-    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
-    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DrivePlatformSystemMethodVersions,
+    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 use grovedb_version::version::v5::GROVE_V5;
 
@@ -80,12 +82,18 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
+/// * **Refunds at the storing epoch's rate** (protocol v15 note 27): `fees.calculate_fee` 1
+///   prices the bytes a refund returns at the storage rate of the protocol version that ran the
+///   epoch that stored them, which that epoch's tree records.
 ///
 /// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
 ///   GroveDB reads and proves a private document store's entries by position range only under
 ///   V5 (`private_document_store.get_range` and `range_proof`), prices a store's creation as it
 ///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
 ///   keyless append more than once (`apply_batch.keyless_append_repeats`).
+///
+/// * **Storage handover** (protocol v15 note 28): `grove_methods` is
+///   `DRIVE_GROVE_METHOD_VERSIONS_V2`.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -128,6 +136,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
             store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 27)
         ..DRIVE_VERSION_V9.methods
     },
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
@@ -135,5 +144,6 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
     // keeps, refuses all three.
     grove_version: GROVE_V5,
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9
 };

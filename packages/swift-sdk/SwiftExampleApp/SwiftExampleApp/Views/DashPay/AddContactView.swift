@@ -21,6 +21,9 @@ struct AddContactView: View {
     /// Observed for its bind: binding the shielded account restores the
     /// wallet's private payments, so the readiness is read again then.
     @EnvironmentObject var shieldedService: ShieldedService
+    /// Read for why the shielded store could not be opened, which keeps the
+    /// wallet's private payments waiting.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -65,12 +68,18 @@ struct AddContactView: View {
     /// submit again, as `SendTransactionView` does for an unconfirmed spend.
     @State private var unconfirmedNotice: String?
 
-    /// Whether the wallet has a private request to the resolved recipient in
-    /// flight, or paid and not yet read back (`privateRepliesPending`). While
-    /// it does, Send is off and the footer offers a private sync, which
-    /// settles it. Read from the wallet, so reopening this sheet keeps it. A
-    /// failed read keeps Send off until a read succeeds.
+    /// Whether the wallet holds the pair with the resolved recipient for a
+    /// private request, as a send decides it (`privateRepliesPending`):
+    /// in flight, paid and not yet read back, or kept by the shielded
+    /// store's journal until the payment is proven never to land. While it
+    /// does, Send is off and the footer offers a private sync, which reads a
+    /// landed request back. Read from the wallet, so reopening this sheet
+    /// keeps it. A failed read keeps Send off until a read succeeds.
     @State private var recipientPending = PrivateRepliesPendingSnapshot()
+
+    /// Why the shielded store could not be opened, as last read with the
+    /// pending state; nil when it is open.
+    @State private var shieldedStoreFailure: String?
 
     /// A private sync the footer started is running.
     @State private var isSyncingPrivate = false
@@ -435,6 +444,8 @@ struct AddContactView: View {
                     Text(ContactRequestSubmissionOutcome.rowMessage(
                         pending: recipientPending.isPending(recipient),
                         restoring: recipientPending.isRestoringPrivatePayments,
+                        restoreFailure: recipientPending.restoreFailure,
+                        shieldedStoreFailure: shieldedStoreFailure,
                         unavailable: recipientPending.isUnavailable,
                         error: nil
                     ) ?? "")
@@ -459,8 +470,9 @@ struct AddContactView: View {
         }
     }
 
-    /// Re-read from the wallet whether a private request to the resolved
-    /// recipient is pending.
+    /// Re-read from the wallet whether it holds the pair with the resolved
+    /// recipient for a private request, and its readiness, and try a
+    /// shielded store that did not open again.
     private func reloadRecipientPending() {
         let contactIds = resolvedRecipient.map { [$0] } ?? []
         let wallet = try? requireWallet()
@@ -472,8 +484,9 @@ struct AddContactView: View {
             ),
             for: contactIds
         )
-        recipientPending.recordReadiness(
-            privateContactReadiness(wallet: wallet, identityId: identity.identityId))
+        let read = privateContactReadiness(wallet: wallet, identityId: identity.identityId)
+        recipientPending.recordReadiness(read.readiness, restoreFailure: read.restoreFailure)
+        shieldedStoreFailure = walletManagerStore.shieldedStoreFailure(retrying: walletManager)
     }
 
     /// Read the private store, which settles a pending private request, then
@@ -597,14 +610,18 @@ struct AddContactView: View {
                     kickDashPaySync(walletManager)
                     unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
                 case .privateRequestPending:
-                    // Nothing was sent, and the wallet may hold nothing for
-                    // it: the footer shows it as pending and offers the
-                    // private sync that settles it.
+                    // Nothing was sent: the wallet holds the pair. The footer
+                    // shows it as pending, with the private sync, until the
+                    // per-contact read says it is free.
                     recipientPending.recordRefusal(of: recipient)
                 case .privatePaymentsNotRestored:
-                    // Nothing was sent: the footer shows the wallet restoring
+                    // Nothing was sent: the footer shows the wallet setting up
                     // its private payments until its readiness says restored.
                     recipientPending.recordRestoringRefusal()
+                case .privateStoreNotRead:
+                    // Nothing was sent and nothing is pending: Send stays on,
+                    // and sending again continues the read.
+                    errorMessage = ContactRequestSubmissionOutcome.privateStoreNotReadMessage
                 case .failed(let message):
                     errorMessage = message
                 }
@@ -668,6 +685,8 @@ struct AddContactView: View {
                     recipientPending.recordRefusal(of: recipient)
                 case .privatePaymentsNotRestored:
                     recipientPending.recordRestoringRefusal()
+                case .privateStoreNotRead:
+                    errorMessage = ContactRequestSubmissionOutcome.privateStoreNotReadMessage
                 case .failed(let message):
                     errorMessage = "Accept failed: \(message)"
                 }

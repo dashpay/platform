@@ -168,6 +168,12 @@ final class WalletManagerStore: ObservableObject {
     /// cross-network bleed at restore time.
     private let modelContainer: ModelContainer
 
+    /// Why opening each network's shielded store failed, until a later
+    /// attempt succeeds. The DashPay views show it while the wallet's
+    /// private payments wait for that store, and retry it
+    /// (`shieldedStoreFailure(retrying:)`).
+    @Published private(set) var shieldedStoreFailures: [Network: String] = [:]
+
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         // Placeholder. Held until the first `activate(...)` call
@@ -202,6 +208,11 @@ final class WalletManagerStore: ObservableObject {
         if let existing = managers[network] {
             let cachedHandle = managerSdkHandles[network]
             if cachedHandle == sdk.handle {
+                // A shielded store that did not open last time is tried
+                // again: until it opens, contact requests stay held (72).
+                if shieldedStoreFailures[network] != nil {
+                    configureShieldedStore(existing, network: network)
+                }
                 if makeActive && existing !== activeManager {
                     // Swapping to a different warm manager supersedes any
                     // in-flight SPV start against the outgoing one.
@@ -232,6 +243,15 @@ final class WalletManagerStore: ObservableObject {
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
+        // Open the shielded store before any wallet is loaded or created:
+        // this app's persister keeps the private contact request scan state,
+        // so Rust holds every wallet published while no store is configured
+        // (code 72) until its private payment journal is read, and a later
+        // bind may never come (no mnemonic, shielded off). With the store
+        // open first, each wallet's journal is read as it is published, and
+        // the binds' own calls on the same path are no-ops. A failure is
+        // recorded and retried; the wallets stay held meanwhile.
+        configureShieldedStore(manager, network: network)
         // Best-effort: a fresh manager comes up with no wallets in
         // memory; restore from the network-scoped persistence
         // handler so reopening the app on this network resurfaces
@@ -243,23 +263,6 @@ final class WalletManagerStore: ObservableObject {
         } catch {
             SDKLogger.event(
                 "manager_restore_failed",
-                category: .lifecycle,
-                severity: .error,
-                fields: ["network": .publicText(network.displayName)],
-                error: error
-            )
-        }
-        // Open the shielded store right after the load: Rust then restores,
-        // with no keys, the unconfirmed private contact request payments of
-        // every wallet that bound a shielded account in an earlier process.
-        // Until it does, those wallets' public contact requests are refused
-        // (code 71), and a later bind may never come (no mnemonic, shielded
-        // off). The same path the bind opens, so the bind's call is a no-op.
-        do {
-            try manager.configureShielded(dbPath: ShieldedService.dbPath(for: network))
-        } catch {
-            SDKLogger.event(
-                "manager_shielded_configure_failed",
                 category: .lifecycle,
                 severity: .error,
                 fields: ["network": .publicText(network.displayName)],
@@ -285,6 +288,38 @@ final class WalletManagerStore: ObservableObject {
                 "wallet_count": .integer(Int64(manager.wallets.count)),
             ]
         )
+    }
+
+    /// Open `network`'s shielded store on `manager`, recording why it failed
+    /// for the DashPay views, or clearing that once it opens. A repeat on the
+    /// same path does not wait on the store, so it is safe on the main
+    /// thread.
+    private func configureShieldedStore(_ manager: PlatformWalletManager, network: Network) {
+        do {
+            try manager.configureShielded(dbPath: ShieldedService.dbPath(for: network))
+            shieldedStoreFailures[network] = nil
+        } catch {
+            shieldedStoreFailures[network] = error.localizedDescription
+            SDKLogger.event(
+                "manager_shielded_configure_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
+            )
+        }
+    }
+
+    /// Why the shielded store of `manager`'s network could not be opened,
+    /// after trying it again, or nil when it is open (or `manager` is not
+    /// one of this store's).
+    func shieldedStoreFailure(retrying manager: PlatformWalletManager) -> String? {
+        guard let network = managers.first(where: { $0.value === manager })?.key,
+              shieldedStoreFailures[network] != nil else {
+            return nil
+        }
+        configureShieldedStore(manager, network: network)
+        return shieldedStoreFailures[network]
     }
 
     /// Manager for `network` if one has been activated this session;

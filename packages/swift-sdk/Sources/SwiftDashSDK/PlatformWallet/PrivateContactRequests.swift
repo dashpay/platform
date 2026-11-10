@@ -50,35 +50,49 @@ public struct PrivateContactInfo: Sendable, Equatable {
 /// private store" and from a contact's pending request rather than inferring
 /// them from the refusals it got.
 public struct PrivateContactReadiness: Sendable, Equatable {
-    /// Whether the wallet's private payments from an earlier process are
-    /// restored for the identity. While false, its public sends and accepts,
-    /// the in-kind accept included, are refused with
-    /// `PlatformWalletError.privateContactPaymentsNotRestored` (72) until the
-    /// shielded store is configured or the wallet's shielded account bound;
-    /// no private sync lifts it.
+    /// Whether the wallet's private payments are restored for the identity.
+    /// While false, its contact requests and acceptances, public or private,
+    /// are refused with `PlatformWalletError.privateContactPaymentsNotRestored`
+    /// (72) until the shielded store is configured or the wallet's shielded
+    /// account bound, or a contact request's own retry of a failed
+    /// restoration succeeds; no private sync lifts it.
     public let privatePaymentsRestored: Bool
     /// Whether a private sync read DashPay's private contact request store to
-    /// its end for the identity since load. Until then its first send or
-    /// accept reads it first, and is refused with
-    /// `PlatformWalletError.privateContactRequestPending` (71) while that
-    /// read cannot finish.
+    /// its end for the identity with its current keys. Every contact request
+    /// and acceptance reads it again from the cursor before it is decided, and
+    /// is refused with `PlatformWalletError.privateContactStoreNotRead` (74)
+    /// while that read cannot finish.
     public let privateStoreRead: Bool
     /// Whether a private contact request the identity paid for may still be
-    /// unresolved. A contact's own pending request is
-    /// `ManagedIdentity.privateReplyPending(contactId:)`.
+    /// unresolved: the marker its private scan state stores, or a payment the
+    /// shielded store's journal keeps unresolved. One pair's hold is
+    /// `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`.
     public let unresolvedPrivatePayment: Bool
+    /// Whether the last restoration of the wallet's private payments failed
+    /// while `privatePaymentsRestored` is false: 72 then holds until one
+    /// succeeds, not only until one runs.
+    /// `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)` reads
+    /// why.
+    public let privatePaymentsRestoreFailed: Bool
 
-    public init(privatePaymentsRestored: Bool, privateStoreRead: Bool, unresolvedPrivatePayment: Bool) {
+    public init(
+        privatePaymentsRestored: Bool,
+        privateStoreRead: Bool,
+        unresolvedPrivatePayment: Bool,
+        privatePaymentsRestoreFailed: Bool = false
+    ) {
         self.privatePaymentsRestored = privatePaymentsRestored
         self.privateStoreRead = privateStoreRead
         self.unresolvedPrivatePayment = unresolvedPrivatePayment
+        self.privatePaymentsRestoreFailed = privatePaymentsRestoreFailed
     }
 
     init(ffi: PrivateContactReadinessFFI) {
         self.init(
             privatePaymentsRestored: ffi.private_payments_restored,
             privateStoreRead: ffi.private_store_read,
-            unresolvedPrivatePayment: ffi.unresolved_private_payment)
+            unresolvedPrivatePayment: ffi.unresolved_private_payment,
+            privatePaymentsRestoreFailed: ffi.private_payments_restore_failed)
     }
 }
 
@@ -117,33 +131,16 @@ extension ManagedIdentity {
         try result.throwIfError()
         return PrivateContactInfo(ffi: ffi)
     }
-
-    /// Whether a private contact request from this identity to `contactId`
-    /// is being paid for, or was paid for and is not yet read back from the
-    /// store. While it is, Rust refuses another private send or reply to the
-    /// contact (`PlatformWalletError.privateContactRequestPending`), so show
-    /// the contact as pending and offer neither; a private sync settles it.
-    /// Read from this snapshot: take a fresh `ManagedIdentity` to see a
-    /// change. After a relaunch, a reply paid for in an earlier process is
-    /// pending again once Rust restores it from the shielded store, which it
-    /// does when the store is configured after the load
-    /// (`PlatformWalletManager.configureShielded`) or the wallet binds its
-    /// shielded account.
-    public func privateReplyPending(contactId: Identifier) throws -> Bool {
-        var pending = false
-        let result = contactId.withFFIBytes { idPtr in
-            PlatformWalletResult(managed_identity_get_private_reply_pending(handle, idPtr, &pending))
-        }
-        try result.throwIfError()
-        return pending
-    }
 }
 
 extension ManagedPlatformWallet {
     /// What a contact request from `identityId`, one of this wallet's
-    /// identities, waits for, as the wallet decides it. A pure read of live
-    /// wallet state; read it again after the shielded store is configured or
-    /// the wallet binds its shielded account to see the restore.
+    /// identities, waits for, as the wallet decides it. Not a pure read: a
+    /// journal record discharged since (a payment proven never to execute) is
+    /// applied first, briefly taking the wallet's write lock, as a send would
+    /// see it; then it reads live wallet state. Read it again after the
+    /// shielded store is configured or the wallet binds its shielded account
+    /// to see the restore.
     public func privateContactReadiness(identityId: Identifier) throws -> PrivateContactReadiness {
         var ffi = PrivateContactReadinessFFI()
         let handle = self.handle
@@ -152,6 +149,48 @@ extension ManagedPlatformWallet {
         }
         try result.check()
         return PrivateContactReadiness(ffi: ffi)
+    }
+
+    /// Why the last restoration of this wallet's private payments failed,
+    /// while they are not restored for `identityId` and none succeeded since,
+    /// or `nil` when none failed (restored, or only not restored yet). What
+    /// `PrivateContactReadiness.privatePaymentsRestoreFailed` flags.
+    public func privatePaymentsRestoreFailure(identityId: Identifier) throws -> String? {
+        var reason: UnsafeMutablePointer<CChar>?
+        let handle = self.handle
+        let result = identityId.withFFIBytes { idPtr in
+            platform_wallet_get_private_payments_restore_failure(handle, idPtr, &reason)
+        }
+        defer { platform_wallet_string_free(reason) }
+        try result.check()
+        return reason.map { String(cString: $0) }
+    }
+
+    /// Whether a contact request from `senderId`, one of this wallet's
+    /// identities, to `recipientId`, public or private, is held for a
+    /// private one, as a send decides it: a private request to the recipient
+    /// is being paid for, or was paid for and is not yet read back from the
+    /// store, or a private payment the shielded store's journal keeps
+    /// unresolved holds the pair, also after the sender identity was removed
+    /// and added again. While it is, Rust refuses another private send or
+    /// reply to the recipient (`PlatformWalletError.privateContactRequestPending`)
+    /// and holds a public one, so show the pair as pending and offer
+    /// neither. A `syncPrivateContactRequests` that reads the entry back
+    /// frees it, as does the payment proven never to execute (its anchor
+    /// pruned, which the shielded sync judges); an endpoint's refusal of the
+    /// payment does not. Not a pure read: a journal record discharged since
+    /// is applied first, so a discharge reads as freed with no send or sync
+    /// in between.
+    public func privatePairHeld(senderId: Identifier, recipientId: Identifier) throws -> Bool {
+        var held = false
+        let handle = self.handle
+        let result = senderId.withFFIBytes { senderPtr in
+            recipientId.withFFIBytes { recipientPtr in
+                platform_wallet_get_private_pair_held(handle, senderPtr, recipientPtr, &held)
+            }
+        }
+        try result.check()
+        return held
     }
 
     /// Read DashPay's private contact request store for every identity of
@@ -218,11 +257,15 @@ extension PlatformWalletManager {
     /// `resolver` supplies both the Orchard spend authority and the DashPay
     /// keys. `signer` is the identity signer `sendContactRequest` takes: it
     /// signs the request with one of the sender's authentication keys, as it
-    /// signs a public request's transition. Throws
-    /// `PlatformWalletError.shieldedSpendUnconfirmed` when the payment may
-    /// already be on chain, and `.privateContactRequestPending` when a
-    /// private request to the recipient is in flight or paid and not yet read
-    /// back: either way do not send again; a later private sync settles it.
+    /// signs a public request's transition. Before anything is paid the
+    /// wallet reads DashPay's private store for the sender to its end.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the payment
+    /// may already be on chain, and `.privateContactRequestPending` when the
+    /// pair is held for a private request (in flight, paid and not yet read
+    /// back, or kept by the journal): either way do not send again.
+    /// `.privateContactStoreNotRead` sent nothing; calling again continues
+    /// the read. `.privateContactPaymentsNotRestored` and
+    /// `.privateContactRecoveryUnsupported` refuse before the read.
     public func sendPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -288,8 +331,8 @@ extension PlatformWalletManager {
     /// privately and paying for the reply from `account`'s shielded notes.
     /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
     /// us at privately. `signer` is the identity signer
-    /// `acceptContactRequest` takes; it signs the reply. An unconfirmed or
-    /// pending reply throws as `sendPrivateContactRequest` does.
+    /// `acceptContactRequest` takes; it signs the reply. It throws as
+    /// `sendPrivateContactRequest` does.
     public func acceptPrivateContactRequest(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -344,8 +387,9 @@ extension PlatformWalletManager {
     /// needs neither shielded support nor a mnemonic read for the payment.
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when a private
     /// reply may already be on chain, or `.privateContactRequestPending` when
-    /// one is in flight or paid and not yet read back: do not accept again;
-    /// and
+    /// the pair is held for one: do not accept again; `.privateContactStoreNotRead`
+    /// when the private store read every accept runs first did not finish
+    /// (nothing sent; calling again continues it); and
     /// `PlatformWalletError.shieldedBuildRequired` when the request needs a
     /// private reply and the native library has no shielded support.
     public func acceptContactRequestReplyingInKind(

@@ -553,15 +553,59 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A private store read that did not finish before a contact request was
+    /// decided has its own code and typed case, apart from a pending request
+    /// (71): nothing was reserved, and calling again continues the read.
+    func testShouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_STORE_NOT_READ
+        )
+        XCTAssertEqual(code, .errorPrivateContactStoreNotRead)
+        XCTAssertEqual(code.rawValue, 74)
+        let detail = "the private contact request store was not read to its end for 9fRYTJZW"
+        guard case .privateContactStoreNotRead(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed store-not-read error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// An SDK pinned below the protocol version a request needs has its own
+    /// code and typed case, apart from a network below it (70), which lifts by
+    /// itself.
+    func testShouldReportAnSdkPinnedBelowTheProtocolVersionByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SDK_PINNED_BELOW_PROTOCOL_VERSION
+        )
+        XCTAssertEqual(code, .errorSdkPinnedBelowProtocolVersion)
+        XCTAssertEqual(code.rawValue, 75)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the SDK is pinned at protocol version 14"
+        guard case .sdkPinnedBelowProtocolVersion(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed pinned-SDK error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
         ffi.private_store_read = true
         ffi.unresolved_private_payment = true
+        ffi.private_payments_restore_failed = true
         XCTAssertEqual(
             PrivateContactReadiness(ffi: ffi),
             PrivateContactReadiness(
-                privatePaymentsRestored: false, privateStoreRead: true, unresolvedPrivatePayment: true))
+                privatePaymentsRestored: false,
+                privateStoreRead: true,
+                unresolvedPrivatePayment: true,
+                privatePaymentsRestoreFailed: true))
+        // Each flag reaches its own field: clearing only the failure flag
+        // reads as a payment not restored yet.
+        ffi.private_payments_restore_failed = false
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestoreFailed)
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestored)
     }
 
     func testShouldReadEveryFieldOfAPrivateContact() {

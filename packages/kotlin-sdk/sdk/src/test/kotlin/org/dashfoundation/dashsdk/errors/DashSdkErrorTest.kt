@@ -20,6 +20,15 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldPreserveAssetLockRecipientMismatchAsATypedRefusal() {
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 61, "cannot be resumed to")
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockRecipientMismatch)
+        assertEquals(native.message, mapped.message)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(

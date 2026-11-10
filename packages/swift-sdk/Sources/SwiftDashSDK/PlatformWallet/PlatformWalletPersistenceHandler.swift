@@ -21,6 +21,7 @@ protocol ModelFetching: Sendable {
 private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
+    case conflictingShieldedRecipient
     case missingRecord
     case requiresChangeset
 }
@@ -587,6 +588,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
                     existing.operationId = entry.operationId ?? existing.operationId
+                    existing.shieldedRecipientRaw43 =
+                        entry.shieldedRecipientRaw43 ?? existing.shieldedRecipientRaw43
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -599,7 +602,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         amountDuffs: entry.amountDuffs,
                         statusRaw: entry.statusRaw,
                         proofBytes: entry.proofBytes,
-                        operationId: entry.operationId
+                        operationId: entry.operationId,
+                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43
                     )
                     backgroundContext.insert(record)
                 }
@@ -694,6 +698,48 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 $0.outPointHex != hex
             }) else { throw AssetLockPersistenceError.duplicateOperationId }
             record.operationId = operationId
+        }
+    }
+
+    /// Shielded-recipient sidecar for the frozen legacy FFI row, saved with
+    /// the base upsert by endChangeset. Like the UUID, a recorded recipient can
+    /// never change: a resume must pay the recipient the lock was built for.
+    func persistAssetLockShieldedRecipient(walletId: Data, outPoint: Data, recipientRaw43: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, recipientRaw43.count == 43 else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.shieldedRecipientRaw43, previous != recipientRaw43 {
+                throw AssetLockPersistenceError.conflictingShieldedRecipient
+            }
+            record.shieldedRecipientRaw43 = recipientRaw43
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a legacy nil
+    /// recipient; a stored value of the wrong size is corruption, not absence.
+    func loadAssetLockShieldedRecipient(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let recipient = record.shieldedRecipientRaw43, recipient.count != 43 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return record.shieldedRecipientRaw43
         }
     }
 
@@ -1050,6 +1096,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     throw AssetLockPersistenceError.duplicateOperationId
                 }
             }
+            if let recipient = record.shieldedRecipientRaw43, recipient.count != 43 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
             return AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
                 transactionBytes: record.transactionBytes,
@@ -1059,7 +1108,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes,
-                operationId: record.operationId
+                operationId: record.operationId,
+                shieldedRecipientRaw43: record.shieldedRecipientRaw43
             )
         }
     }
@@ -1079,6 +1129,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let statusRaw: Int
         public let proofBytes: Data?
         public var operationId: Data? = nil
+        /// Raw 43-byte Orchard recipient of a shielded funding; see
+        /// `PersistentAssetLock.shieldedRecipientRaw43`.
+        public var shieldedRecipientRaw43: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3257,6 +3310,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+                | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
                 | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
         )
     }
@@ -3297,6 +3351,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_persist_asset_lock_shielded_recipient_fn =
+            persistAssetLockShieldedRecipientCallback
+        extensionCallbacks.on_load_asset_lock_shielded_recipient_fn =
+            loadAssetLockShieldedRecipientCallback
         extensionCallbacks.on_persist_private_contact_scan_state_fn = persistPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_free_fn =
@@ -12046,6 +12104,37 @@ private func loadAssetLockOperationIdCallback(
         if let operationId = try handler.loadAssetLockOperationId(
             walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
             operationId.copyBytes(to: outOperationId, count: 16)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
+private func persistAssetLockShieldedRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, recipientRaw43: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let recipientRaw43 else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockShieldedRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            recipientRaw43: Data(bytes: recipientRaw43, count: 43))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockShieldedRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outRecipientRaw43: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outRecipientRaw43 else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let recipient = try handler.loadAssetLockShieldedRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            recipient.copyBytes(to: outRecipientRaw43, count: 43)
             outFound.pointee = true
         }
         return 0

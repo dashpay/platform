@@ -56,7 +56,7 @@ use crate::from_request::TryFromRequest;
 use crate::verify::{
     document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
-use crate::{types::*, ContextProvider, DataContractProvider, Error};
+use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
@@ -113,9 +113,10 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
-use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use crate::error::MapGroveDbError;
@@ -464,6 +465,57 @@ fn proof_query_platform_version(
             metadata.protocol_version
         ),
     })
+}
+
+/// A context provider's configuration error, kept aside while Drive, whose errors cannot
+/// carry it, verifies a proof with what the provider answers.
+///
+/// The provider is set up so that it cannot serve what Drive asked for, whichever node's
+/// answer is verified with it, so the error replaces the verification failure it caused.
+#[derive(Default)]
+struct ProviderMisconfiguration(RefCell<Option<ContextProviderError>>);
+
+impl ProviderMisconfiguration {
+    /// The text Drive is given of the provider's `error`; a configuration error is kept.
+    fn describe(&self, error: ContextProviderError) -> String {
+        let reason = error.to_string();
+        if matches!(error, ContextProviderError::Config(_)) {
+            *self.0.borrow_mut() = Some(error);
+        }
+        reason
+    }
+
+    /// `result`, or the kept configuration error in place of the failure it caused.
+    fn in_place_of_failure<T>(self, result: Result<T, Error>) -> Result<T, Error> {
+        match (result, self.0.into_inner()) {
+            (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
+            (result, _) => result,
+        }
+    }
+}
+
+/// Runs `verify` with a lookup of the data contracts it needs in `provider`.
+///
+/// The lookup gives Drive a failed lookup as text, as
+/// [`crate::DataContractProvider::as_contract_lookup_fn`] does, and a configuration error
+/// is reported in place of the failure it caused ([`ProviderMisconfiguration`]).
+fn with_contract_lookup<T>(
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+    verify: impl FnOnce(&ContractLookupFn) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let misconfiguration = ProviderMisconfiguration::default();
+    let lookup = |id: &Identifier| {
+        provider
+            .get_data_contract(id, platform_version)
+            .map_err(|error| {
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(
+                    misconfiguration.describe(error),
+                ))
+            })
+    };
+    let result = verify(&lookup);
+    misconfiguration.in_place_of_failure(result)
 }
 
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
@@ -1596,8 +1648,6 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let query_platform_version = proof_query_platform_version(mtd)?;
 
-        let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
-
         // Transition families whose proof cannot be bound to execution
         // (balance top-ups, credit transfers/withdrawals, address funds
         // movements, shields, no-history token operations) yield a verified
@@ -1607,15 +1657,17 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
         let (root_hash, outcome) =
-            Drive::verify_state_transition_was_executed_with_proof_for_query_version(
-                &state_transition,
-                &block_info,
-                supported_grovedb_proof_bytes(proof)?,
-                &contracts_provider_fn,
-                query_platform_version,
-                platform_version,
-            )
-            .map_drive_error(proof, mtd)?;
+            with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
+                Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                    &state_transition,
+                    &block_info,
+                    supported_grovedb_proof_bytes(proof)?,
+                    contracts_provider_fn,
+                    query_platform_version,
+                    platform_version,
+                )
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1949,6 +2001,42 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
+    /// The verifier refuses a query carrying composite sub-queries, which it would otherwise
+    /// ignore, and rebuilds Drive's path query from the request alone before it reads the
+    /// proof: the where-clause shape, the route (by id, through an index, indexOnly) and the
+    /// index it reads. It does so without the cursor document on every page, so a request whose
+    /// path query cannot be built that way, such as one no index covers, can never verify; every
+    /// node refuses it too. The path query is built at `platform_version`, the version the
+    /// request is encoded with: a shape only a later version serves carries a protocol feature,
+    /// and the SDK's protocol gate encodes such a request at the network's version before this
+    /// check runs, so the check never refuses what that later version serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let request: DriveDocumentQuery<'dq> =
+            request
+                .clone()
+                .try_into()
+                .map_err(|e: Q::Error| Error::RequestError {
+                    error: e.to_string(),
+                })?;
+        request
+            .ensure_no_sub_queries("verify_proof")
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })?;
+        request
+            .construct_path_query(None, platform_version)
+            .map(drop)
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -2093,9 +2181,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request = drive_query.resolve_with_known_contracts_provider(
-            &provider.as_contract_lookup_fn(platform_version),
-        )?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2141,9 +2229,9 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2199,10 +2287,9 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2255,19 +2342,21 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
-            ContestedResourceVotesGivenByIdentityQuery {
-                limit,
-                ..drive_query.clone()
-            }
-            .verify_identity_votes_given_proof::<Vec<_>>(
-                grovedb_proof,
-                &contract_provider_fn,
-                platform_version,
-            )
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) =
+            with_contract_lookup(provider, platform_version, |contract_provider_fn| {
+                verify_page_drive_proves(drive_query.limit, |limit| {
+                    ContestedResourceVotesGivenByIdentityQuery {
+                        limit,
+                        ..drive_query.clone()
+                    }
+                    .verify_identity_votes_given_proof::<Vec<_>>(
+                        grovedb_proof,
+                        contract_provider_fn,
+                        platform_version,
+                    )
+                })
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2465,18 +2554,23 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
-        let (root_hash, credits) = Drive::verify_total_credits_in_system(
+        // Drive asks for the activation height only when the unpaid epoch is the first one.
+        let misconfiguration = ProviderMisconfiguration::default();
+        let verified = Drive::verify_total_credits_in_system(
             supported_grovedb_proof_bytes(proof)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
-                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(
+                        misconfiguration.describe(e),
+                    ))
                 })
             },
             mtd.core_chain_locked_height,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_drive_error(proof, mtd);
+        let (root_hash, credits) = misconfiguration.in_place_of_failure(verified)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3142,6 +3236,57 @@ mod tests {
     use super::*;
     use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
+    /// A plain documents page cannot verify the sub-queries a composite request carries: its
+    /// verifier refuses them rather than report them verified, so its check refuses them before
+    /// sending, and sends the page alone.
+    #[test]
+    fn should_refuse_sub_queries_before_sending_a_documents_page() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use drive::query::{DriveSubQuery, SubQueryKind};
+
+        let platform_version = PlatformVersion::latest();
+        let contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("the fixture has this document type");
+        let mut page = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version)
+            .expect("a plain page is sent");
+
+        page.sub_queries.push(DriveSubQuery {
+            contract: &contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: Some(10),
+            binding: None,
+        });
+        match <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version) {
+            Err(Error::RequestError { error }) => {
+                assert!(error.contains("sub-queries"), "{error}")
+            }
+            other => panic!("a page with sub-queries must be refused, got {other:?}"),
+        }
+    }
+
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
         assert_eq!(try_u32_to_u16(0).unwrap(), 0u16);
@@ -3548,6 +3693,93 @@ mod tests {
         {
             panic!("platform activation height should not be requested")
         }
+    }
+
+    /// Answers every data contract lookup with the error its function makes.
+    struct FailingContractProvider(fn() -> ContextProviderError);
+
+    impl dash_context_provider::ContextProvider for FailingContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, ContextProviderError> {
+            Err((self.0)())
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, ContextProviderError> {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    fn no_contract_source() -> ContextProviderError {
+        ContextProviderError::Config("no contract source".to_string())
+    }
+
+    /// Drive verifies some proofs without the contract a failed lookup could not give, such
+    /// as a deletion a removal record proves. A configuration error then changes nothing:
+    /// the verification's own result is kept.
+    #[test]
+    fn should_keep_a_verification_that_succeeds_after_a_failed_contract_lookup() {
+        let provider = FailingContractProvider(no_contract_source);
+        let result = with_contract_lookup(&provider, PlatformVersion::latest(), |lookup| {
+            assert!(lookup(&Identifier::new([1; 32])).is_err());
+            Ok(7)
+        });
+        assert!(matches!(result, Ok(7)), "{result:?}");
+    }
+
+    /// A verification that fails after the provider refused a lookup with a configuration
+    /// error fails with that error, which the SDK attributes to its own setup. Any other
+    /// provider failure stays the Drive error it was.
+    #[test]
+    fn should_report_only_a_configuration_error_in_place_of_the_failure_it_caused() {
+        let verify = |provider: &dyn ContextProvider| {
+            with_contract_lookup(provider, PlatformVersion::latest(), |lookup| {
+                lookup(&Identifier::new([1; 32]))?;
+                Ok(())
+            })
+        };
+
+        let misconfigured = verify(&FailingContractProvider(no_contract_source));
+        assert!(
+            matches!(
+                &misconfigured,
+                Err(Error::ContextProviderError(ContextProviderError::Config(reason)))
+                    if reason == "no contract source"
+            ),
+            "{misconfigured:?}"
+        );
+
+        let unavailable = verify(&FailingContractProvider(|| {
+            ContextProviderError::Generic("timed out".to_string())
+        }));
+        assert!(
+            matches!(
+                &unavailable,
+                Err(Error::DriveError { error })
+                    if error.contains("could not be retrieved") && error.contains("timed out")
+            ),
+            "{unavailable:?}"
+        );
     }
 
     /// Build a fully-populated `GetIdentityResponse` shell so that

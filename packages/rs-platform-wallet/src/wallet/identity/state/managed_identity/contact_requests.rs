@@ -394,12 +394,11 @@ impl ManagedIdentity {
         // Rewind the receive cursor so the next sweep re-fetches the
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
-        self.dashpay.private_contact_requests_position = 0;
         // A pass that read the store to its end passed over the sender's
         // private requests: the store is not read for this identity until a
         // pass reads it again from the rewound position, so a send reads it
         // first.
-        self.dashpay.private_contact_requests_read = false;
+        self.rewind_private_store_read();
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -816,8 +815,53 @@ impl ManagedIdentity {
     }
 
     /// Note that a private sync read DashPay's private contact request store
-    /// to its end for this identity, with nothing held back.
-    pub(crate) fn note_private_contact_requests_read(&mut self) {
+    /// to its end for this identity, with nothing held back, the page that
+    /// reached the end proved at `end_height` or above (the lowest height of
+    /// its reads): counted only when that is at or above the height a rewind
+    /// left as its floor (`DashPayState::private_store_read_floor`), so a read
+    /// whose end comes from a node behind the store already seen does not
+    /// count, whatever the heights of the pages before it. Returns whether it
+    /// counted.
+    pub(crate) fn note_private_contact_requests_read(&mut self, end_height: u64) -> bool {
+        let dashpay = &mut self.dashpay;
+        let counted = dashpay
+            .private_store_read_floor
+            .is_none_or(|floor| end_height >= floor);
+        if counted {
+            dashpay.private_contact_requests_read = true;
+        }
+        counted
+    }
+
+    /// Rewind this identity's read of DashPay's private contact request
+    /// store to its start: the position goes back to 0, the read is no longer
+    /// read to the end, and the height it rested on is reset, kept as the
+    /// floor a read since must reach (`DashPayState::private_store_read_floor`).
+    fn rewind_private_store_read(&mut self) {
+        let dashpay = &mut self.dashpay;
+        dashpay.private_contact_requests_position = 0;
+        dashpay.private_contact_requests_read = false;
+        if let Some(read) = dashpay.private_store_read_height.take() {
+            dashpay.private_store_read_floor = Some(
+                dashpay
+                    .private_store_read_floor
+                    .map_or(read, |floor| floor.max(read)),
+            );
+        }
+    }
+
+    /// Note that a private sync read a page of DashPay's private contact
+    /// request store, proved at `height`, for this identity
+    /// (`DashPayState::private_store_read_height`).
+    pub(crate) fn note_private_store_page_read(&mut self, height: u64) {
+        let read = &mut self.dashpay.private_store_read_height;
+        *read = Some(read.map_or(height, |read| read.max(height)));
+    }
+
+    /// [`Self::note_private_contact_requests_read`], for tests outside this
+    /// crate that read an identity's state after a private sync.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn note_private_contact_requests_read_for_tests(&mut self) {
         self.dashpay.private_contact_requests_read = true;
     }
 
@@ -841,13 +885,18 @@ impl ManagedIdentity {
     /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
     /// replay, for a backend attesting
     /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// The record replayed last decides the identity's load-time hold, so a
+    /// later record cleared lifts an earlier marked one; the live
+    /// per-recipient reservations are left alone, and a restoration from
+    /// the shielded store's journal holds every pair whose payment may still
+    /// execute whatever the marker says.
     pub fn apply_private_contact_requests_position(
         &mut self,
         position: PrivateContactRequestsPosition,
     ) {
         self.dashpay.private_contact_requests_position = position.position;
         self.dashpay.private_scan_keys = Some(position.key_fingerprint);
-        self.dashpay.private_payments_unrestored |= position.private_payments_unresolved;
+        self.dashpay.private_payments_unrestored = position.private_payments_unresolved;
     }
 
     /// The reservations of this identity's private payments from an earlier
@@ -903,8 +952,7 @@ impl ManagedIdentity {
         if self.dashpay.private_scan_keys.is_some()
             || self.dashpay.private_contact_requests_position > 0
         {
-            self.dashpay.private_contact_requests_position = 0;
-            self.dashpay.private_contact_requests_read = false;
+            self.rewind_private_store_read();
         }
         self.dashpay.private_scan_keys = Some(key_fingerprint);
         Some(self.private_contact_requests_position_record())
@@ -1089,8 +1137,9 @@ impl ManagedIdentity {
     }
 
     /// Release every pending request sealed as one of `commitments`, whose
-    /// payments were settled as never executing, whichever attempt holds it.
-    pub(crate) fn release_rejected_private_replies(
+    /// payments' journal records were discharged (read back elsewhere, never
+    /// delivered, or proven expired), whichever attempt holds it.
+    pub(crate) fn release_discharged_private_replies(
         &mut self,
         commitments: &std::collections::BTreeSet<[u8; 32]>,
     ) {
@@ -1295,6 +1344,26 @@ mod tests {
             }
         }
         WalletPersister::new([0u8; 32], Arc::new(Failing))
+    }
+
+    /// The private scan state replayed last decides an identity's load-time
+    /// hold: a later record cleared lifts an earlier marked one.
+    #[test]
+    fn should_take_the_last_replayed_private_payment_marker() {
+        let mut managed = create_test_identity([0x31; 32]);
+        let marked = |unresolved: bool| PrivateContactRequestsPosition {
+            private_payments_unresolved: unresolved,
+            ..managed_position()
+        };
+        managed.apply_private_contact_requests_position(marked(true));
+        assert!(managed.dashpay().private_payments_unrestored());
+        managed.apply_private_contact_requests_position(marked(false));
+        assert!(!managed.dashpay().private_payments_unrestored());
+    }
+
+    /// A private scan state record with nothing marked.
+    fn managed_position() -> PrivateContactRequestsPosition {
+        create_test_identity([0x32; 32]).private_contact_requests_position_record()
     }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {

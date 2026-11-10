@@ -722,6 +722,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
+        // Before the wallet is published: hold or restore its private
+        // payments (`PlatformWalletManager::hold_or_restore_private_payments`).
+        #[cfg(feature = "shielded")]
+        self.hold_or_restore_private_payments(&platform_wallet)
+            .await;
+
         // Register the PlatformWallet handle. `rcu` publishes a new map
         // snapshot; the closure can rerun under a concurrent-writer
         // retry, so it must stay pure map manipulation.
@@ -730,6 +736,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
             wallets
         });
+        // A store configured since the check above restored the wallets it
+        // found published, which this one was not yet.
+        #[cfg(feature = "shielded")]
+        self.restore_private_payments_configured_since(&platform_wallet)
+            .await;
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
