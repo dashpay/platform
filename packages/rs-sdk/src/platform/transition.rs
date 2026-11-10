@@ -50,5 +50,6 @@ pub mod update_price_of_document;
 pub(crate) mod validation;
 pub mod vote;
 pub mod waitable;
+mod with_contract;
 pub mod withdraw_from_identity;
 pub use txid::TxId;

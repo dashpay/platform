@@ -243,7 +243,9 @@ Two things differ from version 0:
 
 Build either form with `DataContractUpdateTransition::new_from_contract_update(old_contract, new_contract, ...)`, which computes the delta between the stored contract and the wanted one and refuses a change a delta cannot express. `new_from_data_contract`, which has only the new contract, always builds version 0.
 
-**Verifying a delta's execution proof needs the contract it was built on.** The proof of a contract update holds the contract as it is after the update. Version 0 is compared with it directly. A delta is first merged, by the same `apply_update`, onto the contract as it was before the update, which the verifier takes from its contract lookup (the SDK's context provider); the proved contract must be the result. A client that sends a delta must therefore make the pre-update contract known to its context provider before it waits for the result, or verification fails with `ProofError::MissingContextRequirement`.
+**Verifying a delta's execution proof needs the contract it was built on.** The proof of a contract update holds the contract as it is after the update. Version 0 is compared with it directly. A delta is first merged, by the same `apply_update`, onto the contract as it was before the update, which the verifier takes from its contract lookup; the proved contract must be the result, and a lookup that does not hold that version fails with `ProofError::MissingContextRequirement`.
+
+In the Rust SDK, wait for a delta with `wait_for_data_contract_update(sdk, &transition, &pre_update_contract, settings)`. It makes the pre-update contract known for that one verification and leaves the SDK's context provider as it is. Registering the pre-update contract with the context provider instead is not reliable: a provider keeps the latest version of each contract, so once the update is committed, any other operation may give it the updated contract before the proof is verified, and an update that executed is then reported as failed.
 
 ## Evolving a Contract: Adding Required Fields
 

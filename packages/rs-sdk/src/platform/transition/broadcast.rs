@@ -1,5 +1,6 @@
 use super::broadcast_request::{checked_broadcast_request, BroadcastRequestForStateTransition};
 use super::put_settings::PutSettings;
+use super::with_contract::WithContract;
 use crate::error::StateTransitionBroadcastError;
 use crate::platform::ProtocolRequirement;
 use crate::sync::retry;
@@ -10,7 +11,8 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response, BroadcastStateTransitionRequest, ResponseMetadata,
     WaitForStateTransitionResultResponse,
 };
-use dash_context_provider::ContextProviderError;
+use dash_context_provider::{ContextProvider, ContextProviderError};
+use dpp::prelude::DataContract;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -33,6 +35,7 @@ use rs_dapi_client::{
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
@@ -484,141 +487,160 @@ impl WaitForOutcome for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<(StateTransitionProofOutcome, ResponseMetadata), Error> {
-        trace!(
-            transaction_id = %self
-                .transaction_id()
-                .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string()),
-            "wait: start"
-        );
+        wait_for_outcome_knowing_contract(self, sdk, settings, None).await
+    }
+}
 
-        let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-            None => sdk.dapi_client_settings,
-        };
+/// [`WaitForOutcome::wait_for_outcome_with_metadata`], with the proof verified knowing
+/// `known_contract` when one is given: the verification's context is the SDK's context
+/// provider, except that the data contract known under `known_contract`'s id is
+/// `known_contract` itself ([`WithContract`]).
+pub(super) async fn wait_for_outcome_knowing_contract(
+    state_transition: &StateTransition,
+    sdk: &Sdk,
+    settings: Option<PutSettings>,
+    known_contract: Option<&Arc<DataContract>>,
+) -> Result<(StateTransitionProofOutcome, ResponseMetadata), Error> {
+    trace!(
+        transaction_id = %state_transition
+            .transaction_id()
+            .map(hex::encode)
+            .unwrap_or("UNKNOWN".to_string()),
+        "wait: start"
+    );
 
-        // prepare a factory that will generate closure which executes actual code
-        let factory = |request_settings: RequestSettings| async move {
-            trace!("wait: creating request");
-            let request = self
-                .wait_for_state_transition_result_request()
-                .map_err(|e| ExecutionError {
-                    possibly_accepted: false,
-                    inner: e,
-                    address: None,
-                    retries: 0,
-                })?;
+    let retry_settings = match settings {
+        Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
+        None => sdk.dapi_client_settings,
+    };
 
-            trace!("wait: executing request");
-            let response = request.execute(sdk, request_settings).await.inner_into()?;
-            trace!("wait: received response");
-
-            let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
-
-            // We use match here to have a compilation error if a new version of the response is introduced
-            let state_transition_broadcast_error = match &grpc_response.version {
-                Some(wait_for_state_transition_result_response::Version::V0(result)) => {
-                    match &result.result {
-                        Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => {
-                            Some(e)
-                        }
-                        _ => None,
-                    }
-                }
-                None => None,
-            };
-
-            if let Some(e) = state_transition_broadcast_error {
-                warn!(error=?e, "wait: state transition broadcast error detected");
-                let state_transition_broadcast_error: StateTransitionBroadcastError =
-                    StateTransitionBroadcastError::try_from(e.clone())
-                        .wrap_to_execution_result(&response)?
-                        .inner;
-
-                return Err(Error::from(state_transition_broadcast_error))
-                    .wrap_to_execution_result(&response);
-            }
-
-            let context_provider = sdk.context_provider().ok_or(ExecutionError {
+    // prepare a factory that will generate closure which executes actual code
+    let factory = |request_settings: RequestSettings| async move {
+        trace!("wait: creating request");
+        let request = state_transition
+            .wait_for_state_transition_result_request()
+            .map_err(|e| ExecutionError {
                 possibly_accepted: false,
-                inner: Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )),
-                address: Some(response.address.clone()),
-                retries: response.retries,
+                inner: e,
+                address: None,
+                retries: 0,
             })?;
 
-            // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
-            // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
-            // `metadata`. The request must be reconstructed to feed that verifier. A quorum
-            // key the provider has not cached is fetched and this same response verified
-            // again, so a transition that executed is not reported as failed.
-            let request: BroadcastStateTransitionRequest = self
-                .broadcast_request_for_state_transition()
-                .wrap_to_execution_result(&response)?
-                .inner;
+        trace!("wait: executing request");
+        let response = request.execute(sdk, request_settings).await.inner_into()?;
+        trace!("wait: received response");
 
-            trace!("wait: verifying proof and quorum signature");
-            let (maybe_outcome, metadata, _proof) = sdk
-                .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
-                    request,
-                    grpc_response.clone(),
-                    &context_provider,
-                    "wait_for_state_transition_result",
-                )
-                .await
-                .wrap_to_execution_result(&response)?
-                .inner;
+        let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
 
-            // The current `FromProof` impl always yields `Some`; this guards only a future
-            // impl change, so it stays a typed error rather than an unwrap.
-            let outcome: StateTransitionProofOutcome = maybe_outcome
-                .ok_or_else(|| {
-                    Error::InvalidProvedResponse(
-                        "state transition result missing from verified proof".to_string(),
-                    )
-                })
-                .wrap_to_execution_result(&response)?
-                .inner;
-
-            trace!("wait: proof verification successful");
-            trace!(
-                result_variant = %outcome.result().to_string(),
-                execution_proved = outcome.is_execution_proved(),
-                "wait: result variant"
-            );
-
-            Ok::<_, Error>((outcome, metadata)).wrap_to_execution_result(&response)
+        // We use match here to have a compilation error if a new version of the response is introduced
+        let state_transition_broadcast_error = match &grpc_response.version {
+            Some(wait_for_state_transition_result_response::Version::V0(result)) => {
+                match &result.result {
+                    Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => Some(e),
+                    _ => None,
+                }
+            }
+            None => None,
         };
 
-        let future = retry(sdk.address_list(), retry_settings, factory);
-        // run the future with or without timeout, depending on the settings
-        let wait_timeout = settings.and_then(|s| s.wait_timeout);
+        if let Some(e) = state_transition_broadcast_error {
+            warn!(error=?e, "wait: state transition broadcast error detected");
+            let state_transition_broadcast_error: StateTransitionBroadcastError =
+                StateTransitionBroadcastError::try_from(e.clone())
+                    .wrap_to_execution_result(&response)?
+                    .inner;
 
-        trace!(timeout = ?wait_timeout, "wait: starting retry mechanism");
+            return Err(Error::from(state_transition_broadcast_error))
+                .wrap_to_execution_result(&response);
+        }
 
-        match wait_timeout {
-            Some(timeout) => {
-                trace!(?timeout, "wait: waiting with timeout");
-                tokio::time::timeout(timeout, future)
-                    .await
-                    .map_err(|e| {
-                        warn!(?timeout, "wait: timeout reached");
-                        Error::TimeoutReached(
-                            timeout,
-                            format!("Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
-                            self.name(),
-                            self.transaction_id().map(hex::encode).unwrap_or("UNKNOWN".to_string()),
-                            self.unique_identifiers().join(","),
-                             e),
-                        )
-                    })?
-                    .into_inner()
+        let sdk_provider = sdk.context_provider().ok_or(ExecutionError {
+            possibly_accepted: false,
+            inner: Error::from(ContextProviderError::Config(
+                "Context provider not initialized".to_string(),
+            )),
+            address: Some(response.address.clone()),
+            retries: response.retries,
+        })?;
+        let with_known_contract;
+        let context_provider: &dyn ContextProvider = match known_contract {
+            Some(contract) => {
+                with_known_contract = WithContract::new(&sdk_provider, contract);
+                &with_known_contract
             }
-            None => {
-                trace!("wait: waiting without timeout");
-                future.await.into_inner()
-            }
+            None => &sdk_provider,
+        };
+
+        // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
+        // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
+        // `metadata`. The request must be reconstructed to feed that verifier. A quorum
+        // key the provider has not cached is fetched and this same response verified
+        // again, so a transition that executed is not reported as failed.
+        let request: BroadcastStateTransitionRequest = state_transition
+            .broadcast_request_for_state_transition()
+            .wrap_to_execution_result(&response)?
+            .inner;
+
+        trace!("wait: verifying proof and quorum signature");
+        let (maybe_outcome, metadata, _proof) = sdk
+            .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+                request,
+                grpc_response.clone(),
+                context_provider,
+                "wait_for_state_transition_result",
+            )
+            .await
+            .wrap_to_execution_result(&response)?
+            .inner;
+
+        // The current `FromProof` impl always yields `Some`; this guards only a future
+        // impl change, so it stays a typed error rather than an unwrap.
+        let outcome: StateTransitionProofOutcome = maybe_outcome
+            .ok_or_else(|| {
+                Error::InvalidProvedResponse(
+                    "state transition result missing from verified proof".to_string(),
+                )
+            })
+            .wrap_to_execution_result(&response)?
+            .inner;
+
+        trace!("wait: proof verification successful");
+        trace!(
+            result_variant = %outcome.result().to_string(),
+            execution_proved = outcome.is_execution_proved(),
+            "wait: result variant"
+        );
+
+        Ok::<_, Error>((outcome, metadata)).wrap_to_execution_result(&response)
+    };
+
+    let future = retry(sdk.address_list(), retry_settings, factory);
+    // run the future with or without timeout, depending on the settings
+    let wait_timeout = settings.and_then(|s| s.wait_timeout);
+
+    trace!(timeout = ?wait_timeout, "wait: starting retry mechanism");
+
+    match wait_timeout {
+        Some(timeout) => {
+            trace!(?timeout, "wait: waiting with timeout");
+            tokio::time::timeout(timeout, future)
+                .await
+                .map_err(|e| {
+                    warn!(?timeout, "wait: timeout reached");
+                    Error::TimeoutReached(
+                        timeout,
+                        format!("Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
+                        state_transition.name(),
+                        state_transition.transaction_id().map(hex::encode).unwrap_or("UNKNOWN".to_string()),
+                        state_transition.unique_identifiers().join(","),
+                         e),
+                    )
+                })?
+                .into_inner()
+        }
+        None => {
+            trace!("wait: waiting without timeout");
+            future.await.into_inner()
         }
     }
 }

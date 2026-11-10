@@ -31,10 +31,13 @@
   version. `new_from_data_contract`, which has only the new contract, always builds version
   0; the new `new_from_contract_update(old_contract, new_contract, ...)` and
   `from_contract_update` build the version the platform version defaults to, a delta from
-  protocol version 15. A client that sends a delta must make the contract as it was before
-  the update known to its context provider before it verifies the execution proof, which
-  otherwise fails with `ProofError::MissingContextRequirement`. New consensus errors: 10283,
-  10284, 40010, 40011.
+  protocol version 15. A delta's execution proof is verified against the contract as it was
+  before the update, and fails with `ProofError::MissingContextRequirement` without it: the
+  Rust SDK's new `wait_for_data_contract_update(sdk, &transition, &pre_update_contract,
+  settings)` takes that contract with the wait, where the context provider, which keeps
+  only the latest version of a contract, may no longer hold it. New consensus errors: 10283,
+  10284, 40010, 40011; the three that name a delta's entry (10283, 40010, 40011) carry at
+  most 256 bytes of its name.
 
 - **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
   `epochs_per_era` or `previous_fee_versions`:

@@ -28,6 +28,7 @@
 
 use super::signing_key::AvailableSigningKey;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -45,7 +46,7 @@ use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::{
     ensure_private_document_entries_fit, PutContract,
 };
-use dash_sdk::platform::transition::waitable::Waitable;
+use dash_sdk::platform::transition::waitable::wait_for_data_contract_update;
 use dash_sdk::platform::Fetch;
 
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -556,22 +557,25 @@ impl IdentityWallet {
             ))
         })?;
 
-        // Verifying the execution proof of a delta-based update applies
-        // the delta to the contract it was built against, which the SDK
-        // takes from its context provider. The fetch above does not fill
-        // that provider, so hand it the pre-update contract now, and the
-        // confirmed one once the update landed.
-        self.register_contract_for_proof_verification(&existing);
-
         transition
             .broadcast(&self.sdk, None)
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
-        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        // The proof of a delta-based update is verified by merging the
+        // delta onto the contract it was built on. That contract goes
+        // with this wait rather than through the SDK's shared context
+        // provider, which keeps only the latest version of a contract:
+        // once the update is committed, a concurrent operation can
+        // register the updated contract there before this proof is
+        // verified, and the update would be reported as failed.
+        let confirmed =
+            wait_for_data_contract_update(&self.sdk, &transition, &Arc::new(existing), None)
+                .await
+                .map_err(PlatformWalletError::Sdk)?;
 
+        // Later operations on this contract verify against the
+        // confirmed one.
         self.register_contract_for_proof_verification(&confirmed);
 
         Ok(confirmed)

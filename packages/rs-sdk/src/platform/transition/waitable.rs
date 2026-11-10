@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use super::broadcast::{
-    convert_proof_result, require_execution_proved, BroadcastStateTransition, WaitForOutcome,
+    convert_proof_result, require_execution_proved, wait_for_outcome_knowing_contract,
+    BroadcastStateTransition, WaitForOutcome,
 };
 use super::put_settings::PutSettings;
 use crate::platform::Fetch;
@@ -49,6 +51,41 @@ impl Waitable for DataContract {
             _ => state_transition.wait_for_response(sdk, settings).await,
         }
     }
+}
+
+/// Waits for the result of a data contract update and verifies its proof against
+/// `pre_update_contract`, the contract as it was when the update was built.
+///
+/// A delta contract update (version 1 of the update transition, from protocol version 15)
+/// carries only what it changes, so its proof is verified by merging the delta onto the
+/// contract it was built on and requiring the proved contract to be the result.
+/// [`Waitable::wait_for_response`] takes that contract from the SDK's context provider,
+/// which keeps the latest version of each contract it is given: once the update is
+/// committed, any other operation may give the provider the updated contract before this
+/// proof is verified, and the provider does not take an older version back. The verifier
+/// then has no contract to merge the delta onto, and an update that executed and was paid
+/// for is reported as failed.
+///
+/// Here the contract is part of the call. It is known for this verification only, whatever
+/// the provider holds, and the provider is not written. An update that embeds its contract
+/// (version 0) is verified as [`Waitable::wait_for_response`] verifies it.
+///
+/// As for any contract update, the proof authenticates the contract as it is after the
+/// update: a snapshot at the proof's block.
+pub async fn wait_for_data_contract_update(
+    sdk: &Sdk,
+    state_transition: &StateTransition,
+    pre_update_contract: &Arc<DataContract>,
+    settings: Option<PutSettings>,
+) -> Result<DataContract, Error> {
+    let (outcome, _metadata) = wait_for_outcome_knowing_contract(
+        state_transition,
+        sdk,
+        settings,
+        Some(pre_update_contract),
+    )
+    .await?;
+    convert_proof_result(outcome.into_result())
 }
 
 #[async_trait::async_trait]
