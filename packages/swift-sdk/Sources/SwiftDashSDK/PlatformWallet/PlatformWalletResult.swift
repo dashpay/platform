@@ -316,6 +316,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// did not send it, whatever the network runs. A network upgrade does not
     /// lift it; only raising or removing the pin does.
     case errorSdkPinnedBelowProtocolVersion = 75
+    /// A public contact request to that identity was broadcast and may have
+    /// been delivered (its own send or accept reported
+    /// `errorTransactionBroadcastUnconfirmed`, 20), and no proof settled its
+    /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
+    /// submit it again; a public contact request sync settles it.
+    case errorPublicContactRequestUnconfirmed = 76
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -465,6 +471,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPrivateContactStoreNotRead
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SDK_PINNED_BELOW_PROTOCOL_VERSION:
             self = .errorSdkPinnedBelowProtocolVersion
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
+            self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -723,6 +731,18 @@ public enum PlatformWalletError: LocalizedError {
     /// removing the SDK's protocol version pin lifts it: a developer's
     /// setting, not something the user or a network upgrade changes.
     case sdkPinnedBelowProtocolVersion(String)
+    /// A public contact request to that identity was broadcast and may have
+    /// been delivered, and no proof settled its outcome yet (code 76): the
+    /// wallet holds the pair, keeping the signed transition, and refuses
+    /// every contact request or acceptance to it, public or private, with
+    /// nothing signed. The attempt that broadcast it reported
+    /// `transactionBroadcastUnconfirmed` (20). Unconfirmed, not failed: do not
+    /// submit it again. A public contact request sync (the DashPay sync)
+    /// settles it: the request proved on Platform is recorded as sent, and one
+    /// proved unable to write it frees the pair.
+    /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
+    /// reads whether the pair is still held so.
+    case publicContactRequestUnconfirmed(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -956,6 +976,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
+             .publicContactRequestUnconfirmed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1091,6 +1112,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .privateContactStoreNotRead(detail)
         case .errorSdkPinnedBelowProtocolVersion:
             self = .sdkPinnedBelowProtocolVersion(detail)
+        case .errorPublicContactRequestUnconfirmed:
+            self = .publicContactRequestUnconfirmed(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
