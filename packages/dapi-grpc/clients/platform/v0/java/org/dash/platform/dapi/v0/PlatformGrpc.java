@@ -2371,6 +2371,68 @@ public final class PlatformGrpc {
     return getGetPrivateDocumentEntriesMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getOwnerTransactionsInBlock",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getGetOwnerTransactionsInBlockMethod;
+    if ((getGetOwnerTransactionsInBlockMethod = PlatformGrpc.getGetOwnerTransactionsInBlockMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetOwnerTransactionsInBlockMethod = PlatformGrpc.getGetOwnerTransactionsInBlockMethod) == null) {
+          PlatformGrpc.getGetOwnerTransactionsInBlockMethod = getGetOwnerTransactionsInBlockMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getOwnerTransactionsInBlock"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getOwnerTransactionsInBlock"))
+              .build();
+        }
+      }
+    }
+    return getGetOwnerTransactionsInBlockMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getBlocks",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getGetBlocksMethod;
+    if ((getGetBlocksMethod = PlatformGrpc.getGetBlocksMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetBlocksMethod = PlatformGrpc.getGetBlocksMethod) == null) {
+          PlatformGrpc.getGetBlocksMethod = getGetBlocksMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBlocks"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getBlocks"))
+              .build();
+        }
+      }
+    }
+    return getGetBlocksMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -2980,6 +3042,29 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPrivateDocumentEntriesMethod(), responseObserver);
     }
 
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetOwnerTransactionsInBlockMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlocksMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -3514,6 +3599,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>(
                   this, METHODID_GET_PRIVATE_DOCUMENT_ENTRIES)))
+          .addMethod(
+            getGetOwnerTransactionsInBlockMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>(
+                  this, METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK)))
+          .addMethod(
+            getGetBlocksMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>(
+                  this, METHODID_GET_BLOCKS)))
           .build();
     }
   }
@@ -4168,6 +4267,31 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public void getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetOwnerTransactionsInBlockMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public void getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetBlocksMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -4743,6 +4867,29 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse getPrivateDocumentEntries(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetPrivateDocumentEntriesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse getOwnerTransactionsInBlock(org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetOwnerTransactionsInBlockMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse getBlocks(org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetBlocksMethod(), getCallOptions(), request);
     }
   }
 
@@ -5396,6 +5543,31 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetPrivateDocumentEntriesMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * The state transitions one owner has in the Tenderdash block at a height.
+     * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse> getOwnerTransactionsInBlock(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetOwnerTransactionsInBlockMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+     * `prove` the client trusts the node. This is for looking blocks up, not for
+     * syncing a chain: the gateway allows each IP very few of these requests.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse> getBlocks(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetBlocksMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -5474,6 +5646,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
   private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
   private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 75;
+  private static final int METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK = 76;
+  private static final int METHODID_GET_BLOCKS = 77;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5796,6 +5970,14 @@ public final class PlatformGrpc {
           serviceImpl.getPrivateDocumentEntries((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrivateDocumentEntriesResponse>) responseObserver);
           break;
+        case METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK:
+          serviceImpl.getOwnerTransactionsInBlock((org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetOwnerTransactionsInBlockResponse>) responseObserver);
+          break;
+        case METHODID_GET_BLOCKS:
+          serviceImpl.getBlocks((org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetBlocksResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -5933,6 +6115,8 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedNotesCountMethod())
               .addMethod(getGetShieldedNullifiersMethod())
               .addMethod(getGetPrivateDocumentEntriesMethod())
+              .addMethod(getGetOwnerTransactionsInBlockMethod())
+              .addMethod(getGetBlocksMethod())
               .build();
         }
       }
