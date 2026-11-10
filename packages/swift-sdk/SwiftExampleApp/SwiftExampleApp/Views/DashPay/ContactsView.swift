@@ -226,14 +226,16 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
     Task { _ = try? await walletManager.dashPaySyncNow() }
 }
 
-/// The contacts among `contactIds` that `identityId` has a private request
-/// to in flight, or paid and not yet read back, as the wallet records it
-/// (`ManagedIdentity.privateReplyPending`, one snapshot). While one is, Rust
-/// refuses another send or reply to it, so the views show it as pending and
-/// offer neither; a private sync settles it. Empty when the wallet does not
-/// manage the identity, as it then holds nothing for it. Nil when the wallet
-/// could not be read (no loaded wallet, or a read failed), which the views
-/// keep apart from "nothing pending" (`PrivateRepliesPendingSnapshot`).
+/// The contacts among `contactIds` whose pair with `identityId` the wallet
+/// holds for a private request, as a send decides it
+/// (`ManagedPlatformWallet.privatePairHeld`, one read per contact): a private
+/// request in flight, paid and not yet read back, or kept by the shielded
+/// store's journal. While a pair is held, Rust refuses another send or reply
+/// to it, so the views show it as pending and offer neither. Empty when the
+/// wallet does not manage the identity, as it then holds nothing for it. Nil
+/// when the wallet could not be read (no loaded wallet, or a read failed),
+/// which the views keep apart from "nothing pending"
+/// (`PrivateRepliesPendingSnapshot`).
 @MainActor
 func privateRepliesPending(
     wallet: ManagedPlatformWallet?,
@@ -243,15 +245,14 @@ func privateRepliesPending(
     guard !contactIds.isEmpty else { return [] }
     guard let wallet else { return nil }
     do {
-        let managed: ManagedIdentity
         do {
-            managed = try wallet.managedIdentity(identityId: identityId)
+            _ = try wallet.managedIdentity(identityId: identityId)
         } catch PlatformWalletError.notFound(_) {
             return []
         }
         var pending = Set<Data>()
         for contactId in contactIds {
-            if try managed.privateReplyPending(contactId: contactId) {
+            if try wallet.privatePairHeld(senderId: identityId, recipientId: contactId) {
                 pending.insert(contactId)
             }
         }
@@ -261,15 +262,21 @@ func privateRepliesPending(
     }
 }
 
-/// The wallet's readiness for `identityId`'s contact requests, or nil when
-/// it could not be read (`PrivateRepliesPendingSnapshot.recordReadiness`
-/// keeps the last one then).
+/// The wallet's readiness for `identityId`'s contact requests and, when it
+/// flags a failed restoration, why it failed; a nil readiness when it could
+/// not be read (`PrivateRepliesPendingSnapshot.recordReadiness` keeps the
+/// last one then).
 @MainActor
 func privateContactReadiness(
     wallet: ManagedPlatformWallet?,
     identityId: Data
-) -> PrivateContactReadiness? {
-    try? wallet?.privateContactReadiness(identityId: identityId)
+) -> (readiness: PrivateContactReadiness?, restoreFailure: String?) {
+    guard let readiness = try? wallet?.privateContactReadiness(identityId: identityId) else {
+        return (nil, nil)
+    }
+    guard readiness.privatePaymentsRestoreFailed else { return (readiness, nil) }
+    let reason = (try? wallet?.privatePaymentsRestoreFailure(identityId: identityId)) ?? nil
+    return (readiness, reason)
 }
 
 /// Read DashPay's private contact request store (protocol version 15) for

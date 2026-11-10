@@ -3,26 +3,30 @@ import SwiftDashSDK
 
 /// How a contact request send or accept that threw ended, for the DashPay
 /// views. Follows `SendViewModel`: a shielded spend whose result could not be
-/// confirmed may already be on chain (Rust keeps its notes reserved), so the
-/// view keeps it pending and never offers a fresh submission; the next sync
-/// settles it. A private request Rust reports as pending (one to the same
-/// contact in flight, or paid and not yet read back), which a public send or
-/// accept can also meet, sent nothing new: the view shows it as pending and
-/// offers a private sync, which settles it, after which the user may try
-/// again. Unrestored private payments (code 72) hold the wallet, not one
-/// contact: the view shows "restoring private payments" until the wallet's
-/// readiness reads restored; no private sync lifts it. Every other error is
-/// an ordinary failure the user may retry.
+/// confirmed (code 18) may already be on chain (Rust keeps its notes
+/// reserved), so the view keeps it pending and never offers a fresh
+/// submission; the next sync settles it. A pair Rust reports as held for a
+/// private request (code 71), which a public send or accept can also meet,
+/// sent nothing new: the view shows it as pending until the wallet's
+/// per-contact read says the pair is free. Unrestored private payments
+/// (code 72) hold the wallet, not one contact: the view shows "setting up"
+/// until the wallet's readiness reads restored, or why the last restoration
+/// failed; no private sync lifts it. A private store read that did not
+/// finish (code 74) sent nothing and is not pending: the user may try again.
+/// Every other error is an ordinary failure the user may retry; a storage
+/// backend that cannot protect private payments (73) and an SDK pinned below
+/// the protocol version (75) are shown as configuration problems.
 enum ContactRequestSubmissionOutcome: Equatable {
     /// The private send or reply may have gone through: do not submit again.
     case mayHaveGoneThrough
-    /// A private request to the contact is pending in the wallet; nothing
-    /// was sent. A private sync settles it.
+    /// The wallet holds the pair for a private request; nothing was sent.
     case privateRequestPending
-    /// The wallet's private payments from an earlier process are not
-    /// restored yet; nothing was sent. Restoring them, not a private sync,
-    /// lifts it.
+    /// The wallet's private payments are not restored yet; nothing was sent.
+    /// Restoring them, not a private sync, lifts it.
     case privatePaymentsNotRestored
+    /// The private store read every contact request runs first did not
+    /// finish; nothing was sent, and trying again continues it.
+    case privateStoreNotRead
     /// It failed; the message is the error's.
     case failed(String)
 
@@ -30,26 +34,66 @@ enum ContactRequestSubmissionOutcome: Equatable {
         + "after the next sync confirms it; do not submit it again."
 
     static let privateRequestPendingMessage = "A private request to this contact is "
-        + "pending. Sync private requests to settle it, then try again if it did not "
-        + "go through."
+        + "pending. It clears once the request is read back from the private store, "
+        + "or once its payment can no longer land, which can take a while. Sync "
+        + "private requests to check."
 
-    static let restoringPrivatePaymentsMessage = "Restoring this wallet's private "
-        + "payments. Contact requests wait until they are restored."
+    static let settingUpPrivatePaymentsMessage = "Setting up this wallet's private "
+        + "payments. Contact requests wait until it finishes."
+
+    /// The wallet's last restoration of its private payments failed.
+    static func restoreFailedMessage(_ reason: String) -> String {
+        "Restoring this wallet's private payments failed: \(reason). Contact requests "
+            + "wait until a restore succeeds."
+    }
+
+    /// The app could not open the shielded store, which restores the
+    /// wallet's private payments.
+    static func shieldedStoreFailedMessage(_ reason: String) -> String {
+        "The shielded store could not be opened: \(reason). Contact requests wait "
+            + "until it opens."
+    }
+
+    static let privateStoreNotReadMessage = "Still reading private contact requests. "
+        + "Nothing was sent; try again in a moment."
 
     /// Code 73 is a configuration error of the app's storage, which both
     /// declares what a private payment needs; shown as such.
     static let recoveryUnsupportedMessage = "This storage backend can't protect "
         + "private payments, so private contact requests are off."
 
+    /// Code 75 is the developer's setting: only raising or removing the SDK's
+    /// protocol version pin lifts it.
+    static let sdkPinnedMessage = "This build's SDK is pinned below the protocol "
+        + "version private contact requests need. Raise or remove the SDK's protocol "
+        + "version pin."
+
+    /// The notice shown while the wallet's private payments are not
+    /// restored: why opening the shielded store failed, why the last
+    /// restoration failed, or that they are being set up.
+    static func restoringMessage(restoreFailure: String?, shieldedStoreFailure: String?) -> String {
+        if let shieldedStoreFailure { return shieldedStoreFailedMessage(shieldedStoreFailure) }
+        if let restoreFailure { return restoreFailedMessage(restoreFailure) }
+        return settingUpPrivatePaymentsMessage
+    }
+
     /// The message a request row shows: the restoring notice while the
     /// wallet's private payments are not restored, the pending notice while
-    /// the wallet has a private request to the contact pending, the
-    /// unavailable notice while the wallet could not be read, and whatever
-    /// error an earlier attempt left otherwise.
+    /// the wallet holds the pair, the unavailable notice while the wallet
+    /// could not be read, and whatever error an earlier attempt left
+    /// otherwise.
     static func rowMessage(
-        pending: Bool, restoring: Bool = false, unavailable: Bool = false, error: String?
+        pending: Bool,
+        restoring: Bool = false,
+        restoreFailure: String? = nil,
+        shieldedStoreFailure: String? = nil,
+        unavailable: Bool = false,
+        error: String?
     ) -> String? {
-        if restoring { return restoringPrivatePaymentsMessage }
+        if restoring {
+            return restoringMessage(
+                restoreFailure: restoreFailure, shieldedStoreFailure: shieldedStoreFailure)
+        }
         if pending { return privateRequestPendingMessage }
         if unavailable { return PrivateRepliesPendingSnapshot.unavailableMessage }
         return error
@@ -64,8 +108,12 @@ enum ContactRequestSubmissionOutcome: Equatable {
                 return .privateRequestPending
             case .privateContactPaymentsNotRestored:
                 return .privatePaymentsNotRestored
+            case .privateContactStoreNotRead:
+                return .privateStoreNotRead
             case .privateContactRecoveryUnsupported:
                 return .failed(recoveryUnsupportedMessage)
+            case .sdkPinnedBelowProtocolVersion:
+                return .failed(sdkPinnedMessage)
             default:
                 break
             }
@@ -74,48 +122,53 @@ enum ContactRequestSubmissionOutcome: Equatable {
     }
 }
 
-/// Which contacts have a private request pending in the wallet, as the views
-/// last read it (`privateRepliesPending`). While one is, Rust refuses another
-/// send or reply to that contact, so the views turn off what would submit one
-/// (Accept, Ignore, Send). A failed read is not "nothing pending": the last
+/// Which contacts the wallet holds a pair with for a private request, as the
+/// views last read it (`privateRepliesPending`, one
+/// `ManagedPlatformWallet.privatePairHeld` read per contact, which answers as
+/// a send decides it). While one is held, Rust refuses another send or reply
+/// to that contact, so the views turn off what would submit one (Accept,
+/// Ignore, Send). A failed read is not "nothing pending": the last
 /// successful snapshot stays, and those controls stay off for every contact
 /// until a read covering it succeeds.
 ///
-/// A send or accept Rust refused as pending (code 71) is kept apart from the
-/// read: code 71 also means the private store could not be read to its end
-/// before the first send or accept since load, with nothing reserved, so the
-/// read may find nothing pending. That contact stays pending, with the
-/// private sync offered, until the wallet's readiness says the store was
-/// read to its end.
+/// A send or accept Rust refused as pending (code 71) marks the contact
+/// pending at once; the next successful read covering it decides, as it
+/// reads what the refusal read. Controls for a pair re-enable only when that
+/// read says it is free: a payment that will never land frees it only once
+/// the wallet proves so, which the read shows.
 ///
 /// Whether the wallet's private payments are restored is the wallet's
 /// readiness (`ManagedPlatformWallet.privateContactReadiness`), not
 /// anything the views conclude: a code 72 refusal, or a readiness read that
-/// says not restored, shows "restoring private payments" for every contact,
-/// and only a readiness read that says restored lifts it. A private sync
-/// changes neither on its own.
+/// says not restored, shows "setting up" (or why the last restoration
+/// failed) for every contact, and only a readiness read that says restored
+/// lifts it. A private sync changes neither on its own.
 struct PrivateRepliesPendingSnapshot: Equatable {
     static let unavailableMessage = "Could not read whether a private request to "
         + "this contact is pending. Sync private requests to check again."
 
-    /// The pending contacts the last successful read found.
+    /// The held contacts the last successful read found.
     private(set) var pending: Set<Data> = []
     /// The contacts the last successful read covered.
     private(set) var covered: Set<Data> = []
     /// False after a failed read, until a read succeeds.
     private(set) var available = true
-    /// Contacts a send or accept was refused for as pending (code 71), until
-    /// the wallet's readiness says the private store was read to its end.
+    /// Contacts a send or accept was refused for as pending (code 71) since
+    /// the last successful read covering them.
     private(set) var refused: Set<Data> = []
     /// The wallet's readiness for the identity, as last read; nil until a
     /// read succeeds.
     private(set) var readiness: PrivateContactReadiness?
+    /// Why the last restoration failed, as last read with the readiness;
+    /// nil when none failed or the reason could not be read.
+    private(set) var restoreFailure: String?
     /// Set by a code 72 refusal; cleared only by a readiness read that says
     /// the private payments are restored.
     private(set) var restoringRefused = false
 
-    /// Record a read of `contactIds`: the pending ones, or nil when the read
-    /// failed.
+    /// Record a read of `contactIds`: the held ones, or nil when the read
+    /// failed. A successful read decides each contact it covered, a code 71
+    /// refusal included.
     mutating func record(_ read: Set<Data>?, for contactIds: [Data]) {
         guard let read else {
             available = false
@@ -123,6 +176,7 @@ struct PrivateRepliesPendingSnapshot: Equatable {
         }
         pending = read
         covered = Set(contactIds)
+        refused.subtract(contactIds)
         available = true
     }
 
@@ -138,18 +192,16 @@ struct PrivateRepliesPendingSnapshot: Equatable {
         restoringRefused = true
     }
 
-    /// Record a read of the wallet's readiness, or nil when it failed, which
-    /// keeps what the last read said. A readiness that says restored lifts a
-    /// code 72 refusal; one that says the private store was read to its end
-    /// leaves a contact's pending state to the pending read.
-    mutating func recordReadiness(_ read: PrivateContactReadiness?) {
+    /// Record a read of the wallet's readiness and, when it flags a failed
+    /// restoration, the reason read with it; a nil readiness (the read
+    /// failed) keeps what the last read said. A readiness that says restored
+    /// lifts a code 72 refusal and its failure.
+    mutating func recordReadiness(_ read: PrivateContactReadiness?, restoreFailure: String? = nil) {
         guard let read else { return }
         readiness = read
+        self.restoreFailure = read.privatePaymentsRestoreFailed ? restoreFailure : nil
         if read.privatePaymentsRestored {
             restoringRefused = false
-        }
-        if read.privateStoreRead {
-            refused.removeAll()
         }
     }
 
@@ -160,9 +212,8 @@ struct PrivateRepliesPendingSnapshot: Equatable {
         restoringRefused || readiness?.privatePaymentsRestored == false
     }
 
-    /// Whether `contactId` is pending: the last successful read found a
-    /// private request to it, or a send or accept to it was refused as
-    /// pending and the store has not been read to its end since.
+    /// Whether `contactId` is pending: the last successful read found the
+    /// pair held, or a send or accept to it was refused as pending since.
     func isPending(_ contactId: Data) -> Bool {
         pending.contains(contactId) || refused.contains(contactId)
     }
@@ -171,7 +222,7 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     var isUnavailable: Bool { !available }
 
     /// Whether a send or reply to `contactId` may be offered: a successful
-    /// read covered it and found nothing pending.
+    /// read covered it and found the pair free.
     func allowsSubmission(to contactId: Data) -> Bool {
         available && covered.contains(contactId) && !isPending(contactId)
             && !isRestoringPrivatePayments
@@ -237,9 +288,15 @@ enum PrivateContactRefreshNotice {
     /// The notice a pass that failed leaves, or nil when the network does not
     /// serve the private store yet.
     static func notice(for error: Error) -> String? {
-        if let walletError = error as? PlatformWalletError,
-           case .protocolVersionNotActive = walletError {
-            return nil
+        if let walletError = error as? PlatformWalletError {
+            switch walletError {
+            case .protocolVersionNotActive:
+                return nil
+            case .sdkPinnedBelowProtocolVersion:
+                return ContactRequestSubmissionOutcome.sdkPinnedMessage
+            default:
+                break
+            }
         }
         return "Private requests could not be read: \(error.localizedDescription)"
     }
