@@ -54,16 +54,26 @@ limits, or the create is refused:
 ## `multipleChoiceProposal`
 
 A question whose answers are the choices entered for it. Any identity may
-create one, and nobody may delete it. Its owner may edit the `title`,
-`description` and `url` for two hours after creating it; after that they
-freeze. Every version is kept (`documentsKeepHistory`), so a reader can see the
-text as it was when a choice was entered. Whether it is `open` never changes.
-Creating it opens no vote and states no fund: the first choice does.
+create one, and nobody may delete it. Its owner may edit the `title` and `url`,
+and point it at another description, for two hours after creating it; after
+that they freeze. Every version is kept (`documentsKeepHistory`), so a reader
+can see the proposal as it was when a choice was entered. Whether it is `open`
+never changes. Creating it opens no vote and states no fund: the first choice
+does.
+
+The proposal holds no description of its own. It points at a document saying
+what is being decided, in another contract, so that the description can be
+taken down: the document type is a moderated one (its documents leave state
+only through a moderator's recorded removal) holding a string or a byte array
+that the removal takes away and that the document's author writes, and the
+contract is one whose moderators the masternodes elect.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
-| `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What is being decided |
+| `descriptionId` | identifier, required | The document saying what is being decided |
+| `descriptionContractId` | identifier, required | The contract that document lives in, one declaring elected moderation |
+| `descriptionDocumentType` | string, 1 to 64 characters, required | That document's document type |
 | `url` | string, a URI of 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
 | `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is false |
 

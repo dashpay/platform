@@ -34,15 +34,26 @@ pub mod document_types {
 
     /// A question put to the masternodes whose answers are the choices entered for it. Any
     /// identity may enter [`choice`]s when it is open, and only its owner when it is not; whoever
-    /// may enter them may enter several. Its owner may edit the title, description and url for
-    /// two hours after creating it, and every version is kept; whether it is open never changes.
+    /// may enter them may enter several. What is being decided is not text of the proposal:
+    /// the proposal points at a document saying it, of a moderated document type of a contract
+    /// whose moderators the masternodes elect, so that a description can be taken down. Its
+    /// owner may edit the title and url, and point it at another description, for two hours
+    /// after creating it, and every version is kept; whether it is open never changes.
     /// Undeletable.
     pub mod multiple_choice_proposal {
         pub const NAME: &str = "multipleChoiceProposal";
 
         pub mod properties {
             pub const TITLE: &str = "title";
-            pub const DESCRIPTION: &str = "description";
+            /// The id of the document saying what is being decided. Its document type is a
+            /// moderated one holding a string or a byte array that a moderator's removal
+            /// takes away and that its author writes.
+            pub const DESCRIPTION_ID: &str = "descriptionId";
+            /// The id of the contract the description document lives in, one declaring
+            /// elected moderation.
+            pub const DESCRIPTION_CONTRACT_ID: &str = "descriptionContractId";
+            /// The name of the description document's document type.
+            pub const DESCRIPTION_DOCUMENT_TYPE: &str = "descriptionDocumentType";
             pub const URL: &str = "url";
             /// Whether anyone may enter choices. Only the proposal's owner may when it is
             /// false.

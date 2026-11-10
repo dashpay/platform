@@ -5,6 +5,10 @@
 //! as it wants. The choice with the most votes is kept, and a lock means none of them. Anyone
 //! enters choices for an `open` proposal, and only its owner for one that is not. The owner
 //! may edit the question's text for two hours after creating it.
+//!
+//! A proposal holds no description of its own. It points at a document saying what is being
+//! decided, of the contract and the document type it names: a moderated type of a contract
+//! whose moderators the masternodes elect, holding text a moderator's removal takes away.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
     setup_identity, setup_masternode_voting_identity,
@@ -28,7 +32,14 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+    ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+};
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::DocumentReferenceKind;
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::decision_proposal::DECISION_PROPOSALS_CONTRACT_ID;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -38,7 +49,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, TimestampMillis};
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
-use dpp::platform_value::{Bytes32, Identifier, Value};
+use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -48,6 +59,7 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::system_data_contracts::decision_proposals_contract::v1::document_types::{
     choice, multiple_choice_proposal,
 };
+use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
     ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
@@ -68,11 +80,12 @@ use drive::query::vote_poll_vote_state_query::{
 };
 use drive::query::DriveDocumentQuery;
 use drive::util::object_size_info::DataContractResolvedInfo;
+use drive::util::storage_flags::StorageFlags;
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use simple_signer::signer::SimpleSigner;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 type IdentityInfo = (Identity, SimpleSigner, IdentityPublicKey);
@@ -99,6 +112,93 @@ fn block(time_ms: TimestampMillis, height: u64) -> BlockInfo {
     }
 }
 
+/// A document type of the description hosts whose documents moderators delete, a removal
+/// taking their `text` with it.
+const TEXT: &str = "text";
+/// One whose removal record keeps the `text`.
+const KEPT_TEXT: &str = "keptText";
+/// One whose documents their owner deletes.
+const PLAIN_TEXT: &str = "plainText";
+
+/// A document type holding a `text`, with `extra` merged into its schema.
+fn text_schema(extra: Value) -> Value {
+    let mut schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "text": { "type": "string", "minLength": 1, "maxLength": 4096, "position": 0 },
+        },
+        "required": ["text"],
+        "additionalProperties": false,
+    });
+    if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
+        schema_map.extend(extra_map);
+    }
+    schema
+}
+
+/// A contract hosting the texts proposals describe themselves with. Its moderators are a
+/// team the masternodes elect, its owner until one is seated, when `elected`; its owner
+/// alone otherwise. The same contract every time it is built.
+fn description_host(elected: bool, platform_version: &PlatformVersion) -> DataContract {
+    let owner_id = Identifier::new([if elected { 0xD5 } else { 0xD6 }; 32]);
+    let mut contract =
+        get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
+            .data_contract_owned();
+    let moderators = if elected {
+        ContractModerators::Elected(Box::new(ElectedModerators {
+            join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+            challenge_cool_down: Some(1_209_600),
+            moderated_document_types: [TEXT, KEPT_TEXT]
+                .into_iter()
+                .map(|name| {
+                    (
+                        name.to_string(),
+                        BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                    )
+                })
+                .collect(),
+            interim: InterimModerators::ContractOwner,
+            election_delay: None,
+            max_added_moderators: 0,
+            owner_protected: false,
+        }))
+    } else {
+        ContractModerators::ContractOwner
+    };
+    contract.set_config(contract.config().clone().with_moderation(Some(
+        ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            warnings: false,
+            moderators,
+        },
+    )));
+    // After the config: a type moderators delete from needs the contract to be moderated
+    for (name, schema) in [
+        (
+            TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "moderatorAbilities": { "delete": true },
+            })),
+        ),
+        (
+            KEPT_TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text"] },
+            })),
+        ),
+        (PLAIN_TEXT, text_schema(platform_value!({}))),
+    ] {
+        contract
+            .set_document_schema(name, schema, true, &mut vec![], platform_version)
+            .expect("expected to add the document type");
+    }
+    contract
+}
+
 fn setup() -> (
     TempPlatform<MockCoreRPCLike>,
     &'static PlatformVersion,
@@ -110,6 +210,19 @@ fn setup() -> (
         .with_latest_protocol_version()
         .build_with_mock_rpc()
         .set_genesis_state();
+    for elected in [true, false] {
+        platform
+            .drive
+            .apply_contract(
+                &description_host(elected, platform_version),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the description host");
+    }
     let contract = platform
         .drive
         .cache
@@ -282,31 +395,88 @@ async fn ask_stating(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Identifier {
-    let properties = BTreeMap::from([
-        (
-            multiple_choice_proposal::properties::TITLE.to_string(),
-            Value::Text(question.to_string()),
-        ),
-        (
-            multiple_choice_proposal::properties::DESCRIPTION.to_string(),
-            Value::Text("Enter the answer you would have the network give.".to_string()),
-        ),
-        (
-            multiple_choice_proposal::properties::OPEN.to_string(),
-            Value::Bool(open),
-        ),
-    ]);
+    // The proposer first writes what is being decided where moderators can take it down
+    let host = description_host(true, platform_version);
+    let description_id = describe(
+        platform,
+        &host,
+        proposer,
+        TEXT,
+        time_ms,
+        rng,
+        platform_version,
+    )
+    .await;
     let (transition, id) = create_transition(
         contract,
         proposer,
         multiple_choice_proposal::NAME,
-        properties,
+        question_properties(question, open, host.id(), TEXT, description_id),
         rng,
         platform_version,
     )
     .await;
     process_valid(platform, transition, time_ms, platform_version);
     id
+}
+
+/// `writer` writes a text of `document_type_name` in `host` at `time_ms`; returns its id.
+async fn describe(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    host: &DataContract,
+    writer: &mut Writer,
+    document_type_name: &str,
+    time_ms: TimestampMillis,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> Identifier {
+    let (transition, id) = create_transition(
+        host,
+        writer,
+        document_type_name,
+        BTreeMap::from([(
+            "text".to_string(),
+            Value::Text("Enter the answer you would have the network give.".to_string()),
+        )]),
+        rng,
+        platform_version,
+    )
+    .await;
+    process_valid(platform, transition, time_ms, platform_version);
+    id
+}
+
+/// The properties of a multiple choice proposal asking `question`, described by the document
+/// `description_id` of `description_document_type` in the contract `description_contract_id`.
+fn question_properties(
+    question: &str,
+    open: bool,
+    description_contract_id: Identifier,
+    description_document_type: &str,
+    description_id: Identifier,
+) -> BTreeMap<String, Value> {
+    BTreeMap::from([
+        (
+            multiple_choice_proposal::properties::TITLE.to_string(),
+            Value::Text(question.to_string()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_ID.to_string(),
+            Value::Identifier(description_id.to_buffer()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID.to_string(),
+            Value::Identifier(description_contract_id.to_buffer()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE.to_string(),
+            Value::Text(description_document_type.to_string()),
+        ),
+        (
+            multiple_choice_proposal::properties::OPEN.to_string(),
+            Value::Bool(open),
+        ),
+    ])
 }
 
 /// A serialized create of `writer`'s choice `answer` for `proposal_id`, and the choice's id.
@@ -1371,6 +1541,29 @@ async fn should_let_the_proposer_edit_the_question_for_two_hours() {
     )
     .await;
 
+    // Another text the proposer wrote, to describe the question with instead
+    let host = description_host(true, platform_version);
+    let rewritten = describe(
+        &platform,
+        &host,
+        &mut proposer,
+        TEXT,
+        created_at + 30_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let later_text = describe(
+        &platform,
+        &host,
+        &mut proposer,
+        TEXT,
+        created_at + 30_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
     // The title, the description and the url may change until two hours after the creation
     let edit = edit_transition(
         &contract,
@@ -1382,8 +1575,8 @@ async fn should_let_the_proposer_edit_the_question_for_two_hours() {
                 Value::Text("Which mascot for Platform?".to_string()),
             ),
             (
-                multiple_choice_proposal::properties::DESCRIPTION,
-                Value::Text("One animal, in one word.".to_string()),
+                multiple_choice_proposal::properties::DESCRIPTION_ID,
+                Value::Identifier(rewritten.to_buffer()),
             ),
             (
                 multiple_choice_proposal::properties::URL,
@@ -1403,6 +1596,10 @@ async fn should_let_the_proposer_edit_the_question_for_two_hours() {
         edited.get(multiple_choice_proposal::properties::URL),
         Some(&Value::Text("https://example.org/mascot".to_string()))
     );
+    assert_eq!(
+        edited.get(multiple_choice_proposal::properties::DESCRIPTION_ID),
+        Some(&Value::Identifier(rewritten.to_buffer()))
+    );
 
     // to the millisecond
     let edit = edit_transition(
@@ -1420,21 +1617,32 @@ async fn should_let_the_proposer_edit_the_question_for_two_hours() {
 
     // and no longer after that, whichever of them the edit changes
     for (property, value) in [
-        (multiple_choice_proposal::properties::TITLE, "Which bird?"),
         (
-            multiple_choice_proposal::properties::DESCRIPTION,
-            "One bird, in one word.",
+            multiple_choice_proposal::properties::TITLE,
+            Value::Text("Which bird?".to_string()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_ID,
+            Value::Identifier(later_text.to_buffer()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+            Value::Identifier(description_host(false, platform_version).id().to_buffer()),
+        ),
+        (
+            multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+            Value::Text(KEPT_TEXT.to_string()),
         ),
         (
             multiple_choice_proposal::properties::URL,
-            "https://example.org/bird",
+            Value::Text("https://example.org/bird".to_string()),
         ),
     ] {
         let edit = edit_transition(
             &contract,
             &mut proposer,
             question(&platform),
-            &[(property, Value::Text(value.to_string()))],
+            &[(property, value)],
             platform_version,
         )
         .await;
@@ -1619,4 +1827,161 @@ async fn should_never_let_a_proposal_change_whether_it_is_open() {
             !open
         );
     }
+}
+
+/// What is being decided is said by a document the proposal points at. The contract it names
+/// is one whose moderators the masternodes elect, the document type a moderated one whose
+/// text a removal takes away, and the document is there.
+#[tokio::test]
+async fn should_take_the_description_from_a_moderated_text_of_an_elected_contract() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let mut proposer = writer(&mut platform, &mut rng);
+    let elected = description_host(true, platform_version);
+    let owner_moderated = description_host(false, platform_version);
+    for (document_type_name, kind) in [
+        (TEXT, DocumentReferenceKind::Moderated),
+        (KEPT_TEXT, DocumentReferenceKind::Moderated),
+        (PLAIN_TEXT, DocumentReferenceKind::Deletable),
+    ] {
+        assert_eq!(
+            elected
+                .document_type_for_name(document_type_name)
+                .expect("expected the type")
+                .document_reference_kind(),
+            kind,
+            "{document_type_name}"
+        );
+    }
+
+    // A text in each place a proposal could point
+    let mut texts = BTreeMap::new();
+    for (host, document_type_name) in [
+        (&elected, TEXT),
+        (&elected, KEPT_TEXT),
+        (&elected, PLAIN_TEXT),
+        (&owner_moderated, TEXT),
+    ] {
+        let id = describe(
+            &platform,
+            host,
+            &mut proposer,
+            document_type_name,
+            10_000,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        texts.insert((host.id(), document_type_name), id);
+    }
+    let asking = |host: &DataContract, document_type_name: &'static str, id: Identifier| {
+        question_properties("Which mascot?", true, host.id(), document_type_name, id)
+    };
+    let text_of = |host: &DataContract, document_type_name: &'static str| {
+        texts[&(host.id(), document_type_name)]
+    };
+
+    // A moderated text of the elected contract
+    let (accepted, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, TEXT, text_of(&elected, TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, accepted, 20_000, platform_version);
+
+    // A type whose removal record keeps the text: taking the document down would leave it
+    let (kept, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, KEPT_TEXT, text_of(&elected, KEPT_TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, kept, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeRequirementNotMetError(_))
+        ),
+        "{error:?}"
+    );
+
+    // A type whose documents their owner deletes is not a moderated one
+    let (plain, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, PLAIN_TEXT, text_of(&elected, PLAIN_TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, plain, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeNotModeratedError(_))
+        ),
+        "{error:?}"
+    );
+
+    // A moderated text of a contract its owner moderates: the masternodes elect nobody there
+    let (unelected, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&owner_moderated, TEXT, text_of(&owner_moderated, TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, unelected, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(_))
+        ),
+        "{error:?}"
+    );
+
+    // A text that is not there, and a type the contract does not have
+    let (missing, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, TEXT, Identifier::new([7; 32])),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, missing, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
+        ),
+        "{error:?}"
+    );
+    let (no_type, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, "essay", text_of(&elected, TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, no_type, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeNotFoundError(_))
+        ),
+        "{error:?}"
+    );
 }

@@ -188,6 +188,8 @@ The requirements say what the target's type looks like. They do not say who runs
 
 or compare it with the contracts the application trusts in a [`propertyConstraints`](property-constraints.md) rule (`{ "in": ["descriptionContractId", ["<base58>", "<base58>"]] }`).
 
+The decision proposals contract does the first for the description of a multiple choice proposal: a `moderatedDocument` whose text a removal takes away, in a contract whose moderators the masternodes elect (see `docs/protocol/decision-proposals.md`). `"moderation": "elected"` says the contract declares such a team, not that one is seated: until then the contract's interim moderators, if it names any, are the ones who can remove the document.
+
 ## Errors
 
 | Error | Code | When |

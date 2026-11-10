@@ -160,8 +160,9 @@ mod tests {
 
         let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
 
-        // The question's text may be edited for two hours, every version kept, and then
-        // freezes. It is never deleted, which is what lets a choice refer to it.
+        // The question's title and url may be edited, and the description it points at
+        // changed, for two hours, every version kept, and then they freeze. It is never
+        // deleted, which is what lets a choice refer to it.
         let question = &schema[multiple_choice_proposal::NAME];
         assert_eq!(question["documentsMutable"], Value::Bool(true));
         assert_eq!(question["documentsKeepHistory"], Value::Bool(true));
@@ -189,7 +190,15 @@ mod tests {
                     &two_hours_after_creation
                 ),
                 (
-                    multiple_choice_proposal::properties::DESCRIPTION,
+                    multiple_choice_proposal::properties::DESCRIPTION_ID,
+                    &two_hours_after_creation
+                ),
+                (
+                    multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+                    &two_hours_after_creation
+                ),
+                (
+                    multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
                     &two_hours_after_creation
                 ),
                 (
@@ -208,11 +217,71 @@ mod tests {
             declared,
             BTreeSet::from([
                 multiple_choice_proposal::properties::TITLE,
-                multiple_choice_proposal::properties::DESCRIPTION,
+                multiple_choice_proposal::properties::DESCRIPTION_ID,
+                multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+                multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
                 multiple_choice_proposal::properties::URL,
                 multiple_choice_proposal::properties::OPEN,
             ])
         );
+        // The question holds no description of its own: it points at a document of a
+        // moderated type, of the contract and the type it names, holding a string or bytes
+        // that a moderator's removal takes away and that its author writes
+        let taken_with_the_document = serde_json::json!({
+            "allOf": [
+                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
+                { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+            ]
+        });
+        assert_eq!(
+            question["properties"][multiple_choice_proposal::properties::DESCRIPTION_ID]
+                ["refersTo"],
+            serde_json::json!({
+                "type": "moderatedDocument",
+                "contractIdProperty":
+                    multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+                "documentTypeProperty":
+                    multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+                "documentTypeRequirements": {
+                    "properties": {
+                        "body": {
+                            "name": "$any",
+                            "type": "string",
+                            "when": taken_with_the_document
+                        },
+                        "bodyBytes": {
+                            "name": "$any",
+                            "type": "array",
+                            "byteArray": true,
+                            "when": taken_with_the_document
+                        }
+                    },
+                    "require": { "anyOf": ["body", "bodyBytes"] }
+                }
+            })
+        );
+        // and that contract is one whose moderators the masternodes elect
+        assert_eq!(
+            question["properties"][multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID]
+                ["refersTo"],
+            serde_json::json!({
+                "type": "contract",
+                "contractRequirements": { "moderation": "elected" }
+            })
+        );
+        let required: Vec<&str> = question["required"]
+            .as_array()
+            .expect("the question lists required properties")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        for property in [
+            multiple_choice_proposal::properties::DESCRIPTION_ID,
+            multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+            multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+        ] {
+            assert!(required.contains(&property), "{property} is required");
+        }
         // Every question says whether it is open, for good
         assert_eq!(
             question["properties"][multiple_choice_proposal::properties::OPEN]["type"],
