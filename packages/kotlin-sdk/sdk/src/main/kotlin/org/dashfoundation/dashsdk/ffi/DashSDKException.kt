@@ -13,7 +13,8 @@ import org.dashfoundation.dashsdk.errors.PlatformConsensusError
  * [code] values mirror `DashSDKErrorCode` in `rs-sdk-ffi/src/error.rs`:
  * 0=Success, 1=InvalidParameter, 2=InvalidState, 3=NetworkError,
  * 4=SerializationError, 5=ProtocolError, 6=CryptoError, 7=NotFound,
- * 8=Timeout, 9=NotImplemented, 10=DriveInternalError, 99=InternalError.
+ * 8=Timeout, 9=NotImplemented, 10=DriveInternalError,
+ * 11=StateTransitionResultUnconfirmed, 99=InternalError.
  *
  * [consensusError] is the consensus rejection behind the failure when the
  * native result or `DashSDKError` carried one, `null` otherwise.

@@ -391,7 +391,6 @@ fn insert_review_document(
             apply,
             None,
             platform_version,
-            None,
         )
         .map(|_| document)
         .map_err(|error| format!("{error:?}"))
@@ -426,7 +425,6 @@ fn update_review_document_resource(
             None,
             None,
             platform_version,
-            None,
         )
         .map(|_| updated)
         .map_err(|error| format!("{error:?}"))
@@ -447,7 +445,6 @@ fn delete_review_document(
             true,
             None,
             platform_version,
-            None,
         )
         .map(|_| ())
         .map_err(|error| format!("{error:?}"))
@@ -998,7 +995,6 @@ fn range_demotion_and_at_chain_exemption_coexist_in_one_doctype() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a mixed document");
     }

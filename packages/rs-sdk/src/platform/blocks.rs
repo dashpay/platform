@@ -252,6 +252,8 @@ impl Sdk {
                     .map_err(Error::from)
             }
             .map_err(|error| ExecutionError {
+                // A read: the answer arrived and nothing was submitted
+                possibly_accepted: false,
                 inner: error,
                 address: Some(address.clone()),
                 retries,

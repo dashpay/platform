@@ -8,7 +8,9 @@ use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
 use crate::util::storage_flags::StorageFlags;
 use grovedb::batch::{BatchApplyOptions, QualifiedGroveDbOp};
-use grovedb::TransactionArg;
+use grovedb::{ElementFlags, TransactionArg};
+use grovedb_costs::storage_cost::transition::ElementFlagsUpdate;
+use grovedb_costs::storage_cost::StorageCost;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
@@ -17,6 +19,34 @@ impl Drive {
         &self,
         ops: GroveDbOpBatch,
         validate: bool,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        self.grove_apply_batch_with_flags_update(
+            ops,
+            validate,
+            |cost, old_flags, new_flags| {
+                StorageFlags::update_element_flags(cost, old_flags, new_flags)
+                    .map_err(|e| GroveError::JustInTimeElementFlagsClientError(e.to_string()))
+            },
+            transaction,
+            drive_operations,
+            drive_version,
+        )
+    }
+
+    /// Applies the batch with the given flags update and passes the costs to
+    /// `push_drive_operation_result`.
+    pub(super) fn grove_apply_batch_with_flags_update<U: Into<ElementFlagsUpdate>>(
+        &self,
+        ops: GroveDbOpBatch,
+        validate: bool,
+        update_element_flags: impl FnMut(
+            &StorageCost,
+            Option<ElementFlags>,
+            &mut ElementFlags,
+        ) -> Result<U, GroveError>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
@@ -72,10 +102,7 @@ impl Drive {
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
             }),
-            |cost, old_flags, new_flags| {
-                StorageFlags::update_element_flags(cost, old_flags, new_flags)
-                    .map_err(|e| GroveError::JustInTimeElementFlagsClientError(e.to_string()))
-            },
+            update_element_flags,
             |flags, removed_key_bytes, removed_value_bytes| {
                 StorageFlags::split_removal_bytes(flags, removed_key_bytes, removed_value_bytes)
                     .map_err(|e| GroveError::SplitRemovalBytesClientError(e.to_string()))

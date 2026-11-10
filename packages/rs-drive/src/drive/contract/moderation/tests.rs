@@ -252,14 +252,7 @@ fn should_keep_the_list_trees_and_their_entries_across_a_contract_update() {
             })),
     );
     drive
-        .update_contract(
-            &updated,
-            BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-            None,
-        )
+        .update_contract(&updated, BlockInfo::default(), true, None, platform_version)
         .expect("expected to update the contract");
 
     assert!(has_list_tree(&drive, contract.id(), CONTRACT_BANLIST_KEY));

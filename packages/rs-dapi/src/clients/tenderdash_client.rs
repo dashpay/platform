@@ -23,6 +23,10 @@ use tracing::{debug, error, info, trace, warn};
 /// Tenderdash heights are signed 64-bit integers.
 pub const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
 
+/// How many bytes of a body Tenderdash answered with go into a log line. A block's answer
+/// can be megabytes long.
+const LOGGED_BODY_BYTES: usize = 512;
+
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
 ///
@@ -648,6 +652,37 @@ fn with_tracing(builder: reqwest::ClientBuilder) -> DAPIResult<ClientWithMiddlew
         .build())
 }
 
+/// The start of a body, for a log line: at most `LOGGED_BODY_BYTES` bytes, ending on a
+/// character boundary.
+fn body_preview(body: &str) -> &str {
+    &body[..body.floor_char_boundary(LOGGED_BODY_BYTES)]
+}
+
+/// Read the answer to one call out of its body: the result, or the error Tenderdash gave.
+fn read_response<T>(body: &str) -> DAPIResult<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let response: TenderdashResponse<T> = serde_json::from_str(body).map_err(|e| {
+        error!(
+            "Failed to parse Tenderdash response: {}; body of {} bytes starts with: {}",
+            e,
+            body.len(),
+            body_preview(body)
+        );
+        DapiError::Client(format!("Failed to parse response: {}", e))
+    })?;
+
+    if let Some(error) = response.error {
+        debug!("Tenderdash RPC returned error: {}", error);
+        return Err(DapiError::from_tenderdash_error(error));
+    }
+
+    response
+        .result
+        .ok_or_else(|| DapiError::Client("Tenderdash response missing result field".to_string()))
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -660,12 +695,29 @@ impl TenderdashClient {
     }
 
     /// `post` for a block query: the call has no deadline, see [`block_query_http_client`].
+    ///
+    /// A full block is megabytes of JSON. Reading that much on an async thread would hold up
+    /// the other requests it serves, so the answer is read on the blocking pool.
     async fn post_for_block_query<T, R>(&self, request: &R) -> DAPIResult<T>
     where
-        T: serde::de::DeserializeOwned + Debug,
+        T: serde::de::DeserializeOwned + Debug + Send + 'static,
         R: Serialize + Debug,
     {
-        self.post_with(&self.block_query_client, request).await
+        let start = tokio::time::Instant::now();
+
+        let response_body = self
+            .post_for_body(&self.block_query_client, request)
+            .await?;
+        let result =
+            tokio::task::spawn_blocking(move || read_response::<T>(&response_body)).await?;
+
+        tracing::trace!(
+            elapsed = ?start.elapsed(),
+            request = ?request,
+            response = ?result,
+            "tenderdash_client request executed");
+
+        result
     }
 
     async fn post_with<T, R>(&self, client: &ClientWithMiddleware, request: &R) -> DAPIResult<T>
@@ -676,30 +728,15 @@ impl TenderdashClient {
         let start = tokio::time::Instant::now();
 
         let response_body = self.post_for_body(client, request).await?;
-
-        let response: TenderdashResponse<T> =
-            serde_json::from_str(&response_body).map_err(|e| {
-                error!(
-                    "Failed to parse Tenderdash response: {}; full body: {}",
-                    e, response_body
-                );
-                DapiError::Client(format!("Failed to parse response: {}", e))
-            })?;
+        let result = read_response::<T>(&response_body);
 
         tracing::trace!(
             elapsed = ?start.elapsed(),
             request = ?request,
-            response = ?response,
+            response = ?result,
             "tenderdash_client request executed");
 
-        if let Some(error) = response.error {
-            debug!("Tenderdash RPC returned error: {}", error);
-            return Err(DapiError::from_tenderdash_error(error));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash response missing result field".to_string())
-        })
+        result
     }
 
     /// Send a request or a batch of them, returning the body Tenderdash answered with.
@@ -1083,6 +1120,36 @@ mod tests {
             parse_batch_response(&answer("a", json!({})).to_string()),
             Err(DapiError::Client(_))
         ));
+    }
+
+    #[test]
+    fn should_read_the_answer_to_a_single_call() {
+        let body = answer("a", json!({ "quorum_type": 6 })).to_string();
+        let result: ResultValidators = read_response(&body).unwrap();
+        assert_eq!(result.quorum_type, 6);
+
+        let rejected: DAPIResult<ResultValidators> =
+            read_response(&failure("a", "batch contains 101 requests").to_string());
+        assert!(matches!(rejected, Err(DapiError::TenderdashClientError(_))));
+
+        let without_result: DAPIResult<ResultValidators> =
+            read_response(&json!({ "jsonrpc": "2.0", "id": "a" }).to_string());
+        assert!(matches!(without_result, Err(DapiError::Client(_))));
+
+        let not_json: DAPIResult<ResultValidators> = read_response("not json");
+        assert!(matches!(not_json, Err(DapiError::Client(_))));
+    }
+
+    #[test]
+    fn should_log_only_the_start_of_a_body() {
+        assert_eq!(body_preview("short"), "short");
+
+        let long = "a".repeat(LOGGED_BODY_BYTES * 4);
+        assert_eq!(body_preview(&long).len(), LOGGED_BODY_BYTES);
+
+        // "é" is two bytes, and the limit falls in the middle of one
+        let accented = format!("a{}", "é".repeat(LOGGED_BODY_BYTES));
+        assert_eq!(body_preview(&accented).len(), LOGGED_BODY_BYTES - 1);
     }
 
     #[test]

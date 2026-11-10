@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -49,9 +50,17 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.update_document_for_contract_apply_and_add_to_operations_v1(
+                document_and_contract_info,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract_apply_and_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

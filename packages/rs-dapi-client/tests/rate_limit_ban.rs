@@ -46,6 +46,7 @@ fn test_resource_exhausted_with_header_bans_for_advertised_period() {
         .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(status)),
         retries: 0,
         address: Some(addr.clone()),
@@ -87,6 +88,7 @@ fn test_ratelimit_reset_clamped_to_max() {
         .insert("ratelimit-reset", MetadataValue::try_from("9999").unwrap());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(status)),
         retries: 0,
         address: Some(addr.clone()),
@@ -133,6 +135,7 @@ fn test_zero_and_garbage_header_falls_back_to_ladder() {
         }
 
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(status)),
             retries: 0,
             address: Some(addr.clone()),
@@ -185,6 +188,7 @@ fn test_missing_header_falls_back_to_ladder() {
     address_list.add(addr.clone());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(
             dapi_grpc::tonic::Status::resource_exhausted("429"),
         )),
@@ -365,6 +369,7 @@ fn test_rate_limit_ban_duration_trait_delegation() {
 
     // ExecutionError delegates.
     let ee: ExecutionError<DapiClientError> = ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc({
             let mut s3 = dapi_grpc::tonic::Status::resource_exhausted("429");
             s3.metadata_mut()

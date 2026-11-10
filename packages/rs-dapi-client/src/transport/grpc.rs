@@ -526,13 +526,34 @@ impl_transport_request_grpc!(
     get_document_history
 );
 
-impl_transport_request_grpc!(
-    platform_proto::BroadcastStateTransitionRequest,
-    platform_proto::BroadcastStateTransitionResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    broadcast_state_transition
-);
+impl TransportRequest for platform_proto::BroadcastStateTransitionRequest {
+    type Client = PlatformGrpcClient;
+    type Response = platform_proto::BroadcastStateTransitionResponse;
+    const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+    fn method_name(&self) -> &'static str {
+        "broadcast_state_transition"
+    }
+    fn classify_error(&self, error: &TransportError) -> super::RequestErrorClassification {
+        broadcast::classify_error(error)
+    }
+    fn execute_transport<'c>(
+        self,
+        client: &'c mut Self::Client,
+        settings: &AppliedRequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+        let mut request = self.into_request();
+        if !settings.timeout.is_zero() {
+            request.set_timeout(settings.timeout);
+        }
+        client
+            .broadcast_state_transition(request)
+            .map_err(TransportError::Grpc)
+            .map_ok(|response| response.into_inner())
+            .boxed()
+    }
+}
+
+mod broadcast;
 
 impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultRequest,
