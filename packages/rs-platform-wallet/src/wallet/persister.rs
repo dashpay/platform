@@ -4,7 +4,7 @@
 //! - [`WalletPersister`] — wraps the shared [`PlatformWalletPersistence`] with
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -59,12 +59,31 @@ pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
     contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
-    /// Commitments of private document entries whose payment can never
-    /// execute: the shielded coordinator notes them when it settles an
-    /// unconfirmed spend as failed for good, and the wallet releases the
-    /// private contact request reservations held for them. Shared by the
-    /// clones the wallet and the coordinator hold. In memory only.
-    rejected_private_entries: Arc<std::sync::Mutex<RejectedPrivateEntries>>,
+    /// Commitments of private contact request entries a private sync read
+    /// back and recorded durably, whose records in the shielded store's
+    /// private payment journal are to be discharged: the wallet's view
+    /// notes them, and whoever holds the store discharges them (the shielded
+    /// coordinator's sync pass, a restoration, a private payment). Shared by
+    /// the clones the wallet and the coordinator hold. In memory only: a
+    /// record left undischarged by a restart holds nothing, as the request
+    /// it pays for is recorded. Only a shielded build keeps a journal to
+    /// discharge, so only it keeps them.
+    #[cfg(feature = "shielded")]
+    read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
+    /// Commitments of private contact request entries a private sync read
+    /// back and recorded, whose records' flush failed: noted read back
+    /// (`read_back_private_entries`) once a later flush succeeds
+    /// ([`Self::note_read_back_once_durable`]), at the wallet's next private
+    /// sync, send or reservation. Shared by the clones the wallet and the
+    /// coordinator hold. In memory only: a restart loses them with the
+    /// records the failed flush did not keep.
+    #[cfg(feature = "shielded")]
+    unflushed_read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
+    /// The commitments of the private contact request payments whose journal
+    /// records were discharged in this session (read back, never delivered,
+    /// or proven expired). Shared by the clones the wallet and the
+    /// coordinator hold. In memory only, as are the reservations they guard.
+    discharged_private_entries: Arc<std::sync::Mutex<DischargedPrivateEntries>>,
     /// Whether the reservations of this wallet's unconfirmed private contact
     /// request payments from an earlier process may still be unrestored:
     /// raised at load for a wallet that bound a shielded account before, and
@@ -72,22 +91,68 @@ pub struct WalletPersister {
     /// is up, public contact requests are neither sent nor accepted. Shared by
     /// the clones the wallet and its views hold. In memory only.
     private_payments_unrestored: Arc<AtomicBool>,
+    /// The marker each identity's position record was last stored with in
+    /// this session (`PrivateContactRequestsPosition::private_payments_unresolved`):
+    /// a record whose marker, its identity's and the journal's together,
+    /// differs from it is stored again. Absent when none was stored, or the
+    /// last store or its flush failed. Shared by the clones the wallet and
+    /// the coordinator hold. In memory only.
+    stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process, the backend dropping what it buffered: what the wallet tracks
+    /// in memory since may then not be on disk, so nothing is discharged on
+    /// the strength of it alone ([`Self::buffered_writes_lost`]). Shared by
+    /// the clones the wallet and the coordinator hold. In memory only: the
+    /// next process tracks what its load read from disk.
+    #[cfg(feature = "shielded")]
+    buffered_writes_lost: Arc<AtomicBool>,
+    /// Why the last restoration of this wallet's private payments failed,
+    /// while no later one succeeded (`PlatformWalletError::PrivateContactPaymentsNotRestored`
+    /// then holds for it, not only for one not run yet). Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    private_payment_restore_failure: Arc<std::sync::Mutex<Option<String>>>,
+    /// How the wallet's views run one more restoration of its private
+    /// payments, without waiting on the shielded store, before a contact
+    /// request is refused as not restored: installed by the wallet whenever
+    /// it builds a restoration with a shielded coordinator. Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    #[cfg(feature = "shielded")]
+    private_payment_restore_retry: Arc<std::sync::Mutex<Option<PrivatePaymentRestoreRetry>>>,
 }
 
-/// The commitments [`WalletPersister::note_rejected_private_entries`] noted,
-/// both sets updated under one lock.
+/// One more restoration of a wallet's private payments, run on the persister
+/// it is given (`WalletPersister::retry_private_payment_restore`): taking it
+/// as an argument, rather than holding one, keeps the persister that stores
+/// it from holding itself.
+#[cfg(feature = "shielded")]
+pub(crate) type PrivatePaymentRestoreRetry = Arc<
+    dyn Fn(WalletPersister) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
+/// and the pairs the journal's unresolved payments hold, all updated under one
+/// lock.
 #[derive(Default)]
-struct RejectedPrivateEntries {
-    /// Noted since the last take, for the wallet to release what it holds for
-    /// them ([`WalletPersister::take_rejected_private_entries`]).
-    unapplied: BTreeSet<[u8; 32]>,
-    /// Every one noted in this session, kept after the take: a restoration that
-    /// read an entry before its rejection and reserves its pair after the
-    /// release ran checks it here first
-    /// ([`WalletPersister::private_entry_rejected`]). One commitment per
-    /// payment settled as failed for good, gone with the process, as are the
-    /// reservations it guards.
+struct DischargedPrivateEntries {
+    /// Noted since the last take, for the wallet to release the reservations
+    /// it holds for them ([`WalletPersister::take_unreleased_discharged_private_entries`]).
+    unreleased: BTreeSet<[u8; 32]>,
+    /// Every one noted in this session, kept after the take: a restoration
+    /// that read a record before it was discharged, and reserves its pair
+    /// after, checks it here first under the wallet lock
+    /// ([`WalletPersister::private_entry_discharged`]). Only a shielded build
+    /// keeps a journal to discharge: empty otherwise.
     session: BTreeSet<[u8; 32]>,
+    /// The (sender, recipient) pair of each private contact request payment
+    /// the shielded store's journal keeps, by its entry's commitment
+    /// ([`WalletPersister::note_journaled_private_payments`]): the wallet's
+    /// hold on the pair, which no identity's removal drops. A commitment in
+    /// `session` is never added, and one noted there is removed, so a
+    /// discharged payment holds nothing. Only a shielded build journals:
+    /// empty otherwise.
+    journaled: BTreeMap<[u8; 32], (Identifier, Identifier)>,
 }
 
 impl WalletPersister {
@@ -96,45 +161,289 @@ impl WalletPersister {
             wallet_id,
             inner,
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
-            rejected_private_entries: Arc::default(),
+            #[cfg(feature = "shielded")]
+            read_back_private_entries: Arc::default(),
+            #[cfg(feature = "shielded")]
+            unflushed_read_back_private_entries: Arc::default(),
+            discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
+            stored_private_markers: Arc::default(),
+            #[cfg(feature = "shielded")]
+            buffered_writes_lost: Arc::default(),
+            private_payment_restore_failure: Arc::default(),
+            #[cfg(feature = "shielded")]
+            private_payment_restore_retry: Arc::default(),
         }
     }
 
-    /// Note the commitments of private document entries whose payment was
-    /// settled as never executing, for the wallet to release what it holds
-    /// for them ([`Self::take_rejected_private_entries`]).
+    /// Note how the last restoration of this wallet's private payments went:
+    /// `Some(reason)` when it failed, `None` once one succeeded
+    /// ([`Self::private_payment_restore_failure`]).
     #[cfg(feature = "shielded")]
-    pub(crate) fn note_rejected_private_entries(
+    pub(crate) fn note_private_payment_restore(&self, failure: Option<String>) {
+        *self
+            .private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = failure;
+    }
+
+    /// Why the last restoration of this wallet's private payments failed, if
+    /// it did and none succeeded since.
+    pub(crate) fn private_payment_restore_failure(&self) -> Option<String> {
+        self.private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Install how the wallet's views run one more restoration of its private
+    /// payments ([`Self::retry_private_payment_restore`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn set_private_payment_restore_retry(&self, retry: PrivatePaymentRestoreRetry) {
+        *self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry);
+    }
+
+    /// Run one more restoration of this wallet's private payments, which waits
+    /// on nothing: a busy shielded store leaves the wallet held. Returns
+    /// whether one ran, as none does before the wallet built a restoration
+    /// with a shielded coordinator.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn retry_private_payment_restore(&self) -> bool {
+        let retry = self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match retry {
+            Some(retry) => {
+                retry(self.clone()).await;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Note that `owner`'s position record was stored with the marker
+    /// `marker`, or, with `None`, that whether it was is not known: its last
+    /// store or flush failed ([`Self::private_marker_stored`]).
+    pub(crate) fn note_private_marker_stored(&self, owner: Identifier, marker: Option<bool>) {
+        let mut stored = self
+            .stored_private_markers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match marker {
+            Some(marker) => stored.insert(owner, marker),
+            None => stored.remove(&owner),
+        };
+    }
+
+    /// The marker `owner`'s position record was last stored with in this
+    /// session, if one was and its store did not fail since
+    /// ([`Self::note_private_marker_stored`]).
+    pub(crate) fn private_marker_stored(&self, owner: &Identifier) -> Option<bool> {
+        self.stored_private_markers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(owner)
+            .copied()
+    }
+
+    /// Note the commitments of private contact request entries a private sync
+    /// read back and recorded durably, for their journal records to be
+    /// discharged ([`Self::take_read_back_private_entries`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_read_back_private_entries(
         &self,
         commitments: impl IntoIterator<Item = [u8; 32]>,
     ) {
-        let mut rejected = self.rejected_entries();
+        self.read_back_entries().extend(commitments);
+    }
+
+    /// Note `commitments`, of private requests a private sync read back and
+    /// recorded, for their journal records to be discharged
+    /// ([`Self::note_read_back_private_entries`]), once what records them is
+    /// durable: at once for a backend that commits inline, after a flush
+    /// otherwise. Those a transient flush failure left are kept, with every
+    /// one kept before, and noted by the next call whose flush succeeds: an
+    /// empty one retries them. Those any other failure left are dropped, as the
+    /// backend dropped the records they rest on. Their journal records, and so
+    /// the pairs they hold, stay until noted. The host's flush runs with none
+    /// of the persister's locks held, so a call during it, from another thread
+    /// or the flush itself, neither waits nor loses what it adds.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_read_back_once_durable(
+        &self,
+        commitments: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        let pending = {
+            let mut unflushed = self.unflushed_read_back_entries();
+            unflushed.extend(commitments);
+            std::mem::take(&mut *unflushed)
+        };
+        if pending.is_empty() {
+            return;
+        }
+        if !self.store_commits_inline() {
+            if let Err(error) = self.flush() {
+                if error.is_transient() {
+                    tracing::warn!(
+                        %error,
+                        kept = pending.len(),
+                        "private requests read back are not durably recorded; their journal \
+                         records stay until a later flush succeeds"
+                    );
+                    // A transient failure keeps the buffer: with any added
+                    // meanwhile.
+                    self.unflushed_read_back_entries().extend(pending);
+                } else {
+                    // Any other failure dropped the buffer, the records these
+                    // notices rest on with it: the notices go, so their journal
+                    // records, and the pairs they hold, stay. Their read is not
+                    // rewound: a read again would find the requests already
+                    // tracked, store nothing, and note them again over records
+                    // that never reached disk. The markers stored into that
+                    // buffer are forgotten, so the next comparison stores them
+                    // again (`Self::private_marker_stored`).
+                    tracing::error!(
+                        %error,
+                        dropped = pending.len(),
+                        "private requests read back are not durably recorded, and the backend \
+                         dropped what it buffered; their journal records stay"
+                    );
+                    self.stored_private_markers
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
+                }
+                return;
+            }
+        }
+        self.note_read_back_private_entries(pending);
+    }
+
+    #[cfg(feature = "shielded")]
+    fn unflushed_read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
+        self.unflushed_read_back_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Take the commitments [`Self::note_read_back_private_entries`] noted:
+    /// a caller that fails to discharge one notes it again.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn take_read_back_private_entries(&self) -> BTreeSet<[u8; 32]> {
+        std::mem::take(&mut *self.read_back_entries())
+    }
+
+    /// Note `commitments`, whose private payments' journal records were just
+    /// discharged: a restoration that read them before skips them
+    /// ([`Self::private_entry_discharged`]), and the wallet releases what it
+    /// still reserves for them
+    /// ([`Self::take_unreleased_discharged_private_entries`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_discharged_private_entries(
+        &self,
+        commitments: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        let mut discharged = self.discharged_entries();
         for commitment in commitments {
-            rejected.unapplied.insert(commitment);
-            rejected.session.insert(commitment);
+            discharged.unreleased.insert(commitment);
+            discharged.session.insert(commitment);
+            discharged.journaled.remove(&commitment);
         }
     }
 
-    /// Whether [`Self::note_rejected_private_entries`] noted any commitment
+    /// Note `payments`, each a private contact request payment's entry
+    /// commitment with its (sender, recipient) pair, as kept, or about to be
+    /// kept, by the shielded store's private payment journal: until each is
+    /// discharged ([`Self::note_discharged_private_entries`]) the wallet holds
+    /// its pair ([`Self::private_pair_journaled`]), whatever happens to the
+    /// sender identity. A payment discharged in this session is not noted.
+    /// Noted before a payment is journaled, and by every restoration from the
+    /// journal, so the pairs held cover every record the journal keeps.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_journaled_private_payments(
+        &self,
+        payments: impl IntoIterator<Item = ([u8; 32], Identifier, Identifier)>,
+    ) {
+        let mut entries = self.discharged_entries();
+        for (commitment, sender, recipient) in payments {
+            if !entries.session.contains(&commitment) {
+                entries.journaled.insert(commitment, (sender, recipient));
+            }
+        }
+    }
+
+    /// Forget `commitments`, noted by [`Self::note_journaled_private_payments`]
+    /// for a payment whose journal records were then not saved: nothing was
+    /// paid, so its pair is not held for it.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn forget_journaled_private_payments(&self, commitments: &[[u8; 32]]) {
+        let mut entries = self.discharged_entries();
+        for commitment in commitments {
+            entries.journaled.remove(commitment);
+        }
+    }
+
+    /// A recipient of a private payment from `sender` the journal keeps
+    /// unresolved ([`Self::note_journaled_private_payments`]), if any: the
+    /// sender then holds a payment that may still execute, whatever its
+    /// identity's own state says.
+    pub(crate) fn private_sender_journaled(&self, sender: &Identifier) -> Option<Identifier> {
+        self.discharged_entries()
+            .journaled
+            .values()
+            .find(|(journaled_sender, _)| journaled_sender == sender)
+            .map(|(_, recipient)| *recipient)
+    }
+
+    /// Whether a private payment the journal keeps unresolved holds the pair
+    /// `sender`, `recipient` ([`Self::note_journaled_private_payments`]): then
+    /// neither a public request nor another private one is sent for it.
+    pub(crate) fn private_pair_journaled(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> bool {
+        self.discharged_entries()
+            .journaled
+            .values()
+            .any(|pair| *pair == (*sender, *recipient))
+    }
+
+    /// Whether the journal record of `commitment` was discharged in this
+    /// session, its reservation released or not.
+    pub(crate) fn private_entry_discharged(&self, commitment: &[u8; 32]) -> bool {
+        self.discharged_entries().session.contains(commitment)
+    }
+
+    /// Whether [`Self::note_discharged_private_entries`] noted any commitment
     /// since the last take.
-    pub(crate) fn has_rejected_private_entries(&self) -> bool {
-        !self.rejected_entries().unapplied.is_empty()
+    pub(crate) fn has_unreleased_discharged_private_entries(&self) -> bool {
+        !self.discharged_entries().unreleased.is_empty()
     }
 
-    /// Take the commitments [`Self::note_rejected_private_entries`] noted
+    /// Take the commitments [`Self::note_discharged_private_entries`] noted
     /// since the last take. Take them only where they are applied with
-    /// nothing awaited in between, as nothing keeps a set taken and dropped.
-    pub(crate) fn take_rejected_private_entries(&self) -> BTreeSet<[u8; 32]> {
-        std::mem::take(&mut self.rejected_entries().unapplied)
+    /// nothing awaited in between.
+    pub(crate) fn take_unreleased_discharged_private_entries(&self) -> BTreeSet<[u8; 32]> {
+        std::mem::take(&mut self.discharged_entries().unreleased)
     }
 
-    /// Whether [`Self::note_rejected_private_entries`] noted `commitment` in
-    /// this session, taken or not: a restoration checks it under the wallet
-    /// lock before it reserves a pair for that entry, so a rejection noted and
-    /// applied while the restoration read its entries still holds.
-    pub(crate) fn private_entry_rejected(&self, commitment: &[u8; 32]) -> bool {
-        self.rejected_entries().session.contains(commitment)
+    fn discharged_entries(&self) -> std::sync::MutexGuard<'_, DischargedPrivateEntries> {
+        self.discharged_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Whether [`Self::note_read_back_private_entries`] noted any commitment
+    /// not taken yet.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn has_read_back_private_entries(&self) -> bool {
+        !self.read_back_entries().is_empty()
     }
 
     /// Hold this wallet's public contact requests, sent or accepted, until
@@ -163,8 +472,9 @@ impl WalletPersister {
         self.private_payments_unrestored.load(Ordering::Acquire)
     }
 
-    fn rejected_entries(&self) -> std::sync::MutexGuard<'_, RejectedPrivateEntries> {
-        self.rejected_private_entries
+    #[cfg(feature = "shielded")]
+    fn read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
+        self.read_back_private_entries
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -219,7 +529,22 @@ impl WalletPersister {
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
-        self.inner.flush(self.wallet_id)
+        let flushed = self.inner.flush(self.wallet_id);
+        #[cfg(feature = "shielded")]
+        if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
+            self.buffered_writes_lost.store(true, Ordering::SeqCst);
+        }
+        flushed
+    }
+
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process (anything but a transient failure, which keeps the buffer):
+    /// what the wallet tracked before it may not be on disk, though it is in
+    /// memory. A restoration then leaves the journal records it finds settled
+    /// by tracked requests for the next process to discharge.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn buffered_writes_lost(&self) -> bool {
+        self.buffered_writes_lost.load(Ordering::SeqCst)
     }
 
     pub(crate) fn store_commits_inline(&self) -> bool {
@@ -352,6 +677,12 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "shielded")]
+    use crate::changeset::PersistenceErrorKind;
+    #[cfg(feature = "shielded")]
+    use std::sync::{mpsc, OnceLock};
+    #[cfg(feature = "shielded")]
+    use std::time::Duration;
 
     /// `persists_durably` is a fail-closed security capability: an
     /// implementation that does NOT explicitly attest durability must read as
@@ -378,5 +709,68 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// The host's flush runs with no lock of the persister held: a flush that
+    /// notes another read-back commitment through the same persister, as a
+    /// reentrant backend or another thread would, completes, and nothing a
+    /// failed flush was given is lost: the next flush that succeeds notes
+    /// them all.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_flush_read_back_notices_without_holding_their_lock() {
+        struct Reentrant {
+            persister: OnceLock<WalletPersister>,
+            flush_fails: AtomicBool,
+            reentered: AtomicBool,
+        }
+        impl PlatformWalletPersistence for Reentrant {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                // The first flush notes another commitment before it ends.
+                if !self.reentered.swap(true, Ordering::SeqCst) {
+                    if let Some(persister) = self.persister.get() {
+                        persister.note_read_back_once_durable([[2; 32]]);
+                    }
+                }
+                if self.flush_fails.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    ));
+                }
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            let backend = Arc::new(Reentrant {
+                persister: OnceLock::new(),
+                flush_fails: AtomicBool::new(true),
+                reentered: AtomicBool::new(false),
+            });
+            let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+            let _ = backend.persister.set(persister.clone());
+            persister.note_read_back_once_durable([[1; 32]]);
+            let noted_on_failure = persister.has_read_back_private_entries();
+            backend.flush_fails.store(false, Ordering::SeqCst);
+            persister.note_read_back_once_durable([]);
+            let _ = done.send((noted_on_failure, persister.take_read_back_private_entries()));
+        });
+        let (noted_on_failure, noted) = finished
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the flushes complete");
+        assert!(!noted_on_failure, "a failed flush notes nothing");
+        assert_eq!(noted, BTreeSet::from([[1; 32], [2; 32]]), "nothing lost");
     }
 }

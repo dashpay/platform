@@ -895,7 +895,6 @@ mod keep_history_summable_e2e {
                 true,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("insert doc");
     }
@@ -1058,7 +1057,6 @@ mod keep_history_summable_e2e {
                 Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("update doc to v2");
 

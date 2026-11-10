@@ -24,17 +24,25 @@
 //! which has neither path, while protocol version 14 selects v2 and
 //! answers both.
 //!
-//! Lives next to the v1 query handler (the only call site today) and
-//! is dispatched via the `DriveAbciDocumentQueryHelperVersions` slot
-//! in `PlatformVersion`.
+//! Lives in Drive, under `verify` as well as `server`, so drive-abci's v1
+//! query handler and a client's check before sending route one request
+//! the same way. It is dispatched via the
+//! `DriveAbciDocumentQueryHelperVersions` slot in `PlatformVersion`, the
+//! query version the handler runs at. Each generation refuses with
+//! Drive's `Error::Query` (an unknown version with `Error::Drive`), which
+//! drive-abci reports as `QueryError::Query` (`QueryError::Drive`), the
+//! errors its handler answers these refusals with at every protocol
+//! version.
 
 mod v0;
 mod v1;
 mod v2;
 
-use crate::error::query::QueryError;
+use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
+use crate::error::Error;
+use crate::query::{CountMode, HavingClause, OrderClause, SelectProjection, WhereClause};
 use dpp::version::PlatformVersion;
-use drive::query::{CountMode, HavingClause, OrderClause, SelectProjection, WhereClause};
 
 /// What the helper decided a request should execute as.
 ///
@@ -54,7 +62,7 @@ use drive::query::{CountMode, HavingClause, OrderClause, SelectProjection, Where
 /// disagree with it after a version bump. Routing decides *where* a
 /// request goes; drive decides what it means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AggregateRouting {
+pub enum AggregateRouting {
     /// Non-ranked aggregate: execute with this `(group_by × where)` mode.
     Grouped(CountMode),
     /// Ranked aggregate: execute through the ranked (top-k) surface.
@@ -89,7 +97,7 @@ pub(super) enum AggregateRouting {
 ///
 /// Routes through `platform_version.drive_abci.query.document_query_helpers.compute_aggregate_mode_and_check_limit`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn compute_aggregate_mode_and_check_limit(
+pub fn compute_aggregate_mode_and_check_limit(
     select: &SelectProjection,
     group_by: &[String],
     where_clauses: &[WhereClause],
@@ -98,7 +106,7 @@ pub(super) fn compute_aggregate_mode_and_check_limit(
     having: &[HavingClause],
     function_name: &str,
     platform_version: &PlatformVersion,
-) -> Result<AggregateRouting, QueryError> {
+) -> Result<AggregateRouting, Error> {
     match platform_version
         .drive_abci
         .query
@@ -134,12 +142,19 @@ pub(super) fn compute_aggregate_mode_and_check_limit(
             having,
             function_name,
         ),
-        version => Err(QueryError::Drive(drive::error::Error::Drive(
-            drive::error::drive::DriveError::UnknownVersionMismatch {
-                method: "compute_aggregate_mode_and_check_limit".to_string(),
-                known_versions: vec![0, 1, 2],
-                received: version,
-            },
-        ))),
+        version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "compute_aggregate_mode_and_check_limit".to_string(),
+            known_versions: vec![0, 1, 2],
+            received: version,
+        })),
     }
+}
+
+/// The refusal of a shape the wire carries but no node evaluates yet: a
+/// capability rather than a malformed request.
+fn not_yet_implemented(feature: &str) -> Error {
+    Error::Query(QuerySyntaxError::Unsupported(format!(
+        "{} is not yet implemented",
+        feature
+    )))
 }

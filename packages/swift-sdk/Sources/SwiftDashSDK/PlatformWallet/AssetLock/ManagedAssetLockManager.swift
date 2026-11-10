@@ -78,6 +78,11 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         public let amount: UInt64
         public let status: AssetLockStatus
         public let hasProof: Bool
+        /// Raw 43-byte Orchard recipient a shielded funding
+        /// (`.assetLockShieldedAddressTopUp`) was built to pay and a resume
+        /// pays; `nil` for other funding types and for locks tracked before
+        /// the recipient was recorded.
+        public let shieldedRecipientRaw43: Data?
     }
 
     /// Result of building an asset lock transaction.
@@ -129,7 +134,10 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
                 identityIndex: lock.identity_index,
                 amount: lock.amount,
                 status: AssetLockStatus(rawValue: lock.status) ?? .built,
-                hasProof: lock.has_proof
+                hasProof: lock.has_proof,
+                shieldedRecipientRaw43: lock.has_shielded_recipient
+                    ? withUnsafeBytes(of: lock.shielded_recipient_raw_43) { Data($0) }
+                    : nil
             )
         }
     }

@@ -608,7 +608,11 @@ pub(crate) fn map_spend_result(
         // shield reserves nothing. Either way the next sync (or an app
         // restart) reconciles the outcome; the typed Display already
         // carries the operation name and guidance.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+        // A broadcast that may have been delivered reads the same: it may
+        // still execute, so its notes and recovery record stay, and a host
+        // must not pay again.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 e.to_string(),
@@ -630,7 +634,12 @@ pub(crate) fn map_spend_result(
         // read before any payment keeps the blanket conversion's split: a
         // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
         // the catch-all.
+        // So does a private store read that did not finish before deciding
+        // (nothing reserved or sent), and a pair whose requests came or went
+        // privately, which the in-kind accept can raise.
         Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::PrivateContactStoreNotRead(..))
+        | Err(e @ PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..))
         | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
         | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
         | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
@@ -645,17 +654,13 @@ pub(crate) fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the notes were released; the host may retry. A
-        // broadcast that may have been delivered reads the same for the spend,
-        // while a private contact request it paid for stays pending (71 on a
-        // retry, `managed_identity_get_private_reply_pending`).
-        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_))
-        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-                format!("{operation} failed: {e}"),
-            )
-        }
+        // Definitive failure: the transition never left the wallet (for a note
+        // spend, refused before anything was sent); the notes were released
+        // and the host may retry.
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("{operation} failed: {e}"),
+        ),
         // Definitively failed on an address-nonce race (a shield spends platform
         // address funds; a shield reserves no notes). Its own code carries the
         // safe-to-retry contract AND lets the host recognize the self-healing
@@ -875,7 +880,8 @@ fn map_asset_lock_funding_result(
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }),
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockRecipientMismatch { .. }),
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
@@ -2471,6 +2477,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    anchor_height: None,
                 },
             )
             .expect("seed malformed durable metadata");
@@ -3246,6 +3253,23 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
         );
         assert!(message_of(&not_tracked).contains("is not tracked by this wallet"));
+
+        // A resume naming another recipient than the row recorded is the one
+        // refusal a host must render as "wrong destination", never as a
+        // generic operation failure.
+        let recipient_mismatch = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: [1; 43],
+                requested: [2; 43],
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            recipient_mismatch.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&recipient_mismatch).contains("cannot be resumed to"));
 
         let mismatch = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockFundingMismatch {

@@ -265,6 +265,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// A shielded fund-from-asset-lock resume named a different Orchard
+    /// recipient than the one its tracked lock recorded; nothing was paid.
+    case errorAssetLockRecipientMismatch = 61
     /// The contact requests with that identity came or went privately, so a
     /// public request to it, in reply or as a rotation, would publish the
     /// relationship. Nothing was sent; accept or send it privately.
@@ -425,6 +428,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH:
+            self = .errorAssetLockRecipientMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY:
             self = .errorPrivateContactRequestNeedsPrivateReply
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED:
@@ -628,6 +633,14 @@ public enum PlatformWalletError: LocalizedError {
     /// tracked lock over the cap: it is not re-sent (an earlier attempt may
     /// have reached the network), it stays tracked, and nothing is released.
     case assetLockTooManyInputs(String)
+    /// A shielded fund-from-asset-lock resume (generic outpoint resume or a
+    /// repeated-UUID wallet drain) named a different Orchard recipient than
+    /// the one the tracked lock recorded when it was built. Nothing was
+    /// submitted or paid; resume with the recorded recipient
+    /// (`PersistentAssetLock.shieldedRecipientRaw43` /
+    /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
+    /// recipient was recorded carry none and accept the caller's.
+    case assetLockRecipientMismatch(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -893,7 +906,7 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m),
+             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
@@ -1016,6 +1029,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:

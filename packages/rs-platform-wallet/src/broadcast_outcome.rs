@@ -2,9 +2,13 @@
 //!
 //! Shared by every Platform money-moving path that must keep "definitely
 //! rejected, safe to retry" apart from "ambiguous, may have executed, do
-//! not retry" (shielded spends, masternode credit withdrawals). The shapes
-//! are SDK-transport facts, not operation-specific, so they live here
-//! rather than behind the `shielded` feature.
+//! not retry". Shielded spends that consume notes broadcast through
+//! [`broadcast_tracking_delivery`], which keeps every dispatch's outcome so an
+//! earlier dispatch that may have been delivered is never hidden by a later
+//! refusal; shields into the pool and masternode credit withdrawals classify
+//! the SDK's final error with [`broadcast_definitely_failed`]. The shapes are
+//! SDK-transport facts, not operation-specific, so they live here rather than
+//! behind the `shielded` feature.
 
 /// Whether an SDK error carries Platform's own consensus verdict on the
 /// transition. Two shapes qualify:
@@ -56,13 +60,12 @@ pub(crate) fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// stream resets after the request bytes left can surface the same code,
 /// and the dapi-client's cross-address retry only retains the LAST
 /// transport error, so an earlier-attempt delivery can hide behind a
-/// later attempt's `Unavailable`. Releasing the notes in that residual
-/// window is still fund-safe — the authoritative no-reuse guarantee is
-/// the on-chain nullifier set, so a re-selected note at worst wastes a
-/// ~30 s proof on a nullifier-already-used rejection (see the
-/// `finalize_pending` downgrade rationale in `unshield`); never fund
-/// loss. The trade is deliberate: UX for the dominant offline case over
-/// strict conservatism in a rare race.
+/// later attempt's final error, whatever its code. That is why shielded
+/// spends do not use this classification but [`broadcast_tracking_delivery`],
+/// which reports such a spend unconfirmed: a spend reported failed while it
+/// may still execute could be paid again with other notes. The callers left
+/// here are shields into the pool, which move funds to the wallet's own
+/// notes, and masternode credit withdrawals.
 ///
 /// Everything else leaves the outcome unknown and the caller must fall
 /// through to the result wait instead of failing: `AlreadyExists` proves
@@ -106,36 +109,372 @@ pub(crate) fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
     }
 }
 
-/// Whether a `broadcast()` failure [`broadcast_definitely_failed`] counts as
-/// definite may still have delivered the transition: an `Unavailable`
-/// status, which can follow delivery or hide an earlier attempt's, as noted
-/// there. The spend's notes are released all the same, as the on-chain
-/// nullifier set keeps funds safe, but what the transition does may still
-/// happen: a private contact request's entry may still be appended, so its
-/// pair stays held. A consensus verdict, a rejection code and an empty
-/// address list prove the transition was not admitted.
+/// What the dispatches of one shielded spend's broadcast proved about its
+/// delivery ([`broadcast_tracking_delivery`]).
 #[cfg(feature = "shielded")]
-pub(crate) fn broadcast_may_have_been_delivered(e: &dash_sdk::Error) -> bool {
+#[derive(Debug)]
+pub(crate) enum BroadcastDelivery {
+    /// A node admitted the transition, or already held it (`AlreadyExists`).
+    Admitted,
+    /// No dispatch proved the transition was left out of every mempool: a
+    /// dispatch reached an endpoint, which may have kept or forwarded it,
+    /// whatever it answered (a consensus verdict included, which no proof
+    /// or quorum signature backs), or failed in a way that allows delivery.
+    /// It may execute, so the caller waits for its result, and an
+    /// unconfirmed outcome keeps the notes reserved.
+    MaybeDelivered(dash_sdk::Error),
+    /// The transition never left the wallet: it was refused before its first
+    /// dispatch was sent, there being no address to send it to or the SDK
+    /// refusing it, with no dispatch sent before. Nothing holds its bytes but
+    /// the wallet, so it can never execute.
+    NeverDelivered(dash_sdk::Error),
+}
+
+/// How many single dispatches [`broadcast_tracking_delivery`] makes at most
+/// on `sdk`: its configured overall budget, one dispatch and its effective
+/// retries, so a client configured with no retries dispatches once.
+#[cfg(feature = "shielded")]
+pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
+    sdk.query_settings()
+        .request_settings
+        .finalize()
+        .retries
+        .saturating_add(1)
+}
+
+/// Broadcast a shielded spend `state_transition` in single dispatches (no
+/// SDK retry inside a dispatch), at most the SDK's configured budget
+/// ([`spend_broadcast_dispatches`]), keeping what every dispatch proved: the
+/// SDK's own retry loop returns only its last error, which cannot show that
+/// an earlier attempt was delivered with its response lost. Centralizing that
+/// evidence in the SDK is dashpay/platform#5556; what it means for a payment's
+/// notes, journal and contact stays here.
+///
+/// Any dispatch that reached an endpoint, or failed in a way that allows it
+/// (every transport error, whatever its gRPC code, a timeout, a cause-less
+/// broadcast envelope, an unknown error), makes the whole broadcast
+/// [`BroadcastDelivery::MaybeDelivered`]. So does a consensus verdict: an
+/// endpoint's answer is unauthenticated, and one that kept or forwarded the
+/// signed transition can answer with any verdict. Only a refusal before
+/// anything was sent is [`BroadcastDelivery::NeverDelivered`].
+#[cfg(feature = "shielded")]
+pub(crate) async fn broadcast_tracking_delivery(
+    sdk: &dash_sdk::Sdk,
+    state_transition: &dpp::state_transition::StateTransition,
+) -> BroadcastDelivery {
+    use dash_sdk::dapi_client::RequestSettings;
+    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+    use dash_sdk::platform::transition::put_settings::PutSettings;
+
+    let single_dispatch = PutSettings {
+        request_settings: RequestSettings {
+            retries: Some(0),
+            ..RequestSettings::default()
+        },
+        ..PutSettings::default()
+    };
+    track_delivery(spend_broadcast_dispatches(sdk), || {
+        state_transition.broadcast(sdk, Some(single_dispatch))
+    })
+    .await
+}
+
+/// The classification [`broadcast_tracking_delivery`] makes, over the
+/// outcomes `dispatch` returns, one call per single dispatch, at most
+/// `dispatches` of them.
+#[cfg(feature = "shielded")]
+async fn track_delivery<F, Fut>(dispatches: usize, mut dispatch: F) -> BroadcastDelivery
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
+{
+    use dash_sdk::dapi_client::DapiClientError;
+
+    let mut maybe_delivered: Option<dash_sdk::Error> = None;
+    for _ in 0..dispatches.max(1) {
+        let error = match dispatch().await {
+            Ok(()) | Err(dash_sdk::Error::AlreadyExists(_)) => return BroadcastDelivery::Admitted,
+            Err(error) => error,
+        };
+        // Refused before anything was sent: no address, or the SDK's own
+        // refusal of a kind the network does not serve yet.
+        let never_sent = matches!(
+            error,
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                | dash_sdk::Error::ProtocolVersionNotActive { .. }
+        ) || matches!(
+            &error,
+            dash_sdk::Error::NoAvailableAddressesToRetry(inner)
+                if matches!(
+                    **inner,
+                    dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                )
+        );
+        if never_sent {
+            return match maybe_delivered {
+                Some(_) => BroadcastDelivery::MaybeDelivered(error),
+                None => BroadcastDelivery::NeverDelivered(error),
+            };
+        }
+        // An endpoint's verdict ends the dispatches, and proves nothing.
+        if carries_consensus_rejection(&error) {
+            return BroadcastDelivery::MaybeDelivered(error);
+        }
+        maybe_delivered = Some(error);
+    }
+    match maybe_delivered {
+        Some(error) => BroadcastDelivery::MaybeDelivered(error),
+        // Unreachable: every pass sets it or returns.
+        None => BroadcastDelivery::MaybeDelivered(dash_sdk::Error::Generic(
+            "no broadcast dispatch was made".to_string(),
+        )),
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod tests {
+    use super::*;
     use dash_sdk::dapi_client::transport::TransportError;
     use dash_sdk::dapi_client::DapiClientError;
-    use dash_sdk::dapi_grpc::tonic::Code;
+    use dash_sdk::dapi_grpc::tonic::{Code, Status};
+    use std::sync::Mutex;
 
-    fn unavailable(t: &TransportError) -> bool {
-        let TransportError::Grpc(status) = t;
-        status.code() == Code::Unavailable
+    /// Another error of the same shape as `error`, which is not `Clone`.
+    fn copy(error: &dash_sdk::Error) -> dash_sdk::Error {
+        match error {
+            dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                status,
+            ))) => grpc(status.code()),
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses) => {
+                dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+            }
+            dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
+                dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(copy(inner)))
+            }
+            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => rejection(),
+            dash_sdk::Error::ProtocolVersionNotActive {
+                method,
+                required,
+                feature,
+                network,
+                pinned,
+                ..
+            } => dash_sdk::Error::ProtocolVersionNotActive {
+                method,
+                required: *required,
+                feature: *feature,
+                network: *network,
+                pinned: *pinned,
+                cause: None,
+            },
+            other => dash_sdk::Error::Generic(other.to_string()),
+        }
     }
 
-    if carries_consensus_rejection(e) {
-        return false;
+    fn grpc(code: Code) -> dash_sdk::Error {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+            Status::new(code, "test"),
+        )))
     }
-    match e {
-        dash_sdk::Error::DapiClientError(DapiClientError::Transport(t)) => unavailable(t),
-        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(t)) => {
-            unavailable(t)
+
+    /// A consensus rejection, as DAPI attaches one to a refused broadcast.
+    fn rejection() -> dash_sdk::Error {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::UnsupportedFeatureError;
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            dpp::consensus::ConsensusError::BasicError(BasicError::UnsupportedFeatureError(
+                UnsupportedFeatureError::new("test".to_string(), 1),
+            )),
+        )))
+    }
+
+    /// What [`track_delivery`] makes of dispatches whose outcome `outcome`
+    /// gives by dispatch number, from 0, and how many dispatches it made.
+    async fn tracked(
+        outcome: impl Fn(usize) -> Result<(), dash_sdk::Error>,
+    ) -> (BroadcastDelivery, usize) {
+        let dispatched = Mutex::new(0usize);
+        let delivery = track_delivery(BUDGET, || {
+            let mut count = dispatched.lock().expect("count");
+            let result = outcome(*count);
+            *count += 1;
+            std::future::ready(result)
+        })
+        .await;
+        let dispatched = *dispatched.lock().expect("count");
+        (delivery, dispatched)
+    }
+
+    /// The dispatch budget the tests run with.
+    const BUDGET: usize = 6;
+
+    /// An endpoint that kept or forwarded the transition can answer the
+    /// first dispatch with a consensus verdict, as serialized metadata the
+    /// SDK decodes with no proof behind it: the broadcast stays maybe
+    /// delivered, so its payment stays unconfirmed with its notes, journal
+    /// record and contact hold, and the dispatches end there.
+    #[tokio::test]
+    async fn should_keep_a_broadcast_an_endpoint_refused_maybe_delivered() {
+        use dash_sdk::dapi_grpc::tonic::metadata::{MetadataMap, MetadataValue};
+        use dpp::serialization::PlatformSerializableWithPlatformVersion;
+        use dpp::version::PlatformVersion;
+
+        let verdict = || {
+            let bytes = dpp::consensus::ConsensusError::BasicError(
+                dpp::consensus::basic::BasicError::UnsupportedFeatureError(
+                    dpp::consensus::basic::UnsupportedFeatureError::new("test".to_string(), 1),
+                ),
+            )
+            .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+            .expect("serialized");
+            let mut metadata = MetadataMap::new();
+            metadata.insert_bin(
+                "dash-serialized-consensus-error-bin",
+                MetadataValue::from_bytes(&bytes),
+            );
+            dash_sdk::Error::from(DapiClientError::Transport(TransportError::Grpc(
+                Status::with_metadata(Code::InvalidArgument, "rejected", metadata),
+            )))
+        };
+        assert!(carries_consensus_rejection(&verdict()), "{:?}", verdict());
+        let (delivery, dispatched) = tracked(|_| Err(verdict())).await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
+            "{delivery:?}"
+        );
+        assert_eq!(dispatched, 1);
+    }
+
+    /// The tracker keeps the SDK's configured budget: a client configured
+    /// with no retries dispatches once, one with three retries four times.
+    #[tokio::test]
+    async fn should_keep_the_sdk_s_configured_retry_budget() {
+        use dash_sdk::dapi_client::RequestSettings;
+
+        let no_retries = dash_sdk::SdkBuilder::new_mock()
+            .with_settings(RequestSettings {
+                retries: Some(0),
+                ..RequestSettings::default()
+            })
+            .build()
+            .expect("an SDK");
+        assert_eq!(spend_broadcast_dispatches(&no_retries), 1);
+        let three_retries = dash_sdk::SdkBuilder::new_mock()
+            .with_settings(RequestSettings {
+                retries: Some(3),
+                ..RequestSettings::default()
+            })
+            .build()
+            .expect("an SDK");
+        assert_eq!(spend_broadcast_dispatches(&three_retries), 4);
+
+        let dispatched = Mutex::new(0usize);
+        let delivery = track_delivery(spend_broadcast_dispatches(&no_retries), || {
+            *dispatched.lock().expect("count") += 1;
+            std::future::ready(Err(grpc(Code::Unavailable)))
+        })
+        .await;
+        assert!(matches!(delivery, BroadcastDelivery::MaybeDelivered(_)));
+        assert_eq!(*dispatched.lock().expect("count"), 1);
+    }
+
+    /// An attempt admitted with its response lost, then retries refused for
+    /// any reason, leaves the broadcast maybe delivered: the last error
+    /// alone cannot show the transition never left.
+    #[tokio::test]
+    async fn should_keep_an_earlier_ambiguous_dispatch_over_later_refusals() {
+        for lost in [Code::Unavailable, Code::DeadlineExceeded] {
+            for refusal in [
+                grpc(Code::ResourceExhausted),
+                grpc(Code::Unimplemented),
+                grpc(Code::InvalidArgument),
+                rejection(),
+            ] {
+                let refusal = &refusal;
+                let (delivery, _) = tracked(|dispatch| match dispatch {
+                    0 => Err(grpc(lost)),
+                    _ => Err(copy(refusal)),
+                })
+                .await;
+                assert!(
+                    matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
+                    "{lost:?} then a refusal: {delivery:?}"
+                );
+            }
         }
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => {
-            broadcast_may_have_been_delivered(inner)
+    }
+
+    /// Every transport-level failure may have delivered the transition,
+    /// whatever its code, so a broadcast that only ever fails so is maybe
+    /// delivered after the whole budget.
+    #[tokio::test]
+    async fn should_treat_every_transport_failure_as_maybe_delivered() {
+        for code in [
+            Code::Unavailable,
+            Code::ResourceExhausted,
+            Code::Unimplemented,
+            Code::InvalidArgument,
+            Code::Internal,
+        ] {
+            let (delivery, dispatched) = tracked(|_| Err(grpc(code))).await;
+            assert!(
+                matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
+                "{code:?}: {delivery:?}"
+            );
+            assert_eq!(dispatched, BUDGET, "{code:?}");
         }
-        _ => false,
+    }
+
+    /// Only a refusal before anything was sent, nowhere to send the
+    /// transition or the SDK refusing it, with no dispatch sent before,
+    /// shows it never left.
+    #[tokio::test]
+    async fn should_count_a_broadcast_never_delivered_only_without_an_earlier_ambiguity() {
+        for first in [
+            dash_sdk::Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: 15,
+                feature: None,
+                network: 14,
+                pinned: false,
+                cause: None,
+            },
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
+                dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            )),
+        ] {
+            let first = &first;
+            let (delivery, dispatched) = tracked(|_| Err(copy(first))).await;
+            assert!(
+                matches!(delivery, BroadcastDelivery::NeverDelivered(_)),
+                "{delivery:?}"
+            );
+            assert_eq!(dispatched, 1);
+        }
+    }
+
+    /// A dispatch a node admitted, or already holds, is admitted, after any
+    /// number of failed ones.
+    #[tokio::test]
+    async fn should_count_an_admitted_or_known_dispatch_as_admitted() {
+        let (delivery, _) = tracked(|dispatch| match dispatch {
+            0 => Err(grpc(Code::Unavailable)),
+            _ => Ok(()),
+        })
+        .await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::Admitted),
+            "{delivery:?}"
+        );
+        let (delivery, _) = tracked(|dispatch| match dispatch {
+            0 => Err(grpc(Code::DeadlineExceeded)),
+            _ => Err(dash_sdk::Error::AlreadyExists("in the mempool".to_string())),
+        })
+        .await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::Admitted),
+            "{delivery:?}"
+        );
     }
 }

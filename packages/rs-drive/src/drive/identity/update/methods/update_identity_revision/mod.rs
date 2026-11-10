@@ -13,8 +13,6 @@ use dpp::prelude::Revision;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.
     ///
@@ -39,7 +37,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -55,7 +52,6 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_identity_revision".to_string(),

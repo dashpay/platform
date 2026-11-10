@@ -27,7 +27,7 @@ use key_wallet_manager::WalletManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::private_contact_requests::apply_detached;
+use super::private_contact_requests::{apply_detached, with_journaled_marker};
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
@@ -762,14 +762,44 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.read_private_store_before_deciding(sender_identity_id, recipient_identity_id, crypto)
-            .await?;
-        self.release_rejected_private_requests().await?;
-        let Some(claim) = self
-            .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
-            .await?
-        else {
-            return Ok(None);
+        // Bound to this handle's wallet generation, under its lifecycle gate
+        // while the pair is claimed, and again from the moment the host's
+        // signature returns through the submission and its bookkeeping
+        // (`GatedSigner`): a removal cannot complete in either section, and a
+        // send started on a wallet since removed and re-created under the same
+        // id publishes nothing and records nothing on the replacement.
+        //
+        // The private store read runs before the gate: its network reads and
+        // the host's key resolution (a keychain or biometric prompt) never hold
+        // a removal back. It writes the wallet's state only through steps
+        // fenced to this handle's generation (`current_wallet_info_mut`), so a
+        // replacement never receives it, and a read that ran on a wallet
+        // removed meanwhile is refused at the gate.
+        // Boxed: the read's future (a private sync) is large, and the send's
+        // callers nest it in their own.
+        let read =
+            Box::pin(self.read_private_store_before_deciding(sender_identity_id, crypto)).await;
+        let claim = {
+            let _lifecycle = self.generation.payment_guard().await;
+            if !self.is_current_generation().await {
+                return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                    self.wallet_id,
+                )));
+            }
+            let store_read = read?;
+            self.release_discharged_private_requests().await?;
+            match self
+                .claim_public_pair(
+                    sender_identity_id,
+                    recipient_identity_id,
+                    adopt_reply,
+                    store_read,
+                )
+                .await?
+            {
+                Some(claim) => claim,
+                None => return Ok(None),
+            }
         };
         let sent = self
             .send_claimed_contact_request(
@@ -785,18 +815,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         sent.map(Some)
     }
 
+    /// Whether this handle's wallet generation is the one the manager holds:
+    /// not removed, nor re-created under its id since the handle was taken.
+    async fn is_current_generation(&self) -> bool {
+        self.wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation))
+    }
+
     /// Claim the pair `sender`, `recipient` for a public request: refused,
     /// in the same lock, while a private request to the recipient is
-    /// reserved, or once their requests came or went privately, as a
-    /// `contactRequest` document would publish the relationship (replies and
-    /// rotations go privately instead). The refusal reads what the wallet
-    /// tracks, so on a restored or second device it holds only once the
-    /// private sync has read the store.
+    /// reserved, or a private payment the shielded store's journal keeps
+    /// unresolved holds the pair, whether or not the sender identity was
+    /// removed and added again since
+    /// (`WalletPersister::private_pair_journaled`), or once their requests
+    /// came or went privately, as a `contactRequest` document would publish
+    /// the relationship (replies and rotations go privately instead). The
+    /// refusal reads what the wallet tracks, which the store read before the
+    /// send brought up to date (`DashPayView::read_private_store_before_deciding`).
+    /// When that read applied (`store_read`), the sender's read must still be
+    /// to the store's end here, in the same lock: a rewind since (keys that
+    /// changed, a sender unignored) refuses with
+    /// [`PlatformWalletError::PrivateContactStoreNotRead`].
     pub(super) async fn claim_public_pair(
         &self,
         sender: &Identifier,
         recipient: &Identifier,
         adopt_reply: bool,
+        store_read: bool,
     ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let managed = wm
@@ -809,7 +857,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if adopt_reply && managed.dashpay().outgoing_request(recipient).is_some() {
             return Ok(None);
         }
-        if managed.dashpay().private_reply_pending(recipient) {
+        if store_read && !managed.dashpay().private_contact_requests_read() {
+            return Err(PlatformWalletError::PrivateContactStoreNotRead(*sender));
+        }
+        if managed.dashpay().private_reply_pending(recipient)
+            || self.persister.private_pair_journaled(sender, recipient)
+        {
             return Err(PlatformWalletError::PrivateContactRequestPending(
                 *recipient,
             ));
@@ -904,7 +957,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    above; the helper assembles the SDK `EcdhProvider` + xpub
         //    closure and dispatches `Sdk::send_contact_request`, keeping
         //    the seven-generic SDK signature out of this call site — see
-        //    `sdk_writer.rs`.
+        //    `sdk_writer.rs`. The host signs through `GatedSigner`, which
+        //    takes the wallet generation's lifecycle gate once the signature
+        //    returns and keeps it, to the end of this call, through the
+        //    broadcast the SDK makes right after and the bookkeeping below.
+        let gated = GatedSigner {
+            signer,
+            wallet: self,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        };
         let result = self
             .sdk_writer
             .send_contact_request(SendContactRequestParams {
@@ -919,9 +980,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
                 signing_public_key: identity_public_key,
-                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
+                signer: &gated as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
-            .await?;
+            .await
+            .map_err(|error| match gated.removed() {
+                true => PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id)),
+                false => error,
+            })?;
 
         // 8. Mirror the local-state bookkeeping in `send_contact_request`.
         //
@@ -2426,9 +2491,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })
             .collect();
 
-        // Serialize the queue write with identity removal under the same guard.
+        // Serialize the queue write with identity removal under the same guard,
+        // and fence it to this handle's generation.
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
@@ -2624,9 +2690,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             });
         }
 
-        // Serialize the queue write with identity removal under the same guard.
+        // Serialize the queue write with identity removal under the same guard,
+        // and fence it to this handle's generation.
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
@@ -4052,8 +4119,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.read_private_store_before_deciding(&request.recipient_id, &request.sender_id, crypto)
-            .await?;
+        Box::pin(self.read_private_store_before_deciding(&request.recipient_id, crypto)).await?;
         if self.needs_private_reply(request).await {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,
@@ -4668,7 +4734,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         if self.persister.persists_private_contact_scan_state() {
             cs.private_contact_requests_positions.insert(
                 *identity_id,
-                managed.private_contact_requests_position_record(),
+                with_journaled_marker(
+                    &self.persister,
+                    *identity_id,
+                    managed.private_contact_requests_position_record(),
+                ),
             );
         }
         self.persister.store(cs.into()).map_err(|e| {
@@ -6919,6 +6989,108 @@ mod stamp_race_tests {
             Some(7),
             "a stamp from the live payload records the tracked reference"
         );
+    }
+}
+
+/// Where a contact request send's signing stands, for [`GatedSigner`].
+enum SigningGate {
+    /// The host has not signed yet: no gate is held.
+    Unsigned,
+    /// Signed, and the wallet generation's lifecycle gate is held from then
+    /// on, until the send ends: kept for its drop.
+    Gated {
+        _gate: tokio::sync::OwnedRwLockReadGuard<()>,
+    },
+    /// Signed after the wallet was removed or replaced: nothing goes out.
+    Removed,
+}
+
+/// The host's signer for a contact request send, taking the wallet
+/// generation's lifecycle gate once a signature returns and before it can
+/// leave: the SDK broadcasts right after signing, so the broadcast and the
+/// send's bookkeeping run under the gate, while the host's signing prompt
+/// does not. A signature made after the wallet was removed, or re-created
+/// under its id, is refused, so nothing is published.
+struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
+    signer: &'a S,
+    wallet: &'a IdentityWallet<B>,
+    gate: std::sync::Mutex<SigningGate>,
+}
+
+impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
+    fn gate(&self) -> std::sync::MutexGuard<'_, SigningGate> {
+        self.gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Whether a signature was refused because the wallet was removed or
+    /// replaced while the host signed.
+    fn removed(&self) -> bool {
+        matches!(*self.gate(), SigningGate::Removed)
+    }
+
+    /// Take the lifecycle gate after a signature, unless held already, and
+    /// check the wallet is still current under it. The gate is taken before
+    /// the wallet manager's lock, as the lock ordering requires.
+    async fn hold_gate_after_signing(&self) -> Result<(), dpp::ProtocolError> {
+        if matches!(*self.gate(), SigningGate::Gated { .. }) {
+            return Ok(());
+        }
+        let guard = self.wallet.generation.payment_guard_owned().await;
+        let current = self
+            .wallet
+            .wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.wallet.generation));
+        if current {
+            *self.gate() = SigningGate::Gated { _gate: guard };
+            Ok(())
+        } else {
+            *self.gate() = SigningGate::Removed;
+            Err(dpp::ProtocolError::Generic(
+                "the wallet was removed while the host signed: nothing is sent".to_string(),
+            ))
+        }
+    }
+}
+
+impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> std::fmt::Debug for GatedSigner<'_, S, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GatedSigner")
+    }
+}
+
+#[async_trait::async_trait]
+impl<S, B> Signer<IdentityPublicKey> for GatedSigner<'_, S, B>
+where
+    S: Signer<IdentityPublicKey> + ?Sized + Send + Sync,
+    B: TransactionBroadcaster + ?Sized + Send + Sync,
+{
+    async fn sign(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, dpp::ProtocolError> {
+        let signature = self.signer.sign(key, data).await?;
+        self.hold_gate_after_signing().await?;
+        Ok(signature)
+    }
+
+    async fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        let witness = self.signer.sign_create_witness(key, data).await?;
+        self.hold_gate_after_signing().await?;
+        Ok(witness)
+    }
+
+    fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+        self.signer.can_sign_with(key)
     }
 }
 

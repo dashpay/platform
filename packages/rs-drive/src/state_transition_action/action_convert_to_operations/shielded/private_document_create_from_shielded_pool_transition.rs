@@ -365,7 +365,6 @@ mod tests {
                         &BlockInfo::default(),
                         Some(&transaction),
                         platform_version,
-                        None,
                     )
                 };
                 apply(transition_operations(), false).unwrap_or_else(|e| {
@@ -433,7 +432,6 @@ mod tests {
                 &BlockInfo::default(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to append both entries");
         assert_eq!(store_count(&drive, None), 2);

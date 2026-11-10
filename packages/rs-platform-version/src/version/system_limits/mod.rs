@@ -584,10 +584,11 @@ mod tests {
     fn mock_platform_versions_carry_the_same_documents_batch_cap() {
         use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
         use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
         use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
 
-        let versions =
-            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        let versions = PLATFORM_TEST_VERSIONS
+            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
         assert!(
             !versions.is_empty(),
             "the mock version registry is empty; this test would assert nothing"

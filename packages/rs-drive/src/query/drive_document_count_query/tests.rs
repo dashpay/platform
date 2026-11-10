@@ -107,7 +107,6 @@ fn insert_person_doc(
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to insert document");
 }
@@ -1315,7 +1314,6 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert widget");
     }
@@ -1464,8 +1462,8 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
 /// the reconstructed path query bytes differ and `verify_query`
 /// returns an error.
 ///
-/// Without the fix in `drive_dispatcher.rs`'s `RangeDistinctProof`
-/// arm this test fails. The "fix" is the one-line change from
+/// Without the compile-time fallback in the count proof plan's
+/// `RangeDistinctProof` arm this test fails. The "fix" is the one-line change from
 /// `request.drive_config.default_query_limit` to
 /// `crate::config::DEFAULT_QUERY_LIMIT` on the prove path — see
 /// the comment in that arm for the symmetric reasoning.
@@ -1594,7 +1592,6 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert widget");
     }
@@ -3059,7 +3056,6 @@ mod range_countable_point_lookup_tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert widget");
     }
@@ -3110,7 +3106,6 @@ mod range_countable_point_lookup_tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("insert gizmo");
     }
@@ -3946,7 +3941,6 @@ mod prefix_to_last {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a like");
     }
@@ -4148,7 +4142,6 @@ mod prefix_to_last {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to insert a like");
         }
@@ -4402,7 +4395,6 @@ mod prefix_to_last_in_with_trailing_equal {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a geo document");
     }
@@ -4610,7 +4602,6 @@ mod at_chain_value_tree_counts {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert the document");
     }

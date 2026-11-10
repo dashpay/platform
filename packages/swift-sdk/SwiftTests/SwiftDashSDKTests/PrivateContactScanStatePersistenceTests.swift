@@ -171,7 +171,11 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         XCTAssertNotEqual(
             handler.makePersistenceCapabilities().bits
                 & PlatformWalletPersistenceCapabilities.privateContactRequestScanState, 0)
-        XCTAssertEqual(PlatformWalletPersistenceCapabilities.privateContactRequestScanState, 1 << 14)
+        // Bit 15: bit 14 is the asset-lock shielded recipient's.
+        XCTAssertEqual(PlatformWalletPersistenceCapabilities.privateContactRequestScanState, 1 << 15)
+        XCTAssertEqual(
+            PlatformWalletPersistenceCapabilities.privateContactRequestScanState,
+            UInt64(PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE))
         let ext = handler.makePersistenceCallbacksExtension()
         let persist = try XCTUnwrap(ext.on_persist_private_contact_scan_state_fn)
         let load = try XCTUnwrap(ext.on_load_private_contact_scan_state_fn)

@@ -180,11 +180,34 @@ impl IdentityManager {
     /// Removal is terminal in storage as well as in memory: the persister
     /// deletes the identity and every row it owns, so re-adding the same
     /// id later starts from a blank identity.
+    ///
+    /// Refused, with nothing removed, while the identity's private contact
+    /// request channel is held: a contact request in flight, private or
+    /// public, or a private payment that may still execute, whether its own
+    /// state or the wallet's journal holds it
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]), or one from an
+    /// earlier process not restored yet
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]). Removed
+    /// and loaded again, the identity would start with none of those holds,
+    /// and its persisted marker with it, so a public request could publish a
+    /// pair a private payment still keeps off chain.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,
         persister: &WalletPersister,
     ) -> Result<Identity, PlatformWalletError> {
+        if let Some(managed) = self.managed_identity(identity_id) {
+            let dashpay = managed.dashpay();
+            if let Some(recipient) = dashpay
+                .contact_request_in_flight()
+                .or_else(|| persister.private_sender_journaled(identity_id))
+            {
+                return Err(PlatformWalletError::PrivateContactRequestPending(recipient));
+            }
+            if dashpay.private_payments_unrestored() {
+                return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+            }
+        }
         // Drop the side-index entry first; its value tells us which
         // bucket the identity lives in so we can avoid a second scan.
         let location = self

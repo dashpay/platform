@@ -35,20 +35,14 @@ use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::tests::fixtures::get_data_contract_fixture;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
-use once_cell::sync::Lazy;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-
-static FEE_VERSIONS: Lazy<CachedEpochIndexFeeVersions> =
-    Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
 const POST: &str = "post";
 
@@ -200,7 +194,6 @@ fn apply(drive: &Drive, operations: Vec<DriveOperation>, apply: bool) -> FeeResu
             &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
             None,
             PlatformVersion::latest(),
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to apply the operations")
 }
@@ -306,7 +299,6 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             false,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to estimate the update");
     let applied = drive
@@ -316,7 +308,6 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             true,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to update the contract");
     assert!(estimated.storage_fee >= applied.storage_fee);
@@ -352,7 +343,6 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
             true,
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect("expected to update the contract");
     assert!(has_removals_root(&drive, contract.id()));
@@ -902,7 +892,6 @@ fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Doc
             true,
             None,
             platform_version,
-            None,
         )
         .expect("expected to add the post");
     document
@@ -1263,7 +1252,6 @@ fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
             &BlockInfo::default(),
             None,
             platform_version,
-            Some(&FEE_VERSIONS),
         )
         .expect_err("expected the owner's deletion to be refused");
 
@@ -1332,7 +1320,8 @@ fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() 
     let contract = contract_with(true, false, &[POST]);
     // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
     // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
-    // and costs the same, estimated and applied; only the refund differs.
+    // and costs the same, estimated and applied, apart from the refund and the read of the
+    // storing epoch's record that pricing the refund takes.
     let fees = |forfeiting: bool| {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         insert(&drive, &contract);
@@ -1371,7 +1360,30 @@ fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() 
         estimated.processing_fee
     );
     assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
-    assert_eq!(forfeiting.processing_fee, refunding.processing_fee);
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let mut record_read = vec![];
+    drive
+        .get_epoch_protocol_version_operations(
+            &Epoch::new(0).expect("epoch"),
+            None,
+            &mut record_read,
+            platform_version,
+        )
+        .expect("expected the storing epoch's record");
+    let record_read_fee = drive
+        .calculate_fee(
+            None,
+            Some(record_read),
+            &Epoch::new(3).expect("epoch"),
+            platform_version,
+        )
+        .expect("expected to price the read")
+        .processing_fee;
+    assert!(record_read_fee > 0);
+    assert_eq!(
+        forfeiting.processing_fee + record_read_fee,
+        refunding.processing_fee
+    );
     assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
     assert!(forfeiting.fee_refunds.0.is_empty());
     assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());

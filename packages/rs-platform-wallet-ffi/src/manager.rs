@@ -9,8 +9,9 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
-    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn,
+    LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadPrivateContactScanStateFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
@@ -318,6 +319,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_shielded_recipient: slot!(
+            on_persist_asset_lock_shielded_recipient_fn,
+            PersistAssetLockShieldedRecipientFn
+        ),
+        load_asset_lock_shielded_recipient: slot!(
+            on_load_asset_lock_shielded_recipient_fn,
+            LoadAssetLockShieldedRecipientFn
         ),
         persist_private_contact_scan_state: slot!(
             on_persist_private_contact_scan_state_fn,

@@ -170,7 +170,6 @@ fn insert(
             apply,
             None,
             platform_version(),
-            None,
         )
         .unwrap_or_else(|error| panic!("the {type_name} inserts: {error:?}"))
 }
@@ -193,7 +192,6 @@ fn delete_like(drive: &Drive, contract: &DataContract, like: &Document, apply: b
             apply,
             None,
             platform_version(),
-            None,
         )
         .expect("the like deletes")
 }

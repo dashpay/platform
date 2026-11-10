@@ -109,6 +109,11 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let dashpayPayments: UInt64 = 1 << 12
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// The Orchard recipient of a shielded asset-lock funding survives store
+    /// and load with its row, so a resume after restart pays the confirmed
+    /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
+    /// Rust only honours the declaration when both recipient slots are wired.
+    public static let assetLockShieldedRecipients: UInt64 = 1 << 14
     /// The private contact request sync's scan state (each identity's read
     /// position in DashPay's private contact request store, and its private
     /// contacts' shielded addresses) is stored on its round and restored at
@@ -116,7 +121,7 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`; Rust
     /// only honours the declaration when the extension carries the three
     /// scan-state callbacks.
-    public static let privateContactRequestScanState: UInt64 = 1 << 14
+    public static let privateContactRequestScanState: UInt64 = 1 << 15
 
     public let version: UInt32
     public let bits: UInt64
