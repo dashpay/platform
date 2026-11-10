@@ -643,4 +643,29 @@ describe('waitForDKGWindowPass', () => {
 
     expect(waiting.resolved).to.be.true();
   });
+
+  it('should judge each poll by the Core version answering it', async function it() {
+    // Core is replaced between polls, with no failed call to tell.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_1,
+      height: start + 1,
+      dkgInfo: { active_dkgs: 1, next_dkg: 23, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    // Core 24.0 counts records, and has none yet for the running session.
+    core.version = CORE_24_0;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 23, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [],
+      quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+    };
+
+    await expectStillPolling(waiting, rpcClient);
+  });
 });

@@ -23,13 +23,15 @@ export const CHECK_INTERVAL_MS = 10000;
  * @return {Promise<void>}
  */
 export default async function waitForDKGWindowPass(rpcClient) {
-  const coreVersion = await readCoreVersion(rpcClient);
-
   const announcedDkgs = new Map();
   let nonMemberDkgs = new Set();
   let lastTip;
 
   for (;;) {
+    // Which rule applies depends on the version, and Core may have been
+    // replaced since the last poll.
+    const coreVersion = await readCoreVersion(rpcClient);
+
     const check = await checkMasternodeSafeToStop(rpcClient, coreVersion, {
       knownNonMemberDkgs: nonMemberDkgs,
       ancestor: lastTip,

@@ -133,10 +133,17 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
 
   // Core's DKG worker does nothing during initial block download, and Core
   // never re-enters it without a restart, so a node in it has had no DKG
-  // session since it started.
+  // session since it started: session records do not apply. DKGs it
+  // announces still do, as Core may finish syncing in time for them.
   if (isSyncing) {
+    const blockers = getDkgStopBlockers({ ...snapshot, coreVersion, knownNonMemberDkgs })
+      .filter(({ reason }) => ['upcoming', 'imminent', 'unreadable'].includes(reason));
+
     return {
-      ...result, status: 'safe', blockers: [], isSyncing,
+      ...result,
+      status: getBlockersAt(blockers, height).length > 0 ? 'blocked' : 'safe',
+      blockers,
+      isSyncing,
     };
   }
 
@@ -211,6 +218,18 @@ export default async function checkMasternodeSafeToStop(
   }
 
   second.nonMemberDkgs = new Set([...nonMemberDkgs, ...second.nonMemberDkgs]);
+
+  // A Core restarted into initial block download may no longer announce the
+  // DKGs the first check saw.
+  if (second.isSyncing) {
+    const blockers = [...second.blockers, ...first.blockers];
+
+    return {
+      ...second,
+      status: getBlockersAt(blockers, second.height).length > 0 ? 'blocked' : 'safe',
+      blockers,
+    };
+  }
 
   if (second.status === 'safe' && !second.isSyncing
     && second.height > first.height + MIN_BLOCKS_BEFORE_DKG) {

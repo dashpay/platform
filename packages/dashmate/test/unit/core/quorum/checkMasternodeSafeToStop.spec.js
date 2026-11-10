@@ -193,10 +193,15 @@ describe('checkMasternodeSafeToStop', () => {
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
   });
 
-  it('should treat Core in initial block download as safe without confirmation', async () => {
-    // Core takes no part in DKGs until it has synced.
+  it('should not hold Core in initial block download to sessions, without confirmation', async () => {
+    // Core runs no DKG session until it has synced, so session records and
+    // unrecorded sessions do not apply; announced DKGs still do.
     core.isSyncing = true;
-    core.dkgInfo = { active_dkgs: 0, next_dkg: 1 };
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 12 };
+    core.dkgStatus = {
+      session: [{ llmqType: 'llmq_test_platform', quorumIndex: 0, status: { quorumHeight: 1010 } }],
+      quorumConnections: [{ llmqType: 'llmq_test_platform', quorumIndex: 0, pQuorumBaseBlockIndex: 1010 }],
+    };
 
     const { result } = await startCheck();
 
@@ -269,5 +274,45 @@ describe('checkMasternodeSafeToStop', () => {
 
     expect(state.result.status).to.equal('safe');
     expect(state.result.isReorg).to.not.equal(true);
+  });
+
+  it('should still block a DKG this node is in while Core syncs', async () => {
+    // A Core only a little behind leaves initial block download in time for
+    // the DKGs it announces.
+    core.isSyncing = true;
+    core.version = CORE_24_0_PATCH;
+    core.dkgInfo = {
+      active_dkgs: 0,
+      next_dkg: 2,
+      upcoming_dkgs: [{
+        llmqType: 106, quorumIndex: 0, quorumHeight: 1014, blocksUntilStart: 2, known: true, isMember: true,
+      }],
+    };
+
+    const { result } = await startCheck();
+
+    expect(result.status).to.equal('blocked');
+    expect(result.blockers.map(({ reason }) => reason)).to.deep.equal(['upcoming']);
+  });
+
+  it('should keep the first check\'s DKGs when Core restarts into initial block download during confirmation', async () => {
+    // The first check sees a DKG of this node 8 blocks away; the restarted
+    // Core no longer reports it.
+    core.dkgInfo = {
+      active_dkgs: 0,
+      next_dkg: 8,
+      upcoming_dkgs: [{
+        llmqType: 106, quorumIndex: 0, quorumHeight: 1020, blocksUntilStart: 8, known: true, isMember: true,
+      }],
+    };
+    core.version = CORE_24_0_PATCH;
+
+    const state = await startCheck();
+    core.isSyncing = true;
+    core.height = 1015;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 5 };
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('blocked');
   });
 });
