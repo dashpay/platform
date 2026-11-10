@@ -3540,6 +3540,91 @@ mod tests {
         assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
     }
 
+    /// An entry that only starts with a journal record's commitment, as anyone
+    /// who saw the commitment can append, does not show the record's payment
+    /// executed: the record expires once its anchor is proven pruned.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_take_an_entry_starting_with_a_commitment_as_its_payment() {
+        let fixture = ExpiryFixture::new().await;
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        fixture.prove_at(height);
+        let entry = fixture.pay_unconfirmed(ExpiryFixture::ANCHOR, height).await;
+        let mut forged = entry.to_vec()[..32].to_vec();
+        forged.extend_from_slice(&[0xEE; 64]);
+        publish(&fixture.wallet, 0, vec![forged]).await;
+        let journal = fixture.journal_snapshot().await;
+        assert!(
+            journal[0].1.entry_hash.is_some(),
+            "a new record keeps the hash"
+        );
+        fixture
+            .discharge(&journal, &HashSet::new(), Some(height))
+            .await;
+        fixture.assert_discharged("forged entry").await;
+    }
+
+    /// The expiry's read of the store starts at the sender's read position the
+    /// record kept: a store whose earlier pages no longer answer is read from
+    /// there, and the record discharged.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_read_the_store_for_an_expiry_from_the_position_the_record_kept() {
+        use crate::wallet::shielded::PrivatePaymentRecord;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let fixture = ExpiryFixture::new().await;
+        let height = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        fixture.prove_at(height);
+        let wallet_id = fixture.wallet.wallet_id();
+        let record = PrivatePaymentRecord {
+            account_index: 0,
+            activity_id: [0x71; 32],
+            anchor: ExpiryFixture::ANCHOR,
+            anchor_height: Some(height),
+            commitment: [0x72; 32],
+            payment: PrivateContactPayment {
+                sender: alice.id().to_buffer(),
+                recipient: bob.id().to_buffer(),
+                account_reference: 1,
+            },
+            nullifiers: vec![fixture.input.nullifier],
+            entry_hash: Some([0x73; 32]),
+            store_position: Some(2),
+        };
+        fixture
+            .coordinator
+            .store()
+            .write()
+            .await
+            .journal_private_payments(wallet_id, std::slice::from_ref(&record))
+            .expect("journaled");
+        let contract = dashpay_contract().expect("bundled DashPay");
+        {
+            let mut sdk = (*fixture.wallet.identity().sdk).clone();
+            sdk.mock()
+                .remove_fetch_expectation::<PrivateDocumentEntries, _>(
+                    PrivateDocumentEntriesQuery::new(
+                        contract.id(),
+                        PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                        0,
+                    ),
+                )
+                .await;
+        }
+        publish(&fixture.wallet, 2, vec![]).await;
+        let journal = fixture.journal_snapshot().await;
+        fixture
+            .discharge(&journal, &HashSet::new(), Some(height))
+            .await;
+        assert_eq!(
+            fixture.journaled().await,
+            0,
+            "read from position 2, discharged"
+        );
+    }
+
     /// A restoration that finds a journal record its sender's tracked request
     /// already records, as a private sync read it back in a process that ended
     /// before the shielded sync discharged it, discharges the record.
@@ -3572,6 +3657,159 @@ mod tests {
             0,
             "discharged by the restoration"
         );
+    }
+
+    /// The store's end as the pass's highest proved total: with chunks of two,
+    /// the first page proves five entries at H, and the full second page, from
+    /// a node a block behind, proves only four and its own end. The public
+    /// request reads on to position 4, where Alice's private request is, and is
+    /// refused.
+    #[tokio::test]
+    async fn should_read_past_a_full_page_from_a_node_behind_before_a_public_request() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        serve_pages(
+            &bob_wallet,
+            H,
+            vec![
+                (0, vec![vec![0xA0; 589], vec![0xA1; 589]], 5, H),
+                (2, vec![vec![0xA2; 589], vec![0xA3; 589]], 4, H - 1),
+                (4, vec![entry], 5, H),
+            ],
+        )
+        .await;
+        let public = bob_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{public:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+        })
+        .await;
+    }
+
+    /// After a key rewind with floor H, with chunks of two: a first page at
+    /// H - 1 proving six entries, a middle page at H proving seven and a third
+    /// page at H - 1 proving six. The read goes on past the third page to the
+    /// seven the middle page proved, and position 6 holds Alice's private
+    /// request to Bob's new key: the public request is refused. A pass ending
+    /// at the third page would not count either, its height below the floor
+    /// though the middle page reached it.
+    #[tokio::test]
+    async fn should_not_end_a_rewound_read_at_an_older_walk_target_before_a_public_request() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![]).await;
+        let filler = |byte: u8| vec![vec![byte; 589], vec![byte + 1; 589]];
+        serve_pages(
+            &bob_wallet,
+            H,
+            vec![
+                (0, filler(0xA0), 7, H),
+                (2, filler(0xA2), 7, H),
+                (4, filler(0xA4), 7, H),
+                (6, vec![entry.clone()], 7, H),
+                (7, vec![], 7, H),
+            ],
+        )
+        .await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 16)
+            .await
+            .expect("Bob reads the store at H with his older keys");
+        assert!(store_read(&bob_wallet, BOB).await);
+
+        // The key reaches Bob's identity at the send, which rewinds his read.
+        set_identity_known(&bob_wallet, &bob, true).await;
+        serve_pages(
+            &bob_wallet,
+            H,
+            vec![
+                (0, filler(0xA0), 6, H - 1),
+                (2, filler(0xA2), 7, H),
+                (4, filler(0xA4), 6, H - 1),
+                (6, vec![entry], 7, H),
+            ],
+        )
+        .await;
+        let public = view
+            .send_contact_request_with_external_signer(
+                &bob.id(),
+                &alice.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{public:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
+        })
+        .await;
+    }
+
+    /// `wallet`'s mock answers each page `(start, entries, total, height)` with
+    /// those entries, in chunks of two, showing `total` and proved at
+    /// `height`; every other response is proved at `base`.
+    async fn serve_pages(
+        wallet: &PlatformWallet,
+        base: u64,
+        pages: Vec<(u64, Vec<Vec<u8>>, u64, u64)>,
+    ) {
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let mut sdk = (*wallet.identity().sdk).clone();
+        let mut mock = sdk.mock();
+        mock.set_response_height(base);
+        for (start, entries, total, height) in pages {
+            let query = PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            );
+            let mut page = store_page(start, entries);
+            page.chunk_power = Some(1);
+            page.total_count = total;
+            mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query.clone())
+                .await;
+            mock.expect_fetch(query.clone(), Some(page))
+                .await
+                .expect("page expectation");
+            mock.set_response_height_for::<PrivateDocumentEntries, _>(query, height);
+        }
     }
 
     /// An identity reloaded from a position record stored with its marker
