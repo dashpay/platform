@@ -51,6 +51,7 @@ impl SingleDocumentDriveQuery {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::error::proof::ProofError;
@@ -362,6 +363,64 @@ mod tests {
         assert!(
             matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
             "{result:?}"
+        );
+    }
+
+    /// A proof of more than the document's query, the document together with an identity's
+    /// balance, has the document verified as a subset of it
+    #[test]
+    fn should_find_a_document_that_may_be_contested_in_a_proof_of_more_than_its_query() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = drive_with_contract(DPNS);
+        let document = domain(&contract, 1, "quantum");
+        drive
+            .add_document_for_contract(
+                info(&document, &contract, "domain"),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the document");
+        let query = maybe_contested(&contract, "domain", document.id().to_buffer(), None);
+        let proof = drive
+            .prove_multiple_state_transition_results(
+                &[IdentityDriveQuery {
+                    identity_id: [3; 32],
+                    prove_request_type: IdentityProveRequestType::Balance,
+                }],
+                &[],
+                std::slice::from_ref(&query),
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+                platform_version,
+            )
+            .expect("expected a proof of the balance and the document");
+
+        let (root_hash, found) = query
+            .verify_proof(
+                true,
+                proof.as_slice(),
+                contract
+                    .document_type_for_name("domain")
+                    .expect("expected the domain document type"),
+                platform_version,
+            )
+            .expect("expected the document's part of the proof to verify");
+
+        assert_eq!(found.map(|found| found.id()), Some(document.id()));
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash"),
+            "the proof is of the stored state"
         );
     }
 
