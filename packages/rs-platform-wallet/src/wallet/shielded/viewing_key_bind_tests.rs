@@ -526,6 +526,7 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
                 nullifiers: vec![[2; 32]],
                 st_bytes: vec![9; 32],
                 attempts: 0,
+                identity_index: None,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
             },
@@ -655,9 +656,14 @@ async fn bind_after_wallet_removal_is_refused() {
         .expect("first bind succeeds");
     assert_eq!(coordinator.registered_subwallets().await.len(), 1);
 
-    // What `PlatformWalletManager::remove_wallet` does to this handle.
-    wallet.mark_shielded_detached();
-    coordinator.unregister_wallet(wallet.wallet_id()).await;
+    // What `PlatformWalletManager::remove_wallet` does to this handle: the
+    // detach mark runs inside the coordinator's critical section, after
+    // destructive admission is secured and before any registry is cleared
+    // (#4313 review finding coordinator.rs:805).
+    coordinator
+        .unregister_wallet_with(wallet.wallet_id(), || wallet.mark_shielded_detached())
+        .await
+        .expect("no claim holds admission in this test");
     let persisted_before = persister.stored_count();
 
     let err = wallet
@@ -1078,6 +1084,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
                 nullifiers: vec![],
                 st_bytes: vec![3; 64],
                 attempts: 0,
+                identity_index: None,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
             },
@@ -1099,4 +1106,194 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
             .len(),
         1
     );
+}
+
+/// The one-time-claim registration handoff releases the claim's recovery
+/// record only once the identity's registration is DURABLE (#4313 review,
+/// `platform_wallet.rs` registration tail).
+mod one_time_claim_registration_tests {
+    use super::*;
+    use crate::wallet::shielded::operations::{
+        OneTimeClaimRecoveryRecord, ONE_TIME_CLAIM_RECORDS_ACCOUNT,
+    };
+    use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    /// A buffered persister (`store_commits_inline() == false`) whose `store`
+    /// and `flush` can each be made to fail, counting every call.
+    #[derive(Default)]
+    struct BufferedPersistence {
+        fail_next_store: AtomicBool,
+        fail_flush: AtomicBool,
+        stores: AtomicUsize,
+        flushes: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for BufferedPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.fetch_add(1, Ordering::SeqCst);
+            if self.fail_next_store.swap(false, Ordering::SeqCst) {
+                return Err(PersistenceError::backend("injected store failure"));
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.flushes.fetch_add(1, Ordering::SeqCst);
+            if self.fail_flush.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("injected flush failure"));
+            }
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    const CLAIM_KEY: [u8; 32] = [0xC7; 32];
+
+    fn claimed_identity() -> dpp::identity::Identity {
+        dpp::identity::Identity::V0(IdentityV0 {
+            id: Identifier::from([0xD1; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Arm the record a successful claim leaves behind, and return its receipt.
+    async fn arm_retained_record(
+        coordinator: &NetworkShieldedCoordinator,
+        wallet_id: WalletId,
+    ) -> OneTimeClaimRecoveryRecord {
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(
+                SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT),
+                PendingRedrive {
+                    activity_id: CLAIM_KEY,
+                    anchor: [0x01; 32],
+                    nullifiers: vec![[0x02; 32]],
+                    st_bytes: vec![0x03; 16],
+                    attempts: 0,
+                    identity_index: Some(0),
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                },
+            )
+            .expect("arm the retained record");
+        OneTimeClaimRecoveryRecord::for_tests(wallet_id, CLAIM_KEY)
+    }
+
+    async fn record_retained(
+        coordinator: &NetworkShieldedCoordinator,
+        wallet_id: WalletId,
+    ) -> bool {
+        !coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(SubwalletId::new(wallet_id, ONE_TIME_CLAIM_RECORDS_ACCOUNT))
+            .expect("records")
+            .is_empty()
+    }
+
+    /// RED before the fix: a successful `store` released the record, though a
+    /// buffered backend may hold the identity only in memory until `flush`.
+    /// A flush that fails must keep the record; a crash would otherwise lose
+    /// both the identity and the only copy of its padded id.
+    #[tokio::test]
+    async fn an_unflushed_registration_keeps_the_recovery_record() {
+        let persister = Arc::new(BufferedPersistence::default());
+        persister.fail_flush.store(true, Ordering::SeqCst);
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let coordinator = coordinator_at(&temp_dir("claim_reg_unflushed"));
+        let receipt = arm_retained_record(&coordinator, wallet.wallet_id()).await;
+
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 0, Some(receipt))
+            .await;
+
+        assert_eq!(persister.stores.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            persister.flushes.load(Ordering::SeqCst),
+            1,
+            "a buffered backend must be flushed before the record is released"
+        );
+        assert!(
+            record_retained(&coordinator, wallet.wallet_id()).await,
+            "an identity that never left the persister's buffer must not release its record"
+        );
+
+        // Once the flush succeeds (a retry of the same claim), the record goes.
+        persister.fail_flush.store(false, Ordering::SeqCst);
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 0, Some(receipt))
+            .await;
+        assert!(!record_retained(&coordinator, wallet.wallet_id()).await);
+    }
+
+    /// RED before the fix: a `store` that failed AFTER the in-memory insert
+    /// left the identity in the manager, so the same-session retry hit
+    /// `IdentityAlreadyExists`, never retried persistence, and the record
+    /// could never be released. The retry must re-persist the existing
+    /// registration and then release the record.
+    #[tokio::test]
+    async fn a_retry_after_a_failed_store_repersists_and_releases_the_record() {
+        let persister = Arc::new(BufferedPersistence::default());
+        persister.fail_next_store.store(true, Ordering::SeqCst);
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let coordinator = coordinator_at(&temp_dir("claim_reg_retry"));
+        let receipt = arm_retained_record(&coordinator, wallet.wallet_id()).await;
+
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 0, Some(receipt))
+            .await;
+        assert!(
+            record_retained(&coordinator, wallet.wallet_id()).await,
+            "a rejected store must keep the record"
+        );
+        assert_eq!(persister.flushes.load(Ordering::SeqCst), 0);
+
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 0, Some(receipt))
+            .await;
+        assert_eq!(
+            persister.stores.load(Ordering::SeqCst),
+            2,
+            "the retry must hand the already-inserted registration to the persister again"
+        );
+        assert_eq!(persister.flushes.load(Ordering::SeqCst), 1);
+        assert!(
+            !record_retained(&coordinator, wallet.wallet_id()).await,
+            "a durable retry releases the record"
+        );
+    }
+
+    /// The idempotent re-persist is only for a repeat of THIS registration: an
+    /// identity already registered at a different slot is a real conflict and
+    /// must keep the record.
+    #[tokio::test]
+    async fn a_conflicting_slot_keeps_the_recovery_record() {
+        let persister = Arc::new(BufferedPersistence::default());
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let coordinator = coordinator_at(&temp_dir("claim_reg_conflict"));
+        let receipt = arm_retained_record(&coordinator, wallet.wallet_id()).await;
+
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 0, None)
+            .await;
+        wallet
+            .register_one_time_claim_identity(&coordinator, claimed_identity(), 5, Some(receipt))
+            .await;
+        assert!(record_retained(&coordinator, wallet.wallet_id()).await);
+    }
 }

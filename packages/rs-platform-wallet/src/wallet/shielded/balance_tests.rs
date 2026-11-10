@@ -286,13 +286,15 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         900
     );
 
-    // A real SQLite schema error makes FileBacked's purge fail. Its SQL-first
-    // ordering keeps the live subwallet ledger intact; the host keeps its rows.
+    // A real SQLite schema error makes FileBacked's store reset fail AFTER
+    // destructive admission (which reads `shielded_pending_spends`, so that
+    // table must stay intact). The tree reset runs before the subwallet purge,
+    // so the live subwallet ledger stays intact; the host keeps its rows.
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
+    conn.execute_batch("ALTER TABLE commitment_tree_cap RENAME TO unavailable_tree_cap;")
         .unwrap();
     assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
+    conn.execute_batch("ALTER TABLE unavailable_tree_cap RENAME TO commitment_tree_cap;")
         .unwrap();
     drop(conn);
     assert!(!coordinator.is_hydrated(wallet).await);
@@ -363,6 +365,7 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                     nullifiers: vec![[2; 32]],
                     st_bytes: vec![7; 32],
                     attempts: 0,
+                    identity_index: None,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
                 },
@@ -430,7 +433,10 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
         "another wallet is not restored by this bind"
     );
     drop(store);
-    coordinator.unregister_wallet(wallet).await;
+    coordinator
+        .unregister_wallet(wallet)
+        .await
+        .expect("unregister");
     assert_eq!(
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::Unbound

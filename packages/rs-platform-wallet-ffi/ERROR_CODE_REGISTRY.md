@@ -114,7 +114,7 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 61** — 27–60 are all claimed (27, 29, 31, 34–42
+**Next allocatable integer: 63** — 27–62 are all claimed (27, 29, 31, 34–42
 and 46 merged; 43–45 proposed by active #4313 at head `0302b188ab`; 47 and
 48 proposed by active #4356 (47 renumbered from 42, 48 from 43 — see their
 rows below); 49–54 proposed by active #4586 (the persister
@@ -123,8 +123,11 @@ shield debits and durable recovery errors; 58 proposed by #4799 for an unavailab
 identity balance response; 59 proposed by #5322 for an SPV
 teardown that needs a process restart; 60 proposed by the pooled Core-to-shielded
 wallet drain for `ErrorAssetLockTooManyInputs` (Rust, Swift and Kotlin mirrors —
-renumbered from 59 when #5322 took that number on `v5.1-dev`); 28, 30,
-32 and 33 reserved). **28, 30,
+renumbered from 59 when #5322 took that number on `v5.1-dev`); 61 proposed by
+active #4313 for `ErrorShieldedClaimUnconfirmed` (renumbered from 48 when the
+branch merged `v5.1-dev`, where #4356's `ErrorAssetLockInputContested` holds 48);
+62 proposed by active #4313 for `ErrorShieldedClaimBindingMismatch`;
+28, 30, 32 and 33 reserved). **28, 30,
 32 and 33 are RESERVED, not free**: 28 and 30 were vacated when the
 reservation trio moved to 34–36; 32 and 33 lapsed when their in-repo owners
 (#4310, #4311) closed without merging. All four are deliberately left
@@ -150,8 +153,8 @@ merged table); three others — #4316, #4310 and #4311 — **closed without
 merging** (32 and 33 lapse to RESERVED; 29 passed to #4361, which **merged**
 on 2026-08-26 — it is in the merged table now, and 29 is ABI under rule 3);
 and #4313 (the shielded-invite claim) lost 37 to merged #4348, revived, and
-now holds 43–45 from the frontier at head `0302b188ab` — see its three rows
-below.
+now holds 43–45 (from the frontier at head `0302b188ab`) plus 48 (claimed
+2026-08-28, again from the frontier) — see its four rows below.
 Fork-era numbers remain in the collision history, which is immutable record.
 
 | Code | Name | Owning PR | Status |
@@ -177,6 +180,8 @@ Fork-era numbers remain in the collision history, which is immutable record.
 | 58 | `ErrorIdentityBalanceUnavailable` | #4799 | Proposed — Platform returned no balance for a managed identity. Retrying the read is safe; this is distinct from missing wallet ownership and must not trigger registration or funding |
 | 59 | `ErrorSpvProcessRestartRequired` | #5322 | Proposed — SPV startup or teardown panicked; restart the host process. Not retryable, unlike 27, which SPV start, stop and storage clear now return while an SPV teardown is still running. Typed in Rust, Swift and Kotlin (the PR also types 27 on Kotlin) |
 | 60 | `ErrorAssetLockTooManyInputs` | Core-to-shielded pooled Max | Proposed — an asset lock needs more inputs than one may carry (100 on Dash Core relay policy and Platform consensus): the full drain, or since #5712 a fixed amount held only in many small coins (identity registration, top-up, invitation, platform-address funding). Two meanings. On a build: nothing was broadcast, the reservation is released, no partial drain, and a rebuild after consolidating is safe. On the resume of a tracked `Built` / `Broadcast` lock over the cap (since #5714): it is not re-sent, but an earlier attempt may have reached peers; the row stays tracked and nothing is released. Rust, Swift and Kotlin retain the typed refusal. Renumbered from 59 after #5322 claimed it |
+| 61 | `ErrorShieldedClaimUnconfirmed` | #4313 | In review — renumbered from 48 on 2026-11-02 when the branch merged `v5.1-dev`: 48 is #4356's `ErrorAssetLockInputContested` there, and the frontier stood at 61. First claimed as 48 from the frontier 2026-08-28 (46 merged via #4465, 47 held by active #4356) for review finding 4bf998e99652. The AMBIGUOUS one-time-claim outcome: a panic caught inside the claim export can strike after the Type-20 transition reached the wire, so the transition may already have executed; `out_identity_id` is NOT written (unlike 17), and the retained `shielded_pending_spends` row — the only holder of the claim's padded identity id — makes a rerun a RESUME (`reserve_one_time_claim_key` finds it; `recover_executed_one_time_claim` recovers the declared id). RETRYABLE-as-resume after the claim lease expires; the host MUST preserve the identity slot. Replaces the guard's previous generic `ErrorUnknown` (99), which Kotlin exposed as a non-retryable `Generic` — the slot-forfeiting misclassification. **Rule 5 satisfied across all layers at 61**: the Rust discriminant with its raw-value test pin, Swift's `errorShieldedClaimUnconfirmed = 61` raw case *and* its `init(ffi:)` arm *and* the typed `PlatformWalletError.shieldedClaimUnconfirmed` case with its `init(code:message:)` arm and `errorDescription`, plus an `ErrorHandlingTests` pin of raw value 61; Kotlin's typed retryable `PlatformWallet.ShieldedClaimUnconfirmed` with the `61 ->` arm in `fromPlatformWalletNative` and a `DashSdkErrorTest` pin on 61 |
+| 62 | `ErrorShieldedClaimBindingMismatch` | #4313 | In review — claimed from the frontier 2026-11-02 for the binding-mismatch review finding on `shielded_send.rs`. A one-time-key claim RETRY presented arguments (keys, identity slot, denomination or fallback address) that differ from the transition the earlier attempt submitted. FAIL-CLOSED and ARGUMENT-CORRECTABLE: nothing was rebroadcast, no proof spent, and the pending claim record is kept, so a rerun with the ORIGINAL arguments resumes it; repeating the same call fails the same way. Previously flattened to `ErrorWalletOperation` (6) by the claim entry point's catch-all. **Rule 5 satisfied in the claiming commit**: the Rust discriminant with its raw-value pin and the claim entry point's typed pass-through arm (both tested), Swift's `errorShieldedClaimBindingMismatch = 62` raw case, its `init(ffi:)` arm, the typed `PlatformWalletError.shieldedClaimBindingMismatch` case with its `init(code:message:)` arm and `errorDescription`, plus an `ErrorHandlingTests` pin; Kotlin's typed `PlatformWallet.ShieldedClaimBindingMismatch` (not retryable unchanged) with the `62 ->` arm and a `DashSdkErrorTest` pin |
 
 **Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
 as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
@@ -469,7 +474,7 @@ E0081 plus a duplicate Swift raw value in its own tree, since the 08-25 base
 merges imported merged 42) and at 43 (silent, against an active proposal).
 The full account, timeline included, is in **Non-conforming allocations**
 above. Both persister codes still owe fresh integers from the frontier note —
-the single canonical source; 48 as of 2026-08-26 — and a registry row in the
+the single canonical source; 49 as of 2026-08-28 — and a registry row in the
 same PR (rule 2).
 
 ### 26 — RESOLVED: #4196 restacked onto #4185 and is on 34 / 35 / 36

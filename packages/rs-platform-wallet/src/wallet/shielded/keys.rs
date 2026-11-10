@@ -23,6 +23,135 @@ use crate::error::PlatformWalletError;
 const DASH_COIN_TYPE_MAINNET: u32 = 5;
 const DASH_COIN_TYPE_TESTNET: u32 = 1;
 
+/// Scrub-on-drop containment for an Orchard SECRET that provides no
+/// `Zeroize` support — orchard 0.14's [`SpendingKey`] and
+/// [`SpendAuthorizingKey`] are `Copy` types with neither a `Zeroize` impl
+/// nor a scrubbing `Drop`, so a plain local holding one leaves the complete
+/// spend-authority representation in its stack frame after use (#4204
+/// review finding 1ee08ba70627).
+///
+/// The guard owns the value (`Deref` for use) and volatile-overwrites its
+/// raw bytes on drop, then fences, so the scrub is not elided as a dead
+/// store and runs on EVERY exit path (`?`, early return, panic-unwind).
+/// Call sites additionally `drop()` the guard right after the secret's
+/// final use so it never survives into long-lived async frames across
+/// network awaits.
+///
+/// The safety argument has two halves. The first is the
+/// [`ScrubbableSecret`] bound: the guard is instantiable ONLY over the two
+/// audited Orchard key types, each of which is a fixed-size plain-old-data
+/// representation with no owned indirections and no drop glue, so
+/// overwriting its bytes in place cannot double-free, leave a dangling
+/// pointer, or skip a destructor that had to run (#4313 review finding
+/// keys.rs:64 — a blanket `impl<T>` made the guard silently applicable to
+/// any type, including ones for which byte-scrubbing is unsound). The
+/// second is the `needs_drop` gate below, kept as defence in depth against
+/// an orchard upgrade that adds `Drop` to one of them: the scrub is skipped
+/// rather than made unsound, and `orchard_secret_types_have_no_drop_glue`
+/// turns that silent no-scrub into a test failure.
+///
+/// (What no bound can rule out is the caller having made further copies —
+/// the guard contains the representation it owns; avoiding stray copies is
+/// the call site's job.)
+pub(crate) struct ScrubOnDrop<T: ScrubbableSecret>(pub(crate) T);
+
+/// Marker for the secret types [`ScrubOnDrop`] is audited to byte-scrub.
+///
+/// Implemented for exactly two types — orchard 0.14's [`SpendingKey`] and
+/// [`SpendAuthorizingKey`] — and deliberately NOT blanket-implemented. It is
+/// the bound that keeps the guard's `write_volatile` loop sound: an
+/// implementor must be a fixed-size value whose entire representation is
+/// plain data (no heap pointers, no file descriptors, no `Drop`), so zeroing
+/// it in place destroys the secret and nothing else.
+///
+/// Adding an impl is therefore an explicit audit step, not an accident of
+/// generic inference. The trait is crate-private, so no downstream crate can
+/// widen it at all.
+///
+/// # Safety
+///
+/// The trait is `unsafe` because [`ScrubOnDrop`]'s `Drop` implementation
+/// dereferences the bound into raw `write_volatile` writes over the whole
+/// representation of `T`. An implementor must therefore guarantee that its
+/// entire in-memory representation is plain data that may be overwritten
+/// bytewise:
+///
+/// - no owned indirections (heap pointers, `Box`/`Vec`/`String`, file
+///   descriptors, handles) — byte-scrubbing one leaks or corrupts the owned
+///   resource;
+/// - no drop glue that must observe the live value (`needs_drop::<T>()` is
+///   `false`) — the guard defensively skips the scrub otherwise, so an
+///   implementor with `Drop` silently gets no scrubbing;
+/// - no validity invariant violated by the all-zero bit pattern, since the
+///   value is left zeroed until its storage is released.
+///
+/// Implementing this trait is an explicit statement that byte-zeroing a
+/// value of the type destroys the secret and nothing else (#4313 review
+/// finding keys.rs:76).
+pub(crate) unsafe trait ScrubbableSecret {}
+
+// The complete audited set. `SpendingKey` is a `Copy` 32-byte array wrapper;
+// `SpendAuthorizingKey` is a `Copy` scalar wrapper. Neither has a `Zeroize`
+// impl nor a scrubbing `Drop`, which is why the guard exists at all.
+//
+// SAFETY: both are `Copy`, fixed-size, pointer-free plain-data wrappers with
+// no drop glue (asserted by `orchard_secret_types_have_no_drop_glue`), and
+// neither carries a validity invariant that the all-zero bit pattern breaks:
+// the zeroed value is never read back, only dropped. Byte-zeroing them
+// therefore destroys the spend authority and releases nothing else.
+unsafe impl ScrubbableSecret for SpendingKey {}
+unsafe impl ScrubbableSecret for SpendAuthorizingKey {}
+
+impl<T: ScrubbableSecret> Drop for ScrubOnDrop<T> {
+    fn drop(&mut self) {
+        // Const-folded: for the Orchard key types this is `false` and the
+        // scrub always runs. Overwriting a value that still has drop glue
+        // to execute would be unsound — skip (see the type-level docs).
+        if core::mem::needs_drop::<T>() {
+            return;
+        }
+        let ptr = &mut self.0 as *mut T as *mut u8;
+        for i in 0..core::mem::size_of::<T>() {
+            // Volatile per-byte overwrite: not removable as a dead store.
+            unsafe { core::ptr::write_volatile(ptr.add(i), 0) };
+        }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl<T: ScrubbableSecret> core::ops::Deref for ScrubOnDrop<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod scrub_tests {
+    use super::*;
+
+    /// Both Orchard secret types must stay scrubbable: drop glue appearing on
+    /// either (an orchard upgrade adding `Drop`) would silently disable the
+    /// scrub, and this is the tripwire that turns that into a test failure.
+    #[test]
+    fn orchard_secret_types_have_no_drop_glue() {
+        assert!(!core::mem::needs_drop::<SpendingKey>());
+        assert!(!core::mem::needs_drop::<SpendAuthorizingKey>());
+    }
+
+    /// The guard is instantiable over the audited types — and, because
+    /// [`ScrubbableSecret`] has no blanket impl, over nothing else. A type
+    /// with owned indirections (`Vec<u8>`, say) fails to compile here rather
+    /// than being byte-scrubbed into a leak or a double free
+    /// (#4313 review finding keys.rs:64).
+    #[test]
+    fn only_audited_secret_types_are_scrubbable() {
+        fn assert_scrubbable<T: ScrubbableSecret>() {}
+        assert_scrubbable::<SpendingKey>();
+        assert_scrubbable::<SpendAuthorizingKey>();
+    }
+}
+
 /// ZIP-32 derived Orchard key hierarchy.
 ///
 /// Contains the key material needed for shielded sync and address
@@ -87,22 +216,27 @@ impl OrchardKeySet {
             ))
         })?;
 
-        let sk = SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(|e| {
-            PlatformWalletError::ShieldedKeyDerivation(format!("ZIP-32 derivation failed: {}", e))
-        })?;
+        let sk = ScrubOnDrop(
+            SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(|e| {
+                PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "ZIP-32 derivation failed: {}",
+                    e
+                ))
+            })?,
+        );
 
-        let fvk = FullViewingKey::from(&sk);
-        let ask = SpendAuthorizingKey::from(&sk);
+        let fvk = FullViewingKey::from(&*sk);
+        let ask = SpendAuthorizingKey::from(&*sk);
         let ivk = fvk.to_ivk(Scope::External);
         let ovk = fvk.to_ovk(Scope::External);
         let default_address = fvk.address_at(0u32, Scope::External);
-        // `sk` falls out of scope here. The FVK / ASK / IVK / OVK
-        // already capture every quantity the wallet needs; spend
-        // authorization is re-derived transiently from the wallet
-        // seed via the host signer at sign time. (Orchard
-        // `SpendingKey` is `Copy`, so explicit zeroization of this
-        // local would require wrapping in `Zeroizing`; revisit when
-        // the spend signer lands.)
+        // The master spending key's final use is behind us: scrub its bytes
+        // NOW (the [`ScrubOnDrop`] guard volatile-zeroes them) rather than
+        // letting the representation ride the rest of this frame. The
+        // FVK / ASK / IVK / OVK already capture every quantity the wallet
+        // needs; spend authorization is re-derived transiently from the
+        // wallet seed via the host signer at sign time.
+        drop(sk);
 
         Ok(Self {
             full_viewing_key: fvk,
@@ -211,6 +345,113 @@ impl AccountViewingKeys {
             )
         })?;
         Ok(Self::from_full_viewing_key(fvk))
+    }
+}
+
+/// Length in bytes of a raw Orchard payment address: an 11-byte
+/// diversifier concatenated with a 32-byte `pk_d`. This is the encoding
+/// [`PaymentAddress::to_raw_address_bytes`] produces and the one
+/// `platform_wallet_manager_shielded_default_address` /
+/// `identity_create_from_one_time_key` speak.
+pub const ORCHARD_RAW_ADDRESS_LEN: usize = 43;
+
+/// Derive the default raw Orchard payment address (diversifier index 0,
+/// external scope) from a 32-byte Orchard spending key.
+///
+/// This is the standalone, RNG-free deriver behind
+/// [`generate_one_time_orchard_key`]. It runs the exact SK → FVK →
+/// default-address pipeline that [`OrchardKeySet::from_seed`] uses
+/// (`FullViewingKey::from(&sk)` then `address_at(0, External)`), and
+/// returns the same 43-byte raw encoding
+/// (`super::operations::identity_create_from_one_time_key` derives its
+/// scan key from `SpendingKey::from_bytes(sk)` identically). The *inviter*
+/// side of an L2 shielded invitation calls this to compute the Orchard
+/// recipient it must fund a note to for a given one-time spending key; it
+/// is also the cheap round-trip check for [`generate_one_time_orchard_key`].
+///
+/// # Errors
+///
+/// Returns [`PlatformWalletError::ShieldedKeyDerivation`] when `sk_bytes`
+/// is not a valid Orchard `SpendingKey` scalar — the same validity gate
+/// `identity_create_from_one_time_key` applies to a claimed key.
+pub fn orchard_address_from_spending_key(
+    sk_bytes: &[u8; 32],
+) -> Result<[u8; ORCHARD_RAW_ADDRESS_LEN], PlatformWalletError> {
+    // By-reference parameter: the caller's (typically `Zeroizing`) buffer is
+    // not repeated as a plain by-value array at this boundary. The one
+    // unavoidable transient copy is the `from_bytes` argument itself
+    // (orchard's API takes the array by value); the RESULT is contained in a
+    // [`ScrubOnDrop`] guard so the non-zeroizing `SpendingKey` representation
+    // is volatile-scrubbed on every exit path (#4204 finding 1ee08ba70627).
+    let sk = ScrubOnDrop(
+        Option::<SpendingKey>::from(SpendingKey::from_bytes(*sk_bytes)).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(
+                "spending key is not a valid Orchard SpendingKey".to_string(),
+            )
+        })?,
+    );
+    let fvk = FullViewingKey::from(&*sk);
+    Ok(fvk.address_at(0u32, Scope::External).to_raw_address_bytes())
+}
+
+/// Generate a fresh one-time Orchard spending key together with its default
+/// raw payment address.
+///
+/// Returns `(spending_key_32, default_address_43)`:
+/// - `spending_key_32` — a uniformly random, valid 32-byte Orchard
+///   `SpendingKey` scalar, wrapped in [`zeroize::Zeroizing`] so the bearer
+///   secret is scrubbed when the caller drops it. These are exactly the bytes
+///   `identity_create_from_one_time_key` accepts as its one-time key: both
+///   sides round-trip through `SpendingKey::from_bytes`, which stores the
+///   scalar bytes verbatim, so `spending_key_32 == sk.to_bytes()`.
+/// - `default_address_43` — the address
+///   [`orchard_address_from_spending_key`] derives for that key (raw
+///   11-byte diversifier ‖ 32-byte `pk_d`).
+///
+/// This keeps all Orchard key material in Rust: the *inviter* funds a note
+/// to `default_address_43`, and a *claimer* handed `spending_key_32`
+/// re-derives the viewing keys and spends it.
+///
+/// The scalar is drawn from the OS CSPRNG ([`OsRng`](rand::rngs::OsRng))
+/// and re-rolled until it is a valid Orchard key — an invalid draw is
+/// negligibly rare and the same acceptance loop the `orchard` crate's own
+/// dummy-key generator runs.
+///
+/// Uses [`RngCore::try_fill_bytes`] rather than `fill_bytes`: the latter
+/// *panics* when the OS entropy source fails. This function is called from a
+/// `#[no_mangle] extern "C"` FFI export, where a panic cannot unwind across
+/// the C ABI and would abort the whole process before the JNI panic guard can
+/// run. Surfacing the entropy failure as a typed
+/// [`PlatformWalletError::ShieldedKeyDerivation`] instead lets the FFI layer
+/// return a normal error to the host.
+pub fn generate_one_time_orchard_key(
+) -> Result<(zeroize::Zeroizing<[u8; 32]>, [u8; ORCHARD_RAW_ADDRESS_LEN]), PlatformWalletError> {
+    use rand::{rngs::OsRng, RngCore};
+
+    let mut rng = OsRng;
+    loop {
+        // `Zeroizing` inside the loop, not just on the accepted draw: the
+        // acceptance loop can REJECT a draw, and a rejected 32-byte scalar is
+        // still fresh CSPRNG key material. A plain `[u8; 32]` would drop at the
+        // end of the iteration unscrubbed, leaving discarded near-keys in the
+        // stack frame. Wrapping here scrubs every draw — rejected and accepted
+        // alike — and carries the accepted one out to the caller still wrapped.
+        let mut sk_bytes = zeroize::Zeroizing::new([0u8; 32]);
+        rng.try_fill_bytes(sk_bytes.as_mut_slice()).map_err(|e| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "OS RNG entropy source failed while generating a one-time Orchard key: {e}"
+            ))
+        })?;
+        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(*sk_bytes)) {
+            // Contain the accepted draw's non-zeroizing `SpendingKey`
+            // representation too — the byte buffer is already `Zeroizing`,
+            // but this derived form would otherwise die unscrubbed
+            // (#4204 finding 1ee08ba70627).
+            let sk = ScrubOnDrop(sk);
+            let fvk = FullViewingKey::from(&*sk);
+            let address = fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
+            return Ok((sk_bytes, address));
+        }
     }
 }
 
@@ -404,6 +645,115 @@ mod tests {
         assert!(
             AccountViewingKeys::from_fvk_bytes(&[0xFFu8; 96]).is_err(),
             "non-canonical FVK bytes must be rejected"
+        );
+    }
+
+    /// Round-trip: a freshly generated one-time key's returned address is
+    /// exactly what [`orchard_address_from_spending_key`] re-derives from the
+    /// returned spending key. This is the invariant the inviter/claimer split
+    /// relies on — the inviter funds the returned address; the claimer, given
+    /// only the spending key, must re-derive the same recipient.
+    #[test]
+    fn one_time_key_generate_roundtrips_to_its_address() {
+        let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
+        let rederived = orchard_address_from_spending_key(&sk)
+            .expect("a freshly generated sk is a valid Orchard SpendingKey");
+        assert_eq!(
+            address, rederived,
+            "generated address must equal the deriver's output for the same sk"
+        );
+    }
+
+    /// Ownership: a real Orchard note sent to the generated address is
+    /// recognized by the generated key's incoming viewing key (the claimer
+    /// discovers it on scan) and its nullifier derives cleanly under that
+    /// key's full viewing key (the claimer can spend it). Mirrors the
+    /// note-shaping the foreign-key scan in `operations.rs` performs.
+    #[test]
+    fn generated_key_owns_a_note_sent_to_its_address() {
+        use grovedb_commitment_tree::{
+            ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, RandomSeed, Rho, Scope,
+            SpendingKey,
+        };
+
+        let (sk_bytes, address_bytes) = generate_one_time_orchard_key().expect("OS RNG available");
+
+        // Re-derive exactly the viewing keys a claimer would hold.
+        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(*sk_bytes))
+            .expect("generated sk is a valid Orchard SpendingKey");
+        let fvk = FullViewingKey::from(&sk);
+        let ivk = fvk.to_ivk(Scope::External);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // The generated raw address is precisely this recipient.
+        assert_eq!(
+            recipient.to_raw_address_bytes(),
+            address_bytes,
+            "the generated address is the key's default payment address"
+        );
+
+        // The claimer's IVK owns (recognizes) that address.
+        assert!(
+            ivk.diversifier_index(&recipient).is_some(),
+            "the generated key's ivk must own the generated address"
+        );
+
+        // Build a real note to the address (canonical rho / rseed, exactly as
+        // the foreign-key scan reconstructs one) and confirm it is well-formed
+        // and spendable under the generated fvk: the nullifier derives without
+        // panicking, which is the quantity the claimer's scan stamps.
+        let rho = (1u16..=u16::MAX)
+            .find_map(|n| {
+                let mut b = [0u8; 32];
+                b[0..2].copy_from_slice(&n.to_le_bytes());
+                Rho::from_bytes(&b).into_option()
+            })
+            .expect("a canonical rho exists");
+        let rseed = (1u16..=u16::MAX)
+            .find_map(|m| {
+                let mut b = [0u8; 32];
+                b[2..4].copy_from_slice(&m.to_le_bytes());
+                RandomSeed::from_bytes(b, &rho).into_option()
+            })
+            .expect("a canonical rseed exists");
+        let note = Note::from_parts(recipient, NoteValue::from_raw(10_000_000_000), rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+
+        let _cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+        let _nullifier = note.nullifier(&fvk).to_bytes();
+        assert_eq!(
+            note.recipient().to_raw_address_bytes(),
+            address_bytes,
+            "the note's recipient is the generated address"
+        );
+    }
+
+    /// Determinism: the deriver is a pure function of the spending key —
+    /// same sk in, same address out — and it agrees with what the generator
+    /// returned.
+    #[test]
+    fn address_from_spending_key_is_deterministic() {
+        let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
+        let a = orchard_address_from_spending_key(&sk).expect("valid sk");
+        let b = orchard_address_from_spending_key(&sk).expect("valid sk");
+        assert_eq!(a, b, "same sk must derive the same address");
+        assert_eq!(
+            a, address,
+            "the deriver agrees with the generator for the generated sk"
+        );
+    }
+
+    /// Two generations draw distinct keys (the OS CSPRNG is not seeded to a
+    /// fixed value). A collision here would be a catastrophic RNG failure.
+    #[test]
+    fn generate_produces_distinct_keys() {
+        let (sk_a, addr_a) = generate_one_time_orchard_key().expect("OS RNG available");
+        let (sk_b, addr_b) = generate_one_time_orchard_key().expect("OS RNG available");
+        assert_ne!(*sk_a, *sk_b, "distinct draws must differ");
+        assert_ne!(
+            addr_a, addr_b,
+            "distinct keys must derive distinct addresses"
         );
     }
 }

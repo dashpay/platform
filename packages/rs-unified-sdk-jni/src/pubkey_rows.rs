@@ -356,10 +356,11 @@ pub(crate) fn check_registration_invariants(rows: &[DecodedPubkeyRow]) -> Result
     Ok(())
 }
 
-/// Decode an identity-CREATE registration pubkeys BLOB (all four registration
-/// JNI exports): the shared structural parse plus
-/// [`check_registration_invariants`]. Throws + returns `None` on any violation.
-pub(crate) fn decode_registration_pubkeys_blob(
+/// Decode a pubkeys BLOB structurally only: a null blob or a malformed row
+/// throws, but no key-count or key-role rule is applied. For entry points
+/// whose Rust operation owns those rules (the one-time-key invitation claim).
+/// Throws + returns `None` on a violation.
+pub(crate) fn decode_structural_pubkeys_blob(
     env: &mut JNIEnv,
     arr: &JByteArray,
 ) -> Option<Vec<DecodedPubkeyRow>> {
@@ -367,13 +368,23 @@ pub(crate) fn decode_registration_pubkeys_blob(
         throw_sdk_exception(env, 1, "pubkeysBlob was null/invalid");
         return None;
     };
-    let rows = match parse_pubkey_rows(&bytes) {
-        Ok(rows) => rows,
+    match parse_pubkey_rows(&bytes) {
+        Ok(rows) => Some(rows),
         Err(msg) => {
             throw_sdk_exception(env, 1, &msg);
-            return None;
+            None
         }
-    };
+    }
+}
+
+/// Decode an identity-CREATE registration pubkeys BLOB (the registration JNI
+/// exports): [`decode_structural_pubkeys_blob`] plus
+/// [`check_registration_invariants`]. Throws + returns `None` on any violation.
+pub(crate) fn decode_registration_pubkeys_blob(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+) -> Option<Vec<DecodedPubkeyRow>> {
+    let rows = decode_structural_pubkeys_blob(env, arr)?;
     if let Err(msg) = check_registration_invariants(&rows) {
         throw_sdk_exception(env, 1, &msg);
         return None;
