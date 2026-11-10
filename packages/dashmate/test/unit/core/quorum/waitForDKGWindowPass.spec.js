@@ -918,6 +918,41 @@ describe('waitForDKGWindowPass', () => {
     expect(waiting.resolved).to.be.true();
   });
 
+  it('should keep what a check announced when Core restarts during its confirmation', async function it() {
+    // The first check announces a member DKG for later and is confirmed 15 s
+    // on; Core restarts in between and comes back without the announcement.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 7,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 7,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 7, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.down = true;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    // Back after the DKG started, as Core 24.1 that has not worked out its
+    // proTxHash yet: nothing it reports shows the DKG.
+    core.down = false;
+    core.version = CORE_24_1;
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 22 };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    await expectStillPolling(waiting, rpcClient);
+  });
+
   it('should keep blocking a DKG it saw announced when Core restarts into initial block download', async function it() {
     // A restarted Core reports initial block download, yet it may finish
     // syncing in time for the DKG this node is a member of.

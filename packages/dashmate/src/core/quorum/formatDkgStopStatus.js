@@ -36,6 +36,7 @@ function describeBlocker(blocker, height) {
   switch (blocker.reason) {
     case 'session':
     case 'new-round':
+    case 'unrecorded':
       return [describeRunningDkg(blocker)];
     case 'upcoming':
       if (getStart(blocker) <= height) {
@@ -55,15 +56,17 @@ function describeBlocker(blocker, height) {
 }
 
 /**
- * A DKG the wait remembered from its announcement, once Core shows a record
- * of the same session.
+ * The session a running blocker stands for, or `null` for one that has not
+ * started. The same session can be known several ways at once: announced
+ * earlier, as last round's record, as not recorded yet, or recorded.
  */
-function isShownAsRecord(blocker, blockers) {
-  return blocker.reason === 'upcoming'
-    && blockers.some((other) => (other.reason === 'session' || other.reason === 'new-round')
-      && other.llmqType === blocker.llmqType
-      && other.quorumIndex === blocker.quorumIndex
-      && other.from === getStart(blocker));
+function getRunningSessionKey(blocker, height) {
+  const isRunning = ['session', 'new-round', 'unrecorded'].includes(blocker.reason)
+    || (blocker.reason === 'upcoming' && getStart(blocker) <= height);
+
+  return isRunning
+    ? `${blocker.llmqType}:${blocker.quorumIndex}:${getStart(blocker)}`
+    : null;
 }
 
 /**
@@ -111,10 +114,25 @@ function describeBlockers(height, blockers, blockTimeSeconds) {
     : relevant.filter(({ from, until }) => (from === null || from < safeHeight)
       && (until === null || until > height));
 
+  const shownSessions = new Set();
+  const unique = listed.filter((blocker) => {
+    const key = getRunningSessionKey(blocker, height);
+
+    if (key === null) {
+      return true;
+    }
+
+    if (shownSessions.has(key)) {
+      return false;
+    }
+
+    shownSessions.add(key);
+
+    return true;
+  });
+
   return [
-    ...listed
-      .filter((blocker) => !isShownAsRecord(blocker, listed))
-      .flatMap((blocker) => describeBlocker(blocker, height)),
+    ...unique.flatMap((blocker) => describeBlocker(blocker, height)),
     describeEarliestSafeStop(safeHeight, height, blockTimeSeconds),
   ];
 }

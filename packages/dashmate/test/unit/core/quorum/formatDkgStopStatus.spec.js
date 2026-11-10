@@ -109,6 +109,30 @@ describe('formatDkgStopStatus', () => {
     ]);
   });
 
+  it('should describe a session Core has not recorded yet as running', () => {
+    expect(blocked([{
+      reason: 'unrecorded', llmqType: 'llmq_100_67', quorumIndex: 0, from: HEIGHT - 2, until: HEIGHT + 8,
+    }])).to.deep.equal([
+      `At block ${HEIGHT}, waiting for:`,
+      `llmq_100_67 DKG at block ${HEIGHT - 2} runs until block ${HEIGHT + 8}`,
+      `Earliest safe stop: block ${HEIGHT + 8}, in 8+ blocks (~20m)`,
+    ]);
+  });
+
+  it('should list one session once however many ways it is known', () => {
+    // Announced earlier, still shown as last round's record, and not yet
+    // recorded as its own.
+    expect(blocked([
+      upcoming(HEIGHT - 2),
+      { ...session(HEIGHT - 2), reason: 'new-round' },
+      { ...session(HEIGHT - 2), reason: 'unrecorded' },
+    ])).to.deep.equal([
+      `At block ${HEIGHT}, waiting for:`,
+      `llmq_100_67 DKG at block ${HEIGHT - 2} runs until block ${HEIGHT + 8}`,
+      `Earliest safe stop: block ${HEIGHT + 8}, in 8+ blocks (~20m)`,
+    ]);
+  });
+
   it('should leave out Core\'s session count when the sessions it lists account for it', () => {
     const count = {
       reason: 'active-count', count: 1, from: null, until: null,
