@@ -271,6 +271,7 @@ impl Drive {
                 document_type,
             },
             true,
+            false,
             block_info,
             &mut None,
             &mut None,

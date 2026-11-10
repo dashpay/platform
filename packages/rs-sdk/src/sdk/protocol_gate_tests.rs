@@ -1716,13 +1716,42 @@ fn assert_refused_for<T: std::fmt::Debug>(
     }
 }
 
-/// A `domain` query that reads the elements of `records.identity`.
+/// A `post` contract whose `hashtags` is a typed array of strings, indexed by element.
+fn posts() -> Arc<DataContract> {
+    let schemas = dpp::platform_value::platform_value!({"post": {
+        "type": "object",
+        "properties": {
+            "hashtags": {
+                "type": "array",
+                "maxItems": 10,
+                "items": {"type": "string", "minLength": 1, "maxLength": 61},
+                "position": 0
+            }
+        },
+        "indices": [
+            {"name": "byHashtag", "properties": [{"hashtags": "asc"}]}
+        ],
+        "additionalProperties": false
+    }});
+    Arc::new(
+        dpp::data_contract::DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .unwrap()
+            .create_with_value_config(Identifier::new([9; 32]), 0, schemas, None, None)
+            .unwrap()
+            .data_contract_owned(),
+    )
+}
+
+/// A `post` query that reads the elements of `hashtags`, which the type's index serves.
 fn contains_query() -> DocumentQuery {
-    plain_query().with_where(DriveWhereClause {
-        field: "records.identity".to_string(),
-        operator: WhereOperator::Contains,
-        value: dpp::platform_value::Value::Identifier([1; 32]),
-    })
+    DocumentQuery::new(posts(), "post")
+        .unwrap()
+        .with_limit(10)
+        .with_where(DriveWhereClause {
+            field: "hashtags".to_string(),
+            operator: WhereOperator::Contains,
+            value: dpp::platform_value::Value::Text("dash".to_string()),
+        })
 }
 
 /// A `tip` contract whose documents are summed by `amount`.
@@ -1986,7 +2015,10 @@ fn should_refuse_a_document_query_that_does_not_state_its_requirement() {
 }
 
 /// A mock SDK does not enforce the gate: it sends a query that uses a protocol 14 feature
-/// whatever version it starts at, as a test registered it.
+/// whatever version it starts at, as a test registered it. The check before sending still runs
+/// at the version the query is encoded with, so the feature here is a composite page, which a
+/// check at 13 reads by its shape alone; a typed array's elements, by contrast, are read only
+/// from 14, so a check at 13 refuses a `contains` as its verifier at 13 would.
 #[tokio::test]
 async fn should_send_protocol_14_document_queries_from_a_mock_that_does_not_enforce_the_gate() {
     let mut sdk = SdkBuilder::new_mock()
@@ -1994,10 +2026,10 @@ async fn should_send_protocol_14_document_queries_from_a_mock_that_does_not_enfo
         .build()
         .unwrap();
     sdk.mock()
-        .expect_fetch_many(contains_query(), None::<Documents>)
+        .expect_fetch(composite_query(), None::<CompositeDocuments>)
         .await
         .expect("a mock at 13 encodes the query");
-    Document::fetch_many(&sdk, contains_query())
+    CompositeDocuments::fetch(&sdk, composite_query())
         .await
         .expect("a mock sends what a test registered");
 }
