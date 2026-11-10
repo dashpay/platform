@@ -27,10 +27,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// were released and the caller may retry. A node's refusal or consensus
     /// verdict is unconfirmed instead (18, or 17 for identity-create).
     case errorShieldedBroadcastFailed = 16
-    /// Shielded broadcast accepted but its execution result could not be
-    /// confirmed; the identity may already exist on chain. The FFI also fills
-    /// the derived id into `outIdentityId` on this code, so the caller can
-    /// hold the slot rather than treat the registration as failed.
+    /// An identity create from the pool may have reached a node (accepted, a
+    /// send attempt that may have delivered it, a node's refusal or verdict),
+    /// its result is not proved and a direct fetch of the derived id came
+    /// back empty. The wallet keeps the notes reserved and the saved
+    /// transition. The identity may already exist on chain: do not treat it
+    /// as unregistered or re-submit. The FFI fills the derived id into
+    /// `outIdentityId` on this code, so the caller can hold the slot.
     case errorShieldedBroadcastUnconfirmed = 17
     /// A shielded operation (shield from Platform addresses, unshield /
     /// transfer / withdrawal) may have reached a node and its result is not
@@ -606,11 +609,14 @@ public enum PlatformWalletError: LocalizedError {
     /// left the wallet (refused before anything was sent), so it cannot
     /// execute; any reserved notes were released and a retry is safe.
     case shieldedBroadcastFailed(String)
-    /// Shielded broadcast accepted but its execution result could not be
-    /// confirmed; the identity may already exist on chain. Callers that need
-    /// the derived id should special-case the
+    /// An identity create from the pool may have reached a node (a node's
+    /// refusal or verdict included), its result is not proved and a direct
+    /// fetch of the derived id came back empty. The wallet keeps the notes
+    /// reserved and the saved transition; the identity may already exist on
+    /// chain, so do not treat it as unregistered or re-submit. Callers that
+    /// need the derived id should special-case the
     /// `.errorShieldedBroadcastUnconfirmed` result code (which carries
-    /// `outIdentityId`) before falling back to this error — see
+    /// `outIdentityId`) before falling back to this error: see
     /// `ShieldedIdentityCreateUnconfirmedError`.
     case shieldedBroadcastUnconfirmed(String)
     /// A shielded operation (shield from Platform addresses, unshield /

@@ -280,9 +280,8 @@ sealed class DashSdkError(
          */
         class ShieldedSpendUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the spend may already be on chain; " +
-                    "the wallet keeps the spent notes reserved until the next " +
-                    "shielded sync reconciles the outcome)",
+                "$message (do NOT retry: it may already be on chain or may " +
+                    "still execute, and a retry signs a second transition)",
                 cause,
             )
 
