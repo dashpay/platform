@@ -4581,6 +4581,7 @@ message GetBlocksResponse {
       repeated Transaction transactions = 7; // in block order
       // Only when asked to prove. A block holds all its transactions, so recompute
       // `data_hash` and `results_hash` from them; no Merkle paths are needed.
+      // Compare the fields above with `proof.header` too: only the header is signed.
       TenderdashBlockProof proof = 8;
     }
     // Consecutive blocks from the start height. There can be fewer than the count

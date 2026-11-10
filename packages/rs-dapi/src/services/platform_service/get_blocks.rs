@@ -14,7 +14,7 @@ use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_re
 use dapi_grpc::tonic::{Request, Response};
 use sha2::{Digest, Sha256};
 
-use super::block_proof::{build_block_proof, check_block_contents};
+use super::block_proof::{build_block_proof, check_block_contents, check_block_fields};
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{
@@ -139,6 +139,7 @@ fn read_block(
             .map(|transaction| transaction.hash.clone())
             .collect::<Vec<_>>();
         check_block_contents(&proof, &hashes, &results)?;
+        check_block_fields(&proof, &built)?;
         built.proof = Some(proof);
     }
 
@@ -267,6 +268,7 @@ fn parse_time_ms(time: &str) -> DAPIResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clients::tenderdash_client::BlockHeader;
     use crate::services::platform_service::MAX_CONCURRENT_GET_BLOCKS;
     use crate::services::platform_service::block_proof::tenderdash_commit;
     use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
@@ -509,8 +511,20 @@ mod tests {
 
     /// Read one block holding `[1, 2]` with the given commit as its proof.
     fn read_proved_block(commit: ResultCommit) -> DAPIResult<Option<Block>> {
+        read_proved_block_after(commit, |_| {})
+    }
+
+    /// The same, after `change` altered the header the `block` call answers with, which
+    /// starts as the signed one.
+    fn read_proved_block_after(
+        commit: ResultCommit,
+        change: impl FnOnce(&mut BlockHeader),
+    ) -> DAPIResult<Option<Block>> {
         let mut block = tenderdash_block(json!(["AQI="]));
         block.block_id = commit.signed_header.commit.block_id.clone();
+        let header = &mut block.block.as_mut().unwrap().header;
+        *header = commit.signed_header.header.clone();
+        change(header);
 
         read_block(
             7,
@@ -570,15 +584,23 @@ mod tests {
         }]
     }
 
-    #[test]
-    fn should_attach_a_proof_when_asked_to_prove() {
-        let commit = tenderdash_commit(
+    /// A field's name in an error message, and a change that makes it another value.
+    type HeaderChange = (&'static str, fn(&mut BlockHeader));
+
+    /// A commit whose header commits to the block `read_proved_block` reads.
+    fn commit_of_the_proved_block() -> ResultCommit {
+        tenderdash_commit(
             7,
             &[Sha256::digest([1, 2]).to_vec()],
             &results_of_the_proved_block(),
-        );
+        )
+    }
 
-        let block = read_proved_block(commit).unwrap().unwrap();
+    #[test]
+    fn should_attach_a_proof_when_asked_to_prove() {
+        let block = read_proved_block(commit_of_the_proved_block())
+            .unwrap()
+            .unwrap();
 
         let proof = block.proof.unwrap();
         assert_eq!(proof.quorum_type, 6);
@@ -598,6 +620,54 @@ mod tests {
             read_proved_block(commit),
             Err(DapiError::Internal(_))
         ));
+    }
+
+    #[test]
+    fn should_return_the_fields_of_the_signed_header_with_a_proof() {
+        let block = read_proved_block(commit_of_the_proved_block())
+            .unwrap()
+            .unwrap();
+
+        let proof = block.proof.unwrap();
+        let header = proof.header.unwrap();
+        assert_eq!(block.height, header.height);
+        assert_eq!(block.hash, proof.block_id.unwrap().hash);
+        assert_eq!(block.time_ms, 1_722_265_200_123);
+        assert_eq!(
+            (header.time_seconds, header.time_nanos),
+            (1_722_265_200, 123_456_789)
+        );
+        assert_eq!(
+            block.core_chain_locked_height,
+            header.core_chain_locked_height
+        );
+        assert_eq!(block.app_hash, header.app_hash);
+        assert_eq!(block.proposer_pro_tx_hash, header.proposer_pro_tx_hash);
+    }
+
+    #[test]
+    fn should_fail_rather_than_return_a_field_its_signed_header_does_not_have() {
+        let changes: [HeaderChange; 4] = [
+            ("time", |header| {
+                header.time = "2024-07-29T15:00:00.124456789Z".to_string()
+            }),
+            ("core chain locked height", |header| {
+                header.core_chain_locked_height += 1
+            }),
+            ("app hash", |header| header.app_hash = "08".to_string()),
+            ("proposer", |header| {
+                header.proposer_pro_tx_hash = "0B".to_string()
+            }),
+        ];
+
+        for (name, change) in changes {
+            let Err(DapiError::Internal(message)) =
+                read_proved_block_after(commit_of_the_proved_block(), change)
+            else {
+                panic!("a block with another {name} than its signed header was returned");
+            };
+            assert!(message.contains(name), "{name}: {message}");
+        }
     }
 
     #[test]

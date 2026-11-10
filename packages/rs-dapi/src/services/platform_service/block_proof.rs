@@ -14,6 +14,7 @@ use dapi_grpc::platform::proto::abci::ExecTxResult;
 use dapi_grpc::platform::proto::google::protobuf::Timestamp;
 use dapi_grpc::platform::proto::types::{BlockId as HashedBlockId, PartSetHeader, StateId};
 use dapi_grpc::platform::proto::version::Consensus;
+use dapi_grpc::platform::v0::get_blocks_response::get_blocks_response_v0::Block;
 use dapi_grpc::platform::v0::tenderdash_block_proof::{BlockId, Header};
 use dapi_grpc::platform::v0::{TenderdashBlockProof, TenderdashTransactionProof};
 use sha2::{Digest, Sha256};
@@ -174,6 +175,35 @@ pub(super) fn check_block_contents(
     Ok(())
 }
 
+/// Check that the fields a block repeats from its header are the signed ones. They were
+/// read from another Tenderdash answer than the proof, so nothing else ties them to it.
+pub(super) fn check_block_fields(proof: &TenderdashBlockProof, block: &Block) -> DAPIResult<()> {
+    let header = proof_header(proof)?;
+    let signed_hash = proof.block_id.as_ref().map(|id| id.hash.as_slice());
+
+    let fields = [
+        ("height", block.height == header.height),
+        ("hash", Some(block.hash.as_slice()) == signed_hash),
+        ("time", block.time_ms == header_time_ms(header)?),
+        (
+            "core chain locked height",
+            block.core_chain_locked_height == header.core_chain_locked_height,
+        ),
+        ("app hash", block.app_hash == header.app_hash),
+        (
+            "proposer",
+            block.proposer_pro_tx_hash == header.proposer_pro_tx_hash,
+        ),
+    ];
+    match fields.iter().find(|(_, matches)| !matches) {
+        Some((name, _)) => Err(DapiError::Internal(format!(
+            "the {name} of block {} is not the one in its signed header",
+            header.height
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// The Merkle paths of the transactions at `indexes`. `results` is the whole block's, or
 /// empty when `indexes` is, since the results are read only for transactions returned.
 pub(super) fn transaction_proofs(
@@ -313,10 +343,9 @@ fn header_hash(header: &Header) -> Vec<u8> {
     ])
 }
 
-/// The state id Tenderdash derives from a header, which the quorum signs next to the
-/// block hash: the SHA-256 of these fields as a length-prefixed `StateID` message.
-fn state_id_hash(header: &Header) -> DAPIResult<Vec<u8>> {
-    let time = header
+/// A header's time in milliseconds, as a block and a state id carry it.
+fn header_time_ms(header: &Header) -> DAPIResult<u64> {
+    header
         .time_seconds
         .checked_mul(1000)
         .and_then(|ms| ms.checked_add(i64::from(header.time_nanos / 1_000_000)))
@@ -326,7 +355,13 @@ fn state_id_hash(header: &Header) -> DAPIResult<Vec<u8>> {
                 "block {} has a time outside the range of a state id",
                 header.height
             ))
-        })?;
+        })
+}
+
+/// The state id Tenderdash derives from a header, which the quorum signs next to the
+/// block hash: the SHA-256 of these fields as a length-prefixed `StateID` message.
+fn state_id_hash(header: &Header) -> DAPIResult<Vec<u8>> {
+    let time = header_time_ms(header)?;
     let app_hash = if header.app_hash.is_empty() {
         vec![0; APP_HASH_SIZE]
     } else {
@@ -906,6 +941,54 @@ mod tests {
     #[test]
     fn should_accept_a_block_whose_contents_match_its_header() {
         check_block_contents(&sample_proof(), &sample_hashes(), &sample_results()).unwrap();
+    }
+
+    /// A field's name in an error message, and a change that makes it another value.
+    type FieldChange = (&'static str, fn(&mut Block));
+
+    /// The block fields `sample_proof` signs.
+    fn sample_block() -> Block {
+        let proof = sample_proof();
+        let header = proof.header.unwrap();
+        Block {
+            height: header.height,
+            hash: proof.block_id.unwrap().hash,
+            time_ms: 1_722_265_200_123,
+            core_chain_locked_height: header.core_chain_locked_height,
+            app_hash: header.app_hash,
+            proposer_pro_tx_hash: header.proposer_pro_tx_hash,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn should_accept_a_block_whose_fields_are_the_signed_ones() {
+        assert!(check_block_fields(&sample_proof(), &sample_block()).is_ok());
+    }
+
+    #[test]
+    fn should_refuse_a_block_field_that_is_not_the_signed_one() {
+        let changes: [FieldChange; 6] = [
+            ("height", |block| block.height += 1),
+            ("hash", |block| block.hash[0] ^= 1),
+            ("time", |block| block.time_ms += 1),
+            ("core chain locked height", |block| {
+                block.core_chain_locked_height += 1
+            }),
+            ("app hash", |block| block.app_hash[0] ^= 1),
+            ("proposer", |block| block.proposer_pro_tx_hash[0] ^= 1),
+        ];
+
+        for (name, change) in changes {
+            let mut block = sample_block();
+            change(&mut block);
+
+            let Err(DapiError::Internal(message)) = check_block_fields(&sample_proof(), &block)
+            else {
+                panic!("a block with another {name} than its signed header was accepted");
+            };
+            assert!(message.contains(&format!("the {name} of")), "{message}");
+        }
     }
 
     #[test]

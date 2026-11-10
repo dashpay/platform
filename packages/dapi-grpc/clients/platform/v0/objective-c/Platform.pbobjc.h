@@ -15462,6 +15462,7 @@ GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Block : GPBMessage
 /**
  * Only when asked to prove. A block holds all its transactions, so recompute
  * `data_hash` and `results_hash` from them; no Merkle paths are needed.
+ * Compare the fields above with `proof.header` too: only the header is signed.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof *proof;
 /** Test to see if @c proof has been set. */
