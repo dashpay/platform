@@ -937,7 +937,7 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // Operator payouts (v15 note 29): from this version they follow Core's diffs, and this
+        // Operator payouts (v15 note 32): from this version they follow Core's diffs, and this
         // fixes once what earlier versions left stale. Reconciled against Core's list at the
         // last committed chain locked core height, the height the masternode list is at here;
         // this block's own diff to its chain locked height is applied afterwards, under this

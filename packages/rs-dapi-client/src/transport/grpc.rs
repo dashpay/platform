@@ -569,6 +569,17 @@ impl_transport_request_grpc!(
     wait_for_state_transition_result
 );
 
+// rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetRecentStateTransitionStatusRequest,
+    platform_proto::GetRecentStateTransitionStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_state_transition_status
+);
+
 impl_transport_request_grpc!(
     platform_proto::GetIdentityByPublicKeyHashRequest,
     platform_proto::GetIdentityByPublicKeyHashResponse,
@@ -786,6 +797,42 @@ impl_transport_request_grpc!(
         ..RequestSettings::default()
     },
     get_private_document_entries
+);
+
+// rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetOwnerTransactionsInBlockRequest,
+    platform_proto::GetOwnerTransactionsInBlockResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A block can hold 2 MiB, and every transition in it can belong to the one owner.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // rs-dapi refuses this method when too many are in progress. A busy node is not a
+        // failed one, and a ban would take it away from the client's other requests too.
+        ban_failed_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_owner_transactions_in_block
+);
+
+// rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetBlocksRequest,
+    platform_proto::GetBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A response can reach about 4 MB.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // The gateway limits this method far below every other one. A ban lasts until the
+        // limit resets and would take the node away from the client's other requests too.
+        ban_failed_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_blocks
 );
 
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
