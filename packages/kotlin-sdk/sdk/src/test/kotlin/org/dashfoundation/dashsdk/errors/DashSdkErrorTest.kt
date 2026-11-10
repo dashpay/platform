@@ -384,6 +384,22 @@ class DashSdkErrorTest {
         assertFalse("only raising the pin lifts it", mapped.isRetryable)
     }
 
+    /**
+     * A public request awaiting its outcome has its own code, apart from a
+     * private request pending (71): a DashPay sync, not a private one,
+     * settles it.
+     */
+    @Test
+    fun shouldReportAnUnconfirmedPublicRequestByItsOwnCode() {
+        val detail = "a public contact request to this identity awaits its outcome"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 76, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PrivateContactRequestPending)
+        assertEquals(detail, mapped.message)
+        assertFalse("a sync settles it, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

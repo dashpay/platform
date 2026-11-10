@@ -780,6 +780,22 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorPublicContactRequestUnconfirmed` (native code 76). A public
+         * contact request to that identity was broadcast and may have been
+         * delivered, and no proof settled its outcome yet, so the wallet
+         * holds the pair and signed nothing new to it, public or private.
+         * The send or accept that broadcast it threw
+         * [TransactionBroadcastUnconfirmed] (20). Not retryable as it is: a
+         * DashPay sync settles it (the request found: recorded as sent; its
+         * nonce proved used: the pair freed), and
+         * `Dashpay.publicContactRequestsUnconfirmed` reads whether it still
+         * stands. Not a private request pending ([PrivateContactRequestPending]).
+         * ← Swift `PlatformWalletError.publicContactRequestUnconfirmed`.
+         */
+        class PublicContactRequestUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -987,6 +1003,7 @@ sealed class DashSdkError(
             73 -> PlatformWallet.PrivateContactRecoveryUnsupported(message, cause) // ErrorPrivateContactRecoveryUnsupported
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
+            76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

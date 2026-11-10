@@ -350,6 +350,22 @@ internal object DashpayNative {
     external fun privatePairHeld(walletHandle: Long, senderId: ByteArray, recipientId: ByteArray): Boolean
 
     /**
+     * Whether a public contact request from [senderId], one of the wallet's
+     * identities, to [recipientId] was broadcast and may have been
+     * delivered, with no proof settling its outcome yet
+     * (`platform_wallet_get_public_contact_request_unconfirmed`). While it
+     * stands, the wallet refuses every contact request or acceptance to the
+     * recipient (code 76); a DashPay sync settles it. An unknown wallet
+     * handle throws (NotFound), as does a sender the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`.
+     */
+    external fun publicContactRequestUnconfirmed(
+        walletHandle: Long,
+        senderId: ByteArray,
+        recipientId: ByteArray,
+    ): Boolean
+
+    /**
      * What a contact request from [identityId], one of the wallet's
      * identities, waits for, as the wallet decides it: four flags,
      * `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment,

@@ -512,6 +512,41 @@ class Dashpay internal constructor(private val walletHandle: Long,
     }
 
     /**
+     * The contacts among [contactIds] to which a public contact request from
+     * [ourIdentityId] was broadcast and may have been delivered, with no
+     * proof settling its outcome yet (`DashPayView::public_contact_request_unconfirmed`,
+     * one read per contact). The send or accept that broadcast it threw
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] (20);
+     * while it stands, the wallet refuses every contact request or acceptance
+     * to the contact, public or private
+     * ([DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed], 76), so
+     * a host shows the pair as unconfirmed and offers neither. A DashPay sync
+     * settles it: a request found is recorded as sent, a nonce proved used
+     * frees the pair, and otherwise the same signed bytes are broadcast
+     * again. Read it beside [privateRepliesPending]. Empty when the identity
+     * isn't managed.
+     * ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun publicContactRequestsUnconfirmed(
+        ourIdentityId: ByteArray,
+        contactIds: List<ByteArray>,
+    ): List<ByteArray> = withContext(Dispatchers.IO) {
+        if (contactIds.isEmpty()) return@withContext emptyList()
+        mapNativeErrors {
+            // An identity the wallet does not manage holds nothing.
+            val managed = withManagedIdentity(ourIdentityId) { true } ?: false
+            if (!managed) {
+                emptyList()
+            } else {
+                contactIds.filter {
+                    DashpayNative.publicContactRequestUnconfirmed(walletHandle, ourIdentityId, it)
+                }
+            }
+        }
+    }
+
+    /**
      * The incoming contact request from [senderId] to [ourIdentityId] in
      * local state, or null when there is none (or the identity isn't
      * managed by this wallet). Close the returned ref when done. This is

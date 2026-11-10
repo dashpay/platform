@@ -1421,6 +1421,49 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_private
     })
 }
 
+/// Whether a public contact request from `senderId`, one of the wallet's
+/// identities, to `recipientId` was broadcast and may have been delivered,
+/// with no proof settling its outcome yet (bridges
+/// `platform_wallet_get_public_contact_request_unconfirmed`). While it
+/// stands, the wallet refuses every contact request or acceptance to the
+/// recipient with code 76; a DashPay sync settles it. Throws on an unknown
+/// wallet or sender, returning false.
+/// ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_publicContactRequestUnconfirmed(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    sender_id: JByteArray,
+    recipient_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(sender) = read_id32(env, &sender_id, "senderId") else {
+            return JNI_FALSE;
+        };
+        let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
+            return JNI_FALSE;
+        };
+        let mut unconfirmed = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_public_contact_request_unconfirmed(
+                wallet_handle as Handle,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                &mut unconfirmed,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if unconfirmed {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 /// `DashpayNative.privatePaymentsRestoreFailure`: why the last restoration
 /// of the wallet's private payments failed, while they are not restored for
 /// `identity_id` (bridges `platform_wallet_get_private_payments_restore_failure`),
