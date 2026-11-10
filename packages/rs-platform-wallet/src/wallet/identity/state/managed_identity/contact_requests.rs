@@ -850,6 +850,23 @@ impl ManagedIdentity {
         }
     }
 
+    /// Rewind this identity's read of DashPay's private contact request
+    /// store to `position` when it is past it, as
+    /// [`Self::rewind_private_store_read`] rewinds it to 0: the read is no
+    /// longer to the end, and the height it rested on becomes the floor a
+    /// read since must reach. Returns whether it moved. A restoration rewinds
+    /// to the position a journal record kept, so a private payment whose
+    /// request the identity does not track has its entry read again.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn rewind_private_store_read_to(&mut self, position: u64) -> bool {
+        if self.dashpay.private_contact_requests_position <= position {
+            return false;
+        }
+        self.rewind_private_store_read();
+        self.dashpay.private_contact_requests_position = position;
+        true
+    }
+
     /// Note that a private sync read a page of DashPay's private contact
     /// request store, proved at `height`, for this identity
     /// (`DashPayState::private_store_read_height`).
@@ -897,6 +914,17 @@ impl ManagedIdentity {
         self.dashpay.private_contact_requests_position = position.position;
         self.dashpay.private_scan_keys = Some(position.key_fingerprint);
         self.dashpay.private_payments_unrestored = position.private_payments_unresolved;
+    }
+
+    /// Hold this identity as a load holds one whose position record is
+    /// marked (`DashPayState::private_payments_unrestored`): a persister kept
+    /// its record marked though the identity was added afresh, with no
+    /// reservation or record of the payment the marker stands for, as after
+    /// its wallet was removed and registered again. Only the hold is taken:
+    /// the record's read position covers requests that went with the wallet's
+    /// other rows, so the store is read for the identity from its start.
+    pub(crate) fn hold_for_retained_private_payment_marker(&mut self) {
+        self.dashpay.private_payments_unrestored = true;
     }
 
     /// The reservations of this identity's private payments from an earlier
