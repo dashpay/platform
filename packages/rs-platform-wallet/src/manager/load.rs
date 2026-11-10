@@ -92,6 +92,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets,
             #[cfg(feature = "shielded")]
             shielded,
+            retained_private_contact_scan_states,
         } = start_state;
         // Shielded restore happens lazily on `bind_shielded`, not here: only
         // which wallets bound a shielded account is kept from the snapshot.
@@ -270,7 +271,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     {
                         identity_manager.forget_private_contact_scan_state();
                     }
-                    IdentityManager::from(identity_manager)
+                    let mut identity_manager = IdentityManager::from(identity_manager);
+                    // Records the host kept marked for this id after an
+                    // earlier wallet under it was removed hold their
+                    // identities, those loaded now and those added later, as
+                    // a record of their own marked would.
+                    identity_manager.retain_private_payment_markers(
+                        retained_private_contact_scan_states
+                            .get(&expected_wallet_id)
+                            .into_iter()
+                            .flat_map(|records| records.iter())
+                            .filter(|(_, record)| record.private_payments_unresolved)
+                            .map(|(owner, _)| *owner),
+                    );
+                    identity_manager
                 },
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),

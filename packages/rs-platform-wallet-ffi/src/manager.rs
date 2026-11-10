@@ -8,9 +8,10 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreePrivateContactScanStateFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
-    LoadPrivateContactScanStateFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
+    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
+    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
+    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
@@ -339,6 +340,14 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_free: slot!(
             on_load_private_contact_scan_state_free_fn,
             FreePrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_wallets: slot!(
+            on_load_private_contact_scan_state_wallets_fn,
+            LoadPrivateContactScanStateWalletsFn
+        ),
+        load_private_contact_scan_state_wallets_free: slot!(
+            on_load_private_contact_scan_state_wallets_free_fn,
+            FreePrivateContactScanStateWalletsFn
         ),
     }
 }
@@ -1498,16 +1507,47 @@ mod tests {
             _: usize,
         ) {
         }
+        unsafe extern "C" fn list(_: *mut c_void, _: *mut *const [u8; 32], _: *mut usize) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free_list(_: *mut c_void, _: *const [u8; 32], _: usize) {}
         let mut ext = PersistenceCallbacksExtension {
             on_persist_private_contact_scan_state_fn: Some(persist),
             on_load_private_contact_scan_state_fn: Some(load),
             on_load_private_contact_scan_state_free_fn: Some(free),
+            on_load_private_contact_scan_state_wallets_fn: Some(list),
+            on_load_private_contact_scan_state_wallets_free_fn: Some(free_list),
             ..Default::default()
         };
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_private_contact_scan_state.is_some());
         assert!(parsed.load_private_contact_scan_state.is_some());
         assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_some());
+        // An extension sized before the wallet list leaves both list slots
+        // unread.
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_none());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
         ext.struct_size = std::mem::offset_of!(
             PersistenceCallbacksExtension,
             on_load_private_contact_scan_state_free_fn

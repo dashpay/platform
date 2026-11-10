@@ -98,10 +98,19 @@ struct PrivateContactRequestsPositionStorageDetailView: View {
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
                 FieldRow(label: "Identity ID", value: hexString(record.identityId))
             }
-            Section("Private Contact Request Store") {
+            Section {
                 FieldRow(label: "Read Position", value: String(UInt64(bitPattern: record.position)))
                 FieldRow(label: "Key Fingerprint", value: hexString(record.keyFingerprint))
                 FieldRow(label: "Private Payments Unresolved", value: record.privatePaymentsUnresolved ? "Yes" : "No")
+            } header: {
+                Text("Private Contact Request Store")
+            } footer: {
+                // The purge rule: a marked record outlives its wallet.
+                if record.privatePaymentsUnresolved {
+                    Text("Kept when its wallet is removed, until a record stored cleared for the same "
+                        + "wallet and identity replaces it: the private payment it stands for may still "
+                        + "execute.")
+                }
             }
         }
         .navigationTitle("Private Position")

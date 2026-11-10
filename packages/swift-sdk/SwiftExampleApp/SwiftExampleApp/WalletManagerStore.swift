@@ -171,7 +171,7 @@ final class WalletManagerStore: ObservableObject {
     /// Why opening each network's shielded store failed, until a later
     /// attempt succeeds. The DashPay views show it while the wallet's
     /// private payments wait for that store, and retry it
-    /// (`shieldedStoreFailure(retrying:)`).
+    /// (`configureShieldedAgain(_:)`).
     @Published private(set) var shieldedStoreFailures: [Network: String] = [:]
 
     init(modelContainer: ModelContainer) {
@@ -310,14 +310,21 @@ final class WalletManagerStore: ObservableObject {
         }
     }
 
-    /// Why the shielded store of `manager`'s network could not be opened,
-    /// after trying it again, or nil when it is open (or `manager` is not
-    /// one of this store's).
-    func shieldedStoreFailure(retrying manager: PlatformWalletManager) -> String? {
-        guard let network = managers.first(where: { $0.value === manager })?.key,
-              shieldedStoreFailures[network] != nil else {
-            return nil
-        }
+    /// Why opening the shielded store of `manager`'s network failed last, or
+    /// nil when it opened (or `manager` is not one of this store's).
+    func shieldedStoreFailure(of manager: PlatformWalletManager) -> String? {
+        guard let network = managers.first(where: { $0.value === manager })?.key else { return nil }
+        return shieldedStoreFailures[network]
+    }
+
+    /// Open `manager`'s shielded store again and return why it failed, or
+    /// nil once it is open. On a store already open this asks the wallet to
+    /// retry restoring every wallet whose private payments are still held,
+    /// a restoration that failed after the store opened included; it never
+    /// waits on a busy store (a busy store defers the restoration to a
+    /// task), so it is safe on the main thread.
+    func configureShieldedAgain(_ manager: PlatformWalletManager) -> String? {
+        guard let network = managers.first(where: { $0.value === manager })?.key else { return nil }
         configureShieldedStore(manager, network: network)
         return shieldedStoreFailures[network]
     }
