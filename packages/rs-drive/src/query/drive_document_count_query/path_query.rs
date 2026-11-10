@@ -1223,7 +1223,7 @@ impl DriveDocumentCountQuery<'_> {
     /// count, no index walk needed.
     ///
     /// Shared between the server-side prove path
-    /// ([`Drive::execute_document_count_point_lookup_proof`]'s
+    /// (`Drive::execute_document_count_proof`'s primary-key
     /// documents_countable fast path) and the client-side verify path
     /// ([`Self::verify_primary_key_count_tree_proof`]). Both sides
     /// produce the exact same `PathQuery` for merk-root recomputation.

@@ -282,6 +282,29 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
+    /// The batch's owner handover (protocol version 15): `None` for a batch that updates no
+    /// document, and otherwise the owners of the contracts offering gas sponsorship on the
+    /// documents it updates, for whom an owner change is a full handover.
+    pub(crate) fn owner_handover(
+        operations: &[DriveOperation],
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
+        let mut owner_handover = None;
+        for operation in operations {
+            if let DriveOperation::DocumentOperation(document_operation) = operation {
+                document_operation.add_to_owner_handover(
+                    &mut owner_handover,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+        Ok(owner_handover)
+    }
+
     /// Whether the batch this operation is in refunds nobody for the storage its document
     /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
