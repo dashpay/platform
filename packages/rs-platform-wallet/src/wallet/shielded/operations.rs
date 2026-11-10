@@ -32,7 +32,7 @@ use super::store::{
     PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedStore, SubwalletId,
 };
 use crate::broadcast_outcome::{
-    broadcast_definitely_failed, broadcast_tracking_delivery, carries_consensus_rejection,
+    broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
     BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -701,103 +701,168 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     )
     .await;
 
-    // Wait for proven execution (not just relay-ACK) so the host only
-    // sees success once Platform has actually included the transition. A
-    // DAPI-level ACK alone could otherwise mask a later Platform
-    // rejection. The proven result is discarded; we only need the
-    // confirmation. Staged like `broadcast_shielded_spend`: only a
-    // DEFINITIVE verdict (CheckTx rejection / refused admission) marks
-    // the activity row Failed — an ambiguous wait failure (timeout,
-    // result-proof fetch error) leaves it Pending, because the shield
-    // may still land and the scan's cmx-overlap confirmation will flip
-    // the row when its note appears on-chain. Shield takes no note
-    // reservation, so the ambiguous arm strands no local spend state;
-    // its inputs are transparent address claims guarded by on-chain
-    // nonces, and a host-level retry re-fetches those nonces.
-    let enrich = |e: &dash_sdk::Error| -> PlatformWalletError {
-        if let Some(rich) = addresses_not_enough_funds(e) {
-            let claimed = claimed_inputs
-                .iter()
-                .map(|(addr, (nonce, credits))| {
-                    format!(
-                        "{}=(nonce {nonce}, {credits} credits)",
-                        addr.to_bech32m_string(network)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            PlatformWalletError::ShieldedBroadcastFailed(format!(
-                "addresses not enough funds: required {} credits; \
-                 claimed inputs [{}]; platform sees [{}]",
-                rich.required_balance(),
-                claimed,
-                format_addresses_with_info(rich.addresses_with_info(), network),
-            ))
-        } else {
-            crate::error::promote_address_nonce_error(e)
-                .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+    // What an endpoint's answer says, for the reason an unconfirmed shield
+    // reports. A funds shortfall names the claimed inputs beside what the
+    // endpoint says Platform sees.
+    let describe = |e: &dash_sdk::Error| -> String {
+        let Some(rich) = addresses_not_enough_funds(e) else {
+            return e.to_string();
+        };
+        let claimed = claimed_inputs
+            .iter()
+            .map(|(addr, (nonce, credits))| {
+                format!(
+                    "{}=(nonce {nonce}, {credits} credits)",
+                    addr.to_bech32m_string(network)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "addresses not enough funds: required {} credits; \
+             claimed inputs [{}]; platform sees [{}]",
+            rich.required_balance(),
+            claimed,
+            format_addresses_with_info(rich.addresses_with_info(), network),
+        )
+    };
+
+    // Broadcast keeping what every dispatch proved, then wait for proven
+    // execution (not just relay-ACK) so the host only sees success once
+    // Platform has actually included the transition. A shield proof
+    // authenticates the input addresses' post-state, not this exact shield's
+    // execution, so the affected-state snapshot is accepted. The proven
+    // result is discarded; we only need the confirmation.
+    broadcast_shield(
+        sdk,
+        store,
+        persister,
+        wallet_id,
+        id,
+        &pending_entry,
+        &state_transition,
+        describe,
+    )
+    .await?;
+    info!(account, credits = amount, "Shield broadcast succeeded");
+    Ok(())
+}
+
+/// Broadcast the signed shield `state_transition`, keeping what every
+/// dispatch proved ([`broadcast_tracking_delivery`]), wait for its result and
+/// settle it ([`settle_shield`]).
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_shield<S, D>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    state_transition: &StateTransition,
+    describe: D,
+) -> Result<(), PlatformWalletError>
+where
+    S: ShieldedStore,
+    D: Fn(&dash_sdk::Error) -> String,
+{
+    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    settle_shield(
+        store,
+        persister,
+        wallet_id,
+        id,
+        pending_entry,
+        delivery,
+        describe,
+        || state_transition.wait_for_affected_state::<StateTransitionProofResult>(sdk, None),
+    )
+    .await
+}
+
+/// What a signed shield's broadcast (`delivery`) and result wait (`wait`, run
+/// only when a dispatch may have reached a node) came to, recording it on the
+/// shield's activity row (`pending_entry`). `describe` renders an endpoint's
+/// answer for the reason an unconfirmed shield reports.
+///
+/// Only a transition that never left the wallet
+/// ([`BroadcastDelivery::NeverDelivered`]: refused before anything was sent)
+/// is a failed shield
+/// ([`PlatformWalletError::ShieldedBroadcastFailed`]): nothing holds its bytes
+/// but the wallet, so it can never execute, its row reads failed and the host
+/// may retry. Once a dispatch may have reached a node, every outcome short
+/// of a proved result is [`PlatformWalletError::ShieldedSpendUnconfirmed`],
+/// and the row stays pending: a wait that fails, an endpoint's refusal of the
+/// broadcast and a consensus verdict on either call included. The endpoint
+/// that sends a verdict is unauthenticated, no proof or quorum signature
+/// backs it, and one that kept or forwarded the signed transition can answer
+/// with any verdict, while a retry signs a second shield with the inputs'
+/// next nonces, and a shield's note can be a recipient's ([`shield_to`]).
+///
+/// The shield takes no note reservation and keeps no record of its signed
+/// transition. An unconfirmed one that executes is confirmed by the scan,
+/// which flips the row when its note commitment appears on chain. What shows
+/// it can no longer execute is its inputs' nonces (one of them used by
+/// another transition), which nothing reads for it: until then the row stays
+/// pending.
+#[allow(clippy::too_many_arguments)]
+async fn settle_shield<S, D, W, Fut>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    delivery: BroadcastDelivery,
+    describe: D,
+    wait: W,
+) -> Result<(), PlatformWalletError>
+where
+    S: ShieldedStore,
+    D: Fn(&dash_sdk::Error) -> String,
+    W: FnOnce() -> Fut,
+    Fut: Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
+{
+    let broadcast_answer = match delivery {
+        BroadcastDelivery::Admitted => None,
+        BroadcastDelivery::NeverDelivered(e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            return Err(definite_broadcast_failure(&e));
+        }
+        BroadcastDelivery::MaybeDelivered(e) => {
+            warn!(
+                account = id.account_index,
+                error = %e,
+                "Shield broadcast may have been delivered; falling through to the result wait"
+            );
+            Some(describe(&e))
         }
     };
 
-    match state_transition.broadcast(sdk, None).await {
-        Ok(()) => {}
-        Err(e) if broadcast_definitely_failed(&e) => {
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            return Err(enrich(&e));
-        }
-        Err(e) => {
-            warn!(
-                account,
-                error = %e,
-                "Shield broadcast returned no verdict; the transition may have been \
-                 admitted — falling through to the result wait"
-            );
-        }
-    }
-
-    // A shield proof authenticates the input addresses' post-state, not this
-    // exact shield's execution — accept the affected-state snapshot; a
-    // consensus rejection still surfaces as an error here.
-    if let Err(wait_err) = state_transition
-        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
-        .await
-    {
-        if carries_consensus_rejection(&wait_err) {
-            // A consensus verdict in the result: the shield definitively
-            // did not execute.
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            return Err(enrich(&wait_err));
-        }
-        // Ambiguous: admitted but unconfirmed. Leave the activity row
-        // Pending — the scan's confirmation pass flips it when the
-        // shielded note lands on-chain.
+    if let Err(wait_err) = wait().await {
+        // Leave the activity row Pending: the scan's confirmation pass flips
+        // it when the shielded note lands on-chain.
         warn!(
-            account,
+            account = id.account_index,
             error = %wait_err,
-            "Shield broadcast accepted but result confirmation failed; \
-             leaving the activity row pending"
+            rejected = carries_consensus_rejection(&wait_err),
+            "Shield broadcast but its result is unconfirmed; leaving the activity row pending"
         );
+        let waited = describe(&wait_err);
         return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
             operation: "shield",
-            reason: wait_err.to_string(),
+            reason: match broadcast_answer {
+                Some(answer) => format!("{waited}; its broadcast answered: {answer}"),
+                None => waited,
+            },
         });
     }
 
@@ -806,12 +871,11 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
         persister,
         wallet_id,
         id,
-        &pending_entry,
+        pending_entry,
         ShieldedActivityStatus::Confirmed,
         None,
     )
     .await;
-    info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
 }
 
@@ -1047,7 +1111,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
 
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
-        Err(e) if broadcast_definitely_failed(&e) => {
+        Err(e) if broadcast_was_refused(&e) => {
             // Unauthenticated verdict: settle it against the proven nonce.
             return Err(settle_identity_shield_failure(
                 sdk,
@@ -1470,21 +1534,8 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             },
         )
         .await;
-        if arm_pending_release(
-            store,
-            id,
-            anchor_bytes,
-            anchor_height,
-            &pending_entry,
-            &selected_notes,
-        )
-        .await?
-        {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
 
-        trace!("IdentityTopUpFromShieldedPool: state transition built, broadcasting...");
+        trace!("IdentityTopUpFromShieldedPool: state transition built, saving and broadcasting...");
         // Type 22 is classified affected state: its nullifiers are shared with any
         // competing spend of the same notes and the identity's balance is a
         // snapshot, so the strict wait would reject every success. The snapshot
@@ -1499,6 +1550,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             anchor_bytes,
             anchor_height,
             &selected_notes,
+            &mut reservation,
             &state_transition,
             "identity top up from shielded pool",
             SpendResultWait::AffectedState,
@@ -1565,28 +1617,17 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             };
             Ok((proven_balance, metadata))
         }
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
-            // It may have executed: the reservation stays, released by sync.
-            reservation.hand_over();
-            Err(e)
-        }
-        Err(e) => {
-            // It did not execute: the guard owns the notes until they are
-            // released, so a drop on the way still releases them.
-            reservation.reclaim();
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            reservation.cancel().await;
-            Err(e)
-        }
+        Err(failure) => Err(settle_failed_spend(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &pending_entry,
+            reservation,
+            "identity top up from shielded pool",
+            failure,
+        )
+        .await),
     }
 }
 
@@ -2183,10 +2224,9 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         "Unshield"
     );
 
-    // From here on every error path must release the reservation taken
-    // by `reserve_unspent_notes` — except the ambiguous
-    // `ShieldedSpendUnconfirmed` one, which intentionally leaves it in
-    // place (see the outer match below).
+    // From here on an error before the spend's record is saved releases the
+    // reservation taken by `reserve_unspent_notes`; once it is saved, only a
+    // transition that never left the wallet does (`settle_failed_spend`).
     //
     // `pending_entry` is recorded once the transition is built (so we
     // have its output cmxs) and flipped to Confirmed / Failed in the
@@ -2244,21 +2284,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(
-            store,
-            id,
-            anchor_bytes,
-            anchor_height,
-            &pending_entry,
-            &selected_notes,
-        )
-        .await?
-        {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
 
-        trace!("Unshield: state transition built, broadcasting...");
+        trace!("Unshield: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -2267,6 +2294,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor_bytes,
             anchor_height,
             &selected_notes,
+            &mut reservation,
             &state_transition,
             "unshield",
             SpendResultWait::ExecutionProved,
@@ -2301,9 +2329,9 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             // scan runs the note is re-selected and a second spend is
             // built + proven, then rejected at broadcast with a
             // nullifier-already-used error — wasted ~30 s proof, never
-            // fund loss. (`pending_nullifiers` is in-memory only, so it
-            // does not protect across a process restart in this window;
-            // the on-chain set does.)
+            // fund loss. (A restart restores the reservation only while
+            // the spend's saved record is still there; the on-chain set
+            // protects either way.)
             if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
             {
                 warn!(
@@ -2316,43 +2344,25 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             info!(account, credits = amount, "Unshield broadcast succeeded");
             Ok(())
         }
-        // The broadcast was accepted but its execution result couldn't be
-        // confirmed: the spend may well have executed, so do NOT release
-        // the reservation. `pending_nullifiers` is in-memory only — if the
-        // spend landed, the next nullifier sync's `mark_spent` promotes the
-        // notes to spent (clearing the reservation); if it never landed, an
-        // app restart drops the reservation and frees the notes. Releasing
-        // them now would invite re-selecting notes whose nullifiers may
-        // already be consumed on chain.
-        //
-        // Activity entry: leave it `Pending`. Like the note reservation,
-        // the outcome is genuinely unknown here — a later scan that finds
-        // the spend will flip the row to Confirmed (its id matches), and
-        // until then surfacing it as Pending is honest.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
-            // It may have executed: the reservation stays, released by sync.
-            reservation.hand_over();
-            Err(e)
-        }
-        Err(e) => {
-            // It did not execute: the guard owns the notes until they are
-            // released, so a drop on the way still releases them.
-            reservation.reclaim();
-            // Definitive failure: the spend never executed. Mark the
-            // activity row Failed (upsert by id) before releasing notes.
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            reservation.cancel().await;
-            Err(e)
-        }
+        // A spend that may have reached a node keeps its reservation, its
+        // saved record and its `Pending` activity row: a later scan that
+        // finds the spend marks the notes spent and flips the row to
+        // Confirmed (its id matches), and the saved record restores the
+        // reservation after a restart. Releasing the notes would invite
+        // re-selecting notes whose nullifiers may already be consumed on
+        // chain. Only a spend that failed before its record was saved, or
+        // whose transition never left the wallet, releases them.
+        Err(failure) => Err(settle_failed_spend(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &pending_entry,
+            reservation,
+            "unshield",
+            failure,
+        )
+        .await),
     }
 }
 
@@ -2446,21 +2456,8 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(
-            store,
-            id,
-            anchor_bytes,
-            anchor_height,
-            &pending_entry,
-            &selected_notes,
-        )
-        .await?
-        {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
 
-        trace!("Shielded transfer: state transition built, broadcasting...");
+        trace!("Shielded transfer: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -2469,6 +2466,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             anchor_bytes,
             anchor_height,
             &selected_notes,
+            &mut reservation,
             &state_transition,
             "transfer",
             SpendResultWait::ExecutionProved,
@@ -2508,31 +2506,18 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
-        // Ambiguous post-broadcast confirmation failure: leave the
-        // reservation (and the Pending activity row) in place — a later
-        // scan flips it to Confirmed (see `unshield`'s outer match).
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
-            // It may have executed: the reservation stays, released by sync.
-            reservation.hand_over();
-            Err(e)
-        }
-        Err(e) => {
-            // It did not execute: the guard owns the notes until they are
-            // released, so a drop on the way still releases them.
-            reservation.reclaim();
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            reservation.cancel().await;
-            Err(e)
-        }
+        // See `unshield`'s outer match.
+        Err(failure) => Err(settle_failed_spend(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &pending_entry,
+            reservation,
+            "transfer",
+            failure,
+        )
+        .await),
     }
 }
 
@@ -2638,21 +2623,8 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
-        if arm_pending_release(
-            store,
-            id,
-            anchor_bytes,
-            anchor_height,
-            &pending_entry,
-            &selected_notes,
-        )
-        .await?
-        {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
 
-        trace!("Shielded withdrawal: state transition built, broadcasting...");
+        trace!("Shielded withdrawal: state transition built, saving and broadcasting...");
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -2661,6 +2633,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             anchor_bytes,
             anchor_height,
             &selected_notes,
+            &mut reservation,
             &state_transition,
             "withdraw",
             SpendResultWait::ExecutionProved,
@@ -2700,31 +2673,18 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
-        // Ambiguous post-broadcast confirmation failure: leave the
-        // reservation (and the Pending activity row) in place — a later
-        // scan flips it to Confirmed (see `unshield`'s outer match).
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
-            // It may have executed: the reservation stays, released by sync.
-            reservation.hand_over();
-            Err(e)
-        }
-        Err(e) => {
-            // It did not execute: the guard owns the notes until they are
-            // released, so a drop on the way still releases them.
-            reservation.reclaim();
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Failed,
-                None,
-            )
-            .await;
-            reservation.cancel().await;
-            Err(e)
-        }
+        // See `unshield`'s outer match.
+        Err(failure) => Err(settle_failed_spend(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &pending_entry,
+            reservation,
+            "withdraw",
+            failure,
+        )
+        .await),
     }
 }
 
@@ -2806,14 +2766,16 @@ where
         .map(|(key, _)| (key.id(), key.clone()))
         .collect();
 
-    // From here on every error path must release the reservation taken above — except the
-    // ambiguous `ShieldedBroadcastUnconfirmed` one, which intentionally leaves it in place
-    // (see the outer match below).
+    // From here on an error before the create's record is saved releases the reservation taken
+    // above; once it is saved, only a transition that never left the wallet does
+    // (`settle_failed_spend`).
     //
     // `pending_entry` is recorded once the bundle is built (so we know the
     // identity id + output cmxs) and flipped to Confirmed / Failed in the
-    // outer match; it lives here so the flip can see it.
+    // outer match; it lives here so the flip can see it. So does
+    // `derived_identity_id`, which an unconfirmed create reports.
     let mut pending_entry = None;
+    let mut derived_identity_id = None;
     let result = async {
         let (spends, anchor, anchor_height) =
             extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
@@ -2840,6 +2802,7 @@ where
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         let identity_id = build.identity_id;
+        derived_identity_id = Some(identity_id);
 
         // Live activity: IdentityCreate carries the created identity id.
         // The display amount is the denomination LESS the metered fee (the
@@ -2867,30 +2830,11 @@ where
             },
         )
         .await;
-        if arm_pending_release(
-            store,
-            id,
-            anchor_bytes,
-            anchor_height,
-            &pending_entry,
-            &selected_notes,
-        )
-        .await? {
-            // Each reservation carries its anchor: a pruned anchor releases it.
-            reservation.hand_over();
-        }
 
-        trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK...");
-        // Stage the broadcast and the result-wait SEPARATELY (instead of one `broadcast_and_wait`)
-        // so the two failure shapes can be told apart:
-        //   - a broadcast-time rejection (relay/CheckTx refused the tx) means it never executed, so
-        //     releasing the note reservations is correct;
-        //   - a post-broadcast wait failure is AMBIGUOUS — the relay accepted the tx and it may well
-        //     have executed; treating it as "unregistered" + releasing the notes is the
-        //     orphaned-identity + double-spend hazard this split exists to avoid.
         // The transition is built once from the PoP-signed keys + bundle params (preserving the
         // per-key signatures); the binding signature already committed `identity_id`, the
-        // denomination, and the full key set.
+        // denomination, and the full key set. It is built before its record is saved, which
+        // keeps these exact bytes.
         let st = sdk
             .identity_create_from_shielded_pool_transition(
                 build.public_keys,
@@ -2900,147 +2844,21 @@ where
             )
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        // Broadcast (relay-ACK only). Only a transition that never left the wallet
-        // (`BroadcastDelivery::NeverDelivered`: refused before anything was sent) maps to
-        // `ShieldedBroadcastFailed`,
-        // which lets the outer match release the reservation. Every other failure may have
-        // delivered it and falls through to the result wait below, whose ambiguous arm owns the
-        // fetch-by-derived-id fallback — so the in-flight tx gets confirmed (or held as
-        // unconfirmed) instead of being reported as failed.
-        match broadcast_tracking_delivery(sdk, &st).await {
-            BroadcastDelivery::Admitted => {}
-            BroadcastDelivery::NeverDelivered(e) => {
-                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
-            }
-            BroadcastDelivery::MaybeDelivered(e) => {
-                warn!(
-                    derived_id = %identity_id,
-                    error = %e,
-                    "IdentityCreateFromShieldedPool: broadcast may have been delivered — \
-                     falling through to the result wait"
-                );
-            }
-        }
-
-        // Wait for proven execution. Every failure is AMBIGUOUS: the broadcast reached an
-        //   endpoint and the transition may have executed even though we couldn't fetch or
-        //   verify its result proof. That includes a `StateTransitionBroadcastError` with a
-        //   consensus `cause`: the endpoint that reports it is unauthenticated, no proof or quorum
-        //   signature backs it, and one that kept or forwarded the transition can answer with any
-        //   verdict. It also includes cause-less ones, as DAPI encodes its own wait-side failures
-        //   (timeouts, internal errors) that way. Fall back to fetching the identity by its
-        //   pre-derived id before deciding it is unconfirmed.
-        // An identity-create-from-shielded-pool proof authenticates the spent
-        // nullifiers and resulting identity as a snapshot; it cannot bind the
-        // complete Orchard request, so accept the affected-state outcome.
-        let proof_result = match st
-            .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
-            .await
-        {
-            Ok(result) => result,
-            Err(wait_err) => {
-                warn!(
-                    derived_id = %identity_id,
-                    error = %wait_err,
-                    "IdentityCreateFromShieldedPool: broadcast accepted but result confirmation \
-                     failed; falling back to fetching the identity by its derived id"
-                );
-                // Fetch the identity directly. The id is committed in the sighash and derived
-                // deterministically from the spent nullifiers, so if the transition landed the row
-                // is queryable. A freshly-included identity can take a moment to index on the DAPI
-                // node we hit, so retry a few times with a short, fixed backoff before concluding
-                // it's truly absent — long enough to ride out routine indexing/replica lag, short
-                // enough not to wedge the caller's UI for minutes.
-                match fetch_identity_with_retries(sdk, identity_id).await {
-                    Some(mut identity) => {
-                        info!(
-                            derived_id = %identity_id,
-                            "IdentityCreateFromShieldedPool: result confirmation failed but the \
-                             identity was found on chain by its derived id; treating as success"
-                        );
-                        // Same defensive empty-`public_keys` fill as the proven-result path below,
-                        // so downstream auth-key checks see the committed key set immediately.
-                        if identity.public_keys().is_empty() {
-                            identity.set_public_keys(submitted_public_keys.clone());
-                        }
-                        return Ok::<(Identifier, Identity), PlatformWalletError>((
-                            identity.id(),
-                            identity,
-                        ));
-                    }
-                    None => {
-                        // Arm the persisted re-drive before surfacing the
-                        // ambiguity: the sync-time pass re-checks the
-                        // nullifiers, then re-broadcasts this
-                        // byte-identical transition up to
-                        // MAX_REDRIVE_ATTEMPTS times.
-                        arm_redrive_record(
-                            store,
-                            id,
-                            &pending_entry,
-                            anchor_bytes,
-                            anchor_height,
-                            &selected_notes,
-                            &st,
-                            "identity_create",
-                        )
-                        .await;
-                        return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
-                            identity_id,
-                            reason: wait_err.to_string(),
-                        });
-                    }
-                }
-            }
-        };
-
-        // Pull the verified `Identity` out of the proof result. The expected variant is
-        // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
-        // broadcast still SUCCEEDED, so we don't turn it into an error — we synthesize the identity
-        // from the derived id + submitted keys (the binding signature committed both) and warn, so
-        // the local row is still created.
-        let identity = match proof_result {
-            StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
-                mut identity,
-                _nullifiers,
-            ) => {
-                // The proof-verified id is authoritative: it's recomputed from the proven nullifier
-                // set, while `identity_id` was derived pre-broadcast. They should match (the derived
-                // id is committed in the sighash), but trust the verified one.
-                if identity.id() != identity_id {
-                    warn!(
-                        derived_id = %identity_id,
-                        verified_id = %identity.id(),
-                        "IdentityCreateFromShieldedPool: derived id differs from proof-verified id; \
-                         using the proof-verified id"
-                    );
-                }
-                // Defensive: a proof result can hand back an identity whose `public_keys` map is
-                // empty. Fill it from the submitted set so downstream auth-key checks see the keys
-                // immediately without waiting for the next identity-fetch round (the transition
-                // committed exactly these keys, so id reproducibility is preserved).
-                if identity.public_keys().is_empty() {
-                    identity.set_public_keys(submitted_public_keys);
-                }
-                identity
-            }
-            other => {
-                warn!(
-                    derived_id = %identity_id,
-                    result = %other,
-                    "IdentityCreateFromShieldedPool: unexpected proof-result variant; synthesizing \
-                     the identity from the derived id + submitted keys so the local row still lands"
-                );
-                Identity::new_with_id_and_keys(
-                    identity_id,
-                    submitted_public_keys,
-                    sdk.version(),
-                )
-                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
-            }
-        };
-
-        Ok::<(Identifier, Identity), PlatformWalletError>((identity.id(), identity))
+        trace!("IdentityCreateFromShieldedPool: built, saving and broadcasting via SDK...");
+        broadcast_identity_create_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            anchor_height,
+            &selected_notes,
+            &mut reservation,
+            &st,
+            identity_id,
+            submitted_public_keys,
+        )
+        .await
     }
     .await;
 
@@ -3079,62 +2897,225 @@ where
             );
             Ok((identity_id, identity))
         }
-        // The broadcast was accepted but its result couldn't be confirmed and the identity wasn't
-        // found by a direct fetch. Do NOT release the notes here: `pending_nullifiers` is in-memory
-        // only (see `SubwalletState`, "never persisted; the next sync after a crash reconciles"),
-        // and `mark_spent` during nullifier sync clears matching reservations. So if the transition
-        // actually executed, the next sync promotes these notes to spent; if it truly never landed,
-        // an app restart drops the in-memory reservation and frees them. Releasing them now would
-        // invite double-spend attempts against notes that may already be consumed on chain — the
-        // very hazard this variant exists to prevent. The activity row likewise stays `Pending`
-        // (a later scan that finds the identity's change note flips it to Confirmed).
-        Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => {
-            // It may have executed: the reservation stays, released by sync.
-            reservation.hand_over();
-            Err(e)
-        }
-        Err(e) => {
-            if error_releases_note_reservation(&e) {
-                // It did not execute: the guard owns the notes until they are
-                // released, so a drop on the way still releases them.
-                reservation.reclaim();
-                // Definitive failure: the identity was never created. Mark
-                // the activity row Failed (upsert by id) before releasing.
-                record_activity_status(
-                    store,
-                    persister,
-                    wallet_id,
-                    id,
-                    &pending_entry,
-                    ShieldedActivityStatus::Failed,
-                    None,
-                )
-                .await;
-                reservation.cancel().await;
-            } else {
-                // It may have executed: the reservation stays, released by sync.
-                reservation.hand_over();
-            }
-            Err(e)
+        // A create that may have reached a node keeps its reservation, its saved record and its
+        // `Pending` activity row (see `unshield`'s outer match), and reports the derived id: the
+        // identity may already exist on chain, so the caller holds its registration slot.
+        Err(failure) => {
+            let error = settle_failed_spend(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                reservation,
+                IDENTITY_CREATE_OPERATION,
+                failure,
+            )
+            .await;
+            Err(identity_create_failure(error, derived_identity_id))
         }
     }
 }
 
-/// Whether a failed identity-create should release the notes reserved for it.
+/// The error an identity create reports for `error`, what [`settle_failed_spend`] settled its
+/// failure as. A create settled as unconfirmed carries the derived `identity_id`
+/// ([`PlatformWalletError::ShieldedBroadcastUnconfirmed`]): the identity may already exist on
+/// chain, so the caller must hold its registration slot rather than read a failed create.
+fn identity_create_failure(
+    error: PlatformWalletError,
+    identity_id: Option<Identifier>,
+) -> PlatformWalletError {
+    match (error, identity_id) {
+        (PlatformWalletError::ShieldedSpendUnconfirmed { reason, .. }, Some(identity_id)) => {
+            PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id,
+                reason,
+            }
+        }
+        (error, _) => error,
+    }
+}
+
+/// Save the built identity create `st`'s recovery record durably, then
+/// broadcast it and wait for its result ([`save_spend_then_broadcast`],
+/// [`broadcast_identity_create`]): the identity create's counterpart of
+/// [`broadcast_shielded_spend_with_redrive_with_metadata`].
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    anchor_height: u64,
+    notes: &[ShieldedNote],
+    reservation: &mut NoteReservation<S>,
+    st: &StateTransition,
+    identity_id: Identifier,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+) -> Result<(Identifier, Identity), SpendFailure> {
+    save_spend_then_broadcast(
+        store,
+        id,
+        pending_entry,
+        anchor,
+        anchor_height,
+        notes,
+        reservation,
+        st,
+        IDENTITY_CREATE_OPERATION,
+        || broadcast_identity_create(sdk, st, identity_id, submitted_public_keys),
+    )
+    .await
+}
+
+/// What an identity create is named in the errors its record's save and its
+/// settlement report.
+const IDENTITY_CREATE_OPERATION: &str = "identity create from shielded pool";
+
+/// Broadcast the built identity create `st`, whose record is already saved
+/// ([`save_spend_then_broadcast`]), and wait for its result.
 ///
-/// `false` ONLY for [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]: the broadcast was
-/// accepted and the transition may have executed, so the reservation must be retained. Releasing it
-/// now would invite double-spend attempts against notes that may already be consumed on chain — the
-/// very hazard that variant exists to prevent. `pending_nullifiers` is in-memory only (see
-/// `SubwalletState`, "never persisted; the next sync after a crash reconciles") and `mark_spent`
-/// during nullifier sync clears matching reservations, so if the transition actually executed the
-/// next sync promotes these notes to spent; if it truly never landed, an app restart drops the
-/// in-memory reservation and frees them.
+/// The broadcast and the result wait are staged separately so the two failure shapes can be
+/// told apart:
+///   - a transition that never left the wallet ([`BroadcastDelivery::NeverDelivered`]: refused
+///     before anything was sent) can never execute, so its record is retired and its notes are
+///     released ([`SpendFailure::never_delivered`]);
+///   - every other failure may have delivered it. It falls through to the result wait, and a
+///     wait that fails falls back to fetching the identity by its pre-derived id before the
+///     create is reported unconfirmed ([`PlatformWalletError::ShieldedBroadcastUnconfirmed`]),
+///     its notes and record kept. That includes a `StateTransitionBroadcastError` with a
+///     consensus `cause`: the endpoint that reports it is unauthenticated, no proof or quorum
+///     signature backs it, and one that kept or forwarded the transition can answer with any
+///     verdict. It also includes cause-less ones, as DAPI encodes its own wait-side failures
+///     (timeouts, internal errors) that way.
 ///
-/// Everything else is a definitive pre-execution / build / rejection failure: the spend never
-/// happened, so the reservation must be released.
-fn error_releases_note_reservation(e: &PlatformWalletError) -> bool {
-    !matches!(e, PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+/// Nothing here reports a failed create once a dispatch may have reached a node: a create
+/// reported failed while it may still execute is the orphaned-identity hazard this staging
+/// exists to avoid.
+async fn broadcast_identity_create(
+    sdk: &Arc<dash_sdk::Sdk>,
+    st: &StateTransition,
+    identity_id: Identifier,
+    submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
+) -> Result<(Identifier, Identity), SpendFailure> {
+    let unconfirmed = |reason: String| {
+        SpendFailure::from(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id,
+            reason,
+        })
+    };
+
+    match broadcast_tracking_delivery(sdk, st).await {
+        BroadcastDelivery::Admitted => {}
+        BroadcastDelivery::NeverDelivered(e) => {
+            return Err(SpendFailure {
+                error: definite_broadcast_failure(&e),
+                never_delivered: true,
+            });
+        }
+        BroadcastDelivery::MaybeDelivered(e) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %e,
+                "IdentityCreateFromShieldedPool: broadcast may have been delivered; falling \
+                 through to the result wait"
+            );
+        }
+    }
+
+    // An identity-create-from-shielded-pool proof authenticates the spent
+    // nullifiers and resulting identity as a snapshot; it cannot bind the
+    // complete Orchard request, so accept the affected-state outcome.
+    let proof_result = match st
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(result) => result,
+        Err(wait_err) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %wait_err,
+                "IdentityCreateFromShieldedPool: broadcast accepted but result confirmation \
+                 failed; falling back to fetching the identity by its derived id"
+            );
+            // Fetch the identity directly. The id is committed in the sighash and derived
+            // deterministically from the spent nullifiers, so if the transition landed the row
+            // is queryable. A freshly-included identity can take a moment to index on the DAPI
+            // node we hit, so retry a few times with a short, fixed backoff before concluding
+            // it's truly absent: long enough to ride out routine indexing/replica lag, short
+            // enough not to wedge the caller's UI for minutes.
+            return match fetch_identity_with_retries(sdk, identity_id).await {
+                Some(mut identity) => {
+                    info!(
+                        derived_id = %identity_id,
+                        "IdentityCreateFromShieldedPool: result confirmation failed but the \
+                         identity was found on chain by its derived id; treating as success"
+                    );
+                    // Same defensive empty-`public_keys` fill as the proven-result path below,
+                    // so downstream auth-key checks see the committed key set immediately.
+                    if identity.public_keys().is_empty() {
+                        identity.set_public_keys(submitted_public_keys);
+                    }
+                    Ok((identity.id(), identity))
+                }
+                // The saved record resolves it: the sync-time pass re-checks the nullifiers,
+                // then re-broadcasts this byte-identical transition up to
+                // MAX_REDRIVE_ATTEMPTS times.
+                None => Err(unconfirmed(wait_err.to_string())),
+            };
+        }
+    };
+
+    // Pull the verified `Identity` out of the proof result. The expected variant is
+    // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
+    // broadcast still SUCCEEDED, so we don't turn it into a failed create: we synthesize the
+    // identity from the derived id + submitted keys (the binding signature committed both) and
+    // warn, so the local row is still created.
+    let identity = match proof_result {
+        StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
+            mut identity,
+            _nullifiers,
+        ) => {
+            // The proof-verified id is authoritative: it's recomputed from the proven nullifier
+            // set, while `identity_id` was derived pre-broadcast. They should match (the derived
+            // id is committed in the sighash), but trust the verified one.
+            if identity.id() != identity_id {
+                warn!(
+                    derived_id = %identity_id,
+                    verified_id = %identity.id(),
+                    "IdentityCreateFromShieldedPool: derived id differs from proof-verified id; \
+                     using the proof-verified id"
+                );
+            }
+            // Defensive: a proof result can hand back an identity whose `public_keys` map is
+            // empty. Fill it from the submitted set so downstream auth-key checks see the keys
+            // immediately without waiting for the next identity-fetch round (the transition
+            // committed exactly these keys, so id reproducibility is preserved).
+            if identity.public_keys().is_empty() {
+                identity.set_public_keys(submitted_public_keys);
+            }
+            identity
+        }
+        other => {
+            warn!(
+                derived_id = %identity_id,
+                result = %other,
+                "IdentityCreateFromShieldedPool: unexpected proof-result variant; synthesizing \
+                 the identity from the derived id + submitted keys so the local row still lands"
+            );
+            // The create executed. An identity that cannot be synthesized leaves it
+            // unconfirmed, its notes and record kept for the next sync, never failed.
+            Identity::new_with_id_and_keys(identity_id, submitted_public_keys, sdk.version())
+                .map_err(|e| {
+                    unconfirmed(format!(
+                        "its result was proved, but the identity could not be read from it: {e}"
+                    ))
+                })?
+        }
+    };
+
+    Ok((identity.id(), identity))
 }
 
 /// Number of times [`identity_create_from_shielded_pool`] re-fetches the new identity by its
@@ -3454,12 +3435,12 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// and proceed to build a duplicate proof that's only rejected
 /// ~30 s later at broadcast time.
 ///
-/// The reservation is in-memory only — see
-/// [`ShieldedStore::mark_pending`] for the crash-recovery note.
-/// Callers must pair this with [`finalize_pending`] (on
-/// broadcast success) or [`NoteReservation::cancel`] (on failure) so the
-/// reservation is always released; until they hand it over
-/// ([`NoteReservation::hand_over`]), the returned guard releases it when
+/// The reservation is held in memory until the spend saves its record
+/// ([`save_spend_then_broadcast`]), which restores it after a restart: see
+/// [`ShieldedStore::mark_pending`]. Callers must pair this with
+/// [`finalize_pending`] (on proven execution) or [`settle_failed_spend`]
+/// (on failure); until the notes are handed over
+/// ([`NoteReservation::hand_over`]), the returned guard releases them when
 /// the spend is dropped.
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -3747,19 +3728,14 @@ async fn arm_pending_release<S: ShieldedStore>(
     Ok(true)
 }
 
-/// Maximum sync-time re-broadcast attempts for a
-/// broadcast-accepted-but-unconfirmed spend before the re-drive stops
-/// and the anchor-prune release backstop owns the reservation.
+/// Maximum sync-time re-broadcast attempts for a spend whose outcome is
+/// not known before the re-drive stops and the anchor-prune release
+/// backstop owns the reservation.
 pub(super) const MAX_REDRIVE_ATTEMPTS: u32 = 3;
 
-/// Broadcast a built shielded spend and, on the AMBIGUOUS outcome only
-/// (`ShieldedSpendUnconfirmed` — accepted broadcast, failed result
-/// wait), persist a [`PendingRedrive`] so the sync-time re-drive can
-/// resolve the ambiguity actively: the next scan detects a landing via
-/// the nullifiers; otherwise the byte-identical transition is
-/// re-broadcast up to [`MAX_REDRIVE_ATTEMPTS`] times (fund-safe —
-/// identical nullifiers cannot double-spend); only if every attempt
-/// stays silent does the anchor-prune release backstop take over.
+/// Save a built shielded spend's recovery record, broadcast it and wait for
+/// its result ([`broadcast_shielded_spend_with_redrive_with_metadata`]),
+/// returning the proven result without its metadata.
 #[allow(clippy::too_many_arguments)]
 async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -3769,10 +3745,11 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     anchor: [u8; 32],
     anchor_height: u64,
     notes: &[ShieldedNote],
+    reservation: &mut NoteReservation<S>,
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
-) -> Result<StateTransitionProofResult, PlatformWalletError> {
+) -> Result<StateTransitionProofResult, SpendFailure> {
     broadcast_shielded_spend_with_redrive_with_metadata(
         sdk,
         store,
@@ -3781,6 +3758,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
         anchor,
         anchor_height,
         notes,
+        reservation,
         state_transition,
         operation,
         wait,
@@ -3789,6 +3767,17 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     .map(|(result, _)| result)
 }
 
+/// Save a built shielded spend's recovery record ([`PendingRedrive`])
+/// durably, then broadcast it and wait for its result
+/// ([`save_spend_then_broadcast`], [`broadcast_shielded_spend_classified`]).
+///
+/// The record is what resolves a spend whose outcome is not known: the next
+/// scan detects a landing via the nullifiers; otherwise the byte-identical
+/// transition is re-broadcast up to [`MAX_REDRIVE_ATTEMPTS`] times
+/// (identical nullifiers cannot be spent twice); only if every attempt stays
+/// silent does the anchor-prune release backstop take over. Saved before the
+/// first dispatch, it also covers a process that exits during the dispatches
+/// or the result wait: a restart restores the notes' reservation from it.
 #[allow(clippy::too_many_arguments)]
 async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -3798,28 +3787,168 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     anchor: [u8; 32],
     anchor_height: u64,
     notes: &[ShieldedNote],
+    reservation: &mut NoteReservation<S>,
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
-) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
-    let result = broadcast_shielded_spend(sdk, state_transition, operation, wait).await;
-    if matches!(
-        &result,
-        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
-    ) {
-        arm_redrive_record(
+) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
+    save_spend_then_broadcast(
+        store,
+        id,
+        pending_entry,
+        anchor,
+        anchor_height,
+        notes,
+        reservation,
+        state_transition,
+        operation,
+        || broadcast_shielded_spend_classified(sdk, state_transition, operation, wait),
+    )
+    .await
+}
+
+/// Save the recovery record of the built note-consuming spend
+/// `state_transition` durably, hand its notes over, and only then run
+/// `broadcast`, which sends it and waits for its result: the production flows
+/// pass their classified broadcast, a test intercepts it.
+///
+/// Each of `notes`' reservations first carries the spend's `anchor`
+/// ([`arm_pending_release`]), so a pruned anchor releases it; the record is
+/// then saved, keyed by `pending_entry` ([`arm_redrive_before_broadcast`]). A
+/// spend with no entry to key its record by, or whose record cannot be saved,
+/// is refused with nothing broadcast, and `reservation` still owns the notes:
+/// the caller releases them ([`settle_failed_spend`]), and so does a spend
+/// dropped while a save waits for the store.
+///
+/// Once the record is saved the notes are handed over, with nothing awaited
+/// in between: from then on they belong to the spend's resolution, whatever
+/// happens to this call. An exit or a drop during the dispatches or the
+/// result wait leaves the reservation and the record, which a restart
+/// restores and the redrive pass resolves.
+#[allow(clippy::too_many_arguments)]
+async fn save_spend_then_broadcast<S, B, Fut, T>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    anchor_height: u64,
+    notes: &[ShieldedNote],
+    reservation: &mut NoteReservation<S>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+    broadcast: B,
+) -> Result<T, SpendFailure>
+where
+    S: ShieldedStore,
+    B: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, SpendFailure>>,
+{
+    arm_pending_release(store, id, anchor, anchor_height, pending_entry, notes).await?;
+    arm_redrive_before_broadcast(
+        store,
+        id,
+        pending_entry.as_ref().map(|entry| entry.id),
+        anchor,
+        notes.iter().map(|note| note.nullifier).collect(),
+        state_transition,
+        operation,
+        None,
+        None,
+        anchor_height,
+    )
+    .await?;
+    // Saved: the notes are the spend's resolution's from here on.
+    reservation.hand_over();
+    broadcast().await
+}
+
+/// Settle the notes, saved record and activity row of a note-consuming spend
+/// (transfer, unshield, withdrawal, identity top-up, identity create) that
+/// ended with `failure`, and return the error it reports.
+///
+/// - Its transition never left the wallet ([`SpendFailure::never_delivered`]:
+///   refused before anything was sent), so nothing can execute it: its record
+///   is retired and its notes are released under one store guard
+///   ([`NoteReservation::retire_undelivered`]), and the activity row reads
+///   failed. When the record cannot be retired (a redrive pass claimed a
+///   re-broadcast of it meanwhile, or the write failed), the transition may
+///   leave the wallet after all: everything stays and the spend reads as
+///   unconfirmed.
+/// - Its record was saved (`reservation` is handed over,
+///   [`save_spend_then_broadcast`]) and a dispatch may have reached a node:
+///   it may execute. The notes stay reserved and the record stays, for the
+///   scan and the redrive pass to resolve, and the activity row stays
+///   pending. It reads as unconfirmed, whatever error ended it.
+/// - It failed before its record was saved: nothing was broadcast. The notes
+///   are released and the activity row reads failed.
+#[allow(clippy::too_many_arguments)]
+async fn settle_failed_spend<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    mut reservation: NoteReservation<S>,
+    operation: &'static str,
+    failure: SpendFailure,
+) -> PlatformWalletError {
+    let SpendFailure {
+        error,
+        never_delivered,
+    } = failure;
+    if never_delivered {
+        let retired = match pending_entry.as_ref().map(|entry| entry.id) {
+            Some(activity_id) => reservation.retire_undelivered(&activity_id, &[]).await,
+            None => {
+                reservation.hand_over();
+                false
+            }
+        };
+        if !retired {
+            return PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation,
+                reason: format!(
+                    "its broadcast was refused before delivery ({error}), but its saved \
+                     transition was claimed for a re-broadcast or could not be retired"
+                ),
+            };
+        }
+        record_activity_status(
             store,
+            persister,
+            wallet_id,
             id,
             pending_entry,
-            anchor,
-            anchor_height,
-            notes,
-            state_transition,
-            operation,
+            ShieldedActivityStatus::Failed,
+            None,
         )
         .await;
+        return error;
     }
-    result
+    if reservation.handed_over {
+        return match error {
+            unconfirmed @ (PlatformWalletError::ShieldedSpendUnconfirmed { .. }
+            | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => unconfirmed,
+            other => PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation,
+                reason: other.to_string(),
+            },
+        };
+    }
+    // The guard owns the notes until they are released, so a drop on the
+    // way still releases them.
+    record_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        pending_entry,
+        ShieldedActivityStatus::Failed,
+        None,
+    )
+    .await;
+    reservation.cancel().await;
+    error
 }
 
 /// Save the re-drivable record of a spend durably before it is broadcast,
@@ -3966,58 +4095,6 @@ pub(crate) fn private_document_commitments(
                 .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
         })
         .collect()
-}
-
-/// Persist the re-drivable record for an ambiguous spend. Best-effort:
-/// a failure here only demotes the resolution path to the anchor-prune
-/// backstop (plus restart-loss of the reservation), never fails the
-/// spend call itself — the ambiguity already happened.
-#[allow(clippy::too_many_arguments)]
-async fn arm_redrive_record<S: ShieldedStore>(
-    store: &Arc<RwLock<S>>,
-    id: SubwalletId,
-    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
-    anchor: [u8; 32],
-    anchor_height: u64,
-    notes: &[ShieldedNote],
-    state_transition: &StateTransition,
-    operation: &'static str,
-) {
-    use dpp::serialization::PlatformSerializable;
-
-    let Some(entry) = pending_entry else {
-        return;
-    };
-    let st_bytes = match state_transition.serialize_to_bytes() {
-        Ok(b) => b,
-        Err(e) => {
-            warn!(
-                operation,
-                error = %e,
-                "failed to serialize the unconfirmed transition; re-drive disabled for this \
-                 spend (prune backstop still applies)"
-            );
-            return;
-        }
-    };
-    let redrive = PendingRedrive {
-        activity_id: entry.id,
-        anchor,
-        nullifiers: notes.iter().map(|n| n.nullifier).collect(),
-        st_bytes,
-        attempts: 0,
-        identity_nonce_finalized: false,
-        identity_user_abandoned: false,
-        anchor_height: Some(anchor_height),
-    };
-    if let Err(e) = store.write().await.arm_redrive(id, redrive) {
-        warn!(
-            operation,
-            error = %e,
-            "failed to persist the redrive record; re-drive disabled for this spend (prune \
-             backstop still applies)"
-        );
-    }
 }
 
 /// Whether an SDK error is Platform's `NullifierAlreadySpentError` —
@@ -4360,36 +4437,8 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     }
 }
 
-/// Broadcast a built shielded spend transition (unshield / transfer /
-/// withdraw) and wait for proven execution, staging the two SDK calls
-/// separately so the caller's reservation rollback only runs when the
-/// spend DEFINITIVELY did not happen:
-///
-/// - a definitive `broadcast()` failure ([`broadcast_definitely_failed`]:
-///   a consensus-verdict CheckTx rejection, or a transport failure that
-///   proves nothing was delivered), or a wait-stage consensus rejection
-///   (Platform ran the transition and rejected it on its merits — see
-///   [`carries_consensus_rejection`]), means the spend never executed →
-///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
-///   releases the note reservations via [`NoteReservation::cancel`];
-/// - a no-verdict `broadcast()` failure (`AlreadyExists` proves the tx IS
-///   in the mempool after a lost-ACK retry; timeouts merely allow it)
-///   falls through to the result wait, which either proves execution or
-///   classifies the residual ambiguity;
-/// - any other wait failure (transport error, timeout, result-proof
-///   fetch/verify error, …) is AMBIGUOUS — the relay accepted (or may
-///   have accepted) the tx and it may well have executed →
-///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller
-///   must leave the reservations in place (each spend flow's outer
-///   match has a dedicated arm for this).
-///
-/// Mirrors the staging in [`identity_create_from_shielded_pool`], minus
-/// its fetch-by-derived-id fallback: a spend leaves no artifact as
-/// cheaply queryable as an identity row, so ambiguity is surfaced
-/// directly and reconciled by the next nullifier sync. The proven
-/// result is discarded; only the confirmation matters.
-/// How [`broadcast_shielded_spend`] waits for an already-broadcast spend's
-/// result, mirroring the verifier's classification of the family.
+/// How [`broadcast_shielded_spend_classified`] waits for an already-broadcast
+/// spend's result, mirroring the verifier's classification of the family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpendResultWait {
     /// The family is classified execution-proving (transfer, unshield,
@@ -4402,19 +4451,10 @@ enum SpendResultWait {
     AffectedState,
 }
 
-async fn broadcast_shielded_spend(
-    sdk: &Arc<dash_sdk::Sdk>,
-    state_transition: &StateTransition,
-    operation: &'static str,
-    wait: SpendResultWait,
-) -> Result<(StateTransitionProofResult, ResponseMetadata), PlatformWalletError> {
-    broadcast_shielded_spend_classified(sdk, state_transition, operation, wait)
-        .await
-        .map_err(|failure| failure.error)
-}
-
-/// A failed [`broadcast_shielded_spend_classified`]: the error it reports, and
-/// whether the transition never left the wallet.
+/// A failed note-consuming spend: the error it reports, and whether its
+/// transition never left the wallet. Every failure before the broadcast, and
+/// every one after a dispatch that may have reached a node, is built from its
+/// error alone ([`From`]), with `never_delivered` false.
 struct SpendFailure {
     error: PlatformWalletError,
     /// The broadcast proved nothing was delivered
@@ -4432,8 +4472,25 @@ impl From<PlatformWalletError> for SpendFailure {
     }
 }
 
-/// [`broadcast_shielded_spend`], telling a failure whose transition never
-/// left the wallet from one that may have reached the network.
+/// Broadcast a built shielded spend transition and wait for its proven
+/// result, telling a failure whose transition never left the wallet from one
+/// that may have reached the network:
+///
+/// - refused before anything was sent ([`BroadcastDelivery::NeverDelivered`]):
+///   [`PlatformWalletError::ShieldedBroadcastFailed`], with
+///   [`SpendFailure::never_delivered`] set, so the caller retires the saved
+///   record and releases the notes;
+/// - any dispatch that may have reached a node falls through to the result
+///   wait, which either proves the outcome or leaves it unknown;
+/// - any wait failure, a consensus verdict included
+///   ([`classify_spend_wait_failure`]):
+///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller leaves
+///   the reservations and the saved record in place.
+///
+/// A spend leaves no artifact as cheaply queryable as the identity row
+/// [`broadcast_identity_create`] falls back to, so an unknown outcome is
+/// surfaced directly and resolved by the next nullifier sync and the redrive
+/// pass.
 async fn broadcast_shielded_spend_classified(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &StateTransition,
@@ -4489,7 +4546,7 @@ fn definite_broadcast_failure(e: &dash_sdk::Error) -> PlatformWalletError {
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast
-/// shielded spend (see [`broadcast_shielded_spend`]): unconfirmed, whatever
+/// shielded spend (see [`broadcast_shielded_spend_classified`]): unconfirmed, whatever
 /// it is, the notes staying reserved.
 ///
 /// A consensus verdict on the wait ([`carries_consensus_rejection`]) is no
@@ -4668,6 +4725,7 @@ mod shield_recipient_tests {
 #[cfg(test)]
 mod redrive_tests {
     use super::*;
+    use crate::broadcast_outcome::test_sdks::{sdk_refusing_connections, sdk_without_addresses};
     use crate::wallet::identity::network::PaymentStarted;
     use crate::wallet::shielded::activity::ShieldedActivityEntry;
     use crate::wallet::shielded::store::InMemoryShieldedStore;
@@ -4687,6 +4745,9 @@ mod redrive_tests {
     use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
     use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
     use dpp::version::PlatformVersion;
     use futures::{poll, FutureExt};
     use grovedb_commitment_tree::ProvingKey;
@@ -6204,6 +6265,996 @@ mod redrive_tests {
         assert_eq!(left[0].activity_id, [1; 32]);
         assert_eq!(left[0].attempts, 1, "claimed once, before its broadcast");
     }
+
+    // ── Note-consuming spends: saved before the first dispatch ─────────
+
+    /// The anchor the tests' spends are built on, and the proved height of
+    /// the anchor set it was read from.
+    const SPEND_ANCHOR: [u8; 32] = [0x6E; 32];
+    const SPEND_ANCHOR_HEIGHT: u64 = 5;
+
+    /// The identity the tests' identity create derives.
+    const CREATED_IDENTITY: [u8; 32] = [0x33; 32];
+
+    fn spend_action() -> SerializedAction {
+        SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        }
+    }
+
+    /// The note the tests' spends consume.
+    fn spend_note() -> ShieldedNote {
+        ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5C; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000_000_000_000,
+            note_data: vec![],
+        }
+    }
+
+    /// The note-consuming spends, by the code that saves, broadcasts and
+    /// waits for them.
+    #[derive(Clone, Copy, Debug)]
+    enum SpendPath {
+        /// Transfer, unshield, withdrawal and identity top-up
+        /// ([`broadcast_shielded_spend_with_redrive_with_metadata`]): here a
+        /// transfer.
+        Shared,
+        /// Identity create ([`broadcast_identity_create_with_redrive`]).
+        IdentityCreate,
+    }
+
+    impl SpendPath {
+        /// A signed transition of the path, as it saves and broadcasts one.
+        fn transition(self) -> StateTransition {
+            match self {
+                Self::Shared => ShieldedTransferTransitionV0 {
+                    actions: vec![spend_action(), spend_action()],
+                    value_balance: 1_000,
+                    anchor: SPEND_ANCHOR,
+                    proof: vec![8; 64],
+                    binding_signature: [9; 64],
+                }
+                .into(),
+                Self::IdentityCreate => IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 1_000_000,
+                    actions: vec![spend_action(), spend_action()],
+                    anchor: SPEND_ANCHOR,
+                    proof: vec![8; 64],
+                    binding_signature: [9; 64],
+                    send_to_address_on_creation_failure: PlatformAddress::P2pkh([7; 20]),
+                    identity_id: Identifier::from(CREATED_IDENTITY),
+                }
+                .into(),
+            }
+        }
+
+        /// Save, broadcast and wait for the path's transition on `sdk`, as
+        /// its production flow does once the transition is built.
+        async fn broadcast(
+            self,
+            sdk: &Arc<dash_sdk::Sdk>,
+            spend: &mut ReservedSpend,
+            id: SubwalletId,
+        ) -> Result<(), SpendFailure> {
+            let transition = self.transition();
+            match self {
+                Self::Shared => broadcast_shielded_spend_with_redrive_with_metadata(
+                    sdk,
+                    &spend.store,
+                    id,
+                    &spend.entry,
+                    SPEND_ANCHOR,
+                    SPEND_ANCHOR_HEIGHT,
+                    &spend.notes,
+                    &mut spend.reservation,
+                    &transition,
+                    "transfer",
+                    SpendResultWait::ExecutionProved,
+                )
+                .await
+                .map(|_| ()),
+                Self::IdentityCreate => broadcast_identity_create_with_redrive(
+                    sdk,
+                    &spend.store,
+                    id,
+                    &spend.entry,
+                    SPEND_ANCHOR,
+                    SPEND_ANCHOR_HEIGHT,
+                    &spend.notes,
+                    &mut spend.reservation,
+                    &transition,
+                    Identifier::from(CREATED_IDENTITY),
+                    BTreeMap::new(),
+                )
+                .await
+                .map(|_| ()),
+            }
+        }
+
+        /// Settle the path's failed spend, as its production flow does, and
+        /// return the error it reports.
+        async fn settle(
+            self,
+            spend: ReservedSpend,
+            wallet_id: WalletId,
+            id: SubwalletId,
+            failure: SpendFailure,
+        ) -> PlatformWalletError {
+            let ReservedSpend {
+                store,
+                reservation,
+                entry,
+                ..
+            } = spend;
+            match self {
+                Self::Shared => {
+                    settle_failed_spend(
+                        &store,
+                        None,
+                        wallet_id,
+                        id,
+                        &entry,
+                        reservation,
+                        "transfer",
+                        failure,
+                    )
+                    .await
+                }
+                Self::IdentityCreate => identity_create_failure(
+                    settle_failed_spend(
+                        &store,
+                        None,
+                        wallet_id,
+                        id,
+                        &entry,
+                        reservation,
+                        IDENTITY_CREATE_OPERATION,
+                        failure,
+                    )
+                    .await,
+                    Some(Identifier::from(CREATED_IDENTITY)),
+                ),
+            }
+        }
+
+        /// Whether `error` is the path's report of a spend whose outcome is
+        /// not known.
+        fn reads_unconfirmed(self, error: &PlatformWalletError) -> bool {
+            match self {
+                Self::Shared => matches!(
+                    error,
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "transfer",
+                        ..
+                    }
+                ),
+                Self::IdentityCreate => matches!(
+                    error,
+                    PlatformWalletError::ShieldedBroadcastUnconfirmed { identity_id, .. }
+                        if *identity_id == Identifier::from(CREATED_IDENTITY)
+                ),
+            }
+        }
+    }
+
+    /// A spend right before it saves its record: its note reserved in a
+    /// file-backed store, and its pending activity entry recorded.
+    struct ReservedSpend {
+        store: Arc<RwLock<FileBackedShieldedStore>>,
+        notes: Vec<ShieldedNote>,
+        reservation: NoteReservation<FileBackedShieldedStore>,
+        entry: Option<ShieldedActivityEntry>,
+    }
+
+    impl ReservedSpend {
+        async fn at(path: &std::path::Path, id: SubwalletId, activity_id: [u8; 32]) -> Self {
+            let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+            let store = Arc::new(RwLock::new(
+                FileBackedShieldedStore::open_path(path, 100).expect("the store"),
+            ));
+            store
+                .write()
+                .await
+                .save_note(id, &spend_note())
+                .expect("a note");
+            let (notes, _, _, reservation) =
+                reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                    .await
+                    .expect("reserved");
+            let entry = pending_entry(activity_id);
+            store
+                .write()
+                .await
+                .save_activity(id, &entry)
+                .expect("the pending row");
+            Self {
+                store,
+                notes,
+                reservation,
+                entry: Some(entry),
+            }
+        }
+    }
+
+    /// Make the store at `path` refuse to save a spend's record.
+    fn refuse_record_saves(path: &std::path::Path) {
+        rusqlite::Connection::open(path)
+            .expect("the store's file")
+            .execute_batch(
+                "CREATE TRIGGER reject_redrive_insert BEFORE INSERT ON \
+                 shielded_pending_spends BEGIN SELECT RAISE(FAIL, 'injected'); END;",
+            )
+            .expect("the trigger");
+    }
+
+    /// The store at `path` as a restart opens it, the wallet's note loaded
+    /// into it again.
+    fn restarted_store(path: &std::path::Path, id: SubwalletId) -> FileBackedShieldedStore {
+        let mut store = FileBackedShieldedStore::open_path(path, 100).expect("reopened");
+        store
+            .save_note(id, &spend_note())
+            .expect("the note, loaded again");
+        store
+    }
+
+    /// How many notes of `id` a spend can select, and the status of the
+    /// activity row `activity_id`.
+    async fn spendable_and_status(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> (usize, ShieldedActivityStatus) {
+        let store = store.read().await;
+        (
+            store.get_unspent_notes(id).expect("notes").len(),
+            store
+                .get_activity_by_entry_id(id, activity_id)
+                .expect("the row reads")
+                .expect("the row")
+                .status,
+        )
+    }
+
+    /// A note-consuming spend saves its record durably before its first
+    /// dispatch, and hands its notes over only then. So a process that exits
+    /// between the broadcast and the result (here the spend is dropped while
+    /// its result wait is pending, and nothing settles it) leaves the record:
+    /// the store a restart opens holds the notes' reservation and the exact
+    /// signed transition, the redrive pass re-broadcasts it, and the scan
+    /// that sees its nullifier spent resolves it.
+    #[tokio::test]
+    async fn should_restore_a_spend_that_exited_between_its_broadcast_and_its_result() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use std::task::{Context, Waker};
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let sdk_handle = Arc::new(sdk.clone());
+        let id = SubwalletId::new([0x71; 32], 0);
+        let activity_id = [0x7A; 32];
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let ReservedSpend {
+            store,
+            notes,
+            mut reservation,
+            entry,
+        } = ReservedSpend::at(&path, id, activity_id).await;
+        let transition = SpendPath::Shared.transition();
+        let signed = transition.serialize_to_bytes().expect("serializes");
+
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut spend = Box::pin(save_spend_then_broadcast(
+            &store,
+            id,
+            &entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &notes,
+            &mut reservation,
+            &transition,
+            "transfer",
+            || {
+                // Nothing is dispatched before the record is on the file.
+                let durable =
+                    FileBackedShieldedStore::open_path(&path, 100).expect("a second handle");
+                let saved = durable.pending_redrives(id).expect("the records");
+                assert_eq!(saved.len(), 1, "saved before the first dispatch");
+                assert_eq!(saved[0].st_bytes, signed);
+                // Dispatched; its result never comes.
+                std::future::pending::<Result<(), SpendFailure>>()
+            },
+        ));
+        assert!(
+            spend.as_mut().poll(&mut cx).is_pending(),
+            "broadcast, waiting for its result"
+        );
+        // The process exits here: the spend never returns, nothing settles it.
+        drop(spend);
+        drop(reservation);
+        assert!(
+            store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .is_empty(),
+            "the dropped spend's notes stay reserved"
+        );
+        drop(store);
+
+        let restarted = Arc::new(RwLock::new(restarted_store(&path, id)));
+        {
+            let store = restarted.read().await;
+            assert!(
+                store.get_unspent_notes(id).expect("notes").is_empty(),
+                "the reservation is restored from the record"
+            );
+            let saved = store.pending_redrives(id).expect("the records");
+            assert_eq!(saved.len(), 1);
+            assert_eq!(saved[0].st_bytes, signed, "the exact signed transition");
+            assert_eq!(saved[0].nullifiers, vec![spend_note().nullifier]);
+            assert_eq!(saved[0].anchor, SPEND_ANCHOR);
+            assert_eq!(saved[0].anchor_height, Some(SPEND_ANCHOR_HEIGHT));
+            assert_eq!(saved[0].attempts, 0);
+        }
+
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+        redrive_pending_spends(
+            &sdk_handle,
+            &restarted,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert!(
+            sdk.mock().request_count(&request).await > 0,
+            "the redrive pass re-broadcasts the saved transition"
+        );
+        assert_eq!(
+            restarted
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")[0]
+                .attempts,
+            1
+        );
+
+        // The next scan sees the spend's nullifier on chain.
+        assert!(restarted
+            .write()
+            .await
+            .mark_spent(id, &spend_note().nullifier)
+            .expect("marked"));
+        drop(restarted);
+        assert!(
+            FileBackedShieldedStore::open_path(&path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records")
+                .is_empty(),
+            "resolved for good"
+        );
+    }
+
+    /// A failed spend is settled by what is known about its transition. One
+    /// that never left the wallet has its record retired and its notes
+    /// released together, unless a redrive pass claimed a re-broadcast of the
+    /// record meanwhile: it may then leave the wallet after all, and is kept
+    /// as unconfirmed. One whose record was saved and that may have reached a
+    /// node keeps its notes and its record whatever error ended it, and reads
+    /// as unconfirmed. One whose record could not be saved was never
+    /// dispatched, and releases its notes.
+    #[tokio::test]
+    async fn should_release_a_failed_spend_s_notes_only_when_its_transition_cannot_execute() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let wallet_id = [0x72; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7B; 32];
+        let transition = SpendPath::Shared.transition();
+        let never_delivered = || SpendFailure {
+            error: PlatformWalletError::ShieldedBroadcastFailed("no address".to_string()),
+            never_delivered: true,
+        };
+        for outcome in [
+            "never delivered",
+            "never delivered, re-broadcast claimed",
+            "unconfirmed",
+            "failed after its record was saved",
+            "its record could not be saved",
+        ] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+            if outcome == "its record could not be saved" {
+                refuse_record_saves(&path);
+            }
+            let dispatched = AtomicBool::new(false);
+            let store = Arc::clone(&spend.store);
+            let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+                &spend.store,
+                id,
+                &spend.entry,
+                SPEND_ANCHOR,
+                SPEND_ANCHOR_HEIGHT,
+                &spend.notes,
+                &mut spend.reservation,
+                &transition,
+                "transfer",
+                || async {
+                    dispatched.store(true, Ordering::SeqCst);
+                    Err(match outcome {
+                        "never delivered" => never_delivered(),
+                        "never delivered, re-broadcast claimed" => {
+                            // A redrive pass re-broadcast the saved record
+                            // while the spend's own broadcast ran.
+                            store
+                                .write()
+                                .await
+                                .bump_redrive_attempts(id, &activity_id)
+                                .expect("claimed");
+                            never_delivered()
+                        }
+                        "unconfirmed" => PlatformWalletError::ShieldedSpendUnconfirmed {
+                            operation: "transfer",
+                            reason: "the result wait timed out".to_string(),
+                        }
+                        .into(),
+                        _ => PlatformWalletError::ShieldedBuildError(
+                            "its proved result did not read".to_string(),
+                        )
+                        .into(),
+                    })
+                },
+            )
+            .await;
+            let failure = result.expect_err("the spend failed");
+            let store = Arc::clone(&spend.store);
+            let settled = SpendPath::Shared
+                .settle(spend, wallet_id, id, failure)
+                .await;
+            let (spendable, status) = spendable_and_status(&store, id, &activity_id).await;
+            drop(store);
+            let saved = FileBackedShieldedStore::open_path(&path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records");
+            match outcome {
+                "never delivered" => {
+                    assert!(
+                        matches!(settled, PlatformWalletError::ShieldedBroadcastFailed(_)),
+                        "{outcome}: {settled:?}"
+                    );
+                    assert_eq!(spendable, 1, "{outcome}: the notes are released");
+                    assert!(saved.is_empty(), "{outcome}: the record is retired");
+                    assert_eq!(status, ShieldedActivityStatus::Failed, "{outcome}");
+                }
+                "its record could not be saved" => {
+                    assert!(
+                        matches!(settled, PlatformWalletError::ShieldedStoreError(_)),
+                        "{outcome}: {settled:?}"
+                    );
+                    assert!(!dispatched.load(Ordering::SeqCst), "never dispatched");
+                    assert_eq!(spendable, 1, "{outcome}: the notes are released");
+                    assert!(saved.is_empty(), "{outcome}");
+                    assert_eq!(status, ShieldedActivityStatus::Failed, "{outcome}");
+                }
+                _ => {
+                    assert!(
+                        SpendPath::Shared.reads_unconfirmed(&settled),
+                        "{outcome}: {settled:?}"
+                    );
+                    assert_eq!(spendable, 0, "{outcome}: the notes stay reserved");
+                    assert_eq!(saved.len(), 1, "{outcome}: the record stays");
+                    assert_eq!(status, ShieldedActivityStatus::Pending, "{outcome}");
+                }
+            }
+        }
+    }
+
+    /// Each note-consuming spend path, on an SDK whose node answers every
+    /// request with an error: a dispatch may have reached the node, so the
+    /// spend is unconfirmed, never failed. Its notes stay reserved and its
+    /// record stays, across a restart too, where the redrive pass
+    /// re-broadcasts the exact signed transition and the scan that sees its
+    /// nullifier spent resolves it.
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_a_spend_that_may_have_reached_a_node_until_it_resolves() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let wallet_id = [0x73; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7C; 32];
+        for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+            let sdk_handle = Arc::new(sdk.clone());
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+            let transition = spend_path.transition();
+            let request = transition
+                .broadcast_request_for_state_transition()
+                .expect("serializes");
+
+            let failure = spend_path
+                .broadcast(&sdk_handle, &mut spend, id)
+                .await
+                .expect_err("its result is not proved");
+            assert!(!failure.never_delivered, "{spend_path:?}");
+            let dispatches = sdk.mock().request_count(&request).await;
+            assert!(dispatches > 0, "{spend_path:?}: it was dispatched");
+            let store = Arc::clone(&spend.store);
+            let settled = spend_path.settle(spend, wallet_id, id, failure).await;
+            assert!(
+                spend_path.reads_unconfirmed(&settled),
+                "{spend_path:?}: {settled:?}"
+            );
+            assert_eq!(
+                spendable_and_status(&store, id, &activity_id).await,
+                (0, ShieldedActivityStatus::Pending),
+                "{spend_path:?}: the notes stay reserved, the row pending"
+            );
+            drop(store);
+
+            let restarted = Arc::new(RwLock::new(restarted_store(&path, id)));
+            {
+                let store = restarted.read().await;
+                assert!(
+                    store.get_unspent_notes(id).expect("notes").is_empty(),
+                    "{spend_path:?}: the reservation is restored from the record"
+                );
+                let saved = store.pending_redrives(id).expect("the records");
+                assert_eq!(saved.len(), 1, "{spend_path:?}");
+                assert_eq!(
+                    saved[0].st_bytes,
+                    transition.serialize_to_bytes().expect("serializes"),
+                    "{spend_path:?}: the exact signed transition"
+                );
+            }
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+            redrive_pending_spends(
+                &sdk_handle,
+                &restarted,
+                id,
+                &recorded,
+                &CancellationToken::new(),
+            )
+            .await;
+            assert!(
+                sdk.mock().request_count(&request).await > dispatches,
+                "{spend_path:?}: the redrive pass re-broadcasts it"
+            );
+            assert!(restarted
+                .write()
+                .await
+                .mark_spent(id, &spend_note().nullifier)
+                .expect("marked"));
+            assert!(
+                restarted
+                    .read()
+                    .await
+                    .pending_redrives(id)
+                    .expect("records")
+                    .is_empty(),
+                "{spend_path:?}: resolved once its nullifier is seen spent"
+            );
+        }
+    }
+
+    /// Each note-consuming spend path, on an SDK with no address to send to:
+    /// the transition never left the wallet. Its record was saved before the
+    /// dispatch that was refused; the settlement retires it and frees the
+    /// notes, and the spend reads as failed.
+    #[tokio::test]
+    async fn should_retire_the_record_of_a_spend_that_never_left_the_wallet() {
+        let wallet_id = [0x74; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7D; 32];
+        for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
+            let sdk = Arc::new(sdk_without_addresses());
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+
+            let failure = spend_path
+                .broadcast(&sdk, &mut spend, id)
+                .await
+                .expect_err("nothing to send it to");
+            assert!(
+                failure.never_delivered,
+                "{spend_path:?}: {:?}",
+                failure.error
+            );
+            let store = Arc::clone(&spend.store);
+            assert_eq!(
+                store
+                    .read()
+                    .await
+                    .pending_redrives(id)
+                    .expect("records")
+                    .len(),
+                1,
+                "{spend_path:?}: its record was saved before its dispatch"
+            );
+            let settled = spend_path.settle(spend, wallet_id, id, failure).await;
+            assert!(
+                matches!(settled, PlatformWalletError::ShieldedBroadcastFailed(_)),
+                "{spend_path:?}: {settled:?}"
+            );
+            assert_eq!(
+                spendable_and_status(&store, id, &activity_id).await,
+                (1, ShieldedActivityStatus::Failed),
+                "{spend_path:?}: the notes are free, the row failed"
+            );
+            drop(store);
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .expect("reopened")
+                    .pending_redrives(id)
+                    .expect("records")
+                    .is_empty(),
+                "{spend_path:?}: no record is left"
+            );
+        }
+    }
+
+    /// Each note-consuming spend path whose record cannot be saved dispatches
+    /// nothing: the spend is refused, and its notes are released.
+    #[tokio::test]
+    async fn should_not_dispatch_a_spend_whose_record_cannot_be_saved() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let wallet_id = [0x75; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7E; 32];
+        for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+            let sdk_handle = Arc::new(sdk.clone());
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+            refuse_record_saves(&path);
+
+            let failure = spend_path
+                .broadcast(&sdk_handle, &mut spend, id)
+                .await
+                .expect_err("its record is not saved");
+            assert!(
+                matches!(failure.error, PlatformWalletError::ShieldedStoreError(_)),
+                "{spend_path:?}: {:?}",
+                failure.error
+            );
+            let request = spend_path
+                .transition()
+                .broadcast_request_for_state_transition()
+                .expect("serializes");
+            assert_eq!(
+                sdk.mock().request_count(&request).await,
+                0,
+                "{spend_path:?}: nothing was dispatched"
+            );
+            let store = Arc::clone(&spend.store);
+            let settled = spend_path.settle(spend, wallet_id, id, failure).await;
+            assert!(
+                matches!(settled, PlatformWalletError::ShieldedStoreError(_)),
+                "{spend_path:?}: {settled:?}"
+            );
+            assert_eq!(
+                spendable_and_status(&store, id, &activity_id).await,
+                (1, ShieldedActivityStatus::Failed),
+                "{spend_path:?}: the notes are free, the row failed"
+            );
+        }
+    }
+
+    // ── Shields from Platform addresses ────────────────────────────────
+
+    /// A signed shield from a Platform address (type 15).
+    fn shield_transition() -> StateTransition {
+        ShieldTransitionV0 {
+            inputs: BTreeMap::from([(PlatformAddress::P2pkh([7; 20]), (1, 2_000_000))]),
+            actions: vec![spend_action(), spend_action()],
+            amount: 1_000_000,
+            anchor: SPEND_ANCHOR,
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 0,
+            input_witnesses: vec![],
+        }
+        .into()
+    }
+
+    /// A node's refusal of a dispatch, as an offline or overloaded endpoint
+    /// answers one.
+    fn unavailable() -> dash_sdk::Error {
+        use dash_sdk::dapi_client::transport::TransportError;
+        use dash_sdk::dapi_client::DapiClientError;
+        use dash_sdk::dapi_grpc::tonic::{Code, Status};
+
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+            Status::new(Code::Unavailable, "test"),
+        )))
+    }
+
+    /// A stale-nonce verdict on the shield's input, as a broadcast or as the
+    /// result wait returns one.
+    fn nonce_verdict(on_the_wait: bool) -> dash_sdk::Error {
+        use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+
+        let verdict = ConsensusError::StateError(StateError::AddressInvalidNonceError(
+            AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2),
+        ));
+        if on_the_wait {
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 1,
+                message: "rejected".to_string(),
+                cause: Some(verdict),
+            })
+        } else {
+            dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(verdict)))
+        }
+    }
+
+    fn wait_timeout() -> dash_sdk::Error {
+        dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(80), "waiting".to_string())
+    }
+
+    /// An in-memory store holding the pending activity row `activity_id` of a
+    /// shield of `id`, and the row's entry.
+    async fn recorded_shield(
+        id: SubwalletId,
+        activity_id: [u8; 32],
+    ) -> (
+        Arc<RwLock<InMemoryShieldedStore>>,
+        Option<ShieldedActivityEntry>,
+    ) {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let entry = pending_entry(activity_id);
+        store
+            .write()
+            .await
+            .save_activity(id, &entry)
+            .expect("the pending row");
+        (store, Some(entry))
+    }
+
+    async fn shield_status(
+        store: &Arc<RwLock<InMemoryShieldedStore>>,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> ShieldedActivityStatus {
+        store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, activity_id)
+            .expect("the row reads")
+            .expect("the row")
+            .status
+    }
+
+    /// Once a dispatch may have reached a node, a shield whose result is not
+    /// proved is unconfirmed and its row stays pending, never failed: a node's
+    /// refusal of the broadcast and a consensus verdict on either call
+    /// included (here a stale nonce, which used to read as a retryable nonce
+    /// mismatch), as no proof backs an endpoint's answer and a retry signs a
+    /// second shield. The reason keeps what the broadcast was answered with.
+    #[tokio::test]
+    async fn should_report_a_shield_unconfirmed_once_a_dispatch_may_have_reached_a_node() {
+        let wallet_id = [0x76; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7F; 32];
+        let cases = [
+            (
+                "a node refused the broadcast, the wait timed out",
+                BroadcastDelivery::MaybeDelivered(unavailable()),
+                wait_timeout(),
+            ),
+            (
+                "the broadcast was answered with a consensus verdict",
+                BroadcastDelivery::MaybeDelivered(nonce_verdict(false)),
+                wait_timeout(),
+            ),
+            (
+                "admitted, the wait was answered with a consensus verdict",
+                BroadcastDelivery::Admitted,
+                nonce_verdict(true),
+            ),
+            (
+                "admitted, the wait timed out",
+                BroadcastDelivery::Admitted,
+                wait_timeout(),
+            ),
+        ];
+        for (case, delivery, wait_error) in cases {
+            let (store, entry) = recorded_shield(id, activity_id).await;
+            let broadcast_answer = match &delivery {
+                BroadcastDelivery::MaybeDelivered(e) => Some(e.to_string()),
+                _ => None,
+            };
+            let settled = settle_shield(
+                &store,
+                None,
+                wallet_id,
+                id,
+                &entry,
+                delivery,
+                |e: &dash_sdk::Error| e.to_string(),
+                || std::future::ready(Err(wait_error)),
+            )
+            .await;
+            let Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "shield",
+                reason,
+            }) = settled
+            else {
+                panic!("{case}: {settled:?}");
+            };
+            if let Some(answer) = broadcast_answer {
+                assert!(reason.contains(&answer), "{case}: {reason}");
+            }
+            assert_eq!(
+                shield_status(&store, id, &activity_id).await,
+                ShieldedActivityStatus::Pending,
+                "{case}"
+            );
+        }
+    }
+
+    /// Only a shield whose transition never left the wallet is failed, its
+    /// row with it, and nothing waits for its result.
+    #[tokio::test]
+    async fn should_report_a_shield_failed_only_when_nothing_was_sent() {
+        use dash_sdk::dapi_client::DapiClientError;
+        use std::cell::Cell;
+
+        let wallet_id = [0x77; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x80; 32];
+        let (store, entry) = recorded_shield(id, activity_id).await;
+        let waited = Cell::new(false);
+        let settled = settle_shield(
+            &store,
+            None,
+            wallet_id,
+            id,
+            &entry,
+            BroadcastDelivery::NeverDelivered(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses,
+            )),
+            |e: &dash_sdk::Error| e.to_string(),
+            || {
+                waited.set(true);
+                std::future::ready(Err(wait_timeout()))
+            },
+        )
+        .await;
+        assert!(
+            matches!(
+                settled,
+                Err(PlatformWalletError::ShieldedBroadcastFailed(_))
+            ),
+            "{settled:?}"
+        );
+        assert!(!waited.get(), "nothing was sent, so nothing is waited for");
+        assert_eq!(
+            shield_status(&store, id, &activity_id).await,
+            ShieldedActivityStatus::Failed
+        );
+    }
+
+    /// A shield whose result is proved is confirmed, whatever its broadcast
+    /// was answered with.
+    #[tokio::test]
+    async fn should_confirm_a_shield_whose_result_is_proved() {
+        let wallet_id = [0x78; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x81; 32];
+        for delivery in [
+            BroadcastDelivery::Admitted,
+            BroadcastDelivery::MaybeDelivered(unavailable()),
+        ] {
+            let (store, entry) = recorded_shield(id, activity_id).await;
+            settle_shield(
+                &store,
+                None,
+                wallet_id,
+                id,
+                &entry,
+                delivery,
+                |e: &dash_sdk::Error| e.to_string(),
+                || {
+                    std::future::ready(Ok(StateTransitionProofResult::VerifiedTokenBalanceAbsence(
+                        Identifier::from([1; 32]),
+                    )))
+                },
+            )
+            .await
+            .expect("proved");
+            assert_eq!(
+                shield_status(&store, id, &activity_id).await,
+                ShieldedActivityStatus::Confirmed
+            );
+        }
+    }
+
+    /// The broadcast of a signed shield through a network SDK: a node that
+    /// refuses the connection leaves it unconfirmed and its row pending, as a
+    /// transport failure cannot show that nothing was sent, and an SDK with
+    /// no address to send to leaves it failed.
+    #[tokio::test]
+    async fn should_report_a_shield_unconfirmed_when_its_node_refuses_the_connection() {
+        let wallet_id = [0x79; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x82; 32];
+        let transition = shield_transition();
+
+        let (store, entry) = recorded_shield(id, activity_id).await;
+        let refused = broadcast_shield(
+            &Arc::new(sdk_refusing_connections()),
+            &store,
+            None,
+            wallet_id,
+            id,
+            &entry,
+            &transition,
+            |e: &dash_sdk::Error| e.to_string(),
+        )
+        .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "shield",
+                    ..
+                })
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(
+            shield_status(&store, id, &activity_id).await,
+            ShieldedActivityStatus::Pending
+        );
+
+        let (store, entry) = recorded_shield(id, activity_id).await;
+        let never_sent = broadcast_shield(
+            &Arc::new(sdk_without_addresses()),
+            &store,
+            None,
+            wallet_id,
+            id,
+            &entry,
+            &transition,
+            |e: &dash_sdk::Error| e.to_string(),
+        )
+        .await;
+        assert!(
+            matches!(
+                never_sent,
+                Err(PlatformWalletError::ShieldedBroadcastFailed(_))
+            ),
+            "{never_sent:?}"
+        );
+        assert_eq!(
+            shield_status(&store, id, &activity_id).await,
+            ShieldedActivityStatus::Failed
+        );
+    }
 }
 
 #[cfg(test)]
@@ -6285,14 +7336,14 @@ mod classify_spend_wait_failure_tests {
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
     }
 
-    /// A consensus rejection surfacing from `broadcast()` stays definitive
-    /// for the shields into the pool that classify with
-    /// `broadcast_definitely_failed`, which move funds to the wallet's own
-    /// notes. On a note spend's wait the same verdict reads as unconfirmed:
+    /// A consensus rejection surfacing from `broadcast()` reads as a refusal
+    /// (`broadcast_was_refused`), which proves nothing: the one flow that
+    /// reads it, the shield from an identity, reports unconfirmed either
+    /// way. On a note spend's wait the same verdict reads as unconfirmed:
     /// no proof backs it.
     #[test]
-    fn should_read_a_consensus_rejection_as_definitive_only_for_shields_into_the_pool() {
-        assert!(broadcast_definitely_failed(&consensus_metadata_rejection()));
+    fn should_read_a_consensus_rejection_as_a_refusal_and_never_as_a_failed_spend() {
+        assert!(broadcast_was_refused(&consensus_metadata_rejection()));
         let err = classify_spend_wait_failure("transfer", &consensus_metadata_rejection());
         assert!(
             matches!(err, PlatformWalletError::ShieldedSpendUnconfirmed { .. }),
@@ -6309,49 +7360,38 @@ mod classify_spend_wait_failure_tests {
     }
 
     /// Connection-establishment failures and non-consensus server
-    /// rejections of `broadcast()` ARE definitive: nothing was admitted to
-    /// a mempool. The offline case (connect refused → `Unavailable`) in
-    /// particular must release the notes immediately rather than strand
-    /// them until restart.
+    /// rejections of `broadcast()` read as refusals: the shield from an
+    /// identity then skips its result wait for a proven nonce read. None of
+    /// them proves the transition was left out of every mempool.
     #[test]
-    fn broadcast_connection_failures_and_rejections_are_definitive() {
+    fn should_read_connection_failures_and_rejections_of_a_broadcast_as_refusals() {
         use dash_sdk::dapi_grpc::tonic::Code;
-        assert!(broadcast_definitely_failed(&grpc_err(Code::Unavailable)));
+        assert!(broadcast_was_refused(&grpc_err(Code::Unavailable)));
         // Mempool full / malformed request: server verdicts refusing admission.
-        assert!(broadcast_definitely_failed(&grpc_err(
-            Code::ResourceExhausted
-        )));
-        assert!(broadcast_definitely_failed(&grpc_err(
-            Code::InvalidArgument
-        )));
+        assert!(broadcast_was_refused(&grpc_err(Code::ResourceExhausted)));
+        assert!(broadcast_was_refused(&grpc_err(Code::InvalidArgument)));
     }
 
-    /// No-response shapes of the `broadcast()` call itself are NOT
-    /// definitive: the dapi-client retries across addresses, so the request
+    /// No-response shapes of the `broadcast()` call itself are not
+    /// refusals: the dapi-client retries across addresses, so the request
     /// may have been delivered to a node whose ACK was lost. The caller
-    /// falls through to the result wait instead of releasing the
-    /// reservations (which would let a retry select other unreserved notes
-    /// and double-send if the original broadcast landed).
+    /// falls through to the result wait.
     #[test]
     fn broadcast_no_response_shapes_are_inconclusive() {
         use dash_sdk::dapi_grpc::tonic::Code;
-        assert!(!broadcast_definitely_failed(&grpc_err(
-            Code::DeadlineExceeded
-        )));
+        assert!(!broadcast_was_refused(&grpc_err(Code::DeadlineExceeded)));
         // DAPI maps its own tenderdash-side failures (which can postdate
         // delivery) to Internal.
-        assert!(!broadcast_definitely_failed(&grpc_err(Code::Internal)));
-        assert!(!broadcast_definitely_failed(
-            &dash_sdk::Error::TimeoutReached(
-                std::time::Duration::from_secs(30),
-                "broadcast".to_string(),
-            )
-        ));
-        assert!(!broadcast_definitely_failed(&dash_sdk::Error::Generic(
+        assert!(!broadcast_was_refused(&grpc_err(Code::Internal)));
+        assert!(!broadcast_was_refused(&dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(30),
+            "broadcast".to_string(),
+        )));
+        assert!(!broadcast_was_refused(&dash_sdk::Error::Generic(
             "transport error: connection reset".to_string()
         )));
         // …including as the terminal error of an exhausted retry loop.
-        assert!(!broadcast_definitely_failed(
+        assert!(!broadcast_was_refused(
             &dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(
                 Code::DeadlineExceeded
             )))
@@ -6364,9 +7404,9 @@ mod classify_spend_wait_failure_tests {
     /// — the spend is in flight and the result wait will confirm it.
     #[test]
     fn broadcast_already_exists_is_in_flight() {
-        assert!(!broadcast_definitely_failed(
-            &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string())
-        ));
+        assert!(!broadcast_was_refused(&dash_sdk::Error::AlreadyExists(
+            "state transition already in mempool".to_string()
+        )));
     }
 
     /// A consensus verdict wrapped in the dapi-client's `NoAvailableAddressesToRetry`
@@ -6514,44 +7554,6 @@ mod reserve_shield_fee_tests {
         inputs.insert(addr(1), u64::MAX);
         let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
         assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
-    }
-}
-
-#[cfg(test)]
-mod note_reservation_release_tests {
-    use super::*;
-
-    /// `ShieldedBroadcastUnconfirmed` is the one failure that must NOT release the reservation: the
-    /// broadcast was accepted and the transition may have executed, so freeing the notes invites a
-    /// double-spend against notes that may already be consumed on chain. The next nullifier sync
-    /// reconciles them.
-    #[test]
-    fn unconfirmed_broadcast_retains_reservation() {
-        let e = PlatformWalletError::ShieldedBroadcastUnconfirmed {
-            identity_id: Identifier::from([7u8; 32]),
-            reason: "result proof unavailable".to_string(),
-        };
-        assert!(
-            !error_releases_note_reservation(&e),
-            "ShieldedBroadcastUnconfirmed must retain the note reservation"
-        );
-    }
-
-    /// Every other failure is a definitive pre-execution / build / rejection failure — the spend
-    /// never happened, so the reservation must be released.
-    #[test]
-    fn definitive_failures_release_reservation() {
-        let releasing: Vec<PlatformWalletError> = vec![
-            PlatformWalletError::ShieldedBroadcastFailed("rejected on merits".to_string()),
-            PlatformWalletError::ShieldedBuildError("note selection failed".to_string()),
-            PlatformWalletError::ShieldedStoreError("store write failed".to_string()),
-        ];
-        for e in &releasing {
-            assert!(
-                error_releases_note_reservation(e),
-                "{e:?} must release the note reservation"
-            );
-        }
     }
 }
 

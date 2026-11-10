@@ -87,12 +87,12 @@ These are shipped ABI. Do not renumber.
 | 13 | `ErrorArithmeticOverflow` | Produced in-tree by `shielded_send.rs` (the shielded-send amount/fee overflow guard). Its rustdoc was corrected by #4360 (`e0b8baa850`), which documents the `PlatformWalletError::InputSumOverflow` mapping — the stale no-producer comment this row used to track is gone |
 | 14 | `ErrorNoSelectableInputs` | |
 | 15 | `ErrorWalletAlreadyExists` | |
-| 16 | `ErrorShieldedBroadcastFailed` | |
+| 16 | `ErrorShieldedBroadcastFailed` | Returned only for a transition that never left the wallet (refused before anything was sent). A shield from Platform addresses no longer returns it for an endpoint's refusal or consensus verdict: that is 18 |
 | 17 | `ErrorShieldedBroadcastUnconfirmed` | |
-| 18 | `ErrorShieldedSpendUnconfirmed` | |
+| 18 | `ErrorShieldedSpendUnconfirmed` | Also what a shield from Platform addresses returns once a dispatch may have reached a node and its result is not proved, an endpoint's refusal or consensus verdict included. For a spend that consumes notes, the recovery record is saved before the broadcast and the reservation is restored from it after a restart |
 | 19 | `ErrorShieldedNoRecordedAnchor` | |
 | 20 | `ErrorTransactionBroadcastUnconfirmed` | |
-| 21 | `ErrorAddressNonceMismatch` | |
+| 21 | `ErrorAddressNonceMismatch` | No longer returned by a shield from Platform addresses: an endpoint's nonce verdict on a dispatched shield is 18. Transfers and withdrawals from Platform addresses, and identity registrations and top-ups from them, still return it |
 | 22 | `ErrorCoreInsufficientFunds` | |
 | 23 | `ErrorAssetLockNotTracked` | |
 | 24 | `ErrorAssetLockAlreadyConsumed` | |
@@ -109,7 +109,7 @@ These are shipped ABI. Do not renumber.
 | 39 | `ErrorInsufficientIdentityCredits` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 40 | `ErrorContestedNameNotTradable` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 41 | `ErrorShieldedInsufficientBalance` | Merged 2026-08-11 by **#4360** (`e0b8baa850`) |
-| 42 | `ErrorMasternodeWithdrawalUnconfirmed` | Merged 2026-08-22 by **#4451** (masternode-credit claiming). **Took the number active #4356 had claimed** for `ErrorAssetLockInputConflict` — see the proposed table's 42 note; #4356 renumbers via the frontier |
+| 42 | `ErrorMasternodeWithdrawalUnconfirmed` | Merged 2026-08-22 by **#4451** (masternode-credit claiming). **Took the number active #4356 had claimed** for `ErrorAssetLockInputConflict`; see the proposed table's 42 note. #4356 renumbers via the frontier. Returned once a dispatch may have reached a node and the result is not proved, an endpoint's refusal or consensus verdict included; only a withdrawal that never left the wallet keeps an ordinary, retryable code |
 | 46 | `ErrorMasternodeListUnavailable` | Merged 2026-08-24 by **#4465** (`8dd964277`). Initially minted as 43 (already held by active #4313's `ErrorShieldedInviteAlreadyClaimed` across all three layers) — collision flagged in review and renumbered to the then-frontier same day, Rust and Swift together |
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |

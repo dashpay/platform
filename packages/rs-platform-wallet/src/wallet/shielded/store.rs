@@ -143,12 +143,15 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>)
 ///
 /// Identity-funded shields arm this record before broadcast and have no input
 /// nullifiers. Their guard survives even after rebroadcasting stops. Note spends
-/// arm it only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
-/// the broadcast was accepted but the result wait failed, so the spend
-/// may or may not have executed. Re-broadcasting the byte-identical
-/// transition is fund-safe — identical nullifiers cannot double-spend —
-/// and converts silence into either a confirmation (next scan sees the
-/// nullifiers spent) or a definitive consensus verdict.
+/// arm it before their first dispatch too, and keep it unless the transition
+/// never left the wallet ([`ShieldedStore::retire_undelivered_spend`]): a
+/// spend that may have reached a node may or may not have executed, and a
+/// process that exits during its broadcast or its result wait leaves the
+/// record to restore its notes' reservation from. Re-broadcasting the
+/// byte-identical transition is fund-safe (identical nullifiers cannot be
+/// spent twice) and converts silence into a confirmation (next scan sees the
+/// nullifiers spent); a spend that never lands keeps its notes held until its
+/// anchor is proven pruned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);
@@ -423,12 +426,13 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// Returns `true` if the nullifier was newly added to the
     /// pending set, `false` if it was already pending.
     ///
-    /// Pending state is **in-memory only** — it does not survive
-    /// a process restart. The crash-during-broadcast case is
-    /// reconciled by the next note-scan pass after the transition
-    /// lands (scan-based spend detection marks the spent note via
-    /// its nullifier), or, on rejection, leaves the notes
-    /// observable as unspent again on the next launch.
+    /// The reservation itself is held in memory. A spend saves a redrive
+    /// record before its first dispatch ([`Self::arm_redrive`]), which
+    /// carries its nullifiers: a store that persists records restores the
+    /// reservation from it on reopen, so a process that exits during a
+    /// broadcast keeps the notes reserved. A reservation with no saved
+    /// record (its spend exited before saving one, so before anything was
+    /// dispatched) does not survive a restart.
     ///
     /// `unspent_notes` skips notes whose nullifier is in the
     /// pending set, so a successful `mark_pending` immediately
@@ -521,8 +525,8 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     // ── Re-drivable unconfirmed spends (per-subwallet) ─────────────────
 
-    /// Persist a re-drivable record for a broadcast-accepted spend whose
-    /// result wait failed ambiguously. Keyed by `redrive.activity_id`;
+    /// Persist the re-drivable record of a spend, saved before its first
+    /// dispatch. Keyed by `redrive.activity_id`;
     /// re-arming the same id overwrites. Unlike the bare `mark_pending`
     /// reservations, redrive records survive a restart where the backend
     /// persists them (the file store does): on reopen both the record
@@ -855,8 +859,8 @@ pub trait ShieldedStore: Send + Sync + 'static {
 /// stranded (broadcast-accepted-but-never-landed) spend: once that anchor
 /// is pruned from Platform's recorded set the spend can never execute, and
 /// with the nullifier still unspent the reservation is provably dead and
-/// its note can be freed. All in-memory only — a restart drops every
-/// reservation regardless.
+/// its note can be freed. Held in memory: a restart keeps the reservations
+/// a saved [`PendingRedrive`] restores, and drops the others.
 #[derive(Debug, Clone, Default)]
 pub(super) struct PendingSpend {
     /// The recorded anchor the spend was built against, once known.
@@ -895,11 +899,12 @@ pub(super) struct SubwalletState {
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
     /// concurrent callers can't double-select. Held in memory; a
-    /// pre-broadcast reservation dies with the process, but a
-    /// reservation belonging to an armed [`PendingRedrive`] is
-    /// rehydrated on file-store open (the redrive row carries its
-    /// nullifiers), so an unconfirmed broadcast keeps its notes
-    /// reserved across restarts.
+    /// reservation whose spend has saved no record yet dies with the
+    /// process, but a reservation belonging to an armed
+    /// [`PendingRedrive`], which a spend saves before its first
+    /// dispatch, is rehydrated on file-store open (the redrive row
+    /// carries its nullifiers), so a spend that may have been broadcast
+    /// keeps its notes reserved across restarts.
     pub pending_nullifiers: BTreeMap<[u8; 32], PendingSpend>,
     /// Armed re-drivable unconfirmed spends, keyed by activity id.
     /// See [`PendingRedrive`]. Kept consistent with
