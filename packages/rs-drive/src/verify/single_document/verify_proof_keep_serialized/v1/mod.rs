@@ -556,10 +556,10 @@ mod tests {
         assert_eq!(found.map(|found| found.id()), Some(document.id()));
     }
 
+    /// Generation 1 is protocol version 15's: the version before keeps refusing a proof that
+    /// generation 1 accepts, as a whole proof and as a subset
     #[test]
     fn should_still_refuse_a_document_that_may_be_contested_at_protocol_version_14() {
-        // Generation 1 is protocol version 15's. The version before keeps refusing a proof
-        // that generation 1 accepts.
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, contract) = drive_with_contract_at(DPNS, protocol_version_14);
         let document = domain(&contract, 1, "quantum");
@@ -627,6 +627,8 @@ mod tests {
             .expect("expected a proof")
     }
 
+    /// A proof made for the not contested or for the contested query shows one place only, so
+    /// it can not show the document absent from the other, as a whole proof or as a subset
     #[test]
     fn should_refuse_a_proof_that_covers_only_one_of_the_two_places() {
         let platform_version = PlatformVersion::latest();

@@ -241,6 +241,10 @@ mod tests {
         })
     }
 
+    /// Generation 1 changes one lookup only, at a block time in a document type that keeps
+    /// history. Every other query is the one protocol version 14 built, the capped one of a
+    /// document that may be contested included, so a proof keeps its shape from one version to
+    /// the next
     #[test]
     fn should_build_the_query_the_protocol_version_before_built_except_at_a_block_time() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -257,10 +261,11 @@ mod tests {
         }
     }
 
+    /// Protocol version 14 selects generation 0, whose range takes every key up to the block
+    /// time, the pointer to the latest version at `[0]` included
     #[test]
     fn should_leave_the_lookup_at_a_block_time_of_protocol_version_14_as_it_was() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
-        // Every key up to the block time, the pointer to the latest version at `[0]` included
         let mut versions = Query::new_with_direction(false);
         versions.insert_range_to_inclusive(..=encode_u64(1500));
         let not_contested = history_lookup(versions);
@@ -277,6 +282,8 @@ mod tests {
         );
     }
 
+    /// Protocol version 14 selects generation 0 for a document that may be contested too: it
+    /// builds the plain merge of the two lookups, with and without a block time
     #[test]
     fn should_leave_the_maybe_contested_query_of_protocol_version_14_as_it_was() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
