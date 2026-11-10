@@ -99,6 +99,11 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets `single_document.verify_proof_keep_serialized` to
 ///   1, which verifies the proof of a single document query in its "maybe contested" status.
 ///
+/// * **A single document at a block time** (protocol v15 note 30):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets `query.single_document_path_query` to 1, which
+///   stops a lookup in a document's history above the pointer to the latest version, and
+///   `verify_proof_keep_serialized` 1 verifies its proof.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -121,7 +126,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; a single document at a block time
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
             ..DRIVE_VERSION_V9.methods.batch_operations

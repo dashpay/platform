@@ -72,7 +72,17 @@ Documents in Drive can have different contested statuses:
 
 A `MaybeContested` query looks in both places at once, so its proof has to cover both: a proof
 made for a `NotContested` or a `Contested` query does not verify against it. Such a proof
-verifies from protocol version 15. A `MaybeContested` query with a block time is not supported.
+verifies from protocol version 15.
+
+## Block Time
+
+In a document type that keeps history, a query with a block time asks for the newest version of
+the document stored at or before that time. It answers with no document for a time before the
+document was first stored. Without a block time the query asks for the latest version.
+
+A query with a block time verifies from protocol version 15, in the `NotContested` and
+`MaybeContested` statuses. A contest's area keeps no history, so a `Contested` query ignores the
+block time, as does a query in a document type that keeps no history.
 
 ## API Reference
 

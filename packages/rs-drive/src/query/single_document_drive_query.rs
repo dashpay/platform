@@ -1,16 +1,15 @@
-use crate::drive::document::paths::contract_document_type_path_vec;
-use crate::util::common::encode::encode_u64;
+mod v0;
+mod v1;
 
-use crate::drive::votes;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::Query;
 use dpp::decision_proposal::is_decision_proposal;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use grovedb::{PathQuery, SizedQuery};
+use grovedb::PathQuery;
 use platform_version::version::PlatformVersion;
 use platform_version::TryFromPlatformVersioned;
 
@@ -105,100 +104,43 @@ impl SingleDocumentDriveQuery {
         }
     }
 
-    /// Operations to construct a path query.
+    /// The GroveDB query that looks the document up, which the prover and the verifier both
+    /// build here.
+    ///
+    /// In a document type that keeps history, a query with no block time asks for the latest
+    /// version, and one with a block time for the newest version stored at or before that
+    /// time. A lookup at a block time answers so from protocol version 15: before it, a time
+    /// before the document was first stored answers with the latest version, and no proof of
+    /// such a lookup verifies.
+    ///
+    /// # Parameters
+    ///
+    /// - `platform_version`: The platform version, whose
+    ///   `drive.methods.document.query.single_document_path_query` selects the query built.
+    ///
+    /// # Returns
+    ///
+    /// The path query, or an error when the version is unknown or the two places a document
+    /// that may be contested is looked for in can not be merged into one query.
     pub fn construct_path_query(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        match self.contested_status {
-            SingleDocumentDriveQueryContestedStatus::NotContested => {
-                Ok(self.construct_non_contested_path_query(true))
-            }
-            SingleDocumentDriveQueryContestedStatus::MaybeContested => {
-                let mut non_contested = self.construct_non_contested_path_query(true);
-                let contested = self.construct_contested_path_query(true);
-                // A lookup in a document's history has a subquery. From its generation 2 the
-                // merge refuses an overall limit above a subquery, where the generation before
-                // turned it into the cap of the merged branch. Protocol version 15 is the
-                // first to select that generation, so no earlier version enters here.
-                if self.document_type_keeps_history
-                    && platform_version
-                        .drive
-                        .grove_version
-                        .grovedb_versions
-                        .path_query_methods
-                        .merge
-                        >= 2
-                {
-                    // A lookup at a block time is refused. No proof of one verifies for a
-                    // document outside a contest either, and its range also reaches the
-                    // pointer to the latest version, so a time before the document was
-                    // stored would answer with that version.
-                    if self.block_time_ms.is_some() {
-                        return Err(Error::Query(QuerySyntaxError::Unsupported(
-                            "a document that may be contested can not be looked up at a block \
-                             time"
-                                .to_string(),
-                        )));
-                    }
-                    // The cap is written here instead, which merges to the query the
-                    // generation before built.
-                    non_contested.query.query.limit = non_contested.query.limit.take();
-                }
-                PathQuery::merge(
-                    vec![&non_contested, &contested],
-                    &platform_version.drive.grove_version,
-                )
-                .map_err(Error::from)
-            }
-            SingleDocumentDriveQueryContestedStatus::Contested => {
-                Ok(self.construct_contested_path_query(true))
-            }
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .single_document_path_query
+        {
+            0 => self.construct_path_query_v0(platform_version),
+            1 => self.construct_path_query_v1(platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "SingleDocumentDriveQuery::construct_path_query".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
         }
-    }
-
-    /// Operations to construct the normal path query.
-    fn construct_non_contested_path_query(&self, with_limit_1: bool) -> PathQuery {
-        // First we should get the overall document_type_path
-        let mut path =
-            contract_document_type_path_vec(&self.contract_id, self.document_type_name.as_str());
-
-        path.push(vec![0]);
-
-        let mut query = Query::new();
-        query.insert_key(self.document_id.to_vec());
-
-        if self.document_type_keeps_history {
-            // if the documents keep history then we should insert a subquery
-            if let Some(block_time) = self.block_time_ms {
-                let encoded_block_time = encode_u64(block_time);
-                let mut sub_query = Query::new_with_direction(false);
-                sub_query.insert_range_to_inclusive(..=encoded_block_time);
-                query.set_subquery(sub_query);
-            } else {
-                query.set_subquery_key(vec![0]);
-            }
-        }
-
-        let limit = if with_limit_1 { Some(1) } else { None };
-
-        PathQuery::new(path, SizedQuery::new(query, limit, None))
-    }
-
-    /// Operations to construct the contested path query.
-    fn construct_contested_path_query(&self, with_limit_1: bool) -> PathQuery {
-        // First we should get the overall document_type_path
-        let path = votes::paths::vote_contested_resource_contract_documents_storage_path_vec(
-            &self.contract_id,
-            self.document_type_name.as_str(),
-        );
-
-        let mut query = Query::new();
-        query.insert_key(self.document_id.to_vec());
-
-        let limit = if with_limit_1 { Some(1) } else { None };
-
-        PathQuery::new(path, SizedQuery::new(query, limit, None))
     }
 }
 
@@ -215,6 +157,9 @@ impl TryFromPlatformVersioned<SingleDocumentDriveQuery> for PathQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::query::Query;
+    use crate::util::common::encode::encode_u64;
     use dpp::decision_proposal::{
         DECISION_PROPOSALS_CONTRACT_ID, DECISION_PROPOSAL_FUND_NAME, PROPOSAL_DOCUMENT_TYPE_NAME,
     };
@@ -223,6 +168,7 @@ mod tests {
     use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
     use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+    use grovedb::SizedQuery;
 
     fn create(
         contract_id: Identifier,
@@ -238,7 +184,8 @@ mod tests {
         DocumentTransition::Create(create)
     }
 
-    fn maybe_contested(
+    fn single_document(
+        contested_status: SingleDocumentDriveQueryContestedStatus,
         document_type_keeps_history: bool,
         block_time_ms: Option<u64>,
     ) -> SingleDocumentDriveQuery {
@@ -248,16 +195,56 @@ mod tests {
             document_type_keeps_history,
             document_id: [9; 32],
             block_time_ms,
-            contested_status: SingleDocumentDriveQueryContestedStatus::MaybeContested,
+            contested_status,
         }
     }
 
-    #[test]
-    fn should_build_the_maybe_contested_query_the_protocol_version_before_built() {
-        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
-        for document_type_keeps_history in [false, true] {
-            let query = maybe_contested(document_type_keeps_history, None);
+    /// The query of the document among the documents of its type, in a type that keeps
+    /// history, with `versions` as the lookup in the document's history.
+    fn history_lookup(versions: Query) -> PathQuery {
+        let mut path = contract_document_type_path_vec(&[7; 32], "card");
+        path.push(vec![0]);
+        let mut query = Query::new();
+        query.insert_key(vec![9; 32]);
+        query.set_subquery(versions);
+        PathQuery::new(path, SizedQuery::new(query, Some(1), None))
+    }
 
+    /// Whether generation 1 builds another query than generation 0: a lookup at a block time
+    /// among the documents of a type that keeps history
+    fn looks_in_history_at_block_time(query: &SingleDocumentDriveQuery) -> bool {
+        query.document_type_keeps_history
+            && query.block_time_ms.is_some()
+            && query.contested_status != SingleDocumentDriveQueryContestedStatus::Contested
+    }
+
+    fn every_query() -> impl Iterator<Item = SingleDocumentDriveQuery> {
+        [
+            SingleDocumentDriveQueryContestedStatus::NotContested,
+            SingleDocumentDriveQueryContestedStatus::MaybeContested,
+            SingleDocumentDriveQueryContestedStatus::Contested,
+        ]
+        .into_iter()
+        .flat_map(|contested_status| {
+            [false, true]
+                .into_iter()
+                .flat_map(move |document_type_keeps_history| {
+                    let contested_status = contested_status.clone();
+                    [None, Some(1500)].into_iter().map(move |block_time_ms| {
+                        single_document(
+                            contested_status.clone(),
+                            document_type_keeps_history,
+                            block_time_ms,
+                        )
+                    })
+                })
+        })
+    }
+
+    #[test]
+    fn should_build_the_query_the_protocol_version_before_built_except_at_a_block_time() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        for query in every_query().filter(|query| !looks_in_history_at_block_time(query)) {
             assert_eq!(
                 query
                     .construct_path_query(PlatformVersion::latest())
@@ -265,16 +252,40 @@ mod tests {
                 query
                     .construct_path_query(protocol_version_14)
                     .expect("expected to build the query at protocol version 14"),
-                "keeps history: {document_type_keeps_history}"
+                "{query:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_leave_the_lookup_at_a_block_time_of_protocol_version_14_as_it_was() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        // Every key up to the block time, the pointer to the latest version at `[0]` included
+        let mut versions = Query::new_with_direction(false);
+        versions.insert_range_to_inclusive(..=encode_u64(1500));
+        let not_contested = history_lookup(versions);
+
+        assert_eq!(
+            single_document(
+                SingleDocumentDriveQueryContestedStatus::NotContested,
+                true,
+                Some(1500),
+            )
+            .construct_path_query(protocol_version_14)
+            .expect("expected to build the query"),
+            not_contested
+        );
     }
 
     #[test]
     fn should_leave_the_maybe_contested_query_of_protocol_version_14_as_it_was() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         for block_time_ms in [None, Some(1500)] {
-            let query = maybe_contested(true, block_time_ms);
+            let query = single_document(
+                SingleDocumentDriveQueryContestedStatus::MaybeContested,
+                true,
+                block_time_ms,
+            );
 
             assert_eq!(
                 query
@@ -294,12 +305,54 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_a_maybe_contested_lookup_at_a_block_time() {
-        let result =
-            maybe_contested(true, Some(1500)).construct_path_query(PlatformVersion::latest());
+    fn should_stop_a_lookup_at_a_block_time_above_the_pointer_to_the_latest_version() {
+        for (block_time_ms, last_time_ms) in [
+            (1500, 1500),
+            // A time the history can not order asks for the last one it can
+            (u64::MAX, i64::MAX as u64),
+        ] {
+            let mut versions = Query::new_with_direction(false);
+            versions.insert_range_after_to_inclusive(vec![0]..=encode_u64(last_time_ms));
+
+            assert_eq!(
+                single_document(
+                    SingleDocumentDriveQueryContestedStatus::NotContested,
+                    true,
+                    Some(block_time_ms),
+                )
+                .construct_path_query(PlatformVersion::latest())
+                .expect("expected to build the query"),
+                history_lookup(versions),
+                "block time: {block_time_ms}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_version_of_the_query() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .single_document_path_query = 255;
+
+        let result = single_document(
+            SingleDocumentDriveQueryContestedStatus::NotContested,
+            false,
+            None,
+        )
+        .construct_path_query(&platform_version);
 
         assert!(
-            matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+            matches!(
+                &result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                    if method == "SingleDocumentDriveQuery::construct_path_query"
+                        && known_versions == &vec![0, 1]
+                        && *received == 255
+            ),
             "{result:?}"
         );
     }

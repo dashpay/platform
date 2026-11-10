@@ -2,7 +2,7 @@ use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DO
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
     DriveDocumentInsertContestedMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentUpdateMethodVersions,
+    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
 /// V5 is protocol version 15's document-method table. Relative to V4:
@@ -25,12 +25,19 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   on its own hands storage over as one in a batch of drive operations does.
 /// * `insert_contested.add_contested_document_for_contract_operations` is 2: a poll's end date
 ///   entries name whoever the document's storage flags name.
+/// * `query.single_document_path_query` is 1: in a document type that keeps history, the lookup
+///   of a single document at a block time stops above the pointer to the latest version, and
+///   the lookup of a document that may be contested states its cap itself.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
         fetch_private_document_entries: Some(0), // changed: a page of a store's entries can be read
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
+        query: DriveDocumentQueryMethodVersions {
+            single_document_path_query: 1, // changed: a lookup at a block time stops above the pointer to the latest version
+            ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.query
+        },
         delete: DriveDocumentDeleteMethodVersions {
             remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
