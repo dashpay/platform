@@ -111,7 +111,8 @@ impl SingleDocumentDriveQuery {
     /// version, and one with a block time for the newest version stored at or before that
     /// time. A lookup at a block time answers so from protocol version 15: before it, a time
     /// before the document was first stored answers with the latest version, and no proof of
-    /// such a lookup verifies.
+    /// such a lookup verifies. From protocol version 15 a document with history that may be
+    /// contested is refused at a block time, as a contest's area keeps no history.
     ///
     /// # Parameters
     ///
@@ -120,8 +121,9 @@ impl SingleDocumentDriveQuery {
     ///
     /// # Returns
     ///
-    /// The path query, or an error when the version is unknown or the two places a document
-    /// that may be contested is looked for in can not be merged into one query.
+    /// The path query, or an error when the version is unknown, the lookup is refused, or the
+    /// two places a document that may be contested is looked for in can not be merged into one
+    /// query.
     pub fn construct_path_query(
         &self,
         platform_version: &PlatformVersion,
@@ -333,6 +335,31 @@ mod tests {
                 "block time: {block_time_ms}"
             );
         }
+    }
+
+    /// A contest's area keeps no history, so a document with history that may be contested
+    /// can not be looked up at a block time. Without history the time is ignored, as in every
+    /// status
+    #[test]
+    fn should_refuse_a_lookup_at_a_block_time_of_a_document_with_history_that_may_be_contested() {
+        let result = single_document(
+            SingleDocumentDriveQueryContestedStatus::MaybeContested,
+            true,
+            Some(1500),
+        )
+        .construct_path_query(PlatformVersion::latest());
+
+        assert!(
+            matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+            "{result:?}"
+        );
+        assert!(single_document(
+            SingleDocumentDriveQueryContestedStatus::MaybeContested,
+            false,
+            Some(1500),
+        )
+        .construct_path_query(PlatformVersion::latest())
+        .is_ok());
     }
 
     #[test]

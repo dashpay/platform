@@ -1,3 +1,4 @@
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{Query, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use crate::util::common::encode::encode_u64;
@@ -20,6 +21,10 @@ impl SingleDocumentDriveQuery {
     /// 2 (`GROVE_V5`, which protocol version 15 is the first to select), where the generation
     /// before turned that limit into the cap of the merged branch. Written as that cap here, it
     /// merges to the query generation 0 built.
+    ///
+    /// Such a lookup at a block time is refused. A contest's area keeps no history: it holds
+    /// each contender as it was submitted, with no time to compare, so a document submitted
+    /// after the block time would be found there.
     #[inline(always)]
     pub(super) fn construct_path_query_v1(
         &self,
@@ -30,6 +35,13 @@ impl SingleDocumentDriveQuery {
                 Ok(self.construct_non_contested_path_query_v1())
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
+                if self.document_type_keeps_history && self.block_time_ms.is_some() {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(
+                        "a document with history that may be contested can not be looked up at \
+                         a block time"
+                            .to_string(),
+                    )));
+                }
                 let mut non_contested = self.construct_non_contested_path_query_v1();
                 let contested = self.construct_contested_path_query(true);
                 if self.document_type_keeps_history {

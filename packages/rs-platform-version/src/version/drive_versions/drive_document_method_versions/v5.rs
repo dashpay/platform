@@ -27,7 +27,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   entries name whoever the document's storage flags name.
 /// * `query.single_document_path_query` is 1: in a document type that keeps history, the lookup
 ///   of a single document at a block time stops above the pointer to the latest version, and
-///   the lookup of a document that may be contested states its cap itself.
+///   the lookup of a document that may be contested states its cap itself and is refused at a
+///   block time.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it

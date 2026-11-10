@@ -148,7 +148,7 @@ pub struct DriveDocumentQueryMethodVersions {
     /// above the pointer to the latest version, so it answers with the newest version stored
     /// at or before that time and with nothing before the first, and one of a document that
     /// may be contested states its cap itself, which GroveDB's merge no longer derives above
-    /// a subquery.
+    /// a subquery, and is refused at a block time, as a contest's area keeps no history.
     pub single_document_path_query: FeatureVersion,
 }
 

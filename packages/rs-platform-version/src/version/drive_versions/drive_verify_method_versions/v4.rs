@@ -10,8 +10,8 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 /// (`None`, not active, in every earlier table), and so is
 /// `document.verify_private_document_entries`, with private document types.
 /// `single_document.verify_proof_keep_serialized` is 1: a document that may be contested is
-/// verified, and so is a document at a block time in a type that keeps history, where
-/// generation 0 refused every such query. Everything else matches
+/// verified, and so is a document outside a contest at a block time in a type that keeps
+/// history, where generation 0 refused every such query. Everything else matches
 /// `DRIVE_VERIFY_METHOD_VERSIONS_V3`.
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V4: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
     voting: DriveVerifyVoteMethodVersions {
@@ -25,7 +25,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V4: DriveVerifyMethodVersions = DriveVeri
         ..DRIVE_VERIFY_METHOD_VERSIONS_V3.document
     },
     single_document: DriveVerifySingleDocumentMethodVersions {
-        verify_proof_keep_serialized: 1, // changed: verifies a document that may be contested, and one at a block time
+        verify_proof_keep_serialized: 1, // changed: verifies a document that may be contested, and one outside a contest at a block time
         ..DRIVE_VERIFY_METHOD_VERSIONS_V3.single_document
     },
     ..DRIVE_VERIFY_METHOD_VERSIONS_V3

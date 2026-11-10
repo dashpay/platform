@@ -7,7 +7,9 @@ use platform_version::version::PlatformVersion;
 
 impl SingleDocumentDriveQuery {
     /// Generation 0, except that two kinds of lookup it refused are verified: a document that
-    /// may be contested, and a document at a block time in a type that keeps history.
+    /// may be contested, and a document outside a contest at a block time in a type that keeps
+    /// history. A document with history that may be contested is not looked up at a block time:
+    /// the query refuses it, as a contest's area keeps no history.
     ///
     /// Generation 0 asks GroveDB to name the keys that are absent. That needs an overall limit
     /// and keys that can be listed. A query for a document that may be contested looks in two
@@ -28,7 +30,7 @@ impl SingleDocumentDriveQuery {
                 !(self.document_type_keeps_history && self.block_time_ms.is_some())
             }
             SingleDocumentDriveQueryContestedStatus::MaybeContested => false,
-            // A contest's area keeps no history, so its query has no block time
+            // A contest's area keeps no history, and its query takes no block time
             SingleDocumentDriveQueryContestedStatus::Contested => true,
         };
         if verified_by_generation_0 {
@@ -66,6 +68,7 @@ mod tests {
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::error::proof::ProofError;
+    use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -369,59 +372,47 @@ mod tests {
         );
     }
 
-    /// The query of the person `document_id` as it stood at `block_time_ms`.
+    /// The query of the person `document_id` as it stood at `block_time_ms`, outside a contest.
     fn person_at_block_time(
         contract: &DataContract,
         document_id: [u8; 32],
         block_time_ms: u64,
-        contested_status: SingleDocumentDriveQueryContestedStatus,
     ) -> SingleDocumentDriveQuery {
         SingleDocumentDriveQuery {
-            contested_status,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
             ..maybe_contested(contract, "person", document_id, Some(block_time_ms))
         }
     }
 
     /// A person stored at time 1000 and changed at time 2000 has no version before 1000, the
-    /// first from 1000 and the second from 2000, outside a contest and when it may be
-    /// contested, as a whole proof and as a subset
+    /// first from 1000 and the second from 2000, as a whole proof and as a subset
     #[test]
     fn should_find_the_version_of_a_document_stored_at_or_before_a_block_time() {
         let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
         let (first, second) = person_with_two_versions(&drive, &contract);
 
-        for contested_status in [
-            SingleDocumentDriveQueryContestedStatus::NotContested,
-            SingleDocumentDriveQueryContestedStatus::MaybeContested,
+        for (block_time_ms, expected) in [
+            // Before the document was first stored there is no version of it
+            (0, None),
+            (999, None),
+            (1000, Some(&first)),
+            (1500, Some(&first)),
+            (1999, Some(&first)),
+            (2000, Some(&second)),
+            (2500, Some(&second)),
+            (u64::MAX, Some(&second)),
         ] {
-            for (block_time_ms, expected) in [
-                // Before the document was first stored there is no version of it
-                (0, None),
-                (999, None),
-                (1000, Some(&first)),
-                (1500, Some(&first)),
-                (1999, Some(&first)),
-                (2000, Some(&second)),
-                (2500, Some(&second)),
-                (u64::MAX, Some(&second)),
-            ] {
-                let found = prove_and_verify(
-                    &drive,
-                    &contract,
-                    &person_at_block_time(
-                        &contract,
-                        first.id().to_buffer(),
-                        block_time_ms,
-                        contested_status.clone(),
-                    ),
-                );
+            let found = prove_and_verify(
+                &drive,
+                &contract,
+                &person_at_block_time(&contract, first.id().to_buffer(), block_time_ms),
+            );
 
-                assert_eq!(
-                    found.map(|found| serialized(&found, &contract)),
-                    expected.map(|expected| serialized(expected, &contract)),
-                    "{contested_status:?} at block time {block_time_ms}"
-                );
-            }
+            assert_eq!(
+                found.map(|found| serialized(&found, &contract)),
+                expected.map(|expected| serialized(expected, &contract)),
+                "at block time {block_time_ms}"
+            );
         }
     }
 
@@ -431,18 +422,13 @@ mod tests {
         // Another document, so the type holds a history the proof must tell apart
         person_with_two_versions(&drive, &contract);
 
-        for contested_status in [
-            SingleDocumentDriveQueryContestedStatus::NotContested,
-            SingleDocumentDriveQueryContestedStatus::MaybeContested,
-        ] {
-            let found = prove_and_verify(
-                &drive,
-                &contract,
-                &person_at_block_time(&contract, [9; 32], 1500, contested_status.clone()),
-            );
+        let found = prove_and_verify(
+            &drive,
+            &contract,
+            &person_at_block_time(&contract, [9; 32], 1500),
+        );
 
-            assert_eq!(found, None, "{contested_status:?}");
-        }
+        assert_eq!(found, None);
     }
 
     /// A proof shows the newest version at or before its own block time: it does not verify
@@ -453,49 +439,72 @@ mod tests {
         let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
         let (first, _) = person_with_two_versions(&drive, &contract);
 
-        for contested_status in [
-            SingleDocumentDriveQueryContestedStatus::NotContested,
-            SingleDocumentDriveQueryContestedStatus::MaybeContested,
-        ] {
-            // Each pair of times answers with a different version, or with none for one of them
-            for (proved_block_time_ms, verified_block_time_ms) in
-                [(1500, 2500), (2500, 1500), (500, 1500), (1500, 500)]
-            {
-                let proved = person_at_block_time(
-                    &contract,
-                    first.id().to_buffer(),
-                    proved_block_time_ms,
-                    contested_status.clone(),
-                );
-                let proof = drive
-                    .grove_get_proved_path_query(
-                        &proved
-                            .construct_path_query(platform_version)
-                            .expect("expected to build the query"),
-                        None,
-                        &mut vec![],
-                        &platform_version.drive,
-                    )
-                    .expect("expected a proof");
-                let verified = SingleDocumentDriveQuery {
-                    block_time_ms: Some(verified_block_time_ms),
-                    ..proved
-                };
+        // Each pair of times answers with a different version, or with none for one of them
+        for (proved_block_time_ms, verified_block_time_ms) in
+            [(1500, 2500), (2500, 1500), (500, 1500), (1500, 500)]
+        {
+            let proved =
+                person_at_block_time(&contract, first.id().to_buffer(), proved_block_time_ms);
+            let proof = drive
+                .grove_get_proved_path_query(
+                    &proved
+                        .construct_path_query(platform_version)
+                        .expect("expected to build the query"),
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected a proof");
+            let verified = SingleDocumentDriveQuery {
+                block_time_ms: Some(verified_block_time_ms),
+                ..proved
+            };
 
-                for is_subset in [false, true] {
-                    assert!(
-                        verified
-                            .verify_proof_keep_serialized(
-                                is_subset,
-                                proof.as_slice(),
-                                platform_version
-                            )
-                            .is_err(),
-                        "{contested_status:?}, a proof at {proved_block_time_ms} verified at \
-                         {verified_block_time_ms}, is_subset {is_subset}"
-                    );
-                }
+            for is_subset in [false, true] {
+                assert!(
+                    verified
+                        .verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version)
+                        .is_err(),
+                    "a proof at {proved_block_time_ms} verified at {verified_block_time_ms}, \
+                     is_subset {is_subset}"
+                );
             }
+        }
+    }
+
+    /// A contest's area holds each contender as it was submitted, with no time to compare, so
+    /// a contender submitted after the block time would be found there. A document with
+    /// history that may be contested is refused at a block time, before any proof is read, as
+    /// a whole proof and as a subset
+    #[test]
+    fn should_refuse_to_look_up_a_document_with_history_that_may_be_contested_at_a_block_time() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
+        let (first, _) = person_with_two_versions(&drive, &contract);
+        let outside_a_contest = person_at_block_time(&contract, first.id().to_buffer(), 1500);
+        let proof = drive
+            .grove_get_proved_path_query(
+                &outside_a_contest
+                    .construct_path_query(platform_version)
+                    .expect("expected to build the query"),
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected a proof");
+        let query = SingleDocumentDriveQuery {
+            contested_status: SingleDocumentDriveQueryContestedStatus::MaybeContested,
+            ..outside_a_contest
+        };
+
+        for is_subset in [false, true] {
+            let result =
+                query.verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version);
+
+            assert!(
+                matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+                "is_subset {is_subset}: {result:?}"
+            );
         }
     }
 
@@ -506,12 +515,7 @@ mod tests {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, contract) = drive_with_contract_at(FAMILY_WITH_HISTORY, protocol_version_14);
         let (first, _) = person_with_two_versions_at(&drive, &contract, protocol_version_14);
-        let query = person_at_block_time(
-            &contract,
-            first.id().to_buffer(),
-            1500,
-            SingleDocumentDriveQueryContestedStatus::NotContested,
-        );
+        let query = person_at_block_time(&contract, first.id().to_buffer(), 1500);
         let proof = drive
             .grove_get_proved_path_query(
                 &query
