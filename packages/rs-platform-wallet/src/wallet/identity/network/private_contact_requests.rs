@@ -464,6 +464,12 @@ pub(crate) struct ReservedPrivatePayments {
     /// hold on each pair until its record is discharged.
     #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
     pub(crate) unresolved: Vec<([u8; 32], Identifier, Identifier)>,
+    /// The commitments of the payments whose request the sender's tracked
+    /// request to its recipient records or supersedes, as a private sync that
+    /// read the entry back settled it: their journal records are discharged,
+    /// rather than read for again on every launch.
+    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    pub(crate) settled: Vec<[u8; 32]>,
 }
 
 /// The one step every restoration of a private contact request payment's
@@ -482,7 +488,9 @@ pub(crate) struct ReservedPrivatePayments {
 ///   it before the discharge, and reserves after the reservation was released,
 ///   would hold a pair no entry ever settles;
 /// - one whose request the sender's tracked request to its recipient records
-///   or supersedes, as a private sync that recorded it settled it;
+///   or supersedes, as a private sync that recorded it settled it, returned in
+///   [`ReservedPrivatePayments::settled`] for its journal record to be
+///   discharged;
 /// - one whose sender the wallet does not manage, returned in
 ///   [`ReservedPrivatePayments::unresolved`] for the wallet to hold its pair.
 ///
@@ -514,6 +522,7 @@ pub(crate) fn reserve_unresolved_private_payments(
             .outgoing_request(&recipient)
             .is_some_and(|tracked| records_or_supersedes(tracked, account_reference))
         {
+            reserved.settled.push(commitment);
             continue;
         }
         reserved.unresolved.push((commitment, sender, recipient));
@@ -543,7 +552,7 @@ pub(crate) async fn restore_journaled_private_payments(
     wallet_id: WalletId,
     payments: &[JournaledPrivatePayment],
     journal_authoritative: bool,
-) -> Result<Vec<(Identifier, Identifier)>, PlatformWalletError> {
+) -> Result<(Vec<(Identifier, Identifier)>, Vec<[u8; 32]>), PlatformWalletError> {
     let mut wm = wallet_manager.write().await;
     let info = wm
         .get_wallet_info_mut(&wallet_id)
@@ -551,6 +560,7 @@ pub(crate) async fn restore_journaled_private_payments(
     let ReservedPrivatePayments {
         restored,
         unresolved,
+        settled,
     } = reserve_unresolved_private_payments(
         info, generation, wallet_id, persister, payments, None,
     )?;
@@ -599,7 +609,7 @@ pub(crate) async fn restore_journaled_private_payments(
             ),
         });
     }
-    Ok(restored)
+    Ok((restored, settled))
 }
 
 /// Store `owner`'s private read position record again, for a backend that
@@ -2407,6 +2417,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             journal_authoritative,
         )
         .await
+        .map(|(restored, _)| restored)
     }
 
     /// Whether an earlier private payment from `sender` to `recipient` that
@@ -2591,7 +2602,7 @@ mod tests {
     use super::*;
     use crate::changeset::{
         ClientStartState, ClientWalletStartState, IdentityManagerStartState,
-        PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+        PersistenceCapabilities, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
         PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
@@ -2820,8 +2831,12 @@ mod tests {
         /// While set, a store carrying a private read position record fails
         /// and keeps nothing.
         positions_fail: AtomicBool,
-        /// While set, a flush fails.
+        /// While set, a flush fails, transiently: the backend keeps what it
+        /// buffered.
         flush_fails: AtomicBool,
+        /// While set, a flush fails fatally: the backend drops what it
+        /// buffered.
+        flush_fails_fatally: AtomicBool,
     }
 
     impl RecordingPersistence {
@@ -2831,6 +2846,7 @@ mod tests {
                 stored: Mutex::new(Vec::new()),
                 positions_fail: AtomicBool::new(false),
                 flush_fails: AtomicBool::new(false),
+                flush_fails_fatally: AtomicBool::new(false),
             })
         }
 
@@ -2865,7 +2881,13 @@ mod tests {
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
             if self.flush_fails.load(Ordering::SeqCst) {
-                return Err(PersistenceError::backend("the disk is full"));
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "the disk is busy",
+                ));
+            }
+            if self.flush_fails_fatally.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("the database is corrupt"));
             }
             Ok(())
         }
@@ -3472,6 +3494,84 @@ mod tests {
             "paid, not read back: {paid:?}"
         );
         assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
+    }
+
+    /// A read-back whose records' flush fails for good, the backend dropping
+    /// what it buffered, drops its notice: the journal record stays, the pair
+    /// held, and a later flush that succeeds notes nothing.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_drop_a_read_back_notice_whose_records_the_backend_dropped() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        let persister = fixture.wallet.persister();
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        fixture
+            .persistence
+            .flush_fails_fatally
+            .store(true, Ordering::SeqCst);
+        let view = fixture.wallet.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        fixture
+            .persistence
+            .flush_fails_fatally
+            .store(false, Ordering::SeqCst);
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the next private sync");
+        assert!(!persister.has_read_back_private_entries(), "dropped");
+        fixture
+            .coordinator
+            .discharge_read_back_private_payments()
+            .await;
+        assert_eq!(fixture.journaled().await, 1, "the record stays");
+        assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+    }
+
+    /// A restoration that finds a journal record its sender's tracked request
+    /// already records, as a private sync read it back in a process that ended
+    /// before the shielded sync discharged it, discharges the record.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_discharge_a_journal_record_a_restoration_finds_settled() {
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        fixture
+            .wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        // The process ends before the shielded sync discharges it.
+        let _ = fixture.wallet.persister().take_read_back_private_entries();
+        assert_eq!(fixture.journaled().await, 1);
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(
+            fixture.journaled().await,
+            0,
+            "discharged by the restoration"
+        );
     }
 
     /// An identity reloaded from a position record stored with its marker

@@ -3155,7 +3155,7 @@ impl PrivatePaymentRestore {
             };
             read_private_payment_journal(&mut *store, &self.persister, self.wallet_id, dashpay_id)?
         };
-        let restored = restore_journaled_private_payments(
+        let (restored, settled) = restore_journaled_private_payments(
             &self.wallet_manager,
             &self.generation,
             &self.persister,
@@ -3164,6 +3164,37 @@ impl PrivatePaymentRestore {
             journal_authoritative,
         )
         .await?;
+        // A record whose request the tracked one records or supersedes was
+        // read back by an earlier process, which ended before it discharged
+        // it: discharged now, so its store is not read for it on every launch.
+        // A busy store leaves it for the next restoration.
+        if !settled.is_empty() {
+            let store = if wait {
+                Some(self.coordinator.store().write().await)
+            } else {
+                self.coordinator.store().try_write().ok()
+            };
+            if let Some(mut store) = store {
+                let discharged: Vec<[u8; 32]> = settled
+                    .into_iter()
+                    .filter(|commitment| {
+                        store
+                            .discharge_private_payment(self.wallet_id, commitment)
+                            .inspect_err(|error| {
+                                tracing::warn!(
+                                    wallet_id = %hex::encode(self.wallet_id),
+                                    %error,
+                                    "a settled private payment's journal record was not \
+                                     discharged; the next restoration discharges it"
+                                )
+                            })
+                            .is_ok()
+                    })
+                    .collect();
+                drop(store);
+                self.persister.note_discharged_private_entries(discharged);
+            }
+        }
         // Opened only once a restoration succeeded: a restoration that failed
         // closed over a deleted or replaced store fails the same way until a
         // known-good store is back. One left closed here is opened by the

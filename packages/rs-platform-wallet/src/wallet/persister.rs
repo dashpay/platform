@@ -256,12 +256,13 @@ impl WalletPersister {
     /// recorded, for their journal records to be discharged
     /// ([`Self::note_read_back_private_entries`]), once what records them is
     /// durable: at once for a backend that commits inline, after a flush
-    /// otherwise. Those a flush failed for are kept, with every one kept
-    /// before, and noted by the next call whose flush succeeds: an empty one
-    /// retries them. Their records, and so the pairs they hold, stay until
-    /// then. The host's flush runs with none of the persister's locks held,
-    /// so a call during it, from another thread or the flush itself, neither
-    /// waits nor loses what it adds.
+    /// otherwise. Those a transient flush failure left are kept, with every
+    /// one kept before, and noted by the next call whose flush succeeds: an
+    /// empty one retries them. Those any other failure left are dropped, as the
+    /// backend dropped the records they rest on. Their journal records, and so
+    /// the pairs they hold, stay until noted. The host's flush runs with none
+    /// of the persister's locks held, so a call during it, from another thread
+    /// or the flush itself, neither waits nor loses what it adds.
     #[cfg(feature = "shielded")]
     pub(crate) fn note_read_back_once_durable(
         &self,
@@ -277,14 +278,36 @@ impl WalletPersister {
         }
         if !self.store_commits_inline() {
             if let Err(error) = self.flush() {
-                tracing::warn!(
-                    %error,
-                    kept = pending.len(),
-                    "private requests read back are not durably recorded; their journal \
-                     records stay until a later flush succeeds"
-                );
-                // With any added meanwhile.
-                self.unflushed_read_back_entries().extend(pending);
+                if error.is_transient() {
+                    tracing::warn!(
+                        %error,
+                        kept = pending.len(),
+                        "private requests read back are not durably recorded; their journal \
+                         records stay until a later flush succeeds"
+                    );
+                    // A transient failure keeps the buffer: with any added
+                    // meanwhile.
+                    self.unflushed_read_back_entries().extend(pending);
+                } else {
+                    // Any other failure dropped the buffer, the records these
+                    // notices rest on with it: the notices go, so their journal
+                    // records, and the pairs they hold, stay. Their read is not
+                    // rewound: a read again would find the requests already
+                    // tracked, store nothing, and note them again over records
+                    // that never reached disk. The markers stored into that
+                    // buffer are forgotten, so the next comparison stores them
+                    // again (`Self::private_marker_stored`).
+                    tracing::error!(
+                        %error,
+                        dropped = pending.len(),
+                        "private requests read back are not durably recorded, and the backend \
+                         dropped what it buffered; their journal records stay"
+                    );
+                    self.stored_private_markers
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
+                }
                 return;
             }
         }
@@ -630,6 +653,8 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 mod tests {
     use super::*;
     #[cfg(feature = "shielded")]
+    use crate::changeset::PersistenceErrorKind;
+    #[cfg(feature = "shielded")]
     use std::sync::{mpsc, OnceLock};
     #[cfg(feature = "shielded")]
     use std::time::Duration;
@@ -690,7 +715,10 @@ mod tests {
                     }
                 }
                 if self.flush_fails.load(Ordering::SeqCst) {
-                    return Err(PersistenceError::backend("the disk is full"));
+                    return Err(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    ));
                 }
                 Ok(())
             }
