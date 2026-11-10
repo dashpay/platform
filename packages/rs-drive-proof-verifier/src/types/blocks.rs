@@ -3,6 +3,10 @@
 
 use dpp::state_transition::StateTransition;
 
+/// The most blocks a node returns for one `getBlocks` request. A node refuses a request
+/// for more, and a client spends no more work on one answer than this many blocks need.
+pub const MAX_BLOCKS_PER_REQUEST: u32 = 10;
+
 /// A state transition a block holds, with the result of its execution.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockTransaction {

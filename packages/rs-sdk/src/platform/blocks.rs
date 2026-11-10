@@ -30,7 +30,7 @@ use dapi_grpc::platform::v0::{
 use dash_context_provider::ContextProvider;
 use dpp::version::PlatformVersion;
 pub use drive_proof_verifier::types::blocks::{
-    Block, BlockTransaction, Blocks, OwnerTransactionsInBlock,
+    Block, BlockTransaction, Blocks, OwnerTransactionsInBlock, MAX_BLOCKS_PER_REQUEST,
 };
 use rs_dapi_client::transport::TransportRequest;
 use rs_dapi_client::RequestSettings;
@@ -70,7 +70,8 @@ impl Query<GetOwnerTransactionsInBlockRequest> for OwnerTransactionsInBlockQuery
 pub struct BlocksQuery {
     /// The height of the first block, from 1.
     pub start_height: u64,
-    /// How many blocks to return, from 1 to 10.
+    /// How many blocks to return, from 1 to [`MAX_BLOCKS_PER_REQUEST`]. The node decides
+    /// what it serves and refuses any other count.
     pub count: u32,
 }
 
@@ -92,20 +93,21 @@ trait BlockRequest: TransportRequest + Clone {
     /// What the request's answer is read into.
     type Answer: Send;
 
-    /// How many blocks an answer can hold. Another quorum may have signed each.
+    /// How many blocks an answer can hold. Another quorum may have signed each, or the
+    /// same quorum at a Core height its fetched key is not held for.
     fn max_blocks(&self) -> usize;
 
     /// Verify the answer to this request, which asked to prove.
     fn proved_answer(
         &self,
-        response: Self::Response,
+        response: &Self::Response,
         provider: &dyn ContextProvider,
     ) -> Result<Self::Answer, drive_proof_verifier::Error>;
 
     /// Read the answer to this request, which did not ask to prove.
     fn unproved_answer(
         &self,
-        response: Self::Response,
+        response: &Self::Response,
         platform_version: &PlatformVersion,
     ) -> Result<Self::Answer, drive_proof_verifier::Error>;
 }
@@ -119,7 +121,7 @@ impl BlockRequest for GetOwnerTransactionsInBlockRequest {
 
     fn proved_answer(
         &self,
-        response: GetOwnerTransactionsInBlockResponse,
+        response: &GetOwnerTransactionsInBlockResponse,
         provider: &dyn ContextProvider,
     ) -> Result<Self::Answer, drive_proof_verifier::Error> {
         OwnerTransactionsInBlock::from_proved_response(self, response, provider)
@@ -127,7 +129,7 @@ impl BlockRequest for GetOwnerTransactionsInBlockRequest {
 
     fn unproved_answer(
         &self,
-        response: GetOwnerTransactionsInBlockResponse,
+        response: &GetOwnerTransactionsInBlockResponse,
         platform_version: &PlatformVersion,
     ) -> Result<Self::Answer, drive_proof_verifier::Error> {
         OwnerTransactionsInBlock::from_unproved_response(self, response, platform_version)
@@ -137,10 +139,12 @@ impl BlockRequest for GetOwnerTransactionsInBlockRequest {
 impl BlockRequest for GetBlocksRequest {
     type Answer = Blocks;
 
+    /// No more than a node serves, whatever count the request carries: a node that
+    /// answers a larger count cannot make the client fetch a key for every block of it.
     fn max_blocks(&self) -> usize {
         match &self.version {
             Some(get_blocks_request::Version::V0(v0)) => {
-                usize::try_from(v0.count).unwrap_or(usize::MAX)
+                usize::try_from(v0.count.min(MAX_BLOCKS_PER_REQUEST)).unwrap_or(usize::MAX)
             }
             None => 0,
         }
@@ -148,7 +152,7 @@ impl BlockRequest for GetBlocksRequest {
 
     fn proved_answer(
         &self,
-        response: GetBlocksResponse,
+        response: &GetBlocksResponse,
         provider: &dyn ContextProvider,
     ) -> Result<Self::Answer, drive_proof_verifier::Error> {
         Blocks::from_proved_response(self, response, provider)
@@ -156,7 +160,7 @@ impl BlockRequest for GetBlocksRequest {
 
     fn unproved_answer(
         &self,
-        response: GetBlocksResponse,
+        response: &GetBlocksResponse,
         platform_version: &PlatformVersion,
     ) -> Result<Self::Answer, drive_proof_verifier::Error> {
         Blocks::from_unproved_response(self, response, platform_version)
@@ -218,10 +222,7 @@ impl Sdk {
         &self,
         query: Q,
         request_settings: RequestSettings,
-    ) -> Result<R::Answer, Error>
-    where
-        R::Response: Clone,
-    {
+    ) -> Result<R::Answer, Error> {
         let requirement = query.protocol_requirement(&self.query_settings())?;
         self.ensure_network_serves(requirement, Some(request_settings))
             .await?;
@@ -244,10 +245,10 @@ impl Sdk {
                 .map_err(|error| error.inner_into())?;
 
             let answer = if prove {
-                self.verify_block_answer(request, response).await
+                self.verify_block_answer(request, &response).await
             } else {
                 request
-                    .unproved_answer(response, platform_version)
+                    .unproved_answer(&response, platform_version)
                     .map_err(Error::from)
             }
             .map_err(|error| ExecutionError {
@@ -272,23 +273,46 @@ impl Sdk {
     /// Verify the answer to `request` against the keys of the context provider, fetching
     /// those of quorums it has not cached. A block is what it is at any age, so nothing
     /// here is held to the SDK's freshness tolerances, and nothing is learned from it.
+    ///
+    /// The answer is verified again after each key that had to be fetched. It is read in
+    /// place every time, never copied.
     async fn verify_block_answer<R: BlockRequest>(
         &self,
         request: &R,
-        response: R::Response,
-    ) -> Result<R::Answer, Error>
-    where
-        R::Response: Clone,
-    {
+        response: &R::Response,
+    ) -> Result<R::Answer, Error> {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
-        let verify = || request.proved_answer(response.clone(), &provider);
+        let verify = || request.proved_answer(response, &provider);
 
         match verify_fetching_quorum_keys(&provider, request.max_blocks(), verify).await {
             Ok(answer) => Ok(answer),
             Err(KeyFetchFailure::Refused(error)) => Err((*error).into()),
             Err(KeyFetchFailure::Decided(error)) => Err(*error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blocks_request(count: u32) -> GetBlocksRequest {
+        GetBlocksRequest {
+            version: Some(get_blocks_request::Version::V0(GetBlocksRequestV0 {
+                start_height: 1,
+                count,
+                prove: true,
+            })),
+        }
+    }
+
+    #[test]
+    fn should_fetch_keys_for_no_more_blocks_than_a_node_serves() {
+        assert_eq!(blocks_request(3).max_blocks(), 3);
+        assert_eq!(blocks_request(MAX_BLOCKS_PER_REQUEST).max_blocks(), 10);
+        assert_eq!(blocks_request(u32::MAX).max_blocks(), 10);
+        assert_eq!(GetBlocksRequest { version: None }.max_blocks(), 0);
     }
 }

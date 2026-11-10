@@ -254,19 +254,19 @@ pub fn header_of(height: u64, transactions: &[TestTransaction]) -> Header {
     }
 }
 
-/// The block an honest node returns from `getBlocks` when asked to prove the block at
-/// `height` that holds `transactions`, signed by the test quorum `quorum_hash`.
-pub fn block_answer_by(
+/// The block an honest node returns from `getBlocks` when asked to prove the block of
+/// `header`, which holds `transactions`, signed by the test quorum `quorum_hash`. Start
+/// from [`header_of`] to give the block another protocol version or Core height.
+pub fn block_answer_of(
     quorum_hash: [u8; 32],
-    height: u64,
+    header: Header,
     transactions: &[TestTransaction],
 ) -> Block {
-    let header = header_of(height, transactions);
     let time_ms = header_time_ms(&header).expect("a test header has a time in milliseconds");
     let block_id = block_id_of(&header);
 
     Block {
-        height,
+        height: header.height,
         hash: block_id.hash,
         time_ms,
         core_chain_locked_height: header.core_chain_locked_height,
@@ -287,16 +287,25 @@ pub fn block_answer_by(
     }
 }
 
+/// [`block_answer_of`] the block at `height` under the latest protocol version.
+pub fn block_answer_by(
+    quorum_hash: [u8; 32],
+    height: u64,
+    transactions: &[TestTransaction],
+) -> Block {
+    block_answer_of(quorum_hash, header_of(height, transactions), transactions)
+}
+
 /// [`block_answer_by`] the test quorum [`QUORUM_HASH`].
 pub fn block_answer(height: u64, transactions: &[TestTransaction]) -> Block {
     block_answer_by(QUORUM_HASH, height, transactions)
 }
 
 /// What an honest node answers `getOwnerTransactionsInBlock` with when asked to prove the
-/// transactions at `indexes` of the block at `height` that holds `transactions`. The
+/// transactions at `indexes` of the block of `header`, which holds `transactions`. The
 /// answer lists them in the order of `indexes`, each with the paths of its own position.
-pub fn owner_answer(
-    height: u64,
+pub fn owner_answer_of(
+    header: Header,
     transactions: &[TestTransaction],
     indexes: &[usize],
 ) -> GetOwnerTransactionsInBlockResponseV0 {
@@ -326,6 +335,15 @@ pub fn owner_answer(
 
     GetOwnerTransactionsInBlockResponseV0 {
         transactions: answered,
-        proof: Some(signed_proof(header_of(height, transactions))),
+        proof: Some(signed_proof(header)),
     }
+}
+
+/// [`owner_answer_of`] the block at `height` under the latest protocol version.
+pub fn owner_answer(
+    height: u64,
+    transactions: &[TestTransaction],
+    indexes: &[usize],
+) -> GetOwnerTransactionsInBlockResponseV0 {
+    owner_answer_of(header_of(height, transactions), transactions, indexes)
 }

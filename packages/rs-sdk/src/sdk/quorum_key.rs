@@ -25,8 +25,10 @@ pub(crate) enum KeyFetchFailure {
 /// response, signatures included. No request is sent again.
 ///
 /// A response can name several quorums, as a page of blocks does when the validator set
-/// rotated within it. Each quorum is fetched once at most, and `max_fetches` bounds how
-/// many are: a response that names more is refused with the verifier's error.
+/// rotated within it, and the same quorum at several Core heights. A provider may hold a
+/// fetched key only for the Core heights near the one it was fetched for, so a quorum is
+/// fetched once at most for each Core height it is named at. `max_fetches` bounds how many
+/// fetches there are: a response that needs more is refused with the verifier's error.
 ///
 /// What the provider's trusted source said decides the result:
 /// * the key: the result of the next verification;
@@ -71,11 +73,9 @@ pub(crate) async fn verify_fetching_quorum_keys<T>(
                 error,
             } => {
                 // The provider broke its contract, for example by not caching the key it
-                // returned. The node is not to blame for that.
-                if fetched
-                    .iter()
-                    .any(|(kind, hash, _)| (kind, hash) == (quorum_type, quorum_hash))
-                {
+                // returned. The node is not to blame for that. A miss at another Core
+                // height is no such breach: the fetched key may not be served there.
+                if fetched.contains(&(*quorum_type, *quorum_hash, *core_chain_locked_height)) {
                     return Err(unavailable(
                         *quorum_type,
                         *quorum_hash,

@@ -13,6 +13,7 @@ use dapi_grpc::platform::v0::get_blocks_response::{self, GetBlocksResponseV0};
 use dapi_grpc::platform::v0::{GetBlocksRequest, GetBlocksResponse, get_blocks_request};
 use dapi_grpc::tonic::{Request, Response};
 use drive_proof_verifier::block_proof::transaction_hash;
+use drive_proof_verifier::types::blocks::MAX_BLOCKS_PER_REQUEST;
 
 use super::block_proof::{build_block_proof, check_block_contents, check_block_fields};
 use super::error_mapping::base64_decode;
@@ -23,8 +24,6 @@ use crate::clients::tenderdash_client::{
 };
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::{PlatformServiceImpl, run_holding_permit};
-
-const MAX_BLOCKS_PER_REQUEST: u32 = 10;
 
 /// Keeps a response within the 4 MiB a gRPC client decodes by default. A block can hold
 /// 2 MiB, so ten full blocks would not fit, while any single block does.

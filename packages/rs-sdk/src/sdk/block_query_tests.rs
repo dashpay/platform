@@ -24,12 +24,12 @@ use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTr
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::block_proof::fixtures::{
-    block_answer, block_answer_by, owner_answer, quorum_public_key, TestQuorum, TestTransaction,
-    QUORUM_HASH, QUORUM_TYPE,
+    block_answer, block_answer_by, block_answer_of, header_of, owner_answer, quorum_public_key,
+    TestQuorum, TestTransaction, CORE_HEIGHT, QUORUM_HASH, QUORUM_TYPE,
 };
 use drive_proof_verifier::block_proof::BlockProofError;
 use rs_dapi_client::transport::TransportRequest;
-use rs_dapi_client::{Address, ExecutionResponse, RequestSettings};
+use rs_dapi_client::{Address, CanRetry, ExecutionResponse, RequestSettings};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -382,6 +382,142 @@ async fn should_refuse_a_block_naming_a_quorum_the_trusted_source_does_not_list(
         Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { quorum_hash, .. })
             if quorum_hash == other_quorum
     ));
+}
+
+/// How many Core heights past the one a key was fetched for [`HeightBoundQuorums`] serves
+/// it at.
+const SERVED_HEIGHTS: u32 = 24;
+
+/// A quorum hash and the Core height its key was fetched for.
+type FetchedKey = ([u8; 32], u32);
+
+/// Holds a fetched key only for the Core heights near the one it was fetched for, as a
+/// provider that proves a quorum's key for a height does.
+#[derive(Clone, Default)]
+struct HeightBoundQuorums {
+    fetched: Arc<Mutex<Vec<FetchedKey>>>,
+}
+
+impl ContextProvider for HeightBoundQuorums {
+    fn get_data_contract(
+        &self,
+        _: &Identifier,
+        _: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        Ok(None)
+    }
+
+    fn get_token_configuration(
+        &self,
+        _: &Identifier,
+    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        Ok(None)
+    }
+
+    fn get_quorum_public_key(
+        &self,
+        _: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Result<[u8; 48], ContextProviderError> {
+        let served = self
+            .fetched
+            .lock()
+            .expect("fetch lock")
+            .iter()
+            .any(|(hash, height)| {
+                *hash == quorum_hash
+                    && (*height..=*height + SERVED_HEIGHTS).contains(&core_chain_locked_height)
+            });
+        if served {
+            Ok(quorum_public_key(quorum_hash))
+        } else {
+            Err(ContextProviderError::InvalidQuorum(
+                "not held for this Core height".to_string(),
+            ))
+        }
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        _: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        self.fetched
+            .lock()
+            .expect("fetch lock")
+            .push((quorum_hash, core_chain_locked_height));
+        Some(Box::pin(
+            async move { Ok(Some(quorum_public_key(quorum_hash))) },
+        ))
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1)
+    }
+}
+
+/// A quorum signs for many blocks, and a provider that proves its key for a Core height
+/// serves the key only near that height. Two blocks of a page chain locked further apart
+/// than that each need the key fetched, and the second miss is no fault of the provider's.
+#[tokio::test]
+async fn should_fetch_a_quorums_key_again_for_a_core_height_its_fetch_does_not_serve() {
+    let later_core_height = CORE_HEIGHT + SERVED_HEIGHTS + 1;
+    let mut later = header_of(HEIGHT + 1, &[]);
+    later.core_chain_locked_height = later_core_height;
+    let query = BlocksQuery {
+        start_height: HEIGHT,
+        count: 2,
+    };
+    let response = blocks_response(vec![
+        block_answer(HEIGHT, &block_transactions()),
+        block_answer_of(QUORUM_HASH, later, &[]),
+    ]);
+    let provider = HeightBoundQuorums::default();
+    let sdk = sdk_answering(SdkBuilder::new_mock(), &query, response, provider.clone()).await;
+
+    let Blocks(blocks) = sdk
+        .fetch_blocks_with_settings(query, no_retries())
+        .await
+        .expect("verified blocks");
+
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[1].core_chain_locked_height, later_core_height);
+    assert_eq!(
+        *provider.fetched.lock().expect("fetch lock"),
+        [(QUORUM_HASH, CORE_HEIGHT), (QUORUM_HASH, later_core_height)]
+    );
+}
+
+/// The block is signed and the bytes are in it, so every node would answer the same: the
+/// node is not to blame, and asking another one cannot help.
+#[tokio::test]
+async fn should_not_blame_a_node_for_a_committed_transaction_that_does_not_decode() {
+    let mut transactions = block_transactions();
+    transactions[1].0 = vec![0xff; 40];
+    let query = BlocksQuery {
+        start_height: HEIGHT,
+        count: 1,
+    };
+    let sdk = sdk_answering(
+        SdkBuilder::new_mock(),
+        &query,
+        blocks_response(vec![block_answer(HEIGHT, &transactions)]),
+        TestQuorum::new(),
+    )
+    .await;
+
+    let error = sdk
+        .fetch_blocks(query)
+        .await
+        .expect_err("a transaction this build cannot read");
+
+    assert!(
+        matches!(&error, Error::InvalidRequest(reason) if reason.contains("transaction 1 of block 7")),
+        "got {error:?}"
+    );
+    assert!(!error.can_retry());
 }
 
 #[tokio::test]
