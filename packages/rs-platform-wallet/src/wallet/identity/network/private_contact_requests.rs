@@ -351,6 +351,10 @@ struct PrivateReplyReservation {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: WalletPersister,
     wallet_id: WalletId,
+    /// The wallet generation the reservation was taken on: its release acts
+    /// only on that generation, so a wallet removed and re-created under its
+    /// id since is left alone.
+    generation: Arc<WalletGeneration>,
     sender: Identifier,
     recipient: Identifier,
     attempt: u64,
@@ -377,11 +381,18 @@ impl PrivateReplyReservation {
         release_reservation(
             &mut wm,
             &self.wallet_id,
+            &self.generation,
             &self.sender,
             &self.recipient,
             self.attempt,
         );
-        store_private_payment_marker(&self.persister, &wm, &self.wallet_id, &self.sender);
+        store_private_payment_marker(
+            &self.persister,
+            &wm,
+            &self.wallet_id,
+            &self.generation,
+            &self.sender,
+        );
         self.kept = true;
     }
 }
@@ -394,14 +405,27 @@ impl Drop for PrivateReplyReservation {
         let (wallet_id, sender, recipient, attempt) =
             (self.wallet_id, self.sender, self.recipient, self.attempt);
         let persister = self.persister.clone();
+        let generation = Arc::clone(&self.generation);
         apply_detached(
             &self.wallet_manager,
             "a cancelled private contact request's reservation",
             move |wm| {
-                release_reservation(wm, &wallet_id, &sender, &recipient, attempt);
-                store_private_payment_marker(&persister, wm, &wallet_id, &sender);
+                release_reservation(wm, &wallet_id, &generation, &sender, &recipient, attempt);
+                store_private_payment_marker(&persister, wm, &wallet_id, &generation, &sender);
             },
         );
+    }
+}
+
+/// A stale handle's refusal before anything was paid: its wallet was removed,
+/// or re-created under its id, since the handle was taken
+/// (`DashPayView::with_managed` reports it as not found).
+fn removed_before_send(error: PlatformWalletError) -> PlatformWalletError {
+    match error {
+        PlatformWalletError::WalletNotFound(wallet_id) => {
+            PlatformWalletError::WalletRemovedBeforeSend(wallet_id)
+        }
+        other => other,
     }
 }
 
@@ -432,17 +456,30 @@ pub(super) fn apply_detached(
     });
 }
 
+/// `wallet_id`'s wallet in `wm` while it is still `generation`: `None` once
+/// the wallet was removed, or re-created under its id, since. A guard that
+/// releases what one generation took acts only through this, so it never
+/// touches a replacement's state.
+pub(super) fn generation_info_mut<'w>(
+    wm: &'w mut WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
+) -> Option<&'w mut PlatformWalletInfo> {
+    wm.get_wallet_info_mut(wallet_id)
+        .filter(|info| Arc::ptr_eq(&info.generation, generation))
+}
+
 /// Release the reservation `attempt` holds on `sender`'s private request to
-/// `recipient`.
+/// `recipient`, on the wallet generation `generation` only.
 fn release_reservation(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
     sender: &Identifier,
     recipient: &Identifier,
     attempt: u64,
 ) {
-    if let Some(managed) = wm
-        .get_wallet_info_mut(wallet_id)
+    if let Some(managed) = generation_info_mut(wm, wallet_id, generation)
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
         managed.release_private_reply(recipient, attempt);
@@ -642,10 +679,14 @@ pub(crate) async fn restore_journaled_private_payments(
 /// until the next restoration: that one clears it, the shielded store's
 /// journal being open by then and showing the payment resolved. Never the
 /// other way round.
+///
+/// Only while the wallet is still `generation`: a replacement under the id
+/// stores its own records.
 fn store_private_payment_marker(
     persister: &WalletPersister,
     wm: &WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
     owner: &Identifier,
 ) {
     if !persister.persists_private_contact_scan_state() {
@@ -653,6 +694,7 @@ fn store_private_payment_marker(
     }
     if let Some(managed) = wm
         .get_wallet_info(wallet_id)
+        .filter(|info| Arc::ptr_eq(&info.generation, generation))
         .and_then(|info| info.identity_manager.managed_identity(owner))
     {
         store_private_position(
@@ -1018,7 +1060,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
                 Some(managed.reserve_private_reply(*recipient_identity_id))
             })
-            .await?;
+            .await
+            .map_err(removed_before_send)?;
         let Some(reserved) = reserved else {
             return Ok(None);
         };
@@ -1029,6 +1072,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             wallet_manager: Arc::clone(&self.wallet_manager),
             persister: self.persister.clone(),
             wallet_id: self.wallet_id,
+            generation: Arc::clone(&self.generation),
             sender: *sender_identity_id,
             recipient: *recipient_identity_id,
             attempt,
@@ -1308,13 +1352,28 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Clearing the marker once the payment resolves is not flushed: a clear
     /// that is lost only holds the identity after a restart until a
     /// restoration clears it, which fails closed.
-    fn store_private_payment_marker_before_paying(
+    ///
+    /// Stored only while the wallet is still this handle's generation, under
+    /// the wallet lock a removal takes: a handle whose wallet was removed, or
+    /// re-created under its id, since is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], nothing stored or
+    /// paid.
+    async fn store_private_payment_marker_before_paying(
         &self,
         owner: &Identifier,
         marker: PrivateContactRequestsPosition,
     ) -> Result<(), PlatformWalletError> {
         if !self.persister.persists_private_contact_scan_state() {
             return Err(PlatformWalletError::PrivateContactRecoveryUnsupported);
+        }
+        let wm = self.wallet_manager.read().await;
+        if !wm
+            .get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, &self.generation))
+        {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
         }
         let mut changeset = ContactChangeSet::default();
         changeset
@@ -1334,6 +1393,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         self.persister
             .note_private_marker_stored(*owner, Some(marker.private_payments_unresolved));
+        drop(wm);
         Ok(())
     }
 
@@ -1501,7 +1561,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
         for identity_id in changed {
-            store_private_payment_marker(&self.persister, &wm, &self.wallet_id, &identity_id);
+            store_private_payment_marker(
+                &self.persister,
+                &wm,
+                &self.wallet_id,
+                &self.generation,
+                &identity_id,
+            );
         }
         Ok(())
     }
@@ -1513,9 +1579,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         f: impl FnOnce(&mut ManagedIdentity) -> R,
     ) -> Result<R, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
-        let managed = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+        let managed = self
+            .current_wallet_info_mut(&mut wm)?
             .identity_manager
             .managed_identity_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
@@ -1652,12 +1717,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 managed.private_contact_requests_position_record()
             })
-            .await?;
+            .await
+            .map_err(removed_before_send)?;
         // Before anything is paid, the identity is marked as holding a private
         // payment that may be unresolved: a process reopening the wallet before
         // the payment's reservation is restored, or in a build that cannot
         // restore it, holds its public requests until then.
-        self.store_private_payment_marker_before_paying(sender_identity_id, marker)?;
+        self.store_private_payment_marker_before_paying(sender_identity_id, marker)
+            .await?;
         // What the record read back must carry, computed before paying.
         let shared_secret = crypto
             .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
@@ -5729,6 +5796,155 @@ mod tests {
             managed.dashpay().private_reply_pending(&recipient.id())
         })
         .await
+    }
+
+    /// The position records stored for `owner` so far.
+    fn positions_stored(persistence: &RecordingPersistence, owner: &Identifier) -> usize {
+        persistence
+            .stored
+            .lock()
+            .expect("stored")
+            .iter()
+            .filter(|changeset| {
+                changeset.contacts.as_ref().is_some_and(|contacts| {
+                    contacts
+                        .private_contact_requests_positions
+                        .contains_key(owner)
+                })
+            })
+            .count()
+    }
+
+    /// A private send whose wallet is removed and created again under its id
+    /// while the send is being prepared, after it reserved the pair, is
+    /// refused before anything is paid, and neither its release nor its
+    /// cleanup on drop touches the replacement: the replacement's own
+    /// reservation of the pair stays, and no marker is stored for it. A
+    /// handle taken before the replacement reserves nothing on it, and claims
+    /// nothing on it.
+    #[tokio::test]
+    async fn should_leave_a_wallet_created_again_alone_from_a_stale_private_send() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let manager = manager_on(Arc::clone(&persistence)).await;
+        #[cfg(feature = "shielded")]
+        let _store = {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            manager
+                .configure_shielded(dir.path().join("tree.sqlite"))
+                .await
+                .expect("the shielded store is configured");
+            dir
+        };
+        let replace = |first: &Arc<PlatformWallet>| {
+            let wallet_id = first.wallet_id();
+            let manager = &manager;
+            let alice = &alice;
+            async move {
+                manager.remove_wallet(&wallet_id).await.expect("removed");
+                let again = create_holding(manager, ALICE_PHRASE, alice).await;
+                assert_eq!(again.wallet_id(), wallet_id);
+                // The replacement reserves the pair itself.
+                {
+                    let iw = again.identity();
+                    let mut wm = iw.wallet_manager.write().await;
+                    let reserved = wm
+                        .get_wallet_info_mut(&wallet_id)
+                        .expect("wallet info")
+                        .identity_manager
+                        .managed_identity_mut(&alice.id())
+                        .expect("Alice")
+                        .reserve_private_reply(identity(BOB_PHRASE, BOB).id());
+                    assert!(reserved.is_some());
+                }
+                again
+            }
+        };
+
+        for dropped in [false, true] {
+            let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+            let reached = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            // The second derivation, as the send prepares its request, after
+            // it reserved the pair.
+            let mut pausing = HookedCrypto::new(ALICE_PHRASE);
+            pausing.before_receiving_xpub =
+                Some(pause_on_call(2, Arc::clone(&reached), Arc::clone(&release)));
+            let paid = Arc::new(Mutex::new(Vec::new()));
+            let view = first.identity().dashpay();
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            let mut send = Box::pin(view.send_private_contact_request(
+                &alice_id,
+                &bob_id,
+                None,
+                AutoAcceptProofSource::None,
+                None,
+                &alice_signer,
+                &pausing,
+                keep_entry(&paid),
+            ));
+            tokio::select! {
+                sent = &mut send => panic!("the send ran past its pause: {sent:?}"),
+                _ = reached.notified() => {}
+            }
+            assert!(
+                pending_to(&first, ALICE, &bob).await,
+                "the pair is reserved"
+            );
+            let again = replace(&first).await;
+            let stored = positions_stored(&persistence, &alice.id());
+            if dropped {
+                drop(send);
+            } else {
+                release.notify_one();
+                let sent = send.await;
+                assert!(
+                    matches!(sent, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+                    "{sent:?}"
+                );
+            }
+            tokio::task::yield_now().await;
+            assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+            assert!(
+                pending_to(&again, ALICE, &bob).await,
+                "the replacement's reservation stays ({dropped})"
+            );
+            assert_eq!(
+                positions_stored(&persistence, &alice.id()),
+                stored,
+                "no marker is stored for the replacement ({dropped})"
+            );
+
+            // A handle taken before the replacement acts on nothing of it.
+            let reserved = view
+                .with_managed(&alice.id(), |managed| {
+                    managed.reserve_private_reply(bob.id())
+                })
+                .await;
+            assert!(
+                matches!(reserved, Err(PlatformWalletError::WalletNotFound(_))),
+                "{reserved:?}"
+            );
+            let claimed = view
+                .claim_public_pair(&alice.id(), &bob.id(), false, false)
+                .await;
+            assert!(
+                matches!(
+                    claimed,
+                    Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+                ),
+                "{:?}",
+                claimed.err()
+            );
+            manager
+                .remove_wallet(&again.wallet_id())
+                .await
+                .expect("removed");
+        }
     }
 
     /// A public request is bound to its wallet's generation: while one claims

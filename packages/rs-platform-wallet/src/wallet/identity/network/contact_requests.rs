@@ -18,6 +18,7 @@ use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
@@ -27,7 +28,7 @@ use key_wallet_manager::WalletManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::private_contact_requests::{apply_detached, with_journaled_marker};
+use super::private_contact_requests::{apply_detached, generation_info_mut, with_journaled_marker};
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
@@ -581,6 +582,10 @@ pub(super) enum ReplyOutcome {
 pub(super) struct PublicContactClaim {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: WalletId,
+    /// The wallet generation the claim was taken on: its release acts only
+    /// on that generation, so a wallet removed and re-created under its id
+    /// since is left alone.
+    generation: Arc<WalletGeneration>,
     sender: Identifier,
     recipient: Identifier,
     /// The attempt the claim was taken under: only it releases the claim.
@@ -596,6 +601,7 @@ impl PublicContactClaim {
         release_public_claim(
             &mut wm,
             &self.wallet_id,
+            &self.generation,
             &self.sender,
             &self.recipient,
             self.attempt,
@@ -611,24 +617,28 @@ impl Drop for PublicContactClaim {
         }
         let (wallet_id, sender, recipient, attempt) =
             (self.wallet_id, self.sender, self.recipient, self.attempt);
+        let generation = Arc::clone(&self.generation);
         apply_detached(
             &self.wallet_manager,
             "a dropped public contact request's claim",
-            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient, attempt),
+            move |wm| {
+                release_public_claim(wm, &wallet_id, &generation, &sender, &recipient, attempt)
+            },
         );
     }
 }
 
-/// Release the claim `attempt` holds on `sender`'s pair with `recipient`.
+/// Release the claim `attempt` holds on `sender`'s pair with `recipient`, on
+/// the wallet generation `generation` only.
 fn release_public_claim(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
     sender: &Identifier,
     recipient: &Identifier,
     attempt: u64,
 ) {
-    if let Some(managed) = wm
-        .get_wallet_info_mut(wallet_id)
+    if let Some(managed) = generation_info_mut(wm, wallet_id, generation)
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
         managed.release_public_contact_request(recipient, attempt);
@@ -847,9 +857,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         store_read: bool,
     ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
-        let managed = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+        // A handle whose wallet was removed, or re-created under its id, since
+        // claims nothing on the replacement.
+        let managed = generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
+            })?
             .identity_manager
             .managed_identity_mut(sender)
             .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
@@ -876,6 +889,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
+            generation: Arc::clone(&self.generation),
             sender: *sender,
             recipient: *recipient,
             attempt,
