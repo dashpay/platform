@@ -10,6 +10,8 @@ mod transformer;
 // A moderator's document deletion (`contract_user_moderation`) reads the document the way a
 // document's own deletion does, billed the same.
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
+// A moderator's field change (protocol version 15) also reads who holds the document's storage.
+pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id_and_storage_flags;
 // Check tx reserves, for a create it does not validate the state of, what the block's
 // `chooseFirst` check may bill it: its two hashes and the competitor scan's budget.
 pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::v0::choose_first_reservation;
