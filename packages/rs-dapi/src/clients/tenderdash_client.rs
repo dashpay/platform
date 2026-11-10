@@ -23,6 +23,10 @@ use tracing::{debug, error, info, trace, warn};
 /// Tenderdash heights are signed 64-bit integers.
 pub const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
 
+/// How many bytes of a body Tenderdash answered with go into a log line. A block's answer
+/// can be megabytes long.
+const LOGGED_BODY_BYTES: usize = 512;
+
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
 ///
@@ -648,6 +652,12 @@ fn with_tracing(builder: reqwest::ClientBuilder) -> DAPIResult<ClientWithMiddlew
         .build())
 }
 
+/// The start of a body, for a log line: at most `LOGGED_BODY_BYTES` bytes, ending on a
+/// character boundary.
+fn body_preview(body: &str) -> &str {
+    &body[..body.floor_char_boundary(LOGGED_BODY_BYTES)]
+}
+
 /// Read the answer to one call out of its body: the result, or the error Tenderdash gave.
 fn read_response<T>(body: &str) -> DAPIResult<T>
 where
@@ -655,8 +665,10 @@ where
 {
     let response: TenderdashResponse<T> = serde_json::from_str(body).map_err(|e| {
         error!(
-            "Failed to parse Tenderdash response: {}; full body: {}",
-            e, body
+            "Failed to parse Tenderdash response: {}; body of {} bytes starts with: {}",
+            e,
+            body.len(),
+            body_preview(body)
         );
         DapiError::Client(format!("Failed to parse response: {}", e))
     })?;
@@ -1126,6 +1138,18 @@ mod tests {
 
         let not_json: DAPIResult<ResultValidators> = read_response("not json");
         assert!(matches!(not_json, Err(DapiError::Client(_))));
+    }
+
+    #[test]
+    fn should_log_only_the_start_of_a_body() {
+        assert_eq!(body_preview("short"), "short");
+
+        let long = "a".repeat(LOGGED_BODY_BYTES * 4);
+        assert_eq!(body_preview(&long).len(), LOGGED_BODY_BYTES);
+
+        // "é" is two bytes, and the limit falls in the middle of one
+        let accented = format!("a{}", "é".repeat(LOGGED_BODY_BYTES));
+        assert_eq!(body_preview(&accented).len(), LOGGED_BODY_BYTES - 1);
     }
 
     #[test]
