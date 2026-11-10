@@ -61,7 +61,7 @@ struct ContactRequestsView: View {
     @State private var shieldedStoreFailure: String?
 
     /// The automatic refreshes made since the wallet's private payments were
-    /// last read restored (`PrivatePaymentsRecovery.rechecks`).
+    /// last read restored (`PrivatePaymentsRecovery.recheckDelay`).
     @State private var readinessRechecks = 0
 
     /// What the last private-store refresh has to tell the user, if anything.
@@ -212,9 +212,15 @@ struct ContactRequestsView: View {
         // store completes later and changes nothing this view observes.
         .task(id: readinessRechecks) {
             guard readinessRechecks > 0 else { return }
-            try? await Task.sleep(for: PrivatePaymentsRecovery.recheckInterval)
-            guard !Task.isCancelled else { return }
-            reloadPendingReplies()
+            let due = await PrivatePaymentsRecovery.waitForRecheck(
+                after: walletPending.readiness, attempt: readinessRechecks - 1,
+                sleep: { try await Task.sleep(for: $0) })
+            if due { reloadPendingReplies() }
+        }
+        // A deferred restoration runs once the shielded scan holding the store
+        // ends: refresh then too, ahead of the timer.
+        .onChange(of: shieldedService.isSyncing) { _, syncing in
+            if !syncing { reloadPendingReplies() }
         }
         .onChange(of: shieldedService.isBound) { _, _ in reloadPendingReplies() }
         .onChange(of: rowSignature) { _, _ in
@@ -250,8 +256,8 @@ struct ContactRequestsView: View {
     /// Re-read from the wallet its readiness (`PrivatePaymentsRecovery.refresh`:
     /// the wallet is asked to retry a restoration first when its payments are
     /// not restored, and the readiness shown is read after that), then which
-    /// incoming rows' pairs it holds for a private request, and refresh again
-    /// on a bounded timer while the payments stay unrestored.
+    /// incoming rows' pairs it holds for a private request, and keep
+    /// refreshing on a timer while the payments stay unrestored.
     private func reloadPendingReplies() {
         let contactIds = incomingPending.map(\.contactIdentityId)
         let wallet = try? requireWallet()
@@ -268,7 +274,7 @@ struct ContactRequestsView: View {
             privateRepliesPending(wallet: wallet, identityId: identityId, contactIds: contactIds),
             for: contactIds
         )
-        if PrivatePaymentsRecovery.rechecks(after: walletPending.readiness, attempt: readinessRechecks) {
+        if PrivatePaymentsRecovery.recheckDelay(after: walletPending.readiness, attempt: readinessRechecks) != nil {
             readinessRechecks += 1
         } else if walletPending.readiness?.privatePaymentsRestored == true {
             readinessRechecks = 0
