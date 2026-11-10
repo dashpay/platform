@@ -697,6 +697,24 @@ type PlatformgetPrivateDocumentEntries = {
   readonly responseType: typeof platform_pb.GetPrivateDocumentEntriesResponse;
 };
 
+type PlatformgetOwnerTransactionsInBlock = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetOwnerTransactionsInBlockRequest;
+  readonly responseType: typeof platform_pb.GetOwnerTransactionsInBlockResponse;
+};
+
+type PlatformgetBlocks = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetBlocksRequest;
+  readonly responseType: typeof platform_pb.GetBlocksResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -776,6 +794,8 @@ export class Platform {
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
   static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
+  static readonly getOwnerTransactionsInBlock: PlatformgetOwnerTransactionsInBlock;
+  static readonly getBlocks: PlatformgetBlocks;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1502,6 +1522,24 @@ export class PlatformClient {
   getPrivateDocumentEntries(
     requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
   ): UnaryResponse;
 }
 

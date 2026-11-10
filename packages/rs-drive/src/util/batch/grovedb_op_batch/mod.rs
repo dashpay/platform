@@ -24,6 +24,7 @@ use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::{Element, TreeType};
 use grovedb_version::version::GroveVersion;
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::fmt;
 
 /// A batch of GroveDB operations as a vector.
@@ -32,6 +33,12 @@ use std::fmt;
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<QualifiedGroveDbOp>,
+    /// How the batch's flags update treats a new owner, set on a batch that updates documents
+    /// from protocol version 15. `None` merges flags as they always were. Otherwise the owner
+    /// a write names owns the element afterwards, and an owner change involving one of these
+    /// identities, the owners of contracts offering gas sponsorship on what the batch
+    /// updates, is a full handover.
+    pub(crate) owner_handover: Option<BTreeSet<[u8; 32]>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -512,9 +519,7 @@ pub trait GroveDbOpBatchV0Methods {
 impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// Creates a new empty batch of GroveDB operations.
     fn new() -> Self {
-        GroveDbOpBatch {
-            operations: Vec::new(),
-        }
+        GroveDbOpBatch::default()
     }
 
     /// Gets the number of operations from a list of GroveDB ops.
@@ -544,7 +549,10 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
 
     /// Puts a list of GroveDB operations into a batch.
     fn from_operations(operations: Vec<QualifiedGroveDbOp>) -> Self {
-        GroveDbOpBatch { operations }
+        GroveDbOpBatch {
+            operations,
+            ..Default::default()
+        }
     }
 
     /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.

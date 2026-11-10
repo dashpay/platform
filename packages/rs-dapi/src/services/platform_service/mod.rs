@@ -1,8 +1,11 @@
 // Platform service modular implementation
 // This file contains the core PlatformServiceImpl struct and delegates to individual modules
 
+mod block_proof;
 mod broadcast_state_transition;
 mod error_mapping;
+mod get_blocks;
+mod get_owner_transactions_in_block;
 mod get_recent_state_transition_status;
 mod get_status;
 mod shielded_proof_failure_budget;
@@ -14,8 +17,9 @@ mod protobuf_request_errors;
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetRecentStateTransitionStatusRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetBlocksRequest,
+    GetBlocksResponse, GetOwnerTransactionsInBlockRequest, GetOwnerTransactionsInBlockResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetRecentStateTransitionStatusRequest,
     GetRecentStateTransitionStatusResponse, GetStatusRequest, GetStatusResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -27,7 +31,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
@@ -35,6 +39,34 @@ pub use error_mapping::TenderdashStatus;
 pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
+
+/// `getBlocks` requests reading from Tenderdash at once. Ten full blocks hold about 60 MiB
+/// while in flight, so this keeps the memory of the query bounded on a small node.
+const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
+
+/// `getOwnerTransactionsInBlock` requests reading and decoding blocks at once. Cheaper than
+/// `getBlocks`, since each reads one block, but no response cache can absorb them: the
+/// answer differs per owner.
+const MAX_CONCURRENT_GET_OWNER_TRANSACTIONS: usize = 16;
+
+/// Run backend work in a task of its own, which keeps `permit` until the work ends.
+///
+/// A handler is dropped when its caller goes away or its deadline passes, while the request
+/// it sent to Tenderdash carries on there. Work run here is not dropped with its handler,
+/// and what a block query asks of Tenderdash has no deadline of its own, so it counts
+/// against its limit for as long as the backend is busy with it, and what it read can still
+/// be cached.
+async fn run_holding_permit<T, F>(permit: OwnedSemaphorePermit, work: F) -> DAPIResult<T>
+where
+    T: Send + 'static,
+    F: Future<Output = DAPIResult<T>> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let _permit = permit;
+        work.await
+    })
+    .await?
+}
 
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
@@ -152,6 +184,7 @@ use crate::DapiError;
 use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
+use crate::error::DAPIResult;
 use crate::services::streaming_service::FilterType;
 use crate::sync::Workers;
 
@@ -165,6 +198,8 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    pub get_blocks_permits: Arc<Semaphore>,
+    pub get_owner_transactions_permits: Arc<Semaphore>,
     pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
@@ -228,6 +263,10 @@ impl PlatformServiceImpl {
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
             )),
+            get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
+            get_owner_transactions_permits: Arc::new(Semaphore::new(
+                MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+            )),
             shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,
         }
@@ -250,6 +289,50 @@ impl Platform for PlatformServiceImpl {
         let method = type_name_of_val(request.get_ref());
         trace!(method, "Received get_status request");
         let result = self.get_status_impl(request).await;
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get up to ten consecutive Tenderdash blocks
+    ///
+    /// See [`PlatformServiceImpl::get_blocks_impl`] for implementation details.
+    async fn get_blocks(
+        &self,
+        request: Request<GetBlocksRequest>,
+    ) -> Result<Response<GetBlocksResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_blocks request");
+        let result = self
+            .get_blocks_impl(request)
+            .await
+            .map_err(|error| error.to_status());
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get the state transitions one owner has in the Tenderdash block at a height
+    ///
+    /// See [`PlatformServiceImpl::get_owner_transactions_in_block_impl`] for implementation details.
+    async fn get_owner_transactions_in_block(
+        &self,
+        request: Request<GetOwnerTransactionsInBlockRequest>,
+    ) -> Result<Response<GetOwnerTransactionsInBlockResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_owner_transactions_in_block request");
+        let result = self
+            .get_owner_transactions_in_block_impl(request)
+            .await
+            .map_err(|error| error.to_status());
 
         match &result {
             Ok(_) => info!(method, "request succeeded"),

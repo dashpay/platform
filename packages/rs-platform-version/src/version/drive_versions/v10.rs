@@ -3,6 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
@@ -91,6 +92,13 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
 ///   keyless append more than once (`apply_batch.keyless_append_repeats`).
 ///
+/// * **Storage handover** (protocol v15 note 28): `grove_methods` is
+///   `DRIVE_GROVE_METHOD_VERSIONS_V2`.
+///
+/// * **A document that may be contested** (protocol v15 note 29):
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets `single_document.verify_proof_keep_serialized` to
+///   1, which verifies the proof of a single document query in its "maybe contested" status.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -123,7 +131,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
@@ -140,5 +148,6 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
     // keeps, refuses all three.
     grove_version: GROVE_V5,
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9
 };

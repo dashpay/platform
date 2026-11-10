@@ -72,6 +72,10 @@ const {
             GetPrivateDocumentEntriesResponse: PBJSGetPrivateDocumentEntriesResponse,
             GetRecentStateTransitionStatusRequest: PBJSGetRecentStateTransitionStatusRequest,
             GetRecentStateTransitionStatusResponse: PBJSGetRecentStateTransitionStatusResponse,
+            GetOwnerTransactionsInBlockRequest: PBJSGetOwnerTransactionsInBlockRequest,
+            GetOwnerTransactionsInBlockResponse: PBJSGetOwnerTransactionsInBlockResponse,
+            GetBlocksRequest: PBJSGetBlocksRequest,
+            GetBlocksResponse: PBJSGetBlocksResponse,
           },
         },
       },
@@ -103,6 +107,8 @@ const {
   GetMasternodeYesNoVoteResponse: ProtocGetMasternodeYesNoVoteResponse,
   GetPrivateDocumentEntriesResponse: ProtocGetPrivateDocumentEntriesResponse,
   GetRecentStateTransitionStatusResponse: ProtocGetRecentStateTransitionStatusResponse,
+  GetOwnerTransactionsInBlockResponse: ProtocGetOwnerTransactionsInBlockResponse,
+  GetBlocksResponse: ProtocGetBlocksResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -219,6 +225,14 @@ class PlatformPromiseClient {
 
     this.client.getRecentStateTransitionStatus = promisify(
       this.client.getRecentStateTransitionStatus.bind(this.client),
+    );
+
+    this.client.getOwnerTransactionsInBlock = promisify(
+      this.client.getOwnerTransactionsInBlock.bind(this.client),
+    );
+
+    this.client.getBlocks = promisify(
+      this.client.getBlocks.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -973,6 +987,86 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetRecentStateTransitionStatusRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * @param {!GetOwnerTransactionsInBlockRequest} getOwnerTransactionsInBlockRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetOwnerTransactionsInBlockResponse>}
+   */
+  getOwnerTransactionsInBlock(
+    getOwnerTransactionsInBlockRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getOwnerTransactionsInBlock(
+      getOwnerTransactionsInBlockRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetOwnerTransactionsInBlockResponse,
+              PBJSGetOwnerTransactionsInBlockResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetOwnerTransactionsInBlockRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * @param {!GetBlocksRequest} getBlocksRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetBlocksResponse>}
+   */
+  getBlocks(
+    getBlocksRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getBlocks(
+      getBlocksRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetBlocksResponse,
+              PBJSGetBlocksResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetBlocksRequest,
             ),
           ),
         ],

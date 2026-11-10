@@ -111,13 +111,20 @@ impl PersistenceCapabilities {
     /// empty result. Required before a wallet drain can treat absence as not sent.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
+    /// The Orchard recipient of a shielded asset-lock funding survives
+    /// store/load with its row, so a resume after restart pays the recipient
+    /// the user confirmed. Reported, not required: a backend without it loads
+    /// such rows with no recipient, and a resume then accepts the caller's
+    /// (the pre-recipient behaviour).
+    pub const ASSET_LOCK_SHIELDED_RECIPIENTS: Self = Self(1 << 14);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 13;
+    const HIGHEST_DECLARED_BIT: u32 = 14;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -221,6 +228,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS,
                 "asset_lock_operation_ids",
             ),
+            (
+                PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS,
+                "asset_lock_shielded_recipients",
+            ),
         ];
 
         KNOWN
@@ -238,7 +249,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
+    PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -269,6 +280,10 @@ mod tests {
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
             0x2000
+        );
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits(),
+            0x4000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
