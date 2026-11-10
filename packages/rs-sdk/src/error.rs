@@ -328,7 +328,7 @@ impl From<drive_proof_verifier::Error> for Error {
             drive_proof_verifier::Error::ContextProviderNotSet => {
                 Self::ContextProviderError(ContextProviderError::Config(
                     "context provider is not set, so no proof can be verified; set one with \
-                     SdkBuilder::with_context_provider()"
+                     SdkBuilder::with_context_provider() or Sdk::set_context_provider()"
                         .to_string(),
                 ))
             }

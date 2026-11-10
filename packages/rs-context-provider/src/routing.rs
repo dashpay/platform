@@ -423,7 +423,7 @@ impl ContextProvider for AdaptiveContextProvider {
     }
 
     /// The trusted provider's requirement. It is the only source known when
-    /// the SDK is built, and the route Auto falls back to.
+    /// the SDK is given this provider, and the route Auto falls back to.
     fn requires_proofs(&self) -> bool {
         self.trusted.requires_proofs()
     }
@@ -879,7 +879,7 @@ mod tests {
     }
 
     /// The SDK refuses a provider for another network, or one that requires
-    /// proofs while proofs are off, by asking the provider it is built with.
+    /// proofs while proofs are off, by asking the provider it is built or set with.
     /// A routing provider that answered with the defaults would let the SDK
     /// accept one it must refuse.
     #[test]
@@ -901,7 +901,7 @@ mod tests {
         }
     }
 
-    /// The SDK checks the network of the provider it is built with, and the
+    /// The SDK checks the network of the provider it is built or set with, and the
     /// adaptive provider reports its own. Over a trusted provider for another
     /// network it would pass that check, then verify proofs with that
     /// network's quorum keys whenever it routes to the trusted provider, so

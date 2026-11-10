@@ -8,6 +8,7 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::types::epoch::resolve_current_epoch;
 use crate::platform::Identifier;
+use arc_swap::ArcSwap;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -302,8 +303,9 @@ pub struct Sdk {
     /// Nonce cache managed exclusively by the SDK.
     nonce_cache: Arc<NonceCache>,
 
-    /// Context provider fixed at SDK construction and shared across clones.
-    context_provider: Arc<dyn ContextProvider>,
+    /// Context provider used by the SDK. All clones share it, so
+    /// [`Sdk::set_context_provider`] on any clone replaces it for every one.
+    context_provider: Arc<ArcSwap<Arc<dyn ContextProvider>>>,
 
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
@@ -860,8 +862,11 @@ impl Sdk {
     }
 
     /// Return [ContextProvider] used by the SDK.
-    pub fn context_provider(&self) -> Option<Arc<dyn ContextProvider>> {
-        Some(Arc::clone(&self.context_provider))
+    ///
+    /// This is the provider installed when called; a later
+    /// [`Sdk::set_context_provider`] does not change it.
+    pub fn context_provider(&self) -> Option<impl ContextProvider> {
+        Some(Arc::clone(&**self.context_provider.load()))
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -1010,6 +1015,41 @@ impl Sdk {
             verified_protocol_version: verified,
             prove: self.prove(),
         }
+    }
+
+    /// Set the [ContextProvider] to use.
+    ///
+    /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
+    ///
+    /// Note that this will overwrite any previous context provider. All
+    /// clones of this SDK share it, so this replaces it for every clone,
+    /// including clones made before the call. A proof verification already
+    /// under way, including a quorum-key fetch it waits on, finishes with the
+    /// provider it started with; an operation that sends several requests may
+    /// use the new provider from its next request on. The new provider has
+    /// only its own caches: data contracts registered with the one it
+    /// replaces are not carried over.
+    ///
+    /// A provider that routes between sources, such as
+    /// [`AdaptiveContextProvider`](dash_context_provider::routing::AdaptiveContextProvider),
+    /// routes inside itself, not in the SDK: once it is replaced, changing its
+    /// mode or what is published into its SPV source slot no longer affects
+    /// this SDK.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Config`], leaving the current provider in place, when the
+    /// provider serves another network than this SDK's, or requires proofs
+    /// and this SDK has them turned off (see [`ContextProvider::network`]
+    /// and [`ContextProvider::requires_proofs`]).
+    pub fn set_context_provider<C: ContextProvider + 'static>(
+        &self,
+        context_provider: C,
+    ) -> Result<(), Error> {
+        check_context_provider(&context_provider, self.network, self.proofs)?;
+        self.context_provider
+            .store(Arc::new(Arc::new(context_provider)));
+        Ok(())
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (e.g. shutdown was requested).
@@ -1659,7 +1699,7 @@ impl SdkBuilder {
                     dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi },
                     proofs:self.proofs,
-                    context_provider,
+                    context_provider: Arc::new(ArcSwap::from_pointee(context_provider)),
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
                     // Seed atomic with the initial version; whether the version is
@@ -1719,7 +1759,7 @@ impl SdkBuilder {
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
-                    context_provider,
+                    context_provider: Arc::new(ArcSwap::from_pointee(context_provider)),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
                         self.trusted_initial_height.unwrap_or(0),
@@ -1917,63 +1957,6 @@ pub(crate) mod test {
             super::SdkInstance::Dapi { dapi } => assert_eq!(dapi.proxy, Some(proxy)),
             super::SdkInstance::Mock { .. } => panic!("expected a network SDK"),
         }
-    }
-
-    /// SDK clones retain the exact context-provider identity selected at build.
-    #[test]
-    fn context_provider_identity_is_shared_across_clones() {
-        use dash_context_provider::{ContextProvider, ContextProviderError};
-        use dpp::data_contract::TokenConfiguration;
-        use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-        use dpp::version::PlatformVersion;
-
-        /// Provider whose activation height is a distinctive sentinel so it can
-        /// be told apart from the mock SDK's default provider.
-        struct SentinelProvider(CoreBlockHeight);
-        impl ContextProvider for SentinelProvider {
-            fn get_quorum_public_key(
-                &self,
-                _quorum_type: u32,
-                _quorum_hash: [u8; 32],
-                _height: u32,
-            ) -> Result<[u8; 48], ContextProviderError> {
-                Ok([0u8; 48])
-            }
-            fn get_data_contract(
-                &self,
-                _id: &Identifier,
-                _pv: &PlatformVersion,
-            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-                Ok(None)
-            }
-            fn get_token_configuration(
-                &self,
-                _id: &Identifier,
-            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-                Ok(None)
-            }
-            fn get_platform_activation_height(
-                &self,
-            ) -> Result<CoreBlockHeight, ContextProviderError> {
-                Ok(self.0)
-            }
-        }
-
-        const SENTINEL: CoreBlockHeight = 4_242_424;
-
-        let sdk = SdkBuilder::new_mock()
-            .with_context_provider(SentinelProvider(SENTINEL))
-            .build()
-            .expect("mock sdk should build");
-        let clone = sdk.clone();
-
-        let original_provider = sdk.context_provider().expect("provider present");
-        let clone_provider = clone.context_provider().expect("provider present on clone");
-        assert!(Arc::ptr_eq(&original_provider, &clone_provider));
-        let height = original_provider
-            .get_platform_activation_height()
-            .expect("activation height");
-        assert_eq!(height, SENTINEL);
     }
 
     #[test]
@@ -2241,9 +2224,8 @@ pub(crate) mod test {
     }
 
     /// A provider that requires proofs is refused with proofs turned off,
-    /// whichever of the two the caller configured first and through either
-    /// builder entry point. The provider is fixed once the SDK is built, so
-    /// the build is the only place it can be refused.
+    /// whichever of the two the caller configured first, and by
+    /// `set_context_provider` on an SDK built without proofs.
     #[test]
     fn should_refuse_a_provider_that_requires_proofs_with_proofs_off() {
         let requiring = || Requiring {
@@ -2258,14 +2240,28 @@ pub(crate) mod test {
             .with_network(Network::Testnet)
             .with_context_provider(requiring())
             .with_proofs(false);
-        let shared = SdkBuilder::new_mock()
-            .with_network(Network::Testnet)
-            .with_proofs(false)
-            .with_context_provider_arc(Arc::new(requiring()));
-        for builder in [before, after, shared] {
+        for builder in [before, after] {
             let error = builder.build().expect_err("refused");
             assert!(is_config_error(error, "requires proofs"));
         }
+
+        let unproved = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_proofs(false)
+            .with_context_provider(Requiring {
+                network: Some(Network::Testnet),
+                proofs: false,
+            })
+            .build()
+            .expect("an SDK without proofs");
+        let error = unproved
+            .set_context_provider(requiring())
+            .expect_err("refused");
+        assert!(is_config_error(error, "requires proofs"));
+        assert!(
+            !unproved.context_provider().expect("kept").requires_proofs(),
+            "the refused provider replaced the one the SDK had"
+        );
 
         SdkBuilder::new_mock()
             .with_network(Network::Testnet)
@@ -2286,24 +2282,20 @@ pub(crate) mod test {
     }
 
     /// A provider that serves one network is refused by an SDK for another,
-    /// through either builder entry point, and accepted by an SDK for its own
-    /// network or when it names none.
+    /// in the builder and in `set_context_provider`, which keeps the provider
+    /// it had.
     #[test]
     fn should_refuse_a_provider_for_another_network() {
         let mainnet = || Requiring {
             network: Some(Network::Mainnet),
             proofs: false,
         };
-        let direct = SdkBuilder::new_mock()
+        let error = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
-            .with_context_provider(mainnet());
-        let shared = SdkBuilder::new_mock()
-            .with_network(Network::Testnet)
-            .with_context_provider_arc(Arc::new(mainnet()));
-        for builder in [direct, shared] {
-            let error = builder.build().expect_err("refused");
-            assert!(is_config_error(error, "Mainnet"));
-        }
+            .with_context_provider(mainnet())
+            .build()
+            .expect_err("refused");
+        assert!(is_config_error(error, "Mainnet"));
 
         let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
@@ -2313,18 +2305,95 @@ pub(crate) mod test {
             })
             .build()
             .expect("the same network is accepted");
+        let error = sdk.set_context_provider(mainnet()).expect_err("refused");
+        assert!(is_config_error(error, "Mainnet"));
         assert_eq!(
-            sdk.context_provider().expect("installed").network(),
+            sdk.context_provider().expect("kept").network(),
             Some(Network::Testnet)
         );
-        SdkBuilder::new_mock()
+        sdk.set_context_provider(Requiring {
+            network: None,
+            proofs: false,
+        })
+        .expect("a provider that names no network");
+    }
+
+    /// A provider handed to the builder as an `Arc` is checked like any other.
+    #[test]
+    fn should_check_a_provider_given_as_an_arc_like_any_other() {
+        for (provider, needle) in [
+            (
+                Requiring {
+                    network: Some(Network::Mainnet),
+                    proofs: false,
+                },
+                "Mainnet",
+            ),
+            (
+                Requiring {
+                    network: Some(Network::Testnet),
+                    proofs: true,
+                },
+                "requires proofs",
+            ),
+        ] {
+            let error = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .with_proofs(false)
+                .with_context_provider_arc(Arc::new(provider))
+                .build()
+                .expect_err("refused");
+            assert!(is_config_error(error, needle));
+        }
+    }
+
+    /// Every clone of an SDK reads the provider set last on any of them,
+    /// whether it was cloned before or after: a wallet manager holding a
+    /// clone follows the provider the application installs later.
+    #[test]
+    fn should_share_a_provider_set_on_one_clone_with_every_clone() {
+        let naming = |network| Requiring {
+            network,
+            proofs: false,
+        };
+        let network_of = |sdk: &super::Sdk| sdk.context_provider().expect("installed").network();
+        let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
-            .with_context_provider(Requiring {
-                network: None,
-                proofs: false,
-            })
+            .with_context_provider(naming(Some(Network::Testnet)))
             .build()
+            .expect("a mock SDK");
+        let earlier = sdk.clone();
+        let held = sdk.context_provider().expect("installed");
+
+        earlier
+            .set_context_provider(naming(None))
             .expect("a provider that names no network");
+        assert_eq!(
+            held.network(),
+            Some(Network::Testnet),
+            "a provider taken before the change is still the one taken"
+        );
+        let later = sdk.clone();
+        for (clone, which) in [(&sdk, "original"), (&earlier, "setter"), (&later, "later")] {
+            assert_eq!(
+                network_of(clone),
+                None,
+                "the {which} SDK does not use the provider set last"
+            );
+        }
+
+        sdk.set_context_provider(naming(Some(Network::Testnet)))
+            .expect("a provider for the SDK's network");
+        later
+            .set_context_provider(naming(Some(Network::Mainnet)))
+            .expect_err("a provider for another network");
+        for (clone, which) in [(&sdk, "setter"), (&earlier, "earlier"), (&later, "later")] {
+            assert_eq!(
+                network_of(clone),
+                Some(Network::Testnet),
+                "the {which} SDK does not use the provider set last"
+            );
+        }
     }
 
     #[test]
