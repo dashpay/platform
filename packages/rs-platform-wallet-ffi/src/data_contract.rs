@@ -6,6 +6,7 @@ use std::os::raw::c_char;
 use std::slice;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::update_values::DescriptionUpdate;
 use dpp::prelude::Identifier;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -83,8 +84,13 @@ pub unsafe extern "C" fn platform_wallet_create_data_contract_with_signer(
 /// bumps it). The JSON args are additive overlays: `documents_schema`
 /// / `tokens_schema` / `groups_schema` entries are added or replaced
 /// key-by-key (omitted keys keep their on-chain definition), and
-/// `keywords` / `description` / `config` override only when supplied —
-/// so a single-section update never wipes the rest of the contract.
+/// `keywords` / `config` override only when supplied, so a single-section
+/// update never wipes the rest of the contract.
+///
+/// The description is a tri-state: `clear_description == true` removes the
+/// stored description (and `description` must then be NULL or empty); with
+/// the flag false, a NULL or empty `description` keeps the stored one and a
+/// non-empty string replaces it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
@@ -96,6 +102,7 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
     groups_schema_json: *const c_char,
     keywords_json: *const c_char,
     description: *const c_char,
+    clear_description: bool,
     config_json: *const c_char,
     signer_handle: *mut SignerHandle,
     out_contract_id: *mut u8,
@@ -113,6 +120,17 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
     let groups_str = unwrap_result_or_return!(read_optional_str(groups_schema_json));
     let keywords_str = unwrap_result_or_return!(read_optional_str(keywords_json));
     let description_str = unwrap_result_or_return!(read_optional_str(description));
+    let description_update = match (clear_description, description_str) {
+        (true, Some(_)) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "clear_description is set together with a non-empty description",
+            );
+        }
+        (true, None) => DescriptionUpdate::Clear,
+        (false, None) => DescriptionUpdate::Keep,
+        (false, Some(s)) => DescriptionUpdate::Set(s.to_string()),
+    };
     let config_str = unwrap_result_or_return!(read_optional_str(config_json));
 
     let signer_addr = signer_handle as usize;
@@ -131,7 +149,7 @@ pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
                     tokens_str,
                     groups_str,
                     keywords_str,
-                    description_str,
+                    description_update,
                     config_str,
                     signer,
                 )

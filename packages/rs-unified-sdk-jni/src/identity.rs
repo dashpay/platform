@@ -1211,7 +1211,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
 ///
 /// `contractId` (the 32-byte id of the contract to update) and
 /// `documentsSchemaJson` are required; `tokens`/`groups`/`keywords`/
-/// `description`/`config` are optional (null or empty ⇒ omitted). Unlike
+/// `description`/`config` are optional (null or empty ⇒ omitted);
+/// `clearDescription` removes the stored description and then requires
+/// `description` to be null or empty. Unlike
 /// the document ops this takes NO `signingKeyId` — the wallet selects the
 /// key internally. Returns the 32-byte updated contract id.
 #[no_mangle]
@@ -1227,6 +1229,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
     groups_schema_json: JString,
     keywords_json: JString,
     description: JString,
+    clear_description: jboolean,
     config_json: JString,
     signer_handle: jlong,
 ) -> jbyteArray {
@@ -1290,6 +1293,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
                 opt_ptr(&groups),
                 opt_ptr(&keywords),
                 opt_ptr(&desc),
+                clear_description != 0,
                 opt_ptr(&config),
                 signer_handle as *mut SignerHandle,
                 out_contract_id.as_mut_ptr(),
