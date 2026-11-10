@@ -859,6 +859,14 @@ class PlatformWalletPersistenceHandler(
             }
         }
 
+    override fun onLoadPrivateContactScanStateWallets(): ByteArray =
+        loadOrThrow {
+            runBlockingResult {
+                database.privateContactScanStateDao().walletIdsWithPositions()
+                    .fold(ByteArray(0)) { packed, id -> packed + id }
+            }
+        }
+
     override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
         val round = openRound(walletId)
         round?.finalityAdvanced = true
@@ -3709,7 +3717,11 @@ class PlatformWalletPersistenceHandler(
             database.shieldedDao().deleteActivityByWallet(walletId)
             database.shieldedDao().deleteSyncStatesByWallet(walletId)
             database.shieldedDao().deleteViewingKeysByWallet(walletId)
-            database.privateContactScanStateDao().deletePositionsByWallet(walletId)
+            // A position record marked unresolved outlives the wallet: its
+            // private payment may still execute, and the next load hands it
+            // back as retained, so a wallet registered again holds the
+            // identity it names.
+            database.privateContactScanStateDao().deleteUnmarkedPositionsByWallet(walletId)
             database.privateContactScanStateDao().deleteAddressesByWallet(walletId)
 
             // The wallet row itself — cascades accounts → core / platform

@@ -104,8 +104,12 @@ abstract class NativePersistenceBridge {
          * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
          * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
          * private contact request sync's scan state is stored on its round
-         * and restored at load. The one Kotlin home of this bit, aliased by
-         * the public diagnostic mirror.
+         * and restored at load. A store declaring it keeps a position record
+         * marked unresolved through its wallet's removal, until a record
+         * stored cleared for the same wallet and identity replaces it, and
+         * lists that wallet ([onLoadPrivateContactScanStateWallets]). The
+         * one Kotlin home of this bit, aliased by the public diagnostic
+         * mirror.
          */
         const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
@@ -963,6 +967,17 @@ abstract class NativePersistenceBridge {
      */
     open fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
         arrayOf(ByteArray(0), ByteArray(0))
+
+    /**
+     * `on_load_private_contact_scan_state_wallets_fn`: the ids of every
+     * wallet the store keeps scan state for, 32 bytes each, packed back to
+     * back, a removed wallet whose position records were kept marked
+     * included. Rust reads each one its wallet-list load does not return
+     * through [onLoadPrivateContactScanState] and hands its marked records to
+     * the wallet as retained. Descriptor `()[B`. Throw on a store that cannot
+     * be read.
+     */
+    open fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
 
     /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`

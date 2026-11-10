@@ -147,6 +147,55 @@ class PrivateContactScanStatePersistenceTest {
     }
 
     /**
+     * A position record marked unresolved survives its wallet's purge and is
+     * listed for the load to hand back as retained; an unmarked record and
+     * every address go with the wallet; a cleared record stored later for the
+     * same wallet and identity replaces it, so the next purge removes it.
+     */
+    @Test
+    fun shouldKeepAMarkedRecordThroughItsWalletsPurgeUntilAClearedRecordReplacesIt() = runTest {
+        val unmarked = ByteArray(32) { 1 }
+        round(
+            positions = position(owner, 12, unresolved = true) + position(unmarked, 4),
+            addresses = address(owner, contact, 9),
+        )
+        assertArrayEquals(walletId, handler.onLoadPrivateContactScanStateWallets())
+
+        handler.deleteWalletData(walletId)
+        val (positions, addresses) = handler.onLoadPrivateContactScanState(walletId)
+        assertArrayEquals(
+            "only the marked record outlives the wallet",
+            position(owner, 12, unresolved = true),
+            positions,
+        )
+        assertEquals(0, addresses.size)
+        assertArrayEquals(
+            "the removed wallet is still listed for its kept record",
+            walletId,
+            handler.onLoadPrivateContactScanStateWallets(),
+        )
+
+        // The wallet registered again stores the record cleared.
+        assertEquals(0, handler.onPersistWalletMetadata(walletId, 1, ByteArray(32) { 2 }, 0))
+        round(positions = position(owner, 0))
+        assertFalse(
+            unpackPrivatePositions(walletId, handler.onLoadPrivateContactScanState(walletId)[0])
+                .single().privatePaymentsUnresolved,
+        )
+        handler.deleteWalletData(walletId)
+        assertEquals(0, handler.onLoadPrivateContactScanState(walletId)[0].size)
+        assertEquals(0, handler.onLoadPrivateContactScanStateWallets().size)
+    }
+
+    /** The wallet list packs one 32-byte id per wallet with stored records. */
+    @Test
+    fun shouldListEveryWalletWithStoredScanStateOnce() {
+        assertEquals(0, handler.onLoadPrivateContactScanStateWallets().size)
+        round(positions = position(owner, 12) + position(ByteArray(32) { 1 }, 4))
+        assertArrayEquals(walletId, handler.onLoadPrivateContactScanStateWallets())
+    }
+
+    /**
      * A stored row that cannot cross the ABI fails the load instead of
      * handing back the rest without it: a valid position beside a 42-byte
      * address would otherwise resume past the entry that carried it.

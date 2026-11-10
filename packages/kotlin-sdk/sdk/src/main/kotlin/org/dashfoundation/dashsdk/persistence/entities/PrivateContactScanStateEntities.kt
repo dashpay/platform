@@ -11,8 +11,10 @@ import androidx.room.Entity
  * the contact requests read before it.
  *
  * Keyed by the network-scoped wallet id; no foreign key, so the wallet
- * deletion purges it explicitly (`deleteWalletDataLocked`), and the round
- * that removes the identity clears it (`clearedIdentities`).
+ * deletion purges it explicitly (`deleteWalletDataLocked`), except a record
+ * whose [privatePaymentsUnresolved] is set, which outlives its wallet until a
+ * record stored cleared for the same wallet and identity replaces it; and
+ * the round that removes the identity clears it (`clearedIdentities`).
  */
 @Entity(
     tableName = "private_contact_requests_positions",

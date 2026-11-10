@@ -257,6 +257,11 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
         ) && bridge_overrides(
             env,
             bridge,
+            "onLoadPrivateContactScanStateWallets",
+            LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
@@ -316,8 +321,9 @@ struct BridgeOverrides {
     header: bool,
     /// `onWalletChangesetDashPayBackfill`, which stores the record.
     backfill: bool,
-    /// `onPersistPrivateContactScanState`, `onLoadPrivateContactScanState`
-    /// and `onPersistContactUpsert`: an inherited no-op store would
+    /// `onPersistPrivateContactScanState`, `onLoadPrivateContactScanState`,
+    /// `onLoadPrivateContactScanStateWallets` and `onPersistContactUpsert`:
+    /// an inherited no-op store would
     /// acknowledge a read position it never kept, and a read position
     /// vouches for the contact requests read before it, which an inherited
     /// no-op contact upsert never keeps.
@@ -351,6 +357,12 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_private_contact_scan_state_free_fn: overrides
             .private_contact_scan_state
             .then_some(tramp_load_private_contact_scan_state_free),
+        on_load_private_contact_scan_state_wallets_fn: overrides
+            .private_contact_scan_state
+            .then_some(tramp_load_private_contact_scan_state_wallets),
+        on_load_private_contact_scan_state_wallets_free_fn: overrides
+            .private_contact_scan_state
+            .then_some(tramp_load_private_contact_scan_state_wallets_free),
         ..Default::default()
     }
 }
@@ -1133,6 +1145,10 @@ const PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR: &str = "([B[B[B[B[B)I";
 /// `(walletId) -> [positions, addresses]`.
 const LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR: &str = "([B)[[B";
 
+/// Descriptor of `NativePersistenceBridge.onLoadPrivateContactScanStateWallets`:
+/// `() -> walletIds`, the 32-byte ids packed back to back.
+const LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR: &str = "()[B";
+
 fn pack_private_positions(rows: &[PrivateContactRequestsPositionFFI]) -> Vec<u8> {
     let mut packed = Vec::with_capacity(rows.len() * PRIVATE_POSITION_ENTRY_LEN);
     for row in rows {
@@ -1308,6 +1324,64 @@ unsafe extern "C" fn tramp_load_private_contact_scan_state(
         *out_addresses = Box::into_raw(addresses.into_boxed_slice()) as *const _;
     }
     0
+}
+
+/// Hand Rust the ids of every wallet the store keeps scan state for (see
+/// `LoadPrivateContactScanStateWalletsFn`), a removed wallet whose marked
+/// records outlived it included, from one packed array of 32-byte ids. A
+/// failed read, an exception or an array that is not a whole number of ids
+/// returns `ERR_JNI`, which fails the load.
+unsafe extern "C" fn tramp_load_private_contact_scan_state_wallets(
+    context: *mut c_void,
+    out_wallet_ids: *mut *const [u8; 32],
+    out_wallet_ids_count: *mut usize,
+) -> i32 {
+    *out_wallet_ids = ptr::null();
+    *out_wallet_ids_count = 0;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let packed: JByteArray = env
+            .call_method(
+                bridge,
+                "onLoadPrivateContactScanStateWallets",
+                LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
+                &[],
+            )?
+            .l()?
+            .into();
+        env.convert_byte_array(&packed)
+    });
+    let Some(packed) = loaded else {
+        return ERR_JNI;
+    };
+    let Some(ids) = unpack_wallet_ids(&packed) else {
+        return ERR_JNI;
+    };
+    if !ids.is_empty() {
+        *out_wallet_ids_count = ids.len();
+        *out_wallet_ids = Box::into_raw(ids.into_boxed_slice()) as *const _;
+    }
+    0
+}
+
+/// The 32-byte ids packed back to back in `packed`, or `None` when it is not
+/// a whole number of them.
+fn unpack_wallet_ids(packed: &[u8]) -> Option<Vec<[u8; 32]>> {
+    let (ids, rest) = packed.as_chunks::<32>();
+    rest.is_empty().then(|| ids.to_vec())
+}
+
+/// Release the array [`tramp_load_private_contact_scan_state_wallets`] minted.
+unsafe extern "C" fn tramp_load_private_contact_scan_state_wallets_free(
+    _context: *mut c_void,
+    wallet_ids: *const [u8; 32],
+    wallet_ids_count: usize,
+) {
+    if !wallet_ids.is_null() {
+        drop(Box::from_raw(ptr::slice_from_raw_parts_mut(
+            wallet_ids.cast_mut(),
+            wallet_ids_count,
+        )));
+    }
 }
 
 /// Release the arrays [`tramp_load_private_contact_scan_state`] minted.
@@ -5173,6 +5247,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         LOAD_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR,
     ),
     (
+        "onLoadPrivateContactScanStateWallets",
+        LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
+    ),
+    (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
          Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
@@ -5439,11 +5517,37 @@ mod tests {
                     .is_some(),
                 wired
             );
+            assert_eq!(
+                extension
+                    .on_load_private_contact_scan_state_wallets_fn
+                    .is_some(),
+                wired
+            );
+            assert_eq!(
+                extension
+                    .on_load_private_contact_scan_state_wallets_free_fn
+                    .is_some(),
+                wired
+            );
         }
+        assert_eq!(
+            unpack_wallet_ids(&[[1u8; 32], [2u8; 32]].concat()),
+            Some(vec![[1u8; 32], [2u8; 32]])
+        );
+        assert_eq!(unpack_wallet_ids(&[]), Some(vec![]));
+        assert_eq!(
+            unpack_wallet_ids(&[0u8; 33]),
+            None,
+            "not a whole number of ids"
+        );
         let names = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
         assert_eq!(
             method_descriptor(&names(&["[B", "[B", "[B", "[B", "[B"]), "int"),
             PERSIST_PRIVATE_CONTACT_SCAN_STATE_DESCRIPTOR
+        );
+        assert_eq!(
+            method_descriptor(&names(&[]), "[B"),
+            LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR
         );
         assert_eq!(
             method_descriptor(&names(&["[B"]), "[[B"),
