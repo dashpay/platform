@@ -51,13 +51,17 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
 #[cfg(all(test, feature = "mocks"))]
+mod block_query_tests;
+#[cfg(all(test, feature = "mocks"))]
 mod document_query_shape_tests;
 #[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;
 mod protocol_gate;
 #[cfg(all(test, feature = "mocks"))]
 mod protocol_gate_tests;
-mod quorum_key;
+#[cfg(all(test, feature = "mocks"))]
+pub(crate) mod put_test_support;
+pub(crate) mod quorum_key;
 #[cfg(all(test, feature = "mocks"))]
 mod signed_version_tests;
 #[cfg(all(test, feature = "mocks"))]
@@ -1881,6 +1885,7 @@ pub(crate) mod test {
                         address: node.clone(),
                     })
                     .map_err(|inner| ExecutionError {
+                        possibly_accepted: false,
                         inner,
                         retries: 0,
                         address: Some(node.clone()),

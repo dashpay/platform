@@ -171,15 +171,17 @@ pub enum PlatformWalletFFIResultCode {
     /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
     /// where a spend WAS broadcast and must NOT be retried.
     ErrorShieldedNoRecordedAnchor = 19,
-    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A core
+    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A Core
     /// transaction broadcast (send-to-addresses, DashPay payment, or
     /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
     /// may already be on the network (transport timeout after delivery,
     /// partial peer send, or an internal multi-node retry whose earlier
     /// attempt may have delivered). The wallet intentionally KEEPS the spent
     /// inputs' UTXO reservation, so an immediate retry fails at input
-    /// selection instead of double-spending; the reservation TTL or a sync
-    /// observing the transaction reconciles the outcome. The host must NOT
+    /// selection instead of double-spending; observing the spend reconciles
+    /// the outcome. Also covers Platform state transitions whose result
+    /// could not be verified after possible acceptance, without Core UTXO
+    /// reservations. The host must reconcile the original operation and NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
@@ -615,12 +617,19 @@ pub enum PlatformWalletFFIResultCode {
     ErrorSpvProcessRestartRequired = 59,
 
     /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay
-    /// policy and Platform consensus): a drain of every eligible input, or a
-    /// fixed amount (registration, top-up, invitation, platform-address
-    /// funding) held only in many small coins. Nothing was broadcast. A drain
-    /// host must not silently substitute a partial drain; consolidating the
-    /// coins lets either lock fit.
+    /// policy, and Platform consensus for an instant proof): a drain of every
+    /// eligible input, or a fixed amount (registration, top-up, invitation,
+    /// platform-address funding) held only in many small coins. Nothing was
+    /// broadcast. A drain host must not silently substitute a partial drain;
+    /// consolidating the coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
+
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. Nothing
+    /// was submitted and nothing was paid; resume with the recorded recipient
+    /// (the row exposes it). Rows tracked before the recipient was recorded
+    /// carry none and accept the caller's.
+    ErrorAssetLockRecipientMismatch = 61,
 
     /// The named thing does not exist.
     ///
@@ -874,6 +883,19 @@ fn trade_error_json_detail(
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        // Preserve the SDK's submission phase before any diagnostic can be
+        // interpreted as a definitive nonce, balance or marketplace refusal.
+        if matches!(
+            &error,
+            PlatformWalletError::Sdk(source)
+                | PlatformWalletError::TokenOperationFailed { source, .. }
+                if source.is_state_transition_result_unconfirmed()
+        ) {
+            return Self::err(
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+                error.to_string(),
+            );
+        }
         // The three value-carrying marketplace rejections replace the
         // Display rendering with a stable JSON detail object; everything
         // else keeps Display as the message.
@@ -1049,6 +1071,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+            }
+            PlatformWalletError::AssetLockRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1387,11 +1412,16 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 mod tests {
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::Error as SdkError;
+    use dpp::address_funds::PlatformAddress;
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
     use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
     use dpp::prelude::Identifier;
+    use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use std::time::Duration;
 
     #[test]
     fn ok_has_null_message() {
@@ -1705,6 +1735,51 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_sdk_submission_through_wallet_ffi() {
+        for token_wrapper in [false, true] {
+            for depth in 0..=2 {
+                for diagnostic in [
+                    SdkError::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                    SdkError::InvalidProvedResponse("invalid result proof".into()),
+                    SdkError::Protocol(ProtocolError::ConsensusError(Box::new(
+                        AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+                    ))),
+                ] {
+                    let mut source =
+                        SdkError::StateTransitionResultUnconfirmed(Box::new(diagnostic));
+                    for _ in 0..depth {
+                        source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+                    }
+                    let error = if token_wrapper {
+                        PlatformWalletError::TokenOperationFailed {
+                            operation: "transfer",
+                            source,
+                        }
+                    } else {
+                        PlatformWalletError::Sdk(source)
+                    };
+                    let expected = error.to_string();
+                    let mut result = PlatformWalletFFIResult::from(error);
+                    assert_eq!(
+                        result.code,
+                        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+                    );
+                    assert_eq!(result.code as i32, 20);
+                    assert_eq!(result.consensus_code, 0);
+                    assert_eq!(
+                        result.consensus_kind,
+                        PlatformWalletFFIConsensusErrorKind::None
+                    );
+                    let copied = message_of(&result);
+                    unsafe { platform_wallet_ffi_result_free(&mut result) };
+                    assert!(result.message.is_null());
+                    assert_eq!(copied, expected);
+                }
+            }
+        }
     }
 
     #[test]
@@ -2250,6 +2325,35 @@ mod tests {
     /// starts emitting it. The message must carry the typed `Display` —
     /// including the spender's finality — since that is the only detail
     /// channel the frozen `{ code, message }` ABI has.
+    /// The recipient-mismatch refusal a shielded resume raises, pinned so the
+    /// Swift/Kotlin mirrors decode it, together with the conversion that keeps
+    /// it from flattening to `ErrorUnknown`.
+    #[test]
+    fn asset_lock_recipient_mismatch_code_is_pinned_at_61() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch as i32,
+            61
+        );
+        let recorded = [1u8; 43];
+        let requested = [2u8; 43];
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockRecipientMismatch {
+            out_point: dashcore::OutPoint::null(),
+            recorded,
+            requested,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("cannot be resumed to"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(message.contains(&hex::encode(recorded)));
+    }
+
     #[test]
     fn asset_lock_input_conflict_code_is_pinned_at_47() {
         use dashcore::OutPoint;

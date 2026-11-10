@@ -73,7 +73,7 @@ pub(super) fn backfill_accounting(
             (Err(error), LoadPolicy::Recovery) => {
                 tx.execute_batch("ROLLBACK TO accounting_record; RELEASE accounting_record")?;
                 tracing::warn!(rowid, %error,
-                    "V020 skipped an unreadable historical transaction; its stored bytes are unchanged");
+                    "V021 skipped an unreadable historical transaction; its stored bytes are unchanged");
             }
         }
         let Some(next) = rowid.checked_add(1) else {
@@ -93,10 +93,10 @@ mod tests {
 
     use super::*;
     use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
-    use crate::sqlite::migrations::{self, rewind_v020, wallet_db};
+    use crate::sqlite::migrations::{self, rewind_v021, wallet_db};
 
     #[test]
-    fn should_roll_back_v020_on_transient_repair_failure_even_in_recovery() {
+    fn should_roll_back_v021_on_transient_repair_failure_even_in_recovery() {
         let wallet = [0x73; 32];
         let mut conn = wallet_db(&wallet);
         let fields: Vec<_> = include_str!("../../../tests/fixtures/v019_kept_records.txt")
@@ -118,7 +118,7 @@ mod tests {
             ],
         )
         .unwrap();
-        rewind_v020(&conn);
+        rewind_v021(&conn);
         conn.create_scalar_function(
             "migration_busy",
             0,
@@ -148,9 +148,9 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
         let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('core_transaction_inputs', 'core_transaction_record_originals')", [], |r| r.get(0)).unwrap();
-        assert_eq!(tables, 0, "all V020 DDL and row writes roll back");
+        assert_eq!(tables, 0, "all V021 DDL and row writes roll back");
         let bytes: Vec<u8> = conn
             .query_row("SELECT record_blob FROM core_transactions", [], |r| {
                 r.get(0)
@@ -198,7 +198,7 @@ mod tests {
             let wallet = [0xC1; 32];
             let mut conn = wallet_db(&wallet);
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 200, 1, ?3)", params![wallet.as_slice(), record.txid.as_byte_array().as_slice(), bytes]).unwrap();
-            rewind_v020(&conn);
+            rewind_v021(&conn);
             migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
             let remaining: (i64, i64) = conn.query_row("SELECT (SELECT count(*) FROM core_transactions), (SELECT count(*) FROM core_transaction_inputs)", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
             assert_eq!(remaining.0, 1, "{name}: mined history must remain");
@@ -277,7 +277,7 @@ mod tests {
         }
     }
 
-    /// Both contexts retained by V020, with literal txids and non-null input keys.
+    /// Both contexts retained by V021, with literal txids and non-null input keys.
     #[test]
     fn should_index_immutable_v019_record_bytes() {
         for line in include_str!("../../../tests/fixtures/v019_kept_records.txt").lines() {
@@ -291,7 +291,7 @@ mod tests {
             let wallet = [0xB7; 32];
             let mut conn = wallet_db(&wallet);
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, NULL, 0, ?3)", params![wallet.as_slice(), txid, bytes]).unwrap();
-            rewind_v020(&conn);
+            rewind_v021(&conn);
             migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
             let indexed: (Vec<u8>, Vec<u8>) = conn
                 .query_row(
@@ -328,9 +328,9 @@ mod tests {
                 backfill_accounting(&tx, LoadPolicy::Recovery)
                     .expect("Recovery skips oversized bodies");
             }
-            rewind_v020(&conn);
+            rewind_v021(&conn);
             migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
-                .expect("Recovery completes V020");
+                .expect("Recovery completes V021");
             let count: i64 = conn
                 .query_row("SELECT count(*) FROM core_transaction_inputs", [], |r| {
                     r.get(0)
