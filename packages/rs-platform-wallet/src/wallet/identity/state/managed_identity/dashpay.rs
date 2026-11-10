@@ -121,7 +121,8 @@ pub struct DashPayState {
     /// held back. Until then a private send or accept reads it first: a
     /// request paid for in an earlier process may be in the store unread, and
     /// the reservation that kept it from being paid twice did not survive.
-    /// In memory only; a cursor rewind leaves it set.
+    /// In memory only; a rewind of the read clears it
+    /// (`ManagedIdentity::rewind_private_store_read`).
     pub(super) private_contact_requests_read: bool,
 
     /// The highest height a read of a page of DashPay's private contact
@@ -132,8 +133,18 @@ pub struct DashPayState {
     /// below it, so the store read covers the identity's keys as proved at or
     /// above it, and a public request is decided only with those
     /// (`DashPayView::read_private_store_before_deciding`). `None` before any
-    /// page was read. In memory only; never lowered.
+    /// page was read with the identity's keys since its read was last rewound
+    /// (`ManagedIdentity::rewind_private_store_read`). In memory only.
     pub(super) private_store_read_height: Option<u64>,
+
+    /// The highest `private_store_read_height` a rewind of the read reset:
+    /// the store was seen at that height, so a read since, with the keys the
+    /// rewind was for, counts as read to the end
+    /// (`private_contact_requests_read`) only once it reaches it. A read from
+    /// a node behind it would otherwise pass over entries the wallet already
+    /// saw, which the earlier keys could not open. `None` before any rewind of
+    /// a read. In memory only; never lowered.
+    pub(super) private_store_read_floor: Option<u64>,
 
     /// The fingerprint of the scanning keys `private_contact_requests_position`
     /// and `private_contact_requests_read` hold for

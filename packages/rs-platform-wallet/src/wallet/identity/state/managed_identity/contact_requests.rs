@@ -394,12 +394,11 @@ impl ManagedIdentity {
         // Rewind the receive cursor so the next sweep re-fetches the
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
-        self.dashpay.private_contact_requests_position = 0;
         // A pass that read the store to its end passed over the sender's
         // private requests: the store is not read for this identity until a
         // pass reads it again from the rewound position, so a send reads it
         // first.
-        self.dashpay.private_contact_requests_read = false;
+        self.rewind_private_store_read();
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -816,9 +815,36 @@ impl ManagedIdentity {
     }
 
     /// Note that a private sync read DashPay's private contact request store
-    /// to its end for this identity, with nothing held back.
+    /// to its end for this identity, with nothing held back: counted once
+    /// the read reaches the height a rewind left as its floor
+    /// (`DashPayState::private_store_read_floor`), so a read from a node
+    /// behind the store already seen does not count.
     pub(crate) fn note_private_contact_requests_read(&mut self) {
-        self.dashpay.private_contact_requests_read = true;
+        let dashpay = &mut self.dashpay;
+        if dashpay.private_store_read_floor.is_none_or(|floor| {
+            dashpay
+                .private_store_read_height
+                .is_some_and(|read| read >= floor)
+        }) {
+            dashpay.private_contact_requests_read = true;
+        }
+    }
+
+    /// Rewind this identity's read of DashPay's private contact request
+    /// store to its start: the position goes back to 0, the read is no longer
+    /// read to the end, and the height it rested on is reset, kept as the
+    /// floor a read since must reach (`DashPayState::private_store_read_floor`).
+    fn rewind_private_store_read(&mut self) {
+        let dashpay = &mut self.dashpay;
+        dashpay.private_contact_requests_position = 0;
+        dashpay.private_contact_requests_read = false;
+        if let Some(read) = dashpay.private_store_read_height.take() {
+            dashpay.private_store_read_floor = Some(
+                dashpay
+                    .private_store_read_floor
+                    .map_or(read, |floor| floor.max(read)),
+            );
+        }
     }
 
     /// Note that a private sync read a page of DashPay's private contact
@@ -923,8 +949,7 @@ impl ManagedIdentity {
         if self.dashpay.private_scan_keys.is_some()
             || self.dashpay.private_contact_requests_position > 0
         {
-            self.dashpay.private_contact_requests_position = 0;
-            self.dashpay.private_contact_requests_read = false;
+            self.rewind_private_store_read();
         }
         self.dashpay.private_scan_keys = Some(key_fingerprint);
         Some(self.private_contact_requests_position_record())

@@ -6910,6 +6910,129 @@ mod tests {
         .await;
     }
 
+    /// A read rewound by a key change counts as read to the end only once it
+    /// reaches the store already seen. Bob read the store at H with keys
+    /// missing the decryption key another device added, to which Alice's
+    /// request at position 1 is sealed. His public request brings the key and
+    /// rewinds the read; a node a block behind then answers the store from its
+    /// start holding only the entry before hers. That read does not count, so
+    /// the request is refused as pending, with nothing sent. Once the store is
+    /// read from the cursor at H, her request is found, and the public request
+    /// is refused.
+    #[tokio::test]
+    async fn should_not_count_a_rewound_read_from_behind_the_store_already_seen() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &stale], vec![]).await;
+        let filler = vec![0xA0; 589];
+        let page = |start: u64, entries: Vec<Vec<u8>>, total: u64| {
+            let mut page = store_page(start, entries);
+            page.total_count = total;
+            page
+        };
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let query = |start| {
+            PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            )
+        };
+        let sdk = (*bob_wallet.identity().sdk).clone();
+        sdk.clone().mock().set_response_height(H);
+        let serve = |pages: Vec<(u64, PrivateDocumentEntries, u64)>| {
+            let mut sdk = sdk.clone();
+            async move {
+                let mut mock = sdk.mock();
+                for (start, page, height) in pages {
+                    mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query(start))
+                        .await;
+                    mock.expect_fetch(query(start), Some(page))
+                        .await
+                        .expect("page expectation");
+                    mock.set_response_height_for::<PrivateDocumentEntries, _>(query(start), height);
+                }
+            }
+        };
+        serve(vec![(
+            0,
+            page(0, vec![filler.clone(), entry.clone()], 2),
+            H,
+        )])
+        .await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store at H with his older keys");
+        assert!(store_read(&bob_wallet, BOB).await);
+        let (bob_id, alice_id) = (bob.id(), alice.id());
+        let send = || {
+            view.send_contact_request_with_external_signer(
+                &bob_id,
+                &alice_id,
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+        };
+
+        // The key reaches Bob's identity; a node a block behind answers.
+        set_identity_known(&bob_wallet, &bob, true).await;
+        serve(vec![
+            (0, page(0, vec![filler.clone()], 1), H - 1),
+            (1, page(1, vec![], 1), H - 1),
+        ])
+        .await;
+        let behind = send().await;
+        assert!(
+            matches!(
+                behind,
+                Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                    if recipient == alice.id()
+            ),
+            "{behind:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(
+                !managed.dashpay().private_contact_requests_read(),
+                "not counted"
+            );
+            assert_eq!(managed.dashpay().private_store_read_height(), Some(H - 1));
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
+            assert!(
+                managed.dashpay().outgoing_request(&alice.id()).is_none(),
+                "nothing sent"
+            );
+        })
+        .await;
+
+        // The store is read from the cursor at H.
+        serve(vec![(1, page(1, vec![entry], 2), H)]).await;
+        let caught_up = send().await;
+        assert!(
+            matches!(
+                caught_up,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{caught_up:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(managed.dashpay().private_contact_requests_read());
+            assert!(
+                managed.dashpay().incoming_request(&alice.id()).is_some(),
+                "her private request is recorded"
+            );
+        })
+        .await;
+    }
+
     /// A public request, or a public acceptance, whose sender identity cannot
     /// be fetched is refused as the SDK reported the fetch, before the store is
     /// read again or anything is signed: the keys a read would scan with are
