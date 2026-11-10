@@ -193,6 +193,14 @@ impl DataContractUpdateTransitionV1 {
     /// changed group or token, another contract id (none of which a contract update may make
     /// in either form), reordered keywords, or an empty `$defs` map that appears or
     /// disappears.
+    ///
+    /// A document schema or schema definition is left out of the delta only when it is
+    /// exactly the stored value, which keeps the delta merged onto `old_contract` equal to
+    /// `new_contract`. A value says how each of its integers is typed, and JSON does not: a
+    /// schema that went through JSON may hold a 64-bit integer where the stored one holds a
+    /// 32-bit one, and it then counts as replaced, sent again and paid for again. A caller
+    /// that assembles `new_contract` from JSON keeps the stored value of every schema it
+    /// does not change.
     pub fn from_contract_update(
         old_contract: &DataContract,
         new_contract: &DataContract,
