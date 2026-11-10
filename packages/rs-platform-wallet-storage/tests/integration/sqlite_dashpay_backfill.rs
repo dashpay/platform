@@ -525,14 +525,18 @@ fn should_load_the_cursor_and_its_coverage_from_one_snapshot() {
     );
 
     *MID_LOAD_WRITE.lock().unwrap() = MidLoadWrite::Armed(path.clone(), w);
-    persister.lock_conn_for_test().trace_v2(
-        TraceEventCodes::SQLITE_TRACE_STMT,
-        Some(commit_rewind_mid_load),
-    );
+    persister
+        .lock_conn_for_test()
+        .trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(commit_rewind_mid_load),
+        )
+        .expect("install trace");
     let mut state = persister.load().expect("load");
     persister
         .lock_conn_for_test()
-        .trace_v2(TraceEventCodes::empty(), None);
+        .trace_v2(TraceEventCodes::empty(), None::<fn(TraceEvent<'_>)>)
+        .expect("remove trace");
 
     match std::mem::replace(&mut *MID_LOAD_WRITE.lock().unwrap(), MidLoadWrite::Disarmed) {
         MidLoadWrite::Done(result) => result.expect("the concurrent rewind must commit"),
@@ -702,14 +706,14 @@ fn contact_request(sender: Identifier, recipient: Identifier) -> ContactRequest 
 /// established contact reads back with no outbound marker (one rebuild) and
 /// every wallet with no backfill recorded (one re-run).
 #[test]
-fn should_upgrade_a_pre_v020_database_to_no_marker_and_no_backfill() {
+fn should_upgrade_a_pre_v021_database_to_no_marker_and_no_backfill() {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
     mig::runner()
-        .set_target(refinery::Target::Version(19))
+        .set_target(refinery::Target::Version(20))
         .run(&mut conn)
-        .expect("migrate to the last pre-V020 schema");
+        .expect("migrate to the last pre-V021 schema");
 
     let w = wid(0x5C);
     let owner = Identifier::from([0x71; 32]);
