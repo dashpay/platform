@@ -23,7 +23,8 @@ use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
 #[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
-use platform_value::{Value, ValueMap};
+use platform_value::{Identifier, Value, ValueMap};
+use platform_version::version::PlatformVersion;
 use regex::Regex;
 use std::cmp::Ordering;
 use std::mem;
@@ -211,6 +212,33 @@ pub enum ContestedIndexResolution {
     /// single contender is awarded at once, without the vote window. Meta-schema v3+
     /// (protocol version 14).
     MasternodeVoteNoLocking = 1,
+    /// Masternodes and evonodes vote for a contender, abstain, or lock, as under
+    /// [`MasternodeVote`](Self::MasternodeVote), but each document entered for the index
+    /// values is a contender of its own, kept and named by its document id where the other
+    /// resolutions keep and name a contender by its owner's id. An identity may therefore
+    /// enter several documents, and a vote towards a contender names a document. Admitted
+    /// where `parse_contested_documents_resolution` is set (protocol version 15).
+    MasternodeVoteOnDocuments = 2,
+}
+
+impl ContestedIndexResolution {
+    /// Whether each document entered is a contender of its own, named by its document id
+    /// ([`MasternodeVoteOnDocuments`](Self::MasternodeVoteOnDocuments)), instead of each
+    /// identity being one, named by its id.
+    pub fn contenders_are_documents(&self) -> bool {
+        matches!(self, ContestedIndexResolution::MasternodeVoteOnDocuments)
+    }
+
+    /// The id a contest keeps and names a contender by: the document's under
+    /// [`MasternodeVoteOnDocuments`](Self::MasternodeVoteOnDocuments), its owner's under
+    /// every other resolution.
+    pub fn contender_id(&self, owner_id: Identifier, document_id: Identifier) -> Identifier {
+        if self.contenders_are_documents() {
+            document_id
+        } else {
+            owner_id
+        }
+    }
 }
 
 impl TryFrom<u8> for ContestedIndexResolution {
@@ -1111,6 +1139,11 @@ pub(crate) struct IndexGrammarAdmissions {
     /// Whether a contested index may be resolved without a Lock choice
     /// (`"resolution": 1`, [`ContestedIndexResolution::MasternodeVoteNoLocking`]).
     pub(crate) no_locking_resolution: bool,
+    /// Whether a contested index may make each document a contender
+    /// (`"resolution": 2`, [`ContestedIndexResolution::MasternodeVoteOnDocuments`]). Not a
+    /// property of a schema generation: protocol versions 14 and 15 both parse generation
+    /// 3, and only the tables setting `parse_contested_documents_resolution` admit it.
+    pub(crate) documents_resolution: bool,
 }
 
 impl IndexGrammarAdmissions {
@@ -1130,6 +1163,22 @@ impl IndexGrammarAdmissions {
             summable_off_count_index: generation >= 3,
             range_countable_implies_countable: generation >= 3,
             no_locking_resolution: generation >= 3,
+            documents_resolution: false,
+        }
+    }
+
+    /// The admissions `platform_version` parses an index with: those of its
+    /// `document_type_schema` generation, and the documents resolution where
+    /// `parse_contested_documents_resolution` is set.
+    pub(crate) fn for_platform_version(platform_version: &PlatformVersion) -> Self {
+        let schema = &platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema;
+        Self {
+            documents_resolution: schema.parse_contested_documents_resolution.is_some(),
+            ..Self::for_schema_generation(schema.document_type_schema)
         }
     }
 }
@@ -2035,6 +2084,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
     }
@@ -2079,6 +2129,7 @@ impl Index {
             summable_off_count_index: summable_off_count_index_allowed,
             range_countable_implies_countable,
             no_locking_resolution: no_locking_resolution_allowed,
+            documents_resolution: documents_resolution_allowed,
         } = admissions;
         // Decouple the map
         // It contains properties and a unique key
@@ -2247,10 +2298,19 @@ impl Index {
                             }
                             "resolution" => {
                                 let resolution_int = contested_value.to_integer::<u8>()?;
-                                contested_index_information.resolution =
-                                    resolution_int.try_into().map_err(|e: ProtocolError| {
-                                        DataContractError::ValueWrongType(e.to_string())
-                                    })?;
+                                // Resolution 2 is read only where it is admitted: anywhere
+                                // else it is the unknown resolution it always was, refused
+                                // by the conversion below with the error it always gave
+                                contested_index_information.resolution = match resolution_int {
+                                    2 if documents_resolution_allowed => {
+                                        ContestedIndexResolution::MasternodeVoteOnDocuments
+                                    }
+                                    resolution_int => {
+                                        resolution_int.try_into().map_err(|e: ProtocolError| {
+                                            DataContractError::ValueWrongType(e.to_string())
+                                        })?
+                                    }
+                                };
                                 if contested_index_information.resolution
                                     == ContestedIndexResolution::MasternodeVoteNoLocking
                                     && !no_locking_resolution_allowed
@@ -3537,6 +3597,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -3559,6 +3620,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3581,6 +3643,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3607,6 +3670,7 @@ mod tests {
             summable_off_count_index: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
+            documents_resolution: false,
         };
 
         let mut map = index_value_map("postId", None);
@@ -3642,6 +3706,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3678,6 +3743,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3706,6 +3772,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -3734,6 +3801,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3763,6 +3831,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3793,6 +3862,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -3819,6 +3889,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -3850,6 +3921,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -3881,6 +3953,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3910,6 +3983,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3944,6 +4018,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("the parser applies structural rules only");
@@ -3973,6 +4048,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -3998,6 +4074,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -4027,6 +4104,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -4087,6 +4165,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -4129,6 +4208,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("should parse");
@@ -4164,6 +4244,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -4201,6 +4282,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -4232,6 +4314,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("a non-unique $updatedAt bucketing stays legal");
@@ -4258,6 +4341,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .unwrap_err();
@@ -5513,6 +5597,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("all three ranked keywords must parse when the grammar allows them");
@@ -5545,6 +5630,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("index without ranked keywords must parse");
@@ -5593,6 +5679,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("ranked flags on a compound index must be accepted");
@@ -5629,6 +5716,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5666,6 +5754,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5701,6 +5790,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5733,6 +5823,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5767,6 +5858,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5801,6 +5893,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         assert!(
@@ -5837,6 +5930,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("rankedAverageable on the averageable sugar form must parse");
@@ -5879,6 +5973,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("rankedAverageable on the explicit longhand form must parse");
@@ -5911,6 +6006,7 @@ mod tests {
                     summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
+                    documents_resolution: false,
                 },
             );
             assert!(result.is_err(), "{key} must reject a non-boolean value");
@@ -5949,6 +6045,7 @@ mod tests {
                         summable_off_count_index: false,
                         range_countable_implies_countable: false,
                         no_locking_resolution: false,
+                        documents_resolution: false,
                     },
                 );
                 assert!(
@@ -6026,6 +6123,7 @@ mod tests {
             summable_off_count_index: false,
             range_countable_implies_countable: true,
             no_locking_resolution: true,
+            documents_resolution: false,
         }
     }
 
@@ -6522,6 +6620,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: false,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         );
         let msg = format!(
@@ -6590,6 +6689,7 @@ mod tests {
                     summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
+                    documents_resolution: false,
                 },
             );
             assert!(
@@ -6624,6 +6724,7 @@ mod tests {
                     summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
+                    documents_resolution: false,
                 },
             )
             .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
@@ -6654,6 +6755,7 @@ mod tests {
                     summable_off_count_index: false,
                     range_countable_implies_countable: true,
                     no_locking_resolution: false,
+                    documents_resolution: false,
                 },
             )
             .unwrap_or_else(|e| {
@@ -6682,6 +6784,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("nullSearchable: false on a plain index must still parse");
@@ -6705,6 +6808,7 @@ mod tests {
                 summable_off_count_index: false,
                 range_countable_implies_countable: true,
                 no_locking_resolution: false,
+                documents_resolution: false,
             },
         )
         .expect("nullSearchable: false on a range-averageable index must still parse");
@@ -6770,6 +6874,61 @@ mod tests {
             index.contested_index.expect("contested").resolution,
             ContestedIndexResolution::MasternodeVote
         );
+    }
+
+    /// `"resolution": 2` is read only where `parse_contested_documents_resolution` is set:
+    /// protocol version 14, which parses the same generation 3, refuses it as the unknown
+    /// resolution it was before, and protocol version 15 parses it as the vote among
+    /// documents.
+    #[test]
+    fn test_index_contested_resolution_on_documents_needs_the_admission() {
+        let index_map = contested_unique_index_map(2);
+        let unknown = "contested index resolution unknown: 2";
+        for (refused, admissions) in [
+            ("no admission", Index::try_from(index_map.as_slice())),
+            (
+                "generation 3",
+                Index::try_from_value_map(index_map.as_slice(), v3_admissions()),
+            ),
+            (
+                "protocol version 14",
+                Index::try_from_value_map(
+                    index_map.as_slice(),
+                    IndexGrammarAdmissions::for_platform_version(
+                        PlatformVersion::get(14).expect("protocol version 14"),
+                    ),
+                ),
+            ),
+        ] {
+            let error = admissions.expect_err(refused);
+            assert!(
+                matches!(&error, DataContractError::ValueWrongType(message) if message.contains(unknown)),
+                "{refused}: {error:?}"
+            );
+        }
+
+        let admissions = IndexGrammarAdmissions::for_platform_version(PlatformVersion::latest());
+        let index = Index::try_from_value_map(index_map.as_slice(), admissions)
+            .expect("protocol version 15 admits the vote among documents");
+        let resolution = index.contested_index.expect("contested").resolution;
+        assert_eq!(
+            resolution,
+            ContestedIndexResolution::MasternodeVoteOnDocuments
+        );
+
+        // A contender is named by its document under it, and by its owner under the others
+        let owner_id = Identifier::from([1; 32]);
+        let document_id = Identifier::from([2; 32]);
+        assert_eq!(resolution.contender_id(owner_id, document_id), document_id);
+        for resolution in [
+            ContestedIndexResolution::MasternodeVote,
+            ContestedIndexResolution::MasternodeVoteNoLocking,
+        ] {
+            assert!(!resolution.contenders_are_documents());
+            assert_eq!(resolution.contender_id(owner_id, document_id), owner_id);
+        }
+        // The value itself converts as it always did: only the parser admits it
+        assert!(ContestedIndexResolution::try_from(2u8).is_err());
     }
 
     #[test]
@@ -7047,6 +7206,7 @@ mod tests {
             summable_off_count_index: false,
             range_countable_implies_countable: false,
             no_locking_resolution: false,
+            documents_resolution: false,
         }
     }
 

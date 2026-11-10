@@ -132,14 +132,8 @@ impl DataContractInSerializationFormat {
                             // while the identical index parses fine during
                             // validation — the fee must cover every index the
                             // contract actually registers.
-                            let admissions = IndexGrammarAdmissions::for_schema_generation(
-                                platform_version
-                                    .dpp
-                                    .contract_versions
-                                    .document_type_versions
-                                    .schema
-                                    .document_type_schema,
-                            );
+                            let admissions =
+                                IndexGrammarAdmissions::for_platform_version(platform_version);
                             if let Ok(index) =
                                 Index::try_from_value_map(index_value_map.as_slice(), admissions)
                             {

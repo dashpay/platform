@@ -61,6 +61,8 @@ pub(super) enum StoredContestedFieldMatch {
 pub(super) enum StoredContestedResolution {
     MasternodeVote,
     MasternodeVoteNoLocking,
+    /// Appended: the bincode discriminant is the variant position.
+    MasternodeVoteOnDocuments,
 }
 
 /// [`IndexCountability`].
@@ -195,6 +197,9 @@ impl From<&Index> for StoredIndex {
                         ContestedIndexResolution::MasternodeVoteNoLocking => {
                             StoredContestedResolution::MasternodeVoteNoLocking
                         }
+                        ContestedIndexResolution::MasternodeVoteOnDocuments => {
+                            StoredContestedResolution::MasternodeVoteOnDocuments
+                        }
                     },
                 }),
             countable: match countable {
@@ -303,6 +308,9 @@ impl From<StoredIndex> for Index {
                 }
                 StoredContestedResolution::MasternodeVoteNoLocking => {
                     ContestedIndexResolution::MasternodeVoteNoLocking
+                }
+                StoredContestedResolution::MasternodeVoteOnDocuments => {
+                    ContestedIndexResolution::MasternodeVoteOnDocuments
                 }
             },
         });

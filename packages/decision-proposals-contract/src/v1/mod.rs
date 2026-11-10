@@ -31,6 +31,58 @@ pub mod document_types {
             pub const BY_CREATED_AT: &str = "byCreatedAt";
         }
     }
+
+    /// A question put to the masternodes whose answers are the choices entered for it. Any
+    /// identity may enter one [`choice`] when it is open, and only its owner when it is not. Its
+    /// owner may edit the title, description and url for two hours after creating it, and every
+    /// version is kept; whether it is open never changes. Undeletable.
+    pub mod multiple_choice_proposal {
+        pub const NAME: &str = "multipleChoiceProposal";
+
+        pub mod properties {
+            pub const TITLE: &str = "title";
+            pub const DESCRIPTION: &str = "description";
+            pub const URL: &str = "url";
+            /// Whether anyone may enter choices. Only the proposal's owner may when it is
+            /// false.
+            pub const OPEN: &str = "open";
+        }
+
+        pub mod indexes {
+            /// By owner, then creation time.
+            pub const BY_OWNER: &str = "byOwner";
+            /// By creation time: the newest proposals.
+            pub const BY_CREATED_AT: &str = "byCreatedAt";
+        }
+    }
+
+    /// An answer to a multiple choice proposal. The choices entered for one proposal contend
+    /// in a masternode vote on the contested `byProposal` index: entering the first opens the
+    /// vote, a later one joins it, and an identity enters at most one. Only the owner of a
+    /// proposal that is not open enters a choice for it. The choice with the most votes is kept, unless
+    /// the lock votes (none of the choices) outnumber it. Immutable and undeletable.
+    pub mod choice {
+        pub const NAME: &str = "choice";
+
+        pub mod rules {
+            /// The `propertyConstraints` rule holding the choices of a proposal that is not
+            /// open to its owner.
+            pub const CLOSED_PROPOSAL_TAKES_ITS_OWNERS_CHOICES: &str =
+                "closedProposalTakesItsOwnersChoices";
+        }
+
+        pub mod properties {
+            /// The id of the multiple choice proposal the choice answers.
+            pub const PROPOSAL_ID: &str = "proposalId";
+            pub const TITLE: &str = "title";
+            pub const DESCRIPTION: &str = "description";
+        }
+
+        pub mod indexes {
+            /// The contested unique index the vote among a proposal's choices runs on.
+            pub const BY_PROPOSAL: &str = "byProposal";
+        }
+    }
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {

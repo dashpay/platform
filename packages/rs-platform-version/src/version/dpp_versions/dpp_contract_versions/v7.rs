@@ -20,6 +20,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   and the native validator;
 /// - `parse_private_document`, `Some(0)` rather than `None`: the `private` keyword declares a
 ///   private document type, which only the native schema check of registration admits;
+/// - `parse_contested_documents_resolution`, `Some(0)` rather than `None`: a contested index
+///   may declare `"resolution": 2`, a masternode vote among documents, where each document
+///   entered is a contender named by its document id and an identity may enter several;
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property;
@@ -46,6 +49,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             validation_schema: Some(0),
             // changed: the `private` keyword declares a private document type
             parse_private_document: Some(0),
+            // changed: a contested index may make each document a contender (`resolution` 2)
+            parse_contested_documents_resolution: Some(0),
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
