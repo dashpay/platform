@@ -340,6 +340,24 @@ class PlatformPromiseClient {
   }
 
   /**
+   * What the answering node knows of a state transition, by hash, without waiting: committed,
+   * pending in its mempool, or unknown. Unproved and per node: use it to decide whether waiting
+   * longer makes sense, never to decide that a transition cannot execute.
+   *
+   * @param {!GetRecentStateTransitionStatusRequest} getRecentStateTransitionStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetRecentStateTransitionStatusResponse>}
+   */
+  getRecentStateTransitionStatus(getRecentStateTransitionStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getRecentStateTransitionStatus.bind(this.client),
+    )(
+      getRecentStateTransitionStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

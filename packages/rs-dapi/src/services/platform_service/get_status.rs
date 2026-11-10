@@ -1,3 +1,4 @@
+use dapi_grpc::Message;
 use dapi_grpc::platform::v0::{
     GetStatusRequest, GetStatusResponse,
     get_status_response::get_status_response_v0,
@@ -72,7 +73,10 @@ impl PlatformServiceImpl {
         }
 
         trace!(?key, "get_status cache miss; building response");
-        // Build fresh response and cache it
+        // Build fresh response and cache it, noting the cache's generation first: a block
+        // clearing the cache while the status is read leaves it a block behind, and caching it
+        // would serve that height until the next block
+        let generation = self.platform_cache.generation();
         match self.build_status_response_with_health().await {
             Ok((response, health)) => {
                 trace!(
@@ -81,7 +85,12 @@ impl PlatformServiceImpl {
                     tenderdash_netinfo_error = ?health.tenderdash_netinfo_error,
                     "get_status upstream fetch completed"
                 );
-                self.platform_cache.put(key, &response);
+                self.platform_cache.put_from_generation(
+                    key,
+                    &response,
+                    response.encoded_len(),
+                    generation,
+                );
                 Ok(Response::new(response))
             }
             Err(status) => Err(status),

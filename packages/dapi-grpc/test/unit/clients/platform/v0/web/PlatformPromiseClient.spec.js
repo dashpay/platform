@@ -15,6 +15,7 @@ describe('PlatformPromiseClient (web)', () => {
     platformPromiseClient.client = {
       getOwnerTransactionsInBlock: this.sinon.stub().yields(null, response),
       getBlocks: this.sinon.stub().yields(null, response),
+      getRecentStateTransitionStatus: this.sinon.stub().yields(null, response),
     };
   });
 
@@ -50,6 +51,24 @@ describe('PlatformPromiseClient (web)', () => {
       platformPromiseClient.client.getBlocks.yields(error);
 
       await expect(platformPromiseClient.getBlocks(request)).to.be.rejectedWith(error);
+    });
+  });
+
+  describe('#getRecentStateTransitionStatus', () => {
+    it('should get the node\'s status of a state transition', async () => {
+      const result = await platformPromiseClient.getRecentStateTransitionStatus(request, metadata);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getRecentStateTransitionStatus)
+        .to.be.calledOnceWith(request, metadata);
+    });
+
+    it('should reject with the error the service answers', async () => {
+      const error = new Error('unavailable');
+      platformPromiseClient.client.getRecentStateTransitionStatus.yields(error);
+
+      await expect(platformPromiseClient.getRecentStateTransitionStatus(request))
+        .to.be.rejectedWith(error);
     });
   });
 });
