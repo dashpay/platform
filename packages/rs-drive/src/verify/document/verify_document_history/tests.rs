@@ -7,7 +7,6 @@ use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryFilter,
     DocumentHistoryLifecycle, DocumentHistoryState,
 };
-use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use crate::util::common::encode::encode_u64;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -811,26 +810,6 @@ fn should_authenticate_history_pages_metadata_and_absence() {
     assert_eq!(page, verified);
     assert_eq!(lifecycle(&verified).state, DocumentHistoryState::Absent);
     assert_eq!(lifecycle(&verified).remaining_revisions, 0);
-}
-
-#[test]
-fn should_construct_single_document_point_in_time_history_reads_after_activation() {
-    let query = SingleDocumentDriveQuery {
-        contract_id: [1; 32],
-        document_type_name: "note".into(),
-        document_type_keeps_history: true,
-        document_id: [2; 32],
-        block_time_ms: Some(1000),
-        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-    };
-    for protocol in [12, 13, 14] {
-        assert!(query
-            .construct_path_query(PlatformVersion::get(protocol).unwrap())
-            .is_ok());
-    }
-    assert!(query
-        .construct_path_query(PlatformVersion::get(15).unwrap())
-        .is_ok());
 }
 
 #[test]

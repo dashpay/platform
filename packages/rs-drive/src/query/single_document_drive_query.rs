@@ -641,7 +641,7 @@ mod tests {
                 false,
                 Some(1500),
             )
-            .construct_path_query(PlatformVersion::latest())
+            .construct_path_query(&caller)
             .is_ok());
         }
     }

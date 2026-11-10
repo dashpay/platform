@@ -2,10 +2,11 @@ use super::*;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryFilter,
 };
+use crate::util::common::encode::encode_u64;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_factory::DocumentFactory;
 use dpp::platform_value::platform_value;
-use grovedb::PathQuery;
+use grovedb::{PathQuery, Query};
 use std::collections::BTreeSet;
 
 fn temporal_fixture(initial: &PlatformVersion, summable: bool) -> (Drive, DataContract, Document) {
@@ -169,6 +170,60 @@ fn should_match_history_pages_at_every_temporal_boundary_before_and_after_migrat
                 );
             }
             let temporal = person_at_block_time(&contract, document.id().to_buffer(), 4000);
+            if !migrated && !summable {
+                let path_query = temporal.construct_path_query(current).unwrap();
+                let proof = drive
+                    .grove_get_proved_path_query(&path_query, None, &mut vec![], &current.drive)
+                    .unwrap();
+                let (_, found) = temporal
+                    .verify_proof_keep_serialized(false, &proof, current)
+                    .unwrap();
+                assert_eq!(found, direct_read(&drive, &temporal, current));
+                assert!(found.is_some());
+
+                let mut bare_bound_query = path_query;
+                let mut bare_bound = Query::new_with_direction(false);
+                bare_bound.insert_range_to_inclusive(..=encode_u64(4000));
+                bare_bound_query.query.query.set_subquery(bare_bound);
+                let bare_bound_proof = drive
+                    .grove_get_proved_path_query(
+                        &bare_bound_query,
+                        None,
+                        &mut vec![],
+                        &current.drive,
+                    )
+                    .unwrap();
+                assert!(temporal
+                    .verify_proof_keep_serialized(false, &bare_bound_proof, current)
+                    .is_err());
+
+                let other = person_at_block_time(&contract, [9; 32], 4000);
+                assert_ne!(other.document_id, temporal.document_id);
+                for is_subset in [false, true] {
+                    assert!(
+                        temporal
+                            .verify_proof_keep_serialized(
+                                is_subset,
+                                &proof[..proof.len() - 1],
+                                current,
+                            )
+                            .is_err()
+                    );
+                    if let Ok((root, found)) =
+                        other.verify_proof_keep_serialized(is_subset, &proof, current)
+                    {
+                        assert_eq!(found, direct_read(&drive, &other, current));
+                        assert_eq!(
+                            root,
+                            drive
+                                .grove
+                                .root_hash(None, &current.drive.grove_version)
+                                .unwrap()
+                                .unwrap()
+                        );
+                    }
+                }
+            }
             let mut document_query = temporal.construct_path_query(current).unwrap();
             document_query.query.limit = None;
             // A merged proof keeps the temporal cap on the history walk itself.
@@ -224,6 +279,17 @@ fn should_match_history_pages_at_every_temporal_boundary_before_and_after_migrat
                 None
             );
         }
+    }
+}
+
+#[test]
+fn should_verify_temporal_absence_in_an_empty_history_type() {
+    let current = PlatformVersion::latest();
+    for summable in [false, true] {
+        let (drive, contract, document) = temporal_fixture(current, summable);
+        let query = person_at_block_time(&contract, document.id().to_buffer(), 4000);
+        assert_eq!(direct_read(&drive, &query, current), None);
+        assert_eq!(prove_and_verify(&drive, &contract, &query), None);
     }
 }
 
