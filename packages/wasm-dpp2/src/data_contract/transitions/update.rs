@@ -41,20 +41,24 @@ export interface DataContractUpdateTransitionV0Object {
  * A delta-based (V1) DataContractUpdateTransition serialized as a plain object.
  * It carries only what changed, keyed by the contract, its owner and the
  * version the update produces.
+ *
+ * Every value is in its serialized form: the identifiers are bytes, and a group
+ * or a token configuration is a plain record, not a class instance. The
+ * transition's `dataContractId` and `ownerId` getters return `Identifier`s.
  */
 export interface DataContractUpdateTransitionV1Object {
     $formatVersion: "1";
     "$identity-contract-nonce": bigint;
-    dataContractId: Identifier;
-    ownerId: Identifier;
+    dataContractId: Uint8Array;
+    ownerId: Uint8Array;
     version: number;
     config?: DataContractConfig;
     updatedSchemaDefs?: Record<string, object>;
     newSchemaDefs?: Record<string, object>;
     updatedDocumentSchemas?: Record<string, object>;
     newDocumentSchemas?: Record<string, object>;
-    newGroups?: Record<number, Group>;
-    newTokens?: Record<number, TokenConfiguration>;
+    newGroups?: Record<number, GroupObject>;
+    newTokens?: Record<number, object>;
     addKeywords?: string[];
     removeKeywords?: string[];
     description?: DataContractDescriptionUpdate;
@@ -97,7 +101,7 @@ export interface DataContractUpdateTransitionV1JSON {
     newSchemaDefs?: Record<string, object>;
     updatedDocumentSchemas?: Record<string, object>;
     newDocumentSchemas?: Record<string, object>;
-    newGroups?: Record<number, object>;
+    newGroups?: Record<number, GroupJSON>;
     newTokens?: Record<number, object>;
     addKeywords?: string[];
     removeKeywords?: string[];

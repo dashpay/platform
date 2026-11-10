@@ -368,6 +368,129 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(json["$formatVersion"], "0");
     }
 
+    /// A delta holding each kind of field its two serialized forms write differently: the
+    /// nonce, identifiers, a group keyed by its position and members keyed by identity.
+    fn delta_fixture() -> DataContractUpdateTransition {
+        use crate::data_contract::group::v0::GroupV0;
+        use crate::data_contract::group::Group;
+        use crate::data_contract::update_values::DescriptionUpdate;
+        use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV1;
+        use platform_value::Identifier;
+        use std::collections::BTreeMap;
+
+        DataContractUpdateTransition::V1(DataContractUpdateTransitionV1 {
+            identity_contract_nonce: 8,
+            data_contract_id: Identifier::new([1; 32]),
+            owner_id: Identifier::new([2; 32]),
+            version: 2,
+            config: None,
+            updated_schema_defs: BTreeMap::new(),
+            new_schema_defs: BTreeMap::new(),
+            updated_document_schemas: BTreeMap::new(),
+            new_document_schemas: BTreeMap::new(),
+            new_groups: BTreeMap::from([(
+                0,
+                Group::V0(GroupV0 {
+                    members: BTreeMap::from([
+                        (Identifier::new([3; 32]), 1),
+                        (Identifier::new([4; 32]), 1),
+                    ]),
+                    required_power: 2,
+                }),
+            )]),
+            new_tokens: BTreeMap::new(),
+            add_keywords: vec!["wallet".to_string()],
+            remove_keywords: vec![],
+            description: DescriptionUpdate::Set("a described contract".to_string()),
+            user_fee_increase: 5,
+            signature_public_key_id: 1,
+            signature: BinaryData::new(vec![0xff; 65]),
+        })
+    }
+
+    /// The JSON form of a delta, which the WASM bindings hand to JavaScript as it is: the
+    /// nonce a number while it is a safe integer, identifiers as base58 text, a group a
+    /// plain record under its position.
+    #[test]
+    fn should_write_a_delta_as_json_with_text_identifiers_and_a_numeric_nonce() {
+        use crate::serialization::JsonConvertible;
+        use platform_value::string_encoding::Encoding;
+        use platform_value::Identifier;
+        use serde_json::json;
+
+        let original = delta_fixture();
+        let json = JsonConvertible::to_json(&original).expect("to_json");
+
+        assert_eq!(json["$formatVersion"], "1");
+        assert_eq!(json["$identity-contract-nonce"], json!(8));
+        assert_eq!(
+            json["dataContractId"],
+            json!(Identifier::new([1; 32]).to_string(Encoding::Base58))
+        );
+        assert_eq!(
+            json["ownerId"],
+            json!(Identifier::new([2; 32]).to_string(Encoding::Base58))
+        );
+        assert_eq!(json["version"], json!(2));
+        assert_eq!(json["newGroups"]["0"]["requiredPower"], json!(2));
+        assert_eq!(
+            json["newGroups"]["0"]["members"][Identifier::new([3; 32]).to_string(Encoding::Base58)],
+            json!(1)
+        );
+        assert_eq!(json["addKeywords"], json!(["wallet"]));
+        assert_eq!(json["description"], json!({"set": "a described contract"}));
+
+        let recovered =
+            <DataContractUpdateTransition as JsonConvertible>::from_json(json).expect("from_json");
+        assert_eq!(recovered, original);
+    }
+
+    /// The object form of a delta, which the WASM bindings turn into a JavaScript object
+    /// value by value: identifiers are identifier values (bytes there, not wrapper
+    /// instances), the nonce an integer of 64 bits (a bigint there), a group a plain map.
+    /// A group's position is an integer key here; the bindings write and read it as text,
+    /// the form the group and token maps are read back in, as a contract's are.
+    #[test]
+    fn should_write_a_delta_as_an_object_with_byte_identifiers_and_a_plain_group() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::{Identifier, Value};
+
+        let original = delta_fixture();
+        let object = ValueConvertible::to_object(&original).expect("to_object");
+        fn field_of<'a>(object: &'a Value, name: &'a str) -> &'a Value {
+            object
+                .get(name)
+                .expect("expected a map")
+                .unwrap_or_else(|| panic!("expected the field {name}"))
+        }
+        let field = |name: &'static str| field_of(&object, name);
+
+        assert_eq!(field("$formatVersion"), &Value::Text("1".to_string()));
+        assert_eq!(field("$identity-contract-nonce"), &Value::U64(8));
+        assert_eq!(
+            field("dataContractId"),
+            &Value::Identifier(Identifier::new([1; 32]).to_buffer())
+        );
+        assert_eq!(
+            field("ownerId"),
+            &Value::Identifier(Identifier::new([2; 32]).to_buffer())
+        );
+        let Value::Map(groups) = field("newGroups") else {
+            panic!("expected the new groups as a map");
+        };
+        let [(position, Value::Map(group))] = groups.as_slice() else {
+            panic!("expected one group, a plain map: {groups:?}");
+        };
+        assert_eq!(
+            position.to_integer::<u16>().expect("expected a position"),
+            0
+        );
+        assert!(group.iter().any(
+            |(key, value)| key == &Value::Text("requiredPower".to_string())
+                && value.to_integer::<u32>().ok() == Some(2)
+        ));
+    }
+
     #[test]
     fn value_round_trip_with_envelope_wire_shape() {
         use crate::serialization::ValueConvertible;

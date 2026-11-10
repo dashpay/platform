@@ -225,4 +225,64 @@ describe('DataContractUpdateTransition', () => {
       expect(restoredContract.ownerId.toBase58()).to.equal(value.ownerId);
     });
   });
+
+  describe('delta (version 1)', () => {
+    // A delta names its contract and owner and carries only what it changes
+    const deltaJSON = () => ({
+      $formatVersion: '1',
+      '$identity-contract-nonce': 8,
+      dataContractId: value.id,
+      ownerId: value.ownerId,
+      version: 2,
+      newGroups: {
+        0: {
+          $formatVersion: '0',
+          members: { [value.ownerId]: 1, [value.id]: 1 },
+          requiredPower: 2,
+        },
+      },
+      addKeywords: ['wallet'],
+      description: { set: 'a described contract' },
+      userFeeIncrease: 0,
+      signaturePublicKeyId: 0,
+      signature: '',
+    });
+
+    it('should read a delta from JSON through the getters', () => {
+      const transition = wasm.DataContractUpdateTransition.fromJSON(deltaJSON());
+
+      expect(transition.featureVersion).to.equal(1);
+      expect(transition.identityContractNonce).to.deep.equal(BigInt(8));
+      expect(transition.dataContractId.toBase58()).to.equal(value.id);
+      expect(transition.ownerId.toBase58()).to.equal(value.ownerId);
+      expect(() => transition.getDataContract()).to.throw();
+    });
+
+    it('should write a delta as JSON with text identifiers and a numeric nonce', () => {
+      const json = wasm.DataContractUpdateTransition.fromJSON(deltaJSON()).toJSON();
+
+      expect(json.$formatVersion).to.equal('1');
+      expect(json['$identity-contract-nonce']).to.equal(8);
+      expect(json.dataContractId).to.equal(value.id);
+      expect(json.ownerId).to.equal(value.ownerId);
+      expect(json.version).to.equal(2);
+      expect(json.newGroups['0'].requiredPower).to.equal(2);
+      expect(json.addKeywords).to.deep.equal(['wallet']);
+      expect(json.description).to.deep.equal({ set: 'a described contract' });
+    });
+
+    it('should write a delta as an object with byte identifiers and plain groups', () => {
+      const obj = wasm.DataContractUpdateTransition.fromJSON(deltaJSON()).toObject();
+
+      expect(obj.$formatVersion).to.equal('1');
+      expect(obj['$identity-contract-nonce']).to.deep.equal(BigInt(8));
+      expect(obj.dataContractId).to.be.instanceOf(Uint8Array);
+      expect(obj.ownerId).to.be.instanceOf(Uint8Array);
+      expect(obj.version).to.equal(2);
+      expect(obj.newGroups['0']).to.not.be.instanceOf(wasm.Group);
+      expect(obj.newGroups['0'].requiredPower).to.equal(2);
+      expect(obj.newGroups['0'].members[value.ownerId]).to.equal(1);
+      expect(obj.addKeywords).to.deep.equal(['wallet']);
+    });
+  });
 });
