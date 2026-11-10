@@ -26,7 +26,9 @@ when the live graph changes; other stores labelled `2.0.0` fail closed.
 
 V5 adds the `PersistentTransactionAccounting` entity and the
 `PersistentWallet.transactionAccountingBackfilled` attribute (default `false`)
-through a lightweight migration. Each accounting row, one per
+through a lightweight migration, alongside the optional
+`PersistentAssetLock.shieldedRecipientRaw43` attribute (default `nil`), the
+Orchard recipient of a shielded asset-lock funding. Each accounting row, one per
 `(walletId, txid)`, holds the net amount, direction and fee `rs-platform-wallet`
 emitted for that wallet. Migrated stores start with no rows; at the first load
 of each wallet Rust reads back the wallet's transactions that lack a row

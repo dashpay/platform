@@ -1379,7 +1379,7 @@ pub fn list_unspent_utxos(
 mod tests {
     use super::*;
     use crate::sqlite::config::LoadPolicy;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
     use dashcore::address::Payload;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
@@ -1424,7 +1424,7 @@ mod tests {
             conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
                 params![wallet.as_slice(), txid.as_byte_array().as_slice(), bytes]).unwrap();
         }
-        rewind_v020(&conn);
+        rewind_v021(&conn);
         migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
         for (txid, bytes, original) in &rows {
             let loaded = get_tx_record(&conn, &wallet, txid, &LoadCtx::strict())
@@ -1515,7 +1515,7 @@ mod tests {
                 get_tx_record(&conn, &wallet, &key, &LoadCtx::strict()).is_err(),
                 "{mutation}"
             );
-            rewind_v020(&conn);
+            rewind_v021(&conn);
             assert!(
                 migrations::run_for_open(&mut conn, LoadPolicy::Strict).is_err(),
                 "{mutation}"
@@ -1527,7 +1527,7 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            assert_eq!(version, 19, "{mutation}: failed migration is atomic");
+            assert_eq!(version, 20, "{mutation}: failed migration is atomic");
         }
     }
 
@@ -1714,7 +1714,7 @@ mod tests {
                 (coin, sync)
             };
             let before = snapshot(&conn);
-            rewind_v020(&conn);
+            rewind_v021(&conn);
 
             migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
 
@@ -1767,7 +1767,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        rewind_v020(&conn);
+        rewind_v021(&conn);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery).unwrap();
 
@@ -1811,7 +1811,7 @@ mod tests {
         let tx = conn.transaction().unwrap();
         apply(&tx, &wallet_id, &round(vec![spending.clone()], vec![])).unwrap();
         tx.commit().unwrap();
-        rewind_v020(&conn);
+        rewind_v021(&conn);
         migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
 
         let tx = conn.transaction().unwrap();
@@ -1916,7 +1916,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        rewind_v020(&conn);
+        rewind_v021(&conn);
         conn.execute(
             "UPDATE core_transactions SET record_blob = x'00' WHERE txid = ?1",
             [pending.txid.as_byte_array().to_vec()],
@@ -1934,34 +1934,34 @@ mod tests {
         .unwrap()
     }
 
-    /// Under `Strict`, a kept pending record V020 cannot decode fails the
+    /// Under `Strict`, a kept pending record V021 cannot decode fails the
     /// upgrade instead of being skipped: a skipped body leaves its inputs
     /// unindexed with no signal, so a record-codec regression would only
     /// show up as coins stuck later. The failed upgrade rolls back to V019.
     #[test]
-    fn should_fail_v020_under_strict_on_a_kept_record_it_cannot_decode() {
+    fn should_fail_v021_under_strict_on_a_kept_record_it_cannot_decode() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB8u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Strict)
-            .expect_err("an undecodable kept record must fail V020 under Strict");
+            .expect_err("an undecodable kept record must fail V021 under Strict");
 
         assert_eq!(
             schema_version(&conn),
-            19,
+            20,
             "the failed upgrade must roll back"
         );
     }
 
-    /// Under `Recovery`, V020 skips a kept record it cannot read and the
+    /// Under `Recovery`, V021 skips a kept record it cannot read and the
     /// upgrade completes; that wallet degrades at load instead.
     #[test]
-    fn should_skip_an_undecodable_kept_record_in_v020_under_recovery() {
+    fn should_skip_an_undecodable_kept_record_in_v021_under_recovery() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB9u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
-            .expect("Recovery must complete V020 past an undecodable kept record");
+            .expect("Recovery must complete V021 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 20);
+        assert_eq!(schema_version(&conn), 21);
     }
 
     #[test]

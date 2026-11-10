@@ -395,9 +395,10 @@ fn should_export_protocol_gate_sdk_fixtures() {
         Provider.get_quorum_public_key(106, [2; 32], 0).unwrap(),
     )
     .unwrap();
-    // The versions on either side of protocol 14, fixed so that re-running on a later
-    // branch rewrites the same files the SDK tests read.
-    for signed in [13, 14] {
+    // The versions on either side of protocol 14, and protocol 15, which the private
+    // document requests need, fixed so that re-running on a later branch rewrites the same
+    // files the SDK tests read.
+    for signed in [13, 14, 15] {
         let answer = Node::new(signed).epoch_probe();
         assert_eq!(verified_epoch_probe(answer.clone(), signed), signed);
         std::fs::write(
@@ -455,11 +456,11 @@ fn should_export_protocol_gate_sdk_fixtures() {
 #[test]
 fn should_keep_the_recorded_protocol_gate_vectors_verifiable() {
     let read = |name: &str| std::fs::read(directory().join(name)).unwrap();
-    for signed in [13, 14] {
+    for signed in [13, 14, 15] {
         let answer =
             GetEpochsInfoResponse::decode(read(&format!("epoch-probe-pv{signed}.bin")).as_slice())
                 .unwrap();
-        for rules_version in [13, 14] {
+        for rules_version in [13, 14, 15] {
             assert_eq!(verified_epoch_probe(answer.clone(), rules_version), signed);
         }
     }

@@ -9,13 +9,13 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeCoreHistoryForAccountingFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadCoreHistoryForAccountingFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistCoreHistoryAccountedFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistTransactionAccountingFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn, LoadCoreHistoryForAccountingFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistAssetLockShieldedRecipientFn, PersistCoreHistoryAccountedFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -291,6 +291,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_shielded_recipient: slot!(
+            on_persist_asset_lock_shielded_recipient_fn,
+            PersistAssetLockShieldedRecipientFn
+        ),
+        load_asset_lock_shielded_recipient: slot!(
+            on_load_asset_lock_shielded_recipient_fn,
+            LoadAssetLockShieldedRecipientFn
         ),
         persist_transaction_accounting: slot!(
             on_persist_transaction_accounting_fn,

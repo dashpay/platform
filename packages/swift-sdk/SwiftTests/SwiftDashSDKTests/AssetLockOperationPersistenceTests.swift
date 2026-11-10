@@ -63,6 +63,41 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertEqual(try handler.loadAssetLockOperationId(walletId: walletId, outPoint: rawOutPoint), operationId)
     }
 
+    func testShieldedRecipientSurvivesStaleSnapshotsAndStoreReopenAndCannotChange() throws {
+        let recipient = Data((0..<43).map { UInt8($0 &+ 7) })
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            // No row yet: a read is a failure, not a legacy nil.
+            XCTAssertThrowsError(try handler.loadAssetLockShieldedRecipient(walletId: walletId, outPoint: rawOutPoint))
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertTrue(handler.persistAssetLocks(walletId: walletId,
+                upserts: [snapshot(status: 0, operationId: nil)], removed: []))
+            try handler.persistAssetLockShieldedRecipient(
+                walletId: walletId, outPoint: rawOutPoint, recipientRaw43: recipient)
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+            // A later snapshot without a recipient (a reconstruction or a
+            // status advance) must not erase it; a different one is refused.
+            try persist(handler, status: 1, operationId: nil)
+            handler.beginChangeset(walletId: walletId)
+            XCTAssertThrowsError(try handler.persistAssetLockShieldedRecipient(
+                walletId: walletId, outPoint: rawOutPoint, recipientRaw43: Data(repeating: 9, count: 43)))
+            XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
+            XCTAssertEqual(try handler.loadAssetLockShieldedRecipient(walletId: walletId, outPoint: rawOutPoint), recipient)
+        }
+        let reopened = try DashModelContainer.create(url: url)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+        let rows = try handler.loadCachedAssetLocks(walletId: walletId)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.shieldedRecipientRaw43, recipient)
+        XCTAssertEqual(rows.first?.statusRaw, 1)
+        XCTAssertEqual(try handler.loadAssetLockShieldedRecipient(walletId: walletId, outPoint: rawOutPoint), recipient)
+    }
+
     func testPublishedV3MigratesOperationIdToNil() throws {
         _ = DashModelContainer.schema
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -85,6 +120,7 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         let rows = try ModelContext(migrated).fetch(FetchDescriptor<PersistentAssetLock>())
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
+        XCTAssertNil(rows.first?.shieldedRecipientRaw43)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
         let currentSchema = try XCTUnwrap(DashMigrationPlan.schemas.last)
         XCTAssertEqual(DashModelContainer.schema.version, currentSchema.versionIdentifier)
