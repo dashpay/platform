@@ -915,9 +915,9 @@ fn should_leave_the_state_clean_after_a_payment_only_diff() {
 /// a key change printed without a payout does not tell whether the new operator set a payout
 /// again inside the same Core heights, possibly the very one the masternode had. Platform takes
 /// the payout from Core's state of that masternode at the block's Core height instead: a new
-/// operator identity gets the payout Core reports, an identity a masternode returns to keeps the
-/// key of the payout Core reports, and a reset leaves no payout. Core is asked only about such
-/// entries.
+/// operator identity gets the payout Core reports, the stored list takes Core's payout also for
+/// an identity a masternode returns to, which keeps its TRANSFER keys whatever that payout is,
+/// and a reset leaves no payout. Core is asked only about such entries.
 #[test]
 fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_without_one() {
     let restored_on_new = masternode_with_operator_payout(0x71);
@@ -950,7 +950,7 @@ fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_withou
         ],
         &[
             (restored_on_new.pro_tx_hash, 1001, Some([0x71; 20])),
-            (restored_on_returning.pro_tx_hash, 1002, Some([0x72; 20])),
+            (restored_on_returning.pro_tx_hash, 1002, Some([0xa2; 20])),
         ],
         |_, _| {},
     );
@@ -969,7 +969,7 @@ fn should_take_the_payout_core_reports_for_an_operator_key_change_printed_withou
     );
     assert_eq!(
         stored_operator_payout(&state, &restored_on_returning),
-        Some([0x72; 20])
+        Some([0xa2; 20])
     );
     assert_eq!(transfer_keys(&platform, &reset, &[0x83; 48]), []);
     assert_eq!(stored_operator_payout(&state, &reset), None);

@@ -445,6 +445,7 @@ mod test {
     fn should_build_the_validators_earlier_binaries_built_from_mainnet_masternode_lists() {
         for platform_version in [
             PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::get(14).expect("protocol version 14"),
             PlatformVersion::latest(),
         ] {
             let init_core_height = 2128896;
@@ -498,11 +499,32 @@ mod test {
                     .map(|evonode| (evonode.pro_tx_hash, evonode.clone()))
                     .collect();
 
+                let transaction = platform.drive.grove.start_transaction();
                 let update = |state: &mut PlatformState, core_height, from_scratch| {
-                    if platform_version.protocol_version == 13 {
-                        platform.update_state_masternode_list_v0(state, core_height, from_scratch)
-                    } else {
-                        platform.update_state_masternode_list_v1(state, core_height, from_scratch)
+                    match platform_version
+                        .drive_abci
+                        .methods
+                        .core_based_updates
+                        .update_masternode_list
+                    {
+                        0 => platform.update_state_masternode_list_v0(
+                            state,
+                            core_height,
+                            from_scratch,
+                        ),
+                        1 => platform.update_state_masternode_list_v1(
+                            state,
+                            core_height,
+                            from_scratch,
+                        ),
+                        2 => platform.update_state_masternode_list_v2(
+                            state,
+                            core_height,
+                            from_scratch,
+                            &transaction,
+                            platform_version,
+                        ),
+                        version => panic!("unknown update_masternode_list {version}"),
                     }
                     .expect("expected to apply the masternode list")
                 };
