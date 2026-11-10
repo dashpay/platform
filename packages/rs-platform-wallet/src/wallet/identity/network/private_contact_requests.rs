@@ -422,28 +422,6 @@ fn release_reservation(
     }
 }
 
-/// Note `read_back`, the commitments of private requests a private sync read
-/// back and recorded, for their journal records to be discharged
-/// (`WalletPersister::note_read_back_private_entries`), once what records
-/// them is durable: at once for a backend that commits inline, after a flush
-/// otherwise. A failed flush notes nothing, which keeps the records, and so
-/// the pairs held, until a later read. Only a shielded build keeps a journal,
-/// so only it notes anything.
-#[cfg(feature = "shielded")]
-fn note_read_back_once_durable(persister: &WalletPersister, read_back: Vec<[u8; 32]>) {
-    if !persister.store_commits_inline() {
-        if let Err(error) = persister.flush() {
-            tracing::warn!(
-                %error,
-                "private requests read back are not durably recorded; their journal records \
-                 stay"
-            );
-            return;
-        }
-    }
-    persister.note_read_back_private_entries(read_back);
-}
-
 /// A private contact request payment a restoration reads, from the shielded
 /// store's journal or from the redrive record of its spend: (sender,
 /// recipient, account reference, the entry's commitment).
@@ -1356,10 +1334,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// stored again when it differs from the one last stored
     /// (`private_marker_stale`): a discharge clears the journal's part also
     /// for an identity whose own reservation a read-back already settled, so
-    /// a reload does not hold it on a marker no payment backs.
+    /// a reload does not hold it on a marker no payment backs. First, the
+    /// read-back notices a failed flush kept are retried
+    /// (`WalletPersister::note_read_back_once_durable`).
     pub(crate) async fn release_discharged_private_requests(
         &self,
     ) -> Result<(), PlatformWalletError> {
+        // Read-back notices a failed flush kept, retried first: their journal
+        // records are discharged once noted.
+        #[cfg(feature = "shielded")]
+        self.persister.note_read_back_once_durable([]);
         if !self.persister.has_unreleased_discharged_private_entries() {
             return Ok(());
         }
@@ -2174,7 +2158,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             // pair unheld while no request of it is recorded.
                             #[cfg(feature = "shielded")]
                             if !read_back.is_empty() {
-                                note_read_back_once_durable(&self.persister, read_back);
+                                self.persister.note_read_back_once_durable(read_back);
                             }
                         } else if !identity.failed {
                             identity.failed = true;
@@ -2713,6 +2697,8 @@ mod tests {
         /// While set, a store carrying a private read position record fails
         /// and keeps nothing.
         positions_fail: AtomicBool,
+        /// While set, a flush fails.
+        flush_fails: AtomicBool,
     }
 
     impl RecordingPersistence {
@@ -2721,6 +2707,7 @@ mod tests {
                 capabilities,
                 stored: Mutex::new(Vec::new()),
                 positions_fail: AtomicBool::new(false),
+                flush_fails: AtomicBool::new(false),
             })
         }
 
@@ -2754,6 +2741,9 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if self.flush_fails.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("the disk is full"));
+            }
             Ok(())
         }
 
@@ -3295,6 +3285,87 @@ mod tests {
             .await
             .expect("another private sync");
         assert_eq!(records(), before + 1, "unchanged: not stored again");
+    }
+
+    /// A read-back whose records' flush fails keeps its notice: the pair stays
+    /// held, as the journal record does, and a retry pays nothing. The next
+    /// step's flush succeeds and notes it, the coordinator discharges the
+    /// record, the pair is freed, and a retry pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_keep_a_read_back_notice_whose_flush_failed_until_a_flush_succeeds() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        let persister = fixture.wallet.persister();
+        assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+
+        // Read back while flushes fail: nothing is noted.
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        publish(&fixture.wallet, 1, vec![]).await;
+        fixture
+            .persistence
+            .flush_fails
+            .store(true, Ordering::SeqCst);
+        let view = fixture.wallet.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        assert!(
+            !persister.has_read_back_private_entries(),
+            "not durable yet"
+        );
+        fixture
+            .coordinator
+            .discharge_read_back_private_payments()
+            .await;
+        assert_eq!(fixture.journaled().await, 1, "kept");
+        assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+        // A retry, its flush failing again, pays nothing.
+        let retry = Arc::new(Mutex::new(Vec::new()));
+        let held = fixture.send_again(keep_entry(&retry)).await;
+        assert!(
+            matches!(
+                held,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{held:?}"
+        );
+        assert!(retry.lock().expect("retry").is_empty(), "nothing paid");
+
+        // The next step's flush succeeds: noted, discharged, freed.
+        fixture
+            .persistence
+            .flush_fails
+            .store(false, Ordering::SeqCst);
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the next private sync");
+        assert!(persister.has_read_back_private_entries(), "noted");
+        fixture
+            .coordinator
+            .discharge_read_back_private_payments()
+            .await;
+        assert_eq!(fixture.journaled().await, 0, "discharged");
+        assert!(!persister.private_pair_journaled(&alice.id(), &bob.id()));
+        let paid = fixture.send_again(keep_entry(&retry)).await;
+        assert!(
+            matches!(
+                paid,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "paid, not read back: {paid:?}"
+        );
+        assert_eq!(retry.lock().expect("retry").len(), 1, "the retry pays");
     }
 
     /// An identity reloaded from a position record stored with its marker

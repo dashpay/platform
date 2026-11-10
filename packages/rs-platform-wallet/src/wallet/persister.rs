@@ -70,6 +70,15 @@ pub struct WalletPersister {
     /// discharge, so only it keeps them.
     #[cfg(feature = "shielded")]
     read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
+    /// Commitments of private contact request entries a private sync read
+    /// back and recorded, whose records' flush failed: noted read back
+    /// (`read_back_private_entries`) once a later flush succeeds
+    /// ([`Self::note_read_back_once_durable`]), at the wallet's next private
+    /// sync, send or reservation. Shared by the clones the wallet and the
+    /// coordinator hold. In memory only: a restart loses them with the
+    /// records the failed flush did not keep.
+    #[cfg(feature = "shielded")]
+    unflushed_read_back_private_entries: Arc<std::sync::Mutex<BTreeSet<[u8; 32]>>>,
     /// The commitments of the private contact request payments whose journal
     /// records were discharged in this session (read back, never delivered,
     /// or proven expired). Shared by the clones the wallet and the
@@ -123,6 +132,8 @@ impl WalletPersister {
             contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             read_back_private_entries: Arc::default(),
+            #[cfg(feature = "shielded")]
+            unflushed_read_back_private_entries: Arc::default(),
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
@@ -163,6 +174,43 @@ impl WalletPersister {
         commitments: impl IntoIterator<Item = [u8; 32]>,
     ) {
         self.read_back_entries().extend(commitments);
+    }
+
+    /// Note `commitments`, of private requests a private sync read back and
+    /// recorded, for their journal records to be discharged
+    /// ([`Self::note_read_back_private_entries`]), once what records them is
+    /// durable: at once for a backend that commits inline, after a flush
+    /// otherwise. Those a flush failed for are kept, with every one kept
+    /// before, and noted by the next call whose flush succeeds: an empty one
+    /// retries them. Their records, and so the pairs they hold, stay until
+    /// then.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_read_back_once_durable(
+        &self,
+        commitments: impl IntoIterator<Item = [u8; 32]>,
+    ) {
+        let mut unflushed = self
+            .unflushed_read_back_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        unflushed.extend(commitments);
+        if unflushed.is_empty() {
+            return;
+        }
+        if !self.store_commits_inline() {
+            if let Err(error) = self.flush() {
+                tracing::warn!(
+                    %error,
+                    kept = unflushed.len(),
+                    "private requests read back are not durably recorded; their journal \
+                     records stay until a later flush succeeds"
+                );
+                return;
+            }
+        }
+        let durable = std::mem::take(&mut *unflushed);
+        drop(unflushed);
+        self.note_read_back_private_entries(durable);
     }
 
     /// Take the commitments [`Self::note_read_back_private_entries`] noted:
