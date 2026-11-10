@@ -5,6 +5,7 @@ import checkMasternodeSafeToStop, {
   readCoreVersion,
 } from '../../core/quorum/checkMasternodeSafeToStop.js';
 import { getBlockersAt } from '../../core/quorum/getDkgStopBlockers.js';
+import { NETWORK_LOCAL } from '../../constants.js';
 
 // A check comes back unsettled while the chain moves too fast to read a
 // consistent DKG state, such as while Core catches up after a restart.
@@ -52,7 +53,8 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Check node is participating in DKG',
-        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe && !ctx.platformOnly,
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe
+          && !ctx.platformOnly && !ctx.isLocalMinerStopped,
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -96,7 +98,8 @@ export default function stopNodeTaskFactory(
       },
       {
         title: 'Wait for DKG window to pass',
-        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe && !ctx.platformOnly,
+        enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe
+          && !ctx.platformOnly && !ctx.isLocalMinerStopped,
         task: async () => waitForDKGWindowPass(createRpcClient({
           port: config.get('core.rpc.port'),
           user: 'dashmate',
@@ -112,6 +115,14 @@ export default function stopNodeTaskFactory(
             : [];
 
           await dockerCompose.stop(config, { profiles });
+
+          // Group commands stop a local network's miner before its masternodes.
+          // Without it no block comes, so a DKG wait could never end, and with
+          // every masternode of the network going down together their DKG
+          // produces no commitment to penalize them in.
+          if (config.get('network') === NETWORK_LOCAL && config.get('core.miner.enable')) {
+            ctx.isLocalMinerStopped = true;
+          }
         },
       },
     ]);

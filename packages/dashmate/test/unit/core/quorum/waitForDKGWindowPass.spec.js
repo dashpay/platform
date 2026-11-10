@@ -452,4 +452,69 @@ describe('waitForDKGWindowPass', () => {
 
     expect(waiting.resolved).to.be.true();
   });
+
+  it('should not stop at a DKG start reached in Core\'s record gap, however long it lasts', async function it() {
+    // Waiting starts right at the start block: no earlier poll saw the DKG
+    // announced, and Core takes longer than the confirmation delay to record
+    // the session, or never does because this node is not a member.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start,
+      dkgInfo: { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] },
+      dkgStatus: {
+        session: [],
+        quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+      },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(60000);
+    await expectStillPolling(waiting, rpcClient);
+
+    // The next block arrives without a record: this node is not a member.
+    core.height = start + 1;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 23, upcoming_dkgs: [] };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should not hold a DKG start it saw announced without this node', async function it() {
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: false,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    // Interrupt the first confirmation, so the wait checks again at the start.
+    core.height = start;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [],
+      quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+    };
+    core.beforeDkgInfo = () => {
+      core.beforeDkgInfo = undefined;
+      core.height = start + 7;
+    };
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+    core.height = start;
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
 });

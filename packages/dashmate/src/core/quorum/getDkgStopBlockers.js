@@ -86,8 +86,8 @@ export function hasMembershipActiveDkgs(coreVersion) {
 
 /**
  * @typedef {Object} DkgStopBlocker
- * @property {string} reason `session`, `new-round`, `upcoming`, `imminent`,
- *   `active-count` or `unreadable`
+ * @property {string} reason `session`, `new-round`, `starting`, `upcoming`,
+ *   `imminent`, `active-count` or `unreadable`
  * @property {string|number|null} [llmqType] LLMQ name, or Core's numeric id
  *   when dashmate does not know the type
  * @property {number} [quorumIndex]
@@ -244,6 +244,77 @@ function getSessionRecordBlockers(dkgStatus, height) {
 }
 
 /**
+ * Key naming a DKG session: its quorum and its start block.
+ *
+ * @param {string} llmqType
+ * @param {number} quorumIndex
+ * @param {number} start
+ * @return {string}
+ */
+function getDkgKey(llmqType, quorumIndex, start) {
+  return `${llmqType}:${quorumIndex}:${start}`;
+}
+
+/**
+ * The DKGs Core announces this node is not a member of, as
+ * `llmqType:quorumIndex:start` keys. Once such a DKG starts Core no longer
+ * announces it, so a caller polling Core can remember these to tell a
+ * session it is not part of from one Core has not recorded yet.
+ *
+ * @param {Object} dkgInfo Result of `quorum dkginfo`.
+ * @param {number} height Chain tip `dkgInfo` describes.
+ * @return {Set<string>}
+ */
+export function getAnnouncedNonMemberDkgs(dkgInfo, height) {
+  const upcomingDkgs = dkgInfo && dkgInfo.upcoming_dkgs;
+
+  if (!Array.isArray(upcomingDkgs) || !isCount(height)) {
+    return new Set();
+  }
+
+  return new Set(upcomingDkgs
+    .filter((dkg) => isValidUpcomingDkg(dkg) && dkg.known && !dkg.isMember)
+    .map((dkg) => [LLMQ_TYPES.find(({ id }) => id === dkg.llmqType), dkg])
+    .filter(([llmq]) => llmq)
+    .map(([llmq, dkg]) => getDkgKey(llmq.name, dkg.quorumIndex, height + dkg.blocksUntilStart)));
+}
+
+/**
+ * At its start block Core older than 24.1 erases the previous round's record,
+ * computes the new session's members and only then records the session if
+ * this node is one of them; nothing tells whether it is until then, however
+ * long that takes. `quorum dkgstatus` lists every enabled quorum with the
+ * start of its current session, so a session starting at the tip without a
+ * record blocks that block, unless Core announced it without this node.
+ */
+function getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs) {
+  const connections = dkgStatus && dkgStatus.quorumConnections;
+
+  if (!Array.isArray(connections)) {
+    return [unreadable('quorum dkgstatus quorumConnections')];
+  }
+
+  const sessions = Array.isArray(dkgStatus.session) ? dkgStatus.session : [];
+
+  return connections
+    .filter((quorum) => quorum && quorum.pQuorumBaseBlockIndex === height)
+    .filter(({ llmqType, quorumIndex }) => !knownNonMemberDkgs
+      .has(getDkgKey(llmqType, quorumIndex, height)))
+    .filter(({ llmqType, quorumIndex }) => !sessions.some((entry) => entry
+      && entry.llmqType === llmqType
+      && entry.quorumIndex === quorumIndex
+      && entry.status
+      && entry.status.quorumHeight === height))
+    .map(({ llmqType, quorumIndex }) => ({
+      reason: 'starting',
+      llmqType,
+      quorumIndex,
+      from: height,
+      until: height + 1,
+    }));
+}
+
+/**
  * Everything that makes stopping this masternode risk a PoSe penalty, as
  * height ranges. Stopping is safe at a height no blocker covers (see
  * {@link getBlockersAt}). Some blockers start above the current height; they
@@ -251,8 +322,9 @@ function getSessionRecordBlockers(dkgStatus, height) {
  *
  * All inputs must come from the same chain tip, `height`. Core older than
  * {@link MEMBERSHIP_ACTIVE_DKGS_CORE_VERSION} reports a session only after
- * its DKG worker has recorded it, shortly after the start block connects;
- * callers must confirm a safe result once that delay has passed.
+ * its DKG worker has recorded it, after the start block connects. The start
+ * block blocks until then; callers must also confirm a safe result a while
+ * later, once Core has had time to replace records of previous rounds.
  *
  * Unreadable Core data blocks with no known end.
  *
@@ -260,7 +332,9 @@ function getSessionRecordBlockers(dkgStatus, height) {
  * @param {Object} snapshot.dkgInfo Result of `quorum dkginfo`.
  * @param {Object} snapshot.dkgStatus Result of `quorum dkgstatus`.
  * @param {number} snapshot.height Chain tip both results describe.
- * @param {number|null} snapshot.coreVersion Core's numeric `version`.
+ * @param {number} snapshot.coreVersion Core's numeric `version`.
+ * @param {Set<string>} [snapshot.knownNonMemberDkgs] DKGs Core announced
+ *   without this node, from {@link getAnnouncedNonMemberDkgs}
  * @return {DkgStopBlocker[]}
  */
 export default function getDkgStopBlockers({
@@ -268,6 +342,7 @@ export default function getDkgStopBlockers({
   dkgStatus,
   height,
   coreVersion,
+  knownNonMemberDkgs = new Set(),
 }) {
   if (!isCount(height)) {
     return [unreadable('block height')];
@@ -286,6 +361,10 @@ export default function getDkgStopBlockers({
     // the session keeps going and its record stays.
     ...getSessionRecordBlockers(dkgStatus, height),
   ];
+
+  if (!hasMembershipActiveDkgs(coreVersion)) {
+    blockers.push(...getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs));
+  }
 
   // Core 24.1+ counts every session this node is a member of, or whose
   // membership is unknown, from its start block through its Commit phase.

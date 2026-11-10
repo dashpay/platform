@@ -130,4 +130,44 @@ describe('stopNodeTaskFactory', () => {
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledThrice();
     expect(dockerCompose.stop).to.not.have.been.called();
   });
+
+  it('should not wait for DKGs once the local network\'s miner has stopped', async function it() {
+    // Group commands stop a local network's miner first. Without it no block
+    // comes, so a DKG wait could never end, and with every masternode of the
+    // network going down together their DKG produces no commitment to
+    // penalize them in.
+    const minerConfig = getConfigMock(this.sinon);
+    minerConfig.get.withArgs('core.masternode.enable').returns(false);
+    minerConfig.get.withArgs('core.miner.enable').returns(true);
+    minerConfig.get.withArgs('network').returns('local');
+    minerConfig.getName.returns('local_seed');
+    config.get.withArgs('network').returns('local');
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 3, upcoming_dkgs: [] };
+
+    const state = {};
+    new Listr([
+      { task: () => stopNodeTask(minerConfig) },
+      { task: () => stopNodeTask(config) },
+    ], { renderer: 'silent' })
+      .run({ isForce: false, isSafe: true, platformOnly: false })
+      .then(() => { state.stopped = true; }, (e) => { state.error = e; });
+    await clock.tickAsync(1);
+
+    expect(state.stopped).to.be.true();
+    expect(dockerCompose.stop).to.have.been.calledTwice();
+  });
+
+  it('should refuse a plain stop at a DKG start that Core has not recorded yet', async () => {
+    core.version = CORE_24_0;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [],
+      quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: 1012 }],
+    };
+
+    const { error } = await stop();
+
+    expect(error.message).to.include('may result in a PoSe ban');
+    expect(dockerCompose.stop).to.not.have.been.called();
+  });
 });

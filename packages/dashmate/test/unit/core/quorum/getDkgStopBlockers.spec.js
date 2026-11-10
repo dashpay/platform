@@ -1,4 +1,5 @@
 import getDkgStopBlockers, {
+  getAnnouncedNonMemberDkgs,
   getBlockersAt,
   hasMembershipActiveDkgs,
   LLMQ_TYPES,
@@ -16,6 +17,13 @@ const NEXT_DKG_NOT_IMMINENT = MIN_BLOCKS_BEFORE_DKG + 5;
 const PLATFORM_ACTIVE_BLOCKS = 10; // llmq_test_platform: 5 phases * 2 blocks
 const PLATFORM_INTERVAL = 24;
 
+// Core lists the quorum connections in every `quorum dkgstatus` answer.
+function withConnections(dkgStatus) {
+  return dkgStatus && typeof dkgStatus === 'object'
+    ? { quorumConnections: [], ...dkgStatus }
+    : dkgStatus;
+}
+
 function blockersAt({
   dkgInfo,
   dkgStatus = { session: [] },
@@ -23,7 +31,7 @@ function blockersAt({
   coreVersion = CORE_23,
 }) {
   return getBlockersAt(getDkgStopBlockers({
-    dkgInfo, dkgStatus, height, coreVersion,
+    dkgInfo, dkgStatus: withConnections(dkgStatus), height, coreVersion,
   }), height);
 }
 
@@ -73,7 +81,7 @@ describe('getDkgStopBlockers', () => {
     it('should report when the next DKG starts blocking', () => {
       const [blocker] = getDkgStopBlockers({
         dkgInfo: { active_dkgs: 0, next_dkg: 20 },
-        dkgStatus: { session: [] },
+        dkgStatus: withConnections({ session: [] }),
         height: HEIGHT,
         coreVersion: CORE_23,
       });
@@ -136,7 +144,7 @@ describe('getDkgStopBlockers', () => {
       };
 
       const blockers = getDkgStopBlockers({
-        dkgInfo, dkgStatus: { session: [] }, height: HEIGHT, coreVersion: CORE_24_0,
+        dkgInfo, dkgStatus: withConnections({ session: [] }), height: HEIGHT, coreVersion: CORE_24_0,
       });
 
       expect(getBlockersAt(blockers, HEIGHT)).to.be.empty();
@@ -435,11 +443,13 @@ describe('getDkgStopBlockers', () => {
     Object.entries(malformed).forEach(([description, dkgStatus]) => {
       it(`should block when ${description}`, () => {
         const blockers = getBlockersAt(getDkgStopBlockers({
-          dkgInfo, dkgStatus, height: HEIGHT, coreVersion: CORE_23,
+          dkgInfo, dkgStatus: withConnections(dkgStatus), height: HEIGHT, coreVersion: CORE_23,
         }), HEIGHT);
 
-        expect(blockers).to.have.lengthOf(1);
-        expect(blockers[0]).to.include({ reason: 'unreadable', until: null });
+        expect(blockers).to.not.be.empty();
+        blockers.forEach((blocker) => {
+          expect(blocker).to.include({ reason: 'unreadable', until: null });
+        });
       });
     });
   });
@@ -491,6 +501,86 @@ describe('getDkgStopBlockers', () => {
         expect(isBlockedAtOffset(interval + activeBlocks - 1), 'next session end').to.be.true();
         expect(isBlockedAtOffset(interval + activeBlocks), 'after the next session').to.be.false();
       });
+    });
+  });
+
+  describe('a DKG that starts at the tip, before Core records it (Core older than 24.1)', () => {
+    // `quorum dkgstatus` lists every enabled quorum with the start of its
+    // current session. At a start block Core's DKG worker records the session
+    // only after it has computed the members, and nothing says whether this
+    // node is one of them until then.
+    const startsHere = {
+      llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: HEIGHT,
+    };
+    const dkgInfo = { active_dkgs: 0, next_dkg: 24 };
+
+    function blockersWith(dkgStatus, options = {}) {
+      return getBlockersAt(getDkgStopBlockers({
+        dkgInfo, dkgStatus, height: HEIGHT, coreVersion: CORE_23, ...options,
+      }), HEIGHT);
+    }
+
+    it('should block the start block while Core has no record of the session', () => {
+      const blockers = blockersWith({ session: [], quorumConnections: [startsHere] });
+
+      expect(blockers).to.have.lengthOf(1);
+      expect(blockers[0]).to.include({
+        reason: 'starting', llmqType: 'llmq_100_67', quorumIndex: 0, from: HEIGHT, until: HEIGHT + 1,
+      });
+    });
+
+    it('should leave the session to its record once Core has one', () => {
+      const blockers = blockersWith({
+        session: [record('llmq_100_67', HEIGHT)],
+        quorumConnections: [startsHere],
+      });
+
+      expect(blockers.map(({ reason }) => reason)).to.deep.equal(['session']);
+    });
+
+    it('should not block a session that started before the tip', () => {
+      expect(blockersWith({
+        session: [],
+        quorumConnections: [{ ...startsHere, pQuorumBaseBlockIndex: HEIGHT - 1 }],
+      })).to.be.empty();
+    });
+
+    it('should not block a DKG this node was announced to be no member of', () => {
+      expect(blockersWith(
+        { session: [], quorumConnections: [startsHere] },
+        { knownNonMemberDkgs: new Set([`llmq_100_67:0:${HEIGHT}`]) },
+      )).to.be.empty();
+    });
+
+    it('should rely on Core\'s count on Core 24.1, which includes such a session', () => {
+      expect(blockersWith(
+        { session: [], quorumConnections: [startsHere] },
+        { coreVersion: CORE_24_1 },
+      )).to.be.empty();
+    });
+
+    it('should block when quorum connections are missing', () => {
+      const blockers = blockersWith({ session: [] });
+
+      expect(blockers).to.have.lengthOf(1);
+      expect(blockers[0]).to.include({ reason: 'unreadable', source: 'quorum dkgstatus quorumConnections' });
+    });
+  });
+
+  describe('getAnnouncedNonMemberDkgs', () => {
+    it('should name the announced DKGs this node is known to be no member of', () => {
+      expect([...getAnnouncedNonMemberDkgs({
+        upcoming_dkgs: [
+          upcomingDkg(2, false, 4),
+          upcomingDkg(3, true, 4),
+          unknownUpcomingDkg(4),
+          upcomingDkg(5, false, 250),
+        ],
+      }, HEIGHT)]).to.deep.equal([`llmq_100_67:0:${HEIGHT + 2}`]);
+    });
+
+    it('should name none without membership data', () => {
+      expect([...getAnnouncedNonMemberDkgs({ active_dkgs: 0, next_dkg: 3 }, HEIGHT)]).to.be.empty();
     });
   });
 });

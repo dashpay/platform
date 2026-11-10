@@ -42,10 +42,12 @@ describe('checkMasternodeSafeToStop', () => {
       expect(await readCoreVersion(rpcClient)).to.equal(CORE_23);
     });
 
-    it('should return null when Core reports no integer version', async () => {
+    it('should refuse to guess when Core reports no integer version', async () => {
+      // Which rule applies depends on the version; reading an older one for
+      // Core 24.1 would ignore its session count.
       core.version = '23.1.10';
 
-      expect(await readCoreVersion(rpcClient)).to.be.null();
+      await expect(readCoreVersion(rpcClient)).to.be.rejectedWith('Core did not report its version');
     });
   });
 
@@ -200,5 +202,47 @@ describe('checkMasternodeSafeToStop', () => {
 
     expect(result).to.include({ status: 'safe', isSyncing: true });
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+  });
+
+  it('should report unsettled when a reorg replaced the first check\'s tip and the chain grew', async () => {
+    // The replacing branch can put this node in a DKG starting on it that
+    // Core has not recorded yet.
+    const state = await startCheck();
+    const firstTip = core.height;
+    core.height += 2;
+    core.hashAt = (height) => `other-branch-${height}`;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('unsettled');
+    expect(rpcClient.getBlockHash).to.have.been.calledWith(firstTip);
+  });
+
+  it('should treat Core in initial block download as safe even while blocks keep connecting', async () => {
+    core.isSyncing = true;
+    core.beforeDkgInfo = () => { core.height += 1; };
+
+    const { result } = await startCheck();
+
+    expect(result).to.include({ status: 'safe', isSyncing: true });
+  });
+
+  it('should pass on what it knows about DKGs this node is not part of', async () => {
+    // A DKG starting at the tip blocks unless announced without this node.
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 24 };
+    core.dkgStatus = {
+      session: [],
+      quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: 1012 }],
+    };
+
+    const blocked = await startCheck();
+    expect(blocked.result.status).to.equal('blocked');
+
+    const state = {};
+    checkMasternodeSafeToStop(rpcClient, core.version, {
+      knownNonMemberDkgs: new Set(['llmq_100_67:0:1012']),
+    }).then((result) => { state.result = result; });
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    expect(state.result.status).to.equal('safe');
   });
 });
