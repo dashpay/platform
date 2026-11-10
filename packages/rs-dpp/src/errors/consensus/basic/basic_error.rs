@@ -48,6 +48,9 @@ use crate::consensus::basic::data_contract::{
     UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
+    DataContractMaxSizeExceededError, DataContractUpdateOverlappingEntriesError,
+};
+use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
     UnknownDocumentActionTokenEffectError,
 };
@@ -903,6 +906,16 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatePrivateDocumentEntryError(DuplicatePrivateDocumentEntryError),
+
+    // A delta contract update (protocol version 15) naming one entry in two sections that
+    // cannot both apply.
+    #[error(transparent)]
+    DataContractUpdateOverlappingEntriesError(DataContractUpdateOverlappingEntriesError),
+
+    // A contract whose bytes in the format transitions carry would be over
+    // `max_serialized_size`, which delta contract updates (protocol version 15) can reach.
+    #[error(transparent)]
+    DataContractMaxSizeExceededError(DataContractMaxSizeExceededError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -914,6 +927,7 @@ impl From<BasicError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::data_contract::DataContractUpdateEntryKind;
     use crate::consensus::basic::document::PropertyConstraintViolation;
     use platform_value::Identifier;
 
@@ -1168,6 +1182,23 @@ mod tests {
                 DuplicatePrivateDocumentEntryError::new(0, 3)
             )),
             213
+        );
+        // Delta contract updates (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::DataContractUpdateOverlappingEntriesError(
+                DataContractUpdateOverlappingEntriesError::new(
+                    Identifier::from([1; 32]),
+                    DataContractUpdateEntryKind::Keyword,
+                    "keyword".to_string(),
+                )
+            )),
+            214
+        );
+        assert_eq!(
+            discriminant_of(BasicError::DataContractMaxSizeExceededError(
+                DataContractMaxSizeExceededError::new(0, 0)
+            )),
+            215
         );
     }
 

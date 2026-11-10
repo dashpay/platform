@@ -51,6 +51,7 @@ pub mod change_control_rules;
 pub mod config;
 pub mod group;
 pub mod storage_requirements;
+pub mod update_values;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
@@ -58,7 +59,9 @@ use crate::data_contract::serialized_version::{
 use crate::util::hash::hash_double_to_vec;
 
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::DataContractCompiledMaxSizeExceededError;
+use crate::consensus::basic::data_contract::{
+    DataContractCompiledMaxSizeExceededError, DataContractMaxSizeExceededError,
+};
 #[cfg(feature = "validation")]
 use crate::validation::operations::ProtocolValidationOperation;
 #[cfg(feature = "validation")]
@@ -79,7 +82,7 @@ use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
 
 type JsonSchema = JsonValue;
-type DefinitionName = String;
+pub type DefinitionName = String;
 pub type DocumentName = String;
 pub type TokenName = String;
 pub type GroupContractPosition = u16;
@@ -205,6 +208,13 @@ impl DataContract {
     /// `max_serialized_size`. The compile and serialization it takes is recorded in
     /// `validation_operations`, charged per compiled byte. Refuses, compiles and records
     /// nothing where contracts are not stored compiled.
+    ///
+    /// There it also refuses a contract whose bytes in the format transitions carry are over
+    /// `max_serialized_size`, with a [`DataContractMaxSizeExceededError`]: Drive refuses to
+    /// store one, and from the protocol version that stores contracts compiled a contract can
+    /// reach that cap, as a delta contract update grows a contract past what one state
+    /// transition can carry. The compile measures those bytes, so the check takes no other
+    /// work. It runs first, as the cap every contract had before the compiled one.
     #[cfg(feature = "validation")]
     pub fn validate_compiled_size(
         &self,
@@ -223,10 +233,19 @@ impl DataContract {
         if !stored_compiled {
             return Ok(SimpleConsensusValidationResult::new());
         }
-        let compiled_size = self.serialize_to_storage_bytes(platform_version)?.len() as u64;
+        let (compiled, serialized_size) =
+            self.serialize_to_storage_bytes_with_carried_size(platform_version)?;
+        let compiled_size = compiled.len() as u64;
         validation_operations.extend(std::iter::once(
             ProtocolValidationOperation::ContractCompiledSizeValidation(compiled_size),
         ));
+        let max_serialized_size = platform_version.dpp.contract_versions.max_serialized_size;
+        if serialized_size as u64 > u64::from(max_serialized_size) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DataContractMaxSizeExceededError::new(serialized_size as u64, max_serialized_size)
+                    .into(),
+            ));
+        }
         if compiled_size > u64::from(max_compiled_size) {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 DataContractCompiledMaxSizeExceededError::new(compiled_size, max_compiled_size)
@@ -793,6 +812,70 @@ mod compiled_size_tests {
         fixture_contract()
             .ensure_compiled_size(&mut operations, &platform_version)
             .expect("expected nothing refused at protocol version 14");
+        assert!(operations.is_empty());
+    }
+
+    /// Where contracts are stored compiled, the bytes transitions carry are capped by a
+    /// consensus error too: Drive refuses to store a contract over `max_serialized_size`, and a
+    /// delta contract update can grow one that far. The size is the one Drive measures, and
+    /// the compile that measures it is charged whatever the verdict.
+    #[test]
+    fn should_refuse_a_contract_over_the_serialized_size_cap() {
+        let latest = PlatformVersion::latest();
+        let contract = fixture_contract();
+        let (compiled, serialized_size) = contract
+            .serialize_to_storage_bytes_with_carried_size(latest)
+            .expect("expected the contract to compile");
+        assert_eq!(
+            serialized_size,
+            contract
+                .serialize_to_bytes_with_platform_version(latest)
+                .expect("expected the contract to serialize")
+                .len()
+        );
+        let serialized_size = serialized_size as u32;
+
+        for (cap, refused) in [(serialized_size - 1, true), (serialized_size, false)] {
+            let mut platform_version = latest.clone();
+            platform_version.dpp.contract_versions.max_serialized_size = cap;
+            let mut operations = vec![];
+            let result = contract
+                .validate_compiled_size(&mut operations, &platform_version)
+                .expect("expected the sizes to be measured");
+            if refused {
+                assert!(
+                    matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::DataContractMaxSizeExceededError(error)
+                        )] if error.serialized_size() == u64::from(serialized_size)
+                            && error.max_serialized_size() == cap
+                    ),
+                    "{:?}",
+                    result.errors
+                );
+            } else {
+                assert!(result.is_valid(), "{:?}", result.errors);
+            }
+            assert_eq!(
+                operations,
+                vec![ProtocolValidationOperation::ContractCompiledSizeValidation(
+                    compiled.len() as u64
+                )]
+            );
+        }
+
+        // Where contracts are not stored compiled no contract can reach the cap, and nothing
+        // is measured
+        let mut platform_version = PlatformVersion::get(14)
+            .expect("expected protocol version 14")
+            .clone();
+        platform_version.dpp.contract_versions.max_serialized_size = 1;
+        let mut operations = vec![];
+        assert!(contract
+            .validate_compiled_size(&mut operations, &platform_version)
+            .expect("expected nothing measured at protocol version 14")
+            .is_valid());
         assert!(operations.is_empty());
     }
 }

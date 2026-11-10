@@ -78,6 +78,14 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Edited in place: the accessor returns no contract for a delta contract update, which
+        // the dispatcher refuses before this generation, so an update that embeds its contract
+        // is judged as it was
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a delta contract update reached a generation that validates updates embedding their contract",
+            )));
+        };
         let mut action = self.transform_into_action_v0(
             block_info,
             validation_mode,
@@ -196,7 +204,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let mut validated_identities = BTreeSet::new();
 
-        for (position, group) in self.data_contract().groups() {
+        for (position, group) in data_contract.groups() {
             for member_identity_id in group.members().keys() {
                 if !validated_identities.contains(member_identity_id) {
                     let identity_exists = validate_non_masternode_identity_exists(
@@ -217,7 +225,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                             bump_action,
                             vec![StateError::IdentityMemberOfGroupNotFoundError(
                                 IdentityMemberOfGroupNotFoundError::new(
-                                    self.data_contract().id(),
+                                    data_contract.id(),
                                     *position,
                                     *member_identity_id,
                                 ),
@@ -503,10 +511,18 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Edited in place: the accessor returns no contract for a delta contract update, which
+        // the dispatcher refuses before this generation, so an update that embeds its contract
+        // is transformed as it was
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a delta contract update reached a generation that transforms updates embedding their contract",
+            )));
+        };
         let mut validation_operations = vec![];
 
         let result = validate_document_schemas_depth_for_check_tx(
-            self.data_contract(),
+            data_contract,
             validation_mode,
             platform_version,
         )

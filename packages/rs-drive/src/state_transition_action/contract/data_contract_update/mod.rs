@@ -2,17 +2,25 @@
 pub mod transformer;
 /// v0
 pub mod v0;
+/// v1
+pub mod v1;
 
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
+use crate::state_transition_action::contract::data_contract_update::v1::DataContractUpdateTransitionActionV1;
 use derive_more::From;
 use dpp::data_contract::DataContract;
+use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
 /// data contract update transition action
 #[derive(Debug, Clone, From)]
 pub enum DataContractUpdateTransitionAction {
     /// v0
     V0(DataContractUpdateTransitionActionV0),
+    /// v1: the action of a delta update, which carries the delta's registration cost
+    V1(DataContractUpdateTransitionActionV1),
 }
 
 impl DataContractUpdateTransitionAction {
@@ -20,12 +28,14 @@ impl DataContractUpdateTransitionAction {
     pub fn data_contract(self) -> DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => transition.data_contract,
         }
     }
     /// data contract ref
     pub fn data_contract_ref(&self) -> &DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => &transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => &transition.data_contract,
         }
     }
 
@@ -33,6 +43,7 @@ impl DataContractUpdateTransitionAction {
     pub fn data_contract_mut(&mut self) -> &mut DataContract {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => &mut transition.data_contract,
+            DataContractUpdateTransitionAction::V1(transition) => &mut transition.data_contract,
         }
     }
 
@@ -42,6 +53,9 @@ impl DataContractUpdateTransitionAction {
             DataContractUpdateTransitionAction::V0(transition) => {
                 transition.identity_contract_nonce
             }
+            DataContractUpdateTransitionAction::V1(transition) => {
+                transition.identity_contract_nonce
+            }
         }
     }
 
@@ -49,6 +63,35 @@ impl DataContractUpdateTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             DataContractUpdateTransitionAction::V0(transition) => transition.user_fee_increase,
+            DataContractUpdateTransitionAction::V1(transition) => transition.user_fee_increase,
+        }
+    }
+
+    /// The action of a delta update, from the action of the update carrying the whole
+    /// contract that the delta was merged into, which is `self`, and the registration cost
+    /// of what the delta registers.
+    pub fn into_delta_action(self, registration_cost: Credits) -> Self {
+        DataContractUpdateTransitionActionV1 {
+            identity_contract_nonce: self.identity_contract_nonce(),
+            user_fee_increase: self.user_fee_increase(),
+            data_contract: self.data_contract(),
+            registration_cost,
+        }
+        .into()
+    }
+
+    /// The registration cost this update pays on top of its storage and processing fees:
+    /// the whole contract's for an update that carries the whole contract, and that of
+    /// what it registers alone for a delta.
+    pub fn registration_cost(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => {
+                transition.data_contract.registration_cost(platform_version)
+            }
+            DataContractUpdateTransitionAction::V1(transition) => Ok(transition.registration_cost),
         }
     }
 }
@@ -164,6 +207,40 @@ mod tests {
         assert_eq!(
             cloned.data_contract_ref().document_types().len(),
             EXPECTED_DOC_TYPES.len()
+        );
+    }
+
+    #[test]
+    fn should_pay_the_registration_cost_of_what_a_delta_registers() {
+        let platform_version = PlatformVersion::latest();
+        let action = make_action();
+        let whole_contract_cost = action
+            .data_contract_ref()
+            .registration_cost(platform_version)
+            .expect("expected a registration cost");
+        assert_eq!(
+            action
+                .registration_cost(platform_version)
+                .expect("expected a registration cost"),
+            whole_contract_cost
+        );
+
+        let contract_id = action.data_contract_ref().id();
+        let delta_action = action.into_delta_action(7);
+
+        assert!(matches!(
+            delta_action,
+            DataContractUpdateTransitionAction::V1(_)
+        ));
+        assert_eq!(delta_action.identity_contract_nonce(), 99);
+        assert_eq!(delta_action.user_fee_increase(), 3);
+        assert_eq!(delta_action.data_contract_ref().id(), contract_id);
+        assert_ne!(whole_contract_cost, 7);
+        assert_eq!(
+            delta_action
+                .registration_cost(platform_version)
+                .expect("expected a registration cost"),
+            7
         );
     }
 

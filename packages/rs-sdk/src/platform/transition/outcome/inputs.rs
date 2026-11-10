@@ -173,8 +173,8 @@ impl TransitionInputs {
             // Identity-contract nonces.
             StateTransition::DataContractUpdate(st) => {
                 TransitionInputs::Nonces(vec![NonceInput::IdentityContract {
-                    identity_id: st.data_contract().owner_id(),
-                    contract_id: st.data_contract().id(),
+                    identity_id: st.owner_id(),
+                    contract_id: st.data_contract_id(),
                     nonce: st.identity_contract_nonce(),
                 }])
             }

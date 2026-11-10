@@ -215,6 +215,36 @@ This intermediate format is important because serialization versions and code st
 
 There is also `versioned_limit_deserialize`, which imposes a size limit and always performs full validation -- this is used for data coming from untrusted sources (anything not from Drive's own storage).
 
+## Updating a Contract: the Whole Contract or a Delta
+
+A `DataContractUpdateTransition` has two versions, and a contract owner may send either.
+
+**Version 0 carries the whole contract.** The node compares it with the stored contract and stores it. Because a state transition is capped at `max_state_transition_size` (20,480 bytes), well below the `max_serialized_size` a contract may take (65,000 bytes), an update of this form cannot grow a contract past what one transition carries. It also pays the registration cost of the whole contract again, whatever it changes.
+
+**Version 1 carries a delta** (`DataContractUpdateTransitionV1`, from protocol version 15, where it is the form built by default). It names the contract, its owner and the version it produces, and carries only what changes:
+
+| Field | Meaning |
+|-------|---------|
+| `new_document_schemas`, `updated_document_schemas` | Document types to add, and new schemas for existing ones |
+| `new_schema_defs`, `updated_schema_defs` | `$defs` definitions to add, and new schemas for existing ones |
+| `new_groups`, `new_tokens` | Groups and tokens to add, at the positions after the stored ones |
+| `add_keywords`, `remove_keywords` | Keywords to add after the stored ones that stay, and keywords to remove |
+| `description` | `Keep`, `Clear` or `Set(text)` |
+| `config` | A replacement config, or none to keep the stored one |
+
+A delta has no way to remove a document type, a definition, a group or a token, or to change a group or a token, as no contract update may.
+
+The node reads the stored contract, merges the delta onto it (`DataContract::apply_update`), and validates the update carrying the whole merged contract with the code that validates version 0. A delta is therefore held to every rule of a version 0 update, and the two cannot drift apart. What only a delta can get wrong is refused with its own errors: an entry named in two sections that cannot both apply (`DataContractUpdateOverlappingEntriesError`, 10283, without a fee), an entry to add that the contract already has (`DataContractUpdateEntryAlreadyExistsError`, 40010), and an entry to replace or remove that it does not have (`DataContractUpdateEntryNotFoundError`, 40011).
+
+Two things differ from version 0:
+
+- **Fee.** A delta pays the registration cost of what it registers alone: its new and replaced document types with their indexes, its new tokens and its added keywords. It pays the processing of validating the whole merged contract as version 0 does.
+- **Size.** A delta grows a contract a transition at a time, up to `max_serialized_size`. A contract that would take more is refused with `DataContractMaxSizeExceededError` (10284).
+
+Build either form with `DataContractUpdateTransition::new_from_contract_update(old_contract, new_contract, ...)`, which computes the delta between the stored contract and the wanted one and refuses a change a delta cannot express. `new_from_data_contract`, which has only the new contract, always builds version 0.
+
+**Verifying a delta's execution proof needs the contract it was built on.** The proof of a contract update holds the contract as it is after the update. Version 0 is compared with it directly. A delta is first merged, by the same `apply_update`, onto the contract as it was before the update, which the verifier takes from its contract lookup (the SDK's context provider); the proved contract must be the result. A client that sends a delta must therefore make the pre-update contract known to its context provider before it waits for the result, or verification fails with `ProofError::MissingContextRequirement`.
+
 ## Evolving a Contract: Adding Required Fields
 
 Contract updates are deliberately conservative: existing documents must stay valid and their stored bytes must stay readable, so most schema changes that would break either are rejected. Historically that froze the `required` set of a document type in both directions — requiredness is baked into the document wire format (required properties serialize raw, optional ones carry a presence flag), so changing it would desynchronize every stored document's bytes from the schema used to read them.

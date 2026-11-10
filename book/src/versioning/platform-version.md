@@ -59,19 +59,19 @@ function version so that execution is deterministic.
 ## The Version Array
 
 Each protocol version gets its own constant, defined in a separate file. At
-the time of writing, the platform has fourteen versions:
+the time of writing, the platform has fifteen versions:
 
 ```rust
 // packages/rs-platform-version/src/version/mod.rs
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_14;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_15;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 pub const ALL_VERSIONS: RangeInclusive<ProtocolVersion> = 1..=LATEST_VERSION;
 ```
 
-These fourteen snapshots are collected into a single static array in
+These fifteen snapshots are collected into a single static array in
 `protocol_version.rs`:
 
 ```rust
@@ -90,22 +90,23 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V12,
     PLATFORM_V13,
     PLATFORM_V14,
+    PLATFORM_V15,
 ];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V15;
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 ```
 
 The array is indexed by protocol version number minus one (since versions are
-1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V14` at index 13. This
+1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V15` at index 14. This
 simple layout is what makes the `get` function so fast.
 
-One file, one protocol version. `v14.rs` was created when the first consensus
-change after version 13 shipped needed somewhere to live, and every later
-change destined for version 14 amends that same file. The day version 14 is
+One file, one protocol version. `v15.rs` was created when the first consensus
+change after version 14 shipped needed somewhere to live, and every later
+change destined for version 15 amends that same file. The day version 15 is
 released the file freezes: from then on it is part of the chain's historical
-record, and the next consensus change creates `v15.rs`. There is never a
-`v14.rs` that means one thing on a node built last month and another on a node
+record, and the next consensus change creates `v16.rs`. There is never a
+`v15.rs` that means one thing on a node built last month and another on a node
 built today.
 
 ## What a Version Snapshot Looks Like
@@ -153,7 +154,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
 };
 ```
 
-Now compare with `PLATFORM_V14`, the latest at the time of writing. By
+Now compare with `PLATFORM_V14`, a snapshot that bumped many slots at once. By
 convention, each sub-constant slot that was bumped carries a trailing
 `// changed:` comment saying what changed. The `protocol_version` field is the
 snapshot's identity and is never annotated. One bumped slot in this snapshot,
@@ -278,8 +279,8 @@ impl PlatformVersion {
 }
 ```
 
-This is a simple array lookup. Protocol version 1 maps to index 0, version 14
-to index 13. If the version number is out of range, you get a clear error. No
+This is a simple array lookup. Protocol version 1 maps to index 0, version 15
+to index 14. If the version number is out of range, you get a clear error. No
 hash maps, no runtime registration, no dynamic dispatch -- just a static array
 of compile-time constants.
 
@@ -425,7 +426,7 @@ version 14 means.
   every node that was there at the time.
 - Never add a new field to `PlatformVersion` without also updating every
   `PLATFORM_V*` constant. The compiler will enforce this, but be aware that
-  the fix is updating fourteen files, not one.
+  the fix is updating fifteen files, not one.
 - Never use `PlatformVersion::latest()` in consensus-critical code paths.
   Always use the version from the current platform state, obtained via
   `platform_state.current_platform_version()`. The "latest" version is what

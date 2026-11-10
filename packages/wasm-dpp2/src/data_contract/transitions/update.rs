@@ -1,5 +1,6 @@
 use crate::data_contract::DataContractWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -10,6 +11,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{DataContract, IdentityNonce};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionOwned;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::validation::operations::ProtocolValidationOperation;
@@ -19,26 +21,98 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * DataContractUpdateTransition serialized as a plain object.
+ * What a delta-based (V1) DataContractUpdateTransition does to the description.
  */
-export interface DataContractUpdateTransitionObject {
+export type DataContractDescriptionUpdate = "keep" | "clear" | { set: string };
+
+/**
+ * A full-contract (V0) DataContractUpdateTransition serialized as a plain object.
+ */
+export interface DataContractUpdateTransitionV0Object {
+    $formatVersion: "0";
     dataContract: DataContractObject;
-    identityNonce: bigint;
+    "$identity-contract-nonce": bigint;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: Uint8Array;
 }
 
 /**
- * DataContractUpdateTransition serialized as JSON.
+ * A delta-based (V1) DataContractUpdateTransition serialized as a plain object.
+ * It carries only what changed, keyed by the contract, its owner and the
+ * version the update produces.
  */
-export interface DataContractUpdateTransitionJSON {
+export interface DataContractUpdateTransitionV1Object {
+    $formatVersion: "1";
+    "$identity-contract-nonce": bigint;
+    dataContractId: Identifier;
+    ownerId: Identifier;
+    version: number;
+    config?: DataContractConfig;
+    updatedSchemaDefs?: Record<string, object>;
+    newSchemaDefs?: Record<string, object>;
+    updatedDocumentSchemas?: Record<string, object>;
+    newDocumentSchemas?: Record<string, object>;
+    newGroups?: Record<number, Group>;
+    newTokens?: Record<number, TokenConfiguration>;
+    addKeywords?: string[];
+    removeKeywords?: string[];
+    description?: DataContractDescriptionUpdate;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * DataContractUpdateTransition serialized as a plain object.
+ */
+export type DataContractUpdateTransitionObject =
+    | DataContractUpdateTransitionV0Object
+    | DataContractUpdateTransitionV1Object;
+
+/**
+ * A full-contract (V0) DataContractUpdateTransition serialized as JSON.
+ */
+export interface DataContractUpdateTransitionV0JSON {
+    $formatVersion: "0";
     dataContract: DataContractJSON;
-    identityNonce: string;
+    "$identity-contract-nonce": string;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: string;
 }
+
+/**
+ * A delta-based (V1) DataContractUpdateTransition serialized as JSON
+ * (with string identifiers).
+ */
+export interface DataContractUpdateTransitionV1JSON {
+    $formatVersion: "1";
+    "$identity-contract-nonce": string;
+    dataContractId: string;
+    ownerId: string;
+    version: number;
+    config?: DataContractConfig;
+    updatedSchemaDefs?: Record<string, object>;
+    newSchemaDefs?: Record<string, object>;
+    updatedDocumentSchemas?: Record<string, object>;
+    newDocumentSchemas?: Record<string, object>;
+    newGroups?: Record<number, object>;
+    newTokens?: Record<number, object>;
+    addKeywords?: string[];
+    removeKeywords?: string[];
+    description?: DataContractDescriptionUpdate;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: string;
+}
+
+/**
+ * DataContractUpdateTransition serialized as JSON.
+ */
+export type DataContractUpdateTransitionJSON =
+    | DataContractUpdateTransitionV0JSON
+    | DataContractUpdateTransitionV1JSON;
 "#;
 
 #[wasm_bindgen]
@@ -146,7 +220,8 @@ impl DataContractUpdateTransitionWasm {
                 &platform_version.into(),
             )?;
 
-        self.0.set_data_contract(data_contract_serialization_format);
+        self.0
+            .set_data_contract(data_contract_serialization_format)?;
 
         Ok(())
     }
@@ -154,6 +229,17 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(getter = "identityContractNonce")]
     pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
+    }
+
+    /// The contract the update targets: embedded in a V0 transition, named by a V1 delta.
+    #[wasm_bindgen(getter = "dataContractId")]
+    pub fn data_contract_id(&self) -> IdentifierWasm {
+        self.0.data_contract_id().into()
+    }
+
+    #[wasm_bindgen(getter = "ownerId")]
+    pub fn owner_id(&self) -> IdentifierWasm {
+        self.0.owner_id().into()
     }
 
     #[wasm_bindgen(js_name = "getDataContract")]
@@ -164,7 +250,11 @@ impl DataContractUpdateTransitionWasm {
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let data_contract_serialization_format = self.0.data_contract();
+        let data_contract_serialization_format = self.0.data_contract().ok_or_else(|| {
+            WasmDppError::invalid_argument(
+                "a delta-based data contract update transition carries no full contract",
+            )
+        })?;
 
         let mut validation_operations: Vec<ProtocolValidationOperation> = Vec::new();
 

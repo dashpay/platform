@@ -220,9 +220,14 @@ pub(in crate::execution) async fn resign_with_contract(
             create.set_data_contract(serialized_contract);
         }
         StateTransition::DataContractUpdate(update) => {
-            let mut serialized_contract = update.data_contract().clone();
+            let mut serialized_contract = update
+                .data_contract()
+                .expect("expected an update that embeds its contract")
+                .clone();
             edit_contract(&mut serialized_contract);
-            update.set_data_contract(serialized_contract);
+            update
+                .set_data_contract(serialized_contract)
+                .expect("expected an update that embeds its contract");
         }
         _ => panic!("expected a data contract create or update transition"),
     }

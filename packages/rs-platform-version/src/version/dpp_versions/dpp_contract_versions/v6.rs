@@ -67,6 +67,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         validate_moderation_config: 0,
         equal_ignoring_time_fields: 0,
         registration_cost: 2, // changed: charges the once-per-identity token distribution surcharge
+        apply_update: None,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {

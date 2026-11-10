@@ -208,7 +208,11 @@ depends on `ValidationMode` -- `CheckTx` mode skips full schema validation for s
 
 **DataContractUpdate:** Fetches the existing contract from Drive to compare against
 the proposed update. Validates that schema changes are backward-compatible (e.g., you
-can add fields but not remove required ones).
+can add fields but not remove required ones). A delta update (version 1 of the
+transition, from protocol version 15) carries only what changes: it is first merged onto
+the existing contract, and the update carrying the whole merged contract is validated in
+its place, so both forms run the same checks. See
+[Updating a Contract](../data-model/data-contracts.md#updating-a-contract-the-whole-contract-or-a-delta).
 
 **Batch (Documents):** This is the most complex transformation. For each document
 sub-transition in the batch, the platform must:

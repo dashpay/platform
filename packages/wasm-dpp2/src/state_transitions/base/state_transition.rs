@@ -562,26 +562,36 @@ impl StateTransitionWasm {
 
                 self.0 = DataContractCreate(contract_create);
             }
-            DataContractUpdate(mut contract_update) => {
-                let new_contract = match contract_update.data_contract().clone() {
-                    DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id;
+            DataContractUpdate(contract_update) => {
+                let contract_update = match contract_update {
+                    DataContractUpdateTransition::V0(mut v0) => {
+                        v0.data_contract = match v0.data_contract {
+                            DataContractInSerializationFormat::V0(mut format) => {
+                                format.owner_id = owner_id;
 
-                        DataContractInSerializationFormat::V0(v0)
+                                DataContractInSerializationFormat::V0(format)
+                            }
+                            DataContractInSerializationFormat::V1(mut format) => {
+                                format.owner_id = owner_id;
+
+                                DataContractInSerializationFormat::V1(format)
+                            }
+                            DataContractInSerializationFormat::V2(mut format) => {
+                                format.base.owner_id = owner_id;
+
+                                DataContractInSerializationFormat::V2(format)
+                            }
+                        };
+
+                        DataContractUpdateTransition::V0(v0)
                     }
-                    DataContractInSerializationFormat::V1(mut v1) => {
+                    // A delta embeds no contract and names its owner itself
+                    DataContractUpdateTransition::V1(mut v1) => {
                         v1.owner_id = owner_id;
 
-                        DataContractInSerializationFormat::V1(v1)
-                    }
-                    DataContractInSerializationFormat::V2(mut v2) => {
-                        v2.base.owner_id = owner_id;
-
-                        DataContractInSerializationFormat::V2(v2)
+                        DataContractUpdateTransition::V1(v1)
                     }
                 };
-
-                contract_update.set_data_contract(new_contract);
 
                 self.0 = DataContractUpdate(contract_update);
             }
@@ -708,6 +718,11 @@ impl StateTransitionWasm {
                     v0.identity_contract_nonce = nonce;
 
                     DataContractUpdateTransition::V0(v0).into()
+                }
+                DataContractUpdateTransition::V1(mut v1) => {
+                    v1.identity_contract_nonce = nonce;
+
+                    DataContractUpdateTransition::V1(v1).into()
                 }
             },
             Batch(mut batch) => {

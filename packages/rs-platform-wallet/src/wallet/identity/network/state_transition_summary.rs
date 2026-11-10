@@ -46,7 +46,9 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionV1,
+};
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
@@ -136,7 +138,8 @@ pub enum StateTransitionSummaryKind {
 pub struct DataContractSummary {
     pub contract_id: Identifier,
     pub owner_id: Identifier,
-    /// Document type names, in the contract's order.
+    /// Document type names, in the contract's order. For a delta contract update, which
+    /// carries only what it changes, the types it adds, then those it replaces.
     pub document_type_names: Vec<String>,
     /// The whole transition: the contract (schemas, tokens and their
     /// distribution rules, groups, keywords), and for a create the contract
@@ -307,10 +310,15 @@ fn summarize(
             )?)
         }
         StateTransition::DataContractUpdate(update) => {
-            StateTransitionSummaryKind::DataContractUpdate(summarize_contract(
-                update.data_contract(),
-                budget.render(update)?,
-            )?)
+            let details = budget.render(update)?;
+            StateTransitionSummaryKind::DataContractUpdate(match update {
+                DataContractUpdateTransition::V0(update) => {
+                    summarize_contract(&update.data_contract, details)?
+                }
+                DataContractUpdateTransition::V1(delta) => {
+                    summarize_contract_delta(delta, details)?
+                }
+            })
         }
         other => StateTransitionSummaryKind::Other {
             details: budget.render(other)?,
@@ -461,6 +469,29 @@ fn summarize_contract(
     Ok(DataContractSummary {
         contract_id: contract.id(),
         owner_id: contract.owner_id(),
+        document_type_names,
+        details,
+    })
+}
+
+/// A delta contract update carries only what it changes, so the names are those of the
+/// document types it adds, then of those it replaces; `details` shows the rest of the delta.
+fn summarize_contract_delta(
+    delta: &DataContractUpdateTransitionV1,
+    details: String,
+) -> Result<DataContractSummary, PlatformWalletError> {
+    let document_type_names: Vec<String> = delta
+        .new_document_schemas
+        .keys()
+        .chain(delta.updated_document_schemas.keys())
+        .cloned()
+        .collect();
+    for name in &document_type_names {
+        check_document_type_name(name)?;
+    }
+    Ok(DataContractSummary {
+        contract_id: delta.data_contract_id,
+        owner_id: delta.owner_id,
         document_type_names,
         details,
     })

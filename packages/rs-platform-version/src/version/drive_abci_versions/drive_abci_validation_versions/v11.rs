@@ -34,10 +34,22 @@ use super::{
 /// - the masternode vote `transform_into_action`, 1 rather than 0: a vote on a yes/no poll looks up
 ///   the masternode's previous answer on that poll.
 /// - the contract update `transform_into_action` 1: v0, then in check_tx and recheck, which run no
-///   state validation, the updated contract is held to the compiled size cap with its time fields
-///   at their widest, a bound on what a block measures once it restores the stored contract's
-///   creation fields. It reads no state, so it covers an update to a contract created earlier in
-///   the same block too. Mempool admission only: a block runs v0's state validation.
+///   state validation, the updated contract is held to the size caps with its time fields at
+///   their widest, a bound on what a block measures once it restores the stored contract's
+///   creation fields. For an update that carries the whole contract it reads no state, so it
+///   covers an update to a contract created earlier in the same block too. Mempool admission
+///   only: a block runs state validation.
+/// - the contract update `basic_structure` 3, `nonce` 1 and `state` 2, with
+///   `transform_into_action` 1, admit version 1 of the transition, the delta form, which
+///   carries only what an update changes (protocol v15 note 32). An update that carries the
+///   whole contract runs the generations protocol version 14 selects (`basic_structure` 2,
+///   `nonce` 0, `state` 1) unchanged. For a delta, `basic_structure` 3 refuses, without a fee,
+///   one that names an entry in two sections that cannot both apply; `nonce` 1 reads the owner
+///   and the contract the delta names; and `state` 2 and `transform_into_action` 1 read the
+///   stored contract, merge the delta onto it and validate the update carrying the whole
+///   contract that results, with `basic_structure` 2 and `state` 1 (or the mempool checks of
+///   `transform_into_action` 1), so a delta is held to every rule of such an update. Its
+///   action carries the registration cost of what the delta registers alone.
 /// - document create `structure_validation` 2: v1, then a create of the decision proposals
 ///   contract's `proposal` (protocol version 15) must state exactly the decision proposal fund
 ///   under the proposal's name, its rule must make a yes/no poll within the system limits, and
@@ -97,7 +109,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .contract_user_moderation_state_transition
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                transform_into_action: 1, // check_tx holds the update to the compiled size cap
+                basic_structure: Some(3), // a delta names no entry in two sections that cannot both apply
+                nonce: Some(1),           // reads the owner and the contract a delta names
+                state: 2, // a delta is merged onto the stored contract and validated as the update carrying the whole contract
+                transform_into_action: 1, // check_tx holds the update to the size caps, and merges a delta
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .contract_update_state_transition

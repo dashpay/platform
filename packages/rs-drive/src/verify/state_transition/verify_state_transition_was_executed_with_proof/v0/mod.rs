@@ -89,7 +89,8 @@ use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDri
 
 impl Drive {
     /// The verification of generations 0 and 1 of
-    /// `verify_state_transition_was_executed_with_proof`. With
+    /// `verify_state_transition_was_executed_with_proof`, which generation 2 runs too once
+    /// it has merged a delta contract update. With
     /// `carries_owner_balance` (a producer at `prove_state_transition` generation
     /// 1) the proof of an owned, fee-paying transition also carries the owner's
     /// credit balance: a document batch's proof is verified strictly as one merged
@@ -135,27 +136,32 @@ impl Drive {
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
+                // Edited in place: an update that embeds its contract, the only form active
+                // through protocol version 14, is verified as it was. A delta embeds none:
+                // generation 2 merges it onto the contract it was built on and hands this
+                // body the update embedding the result
+                let Some(data_contract) = data_contract_update.data_contract() else {
+                    return Err(Error::Proof(ProofError::InvalidTransition(
+                        "a delta data contract update is verified from verify_state_transition_was_executed_with_proof 2"
+                            .to_string(),
+                    )));
+                };
                 // we expect to get a contract that matches the state transition
-                let keeps_history = data_contract_update
-                    .data_contract()
-                    .config()
-                    .keeps_history();
+                let keeps_history = data_contract.config().keeps_history();
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
                     Some(keeps_history),
                     carries_owner_balance,
                     true,
-                    data_contract_update.data_contract().id().into_buffer(),
+                    data_contract.id().into_buffer(),
                     platform_version,
                 )?;
-                let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update", data_contract_update.data_contract().id()))))?;
+                let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update", data_contract.id()))))?;
                 let contract_for_serialization: DataContractInSerializationFormat = contract
                     .clone()
                     .try_into_platform_versioned(platform_version)?;
-                if let Some(mismatch) =
-                    contract_for_serialization.first_mismatch(data_contract_update.data_contract())
-                {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract_update.data_contract().id(), mismatch))));
+                if let Some(mismatch) = contract_for_serialization.first_mismatch(data_contract) {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract.id(), mismatch))));
                 }
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
