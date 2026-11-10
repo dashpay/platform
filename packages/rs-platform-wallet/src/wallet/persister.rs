@@ -98,7 +98,30 @@ pub struct WalletPersister {
     /// last store or its flush failed. Shared by the clones the wallet and
     /// the coordinator hold. In memory only.
     stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
+    /// Why the last restoration of this wallet's private payments failed,
+    /// while no later one succeeded (`PlatformWalletError::PrivateContactPaymentsNotRestored`
+    /// then holds for it, not only for one not run yet). Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    private_payment_restore_failure: Arc<std::sync::Mutex<Option<String>>>,
+    /// How the wallet's views run one more restoration of its private
+    /// payments, without waiting on the shielded store, before a contact
+    /// request is refused as not restored: installed by the wallet whenever
+    /// it builds a restoration with a shielded coordinator. Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    #[cfg(feature = "shielded")]
+    private_payment_restore_retry: Arc<std::sync::Mutex<Option<PrivatePaymentRestoreRetry>>>,
 }
+
+/// One more restoration of a wallet's private payments, run on the persister
+/// it is given (`WalletPersister::retry_private_payment_restore`): taking it
+/// as an argument, rather than holding one, keeps the persister that stores
+/// it from holding itself.
+#[cfg(feature = "shielded")]
+pub(crate) type PrivatePaymentRestoreRetry = Arc<
+    dyn Fn(WalletPersister) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
 /// and the pairs the journal's unresolved payments hold, all updated under one
@@ -137,6 +160,59 @@ impl WalletPersister {
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
+            private_payment_restore_failure: Arc::default(),
+            #[cfg(feature = "shielded")]
+            private_payment_restore_retry: Arc::default(),
+        }
+    }
+
+    /// Note how the last restoration of this wallet's private payments went:
+    /// `Some(reason)` when it failed, `None` once one succeeded
+    /// ([`Self::private_payment_restore_failure`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_private_payment_restore(&self, failure: Option<String>) {
+        *self
+            .private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = failure;
+    }
+
+    /// Why the last restoration of this wallet's private payments failed, if
+    /// it did and none succeeded since.
+    pub(crate) fn private_payment_restore_failure(&self) -> Option<String> {
+        self.private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Install how the wallet's views run one more restoration of its private
+    /// payments ([`Self::retry_private_payment_restore`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn set_private_payment_restore_retry(&self, retry: PrivatePaymentRestoreRetry) {
+        *self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry);
+    }
+
+    /// Run one more restoration of this wallet's private payments, which waits
+    /// on nothing: a busy shielded store leaves the wallet held. Returns
+    /// whether one ran, as none does before the wallet built a restoration
+    /// with a shielded coordinator.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn retry_private_payment_restore(&self) -> bool {
+        let retry = self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match retry {
+            Some(retry) => {
+                retry(self.clone()).await;
+                true
+            }
+            None => false,
         }
     }
 

@@ -569,8 +569,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // sends or accepts waits until the reservations of its unconfirmed
             // private payments from an earlier process are restored from the
             // shielded store, which only a configured store can show.
+            // So does one whose persister keeps the private scan state: only it
+            // lets a private payment be paid, so only its wallet can have one
+            // the journal keeps that no marker shows. Restored below once the
+            // load is published when a store is configured, by
+            // `configure_shielded` otherwise.
             #[cfg(feature = "shielded")]
-            if bound_shielded.contains(&wallet_id) {
+            if bound_shielded.contains(&wallet_id)
+                || platform_wallet
+                    .persister()
+                    .persists_private_contact_scan_state()
+            {
                 platform_wallet
                     .persister()
                     .hold_until_private_payments_restored();
@@ -695,11 +704,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         // Past the rollback point. A store configured before this load
-        // restores the held wallets' private payments now, with no keys;
-        // otherwise `configure_shielded` does.
+        // restores the held wallets' private payments now, with no keys and
+        // without waiting on the store, which a scan may hold; otherwise
+        // `configure_shielded` does.
         #[cfg(feature = "shielded")]
         if let Some(coordinator) = self.shielded_coordinator().await {
-            self.restore_private_contact_payment_holds(&coordinator)
+            self.restore_private_payments_without_waiting(&coordinator, true)
                 .await;
         }
 
@@ -1958,7 +1968,7 @@ mod private_payment_hold_tests {
     use crate::test_support::NoopTestEventHandler;
     use crate::wallet::identity::ManagedIdentity;
     use crate::wallet::platform_wallet::WalletId;
-    use crate::wallet::shielded::store::PendingRedrive;
+    use crate::wallet::shielded::store::{PendingRedrive, PrivatePaymentEntry};
     use crate::wallet::shielded::{
         FileBackedShieldedStore, PrivateContactPayment, ShieldedStore, SubwalletId,
     };
@@ -2105,8 +2115,9 @@ mod private_payment_hold_tests {
                     recipient: RECIPIENT,
                     account_reference: 0,
                 },
-                &[[0xC1; 32]],
+                &[PrivatePaymentEntry::for_commitment([0xC1; 32])],
                 0,
+                None,
             )
             .expect("the payment saved");
     }

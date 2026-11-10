@@ -680,19 +680,30 @@ pub enum PlatformWalletError {
     PrivateContactRequestNeedsPrivateReply(Identifier),
 
     /// A private contact request to this identity is being paid for, or was
-    /// paid for and is not yet read back from DashPay's store: no other one is
-    /// sent, privately or publicly, until the private sync reads it back or
-    /// its payment definitely fails, as the store keeps every entry appended.
-    /// Also returned, with nothing sealed, paid or broadcast, by the first
-    /// send or accept from an identity since load, public or private, while
-    /// DashPay's store cannot yet be read to its end for it: a request paid
-    /// for in an earlier process may be there unread. Syncing private contact
-    /// requests and trying again goes on from where that read stopped.
+    /// paid for and is not yet read back from DashPay's store, or a private
+    /// payment the shielded store's journal keeps unresolved holds the pair:
+    /// no other one is sent, privately or publicly, until the private sync
+    /// reads it back or its payment provably never executes, as the store
+    /// keeps every entry appended. Pending, not failed: it is not submitted
+    /// again.
     #[error(
         "a private contact request to {0} is in flight or not yet read back from the store; sync \
          private contact requests to settle it"
     )]
     PrivateContactRequestPending(Identifier),
+
+    /// DashPay's private contact request store was not read to its end for
+    /// this identity with the keys Platform proves it holds, before a contact
+    /// request from it, public or private, or an acceptance, was decided: a
+    /// request in the store unread could hold the pair. Nothing was reserved,
+    /// sealed, paid or broadcast. Calling again goes on with the read from
+    /// where it stopped (a node behind the store already seen, or keys that
+    /// kept changing, stop it).
+    #[error(
+        "DashPay's private contact request store was not read to its end for {0}; nothing was \
+         sent, and trying again continues the read"
+    )]
+    PrivateContactStoreNotRead(Identifier),
 
     /// This wallet bound a shielded account before this process started, or
     /// the identity was loaded with its private scan state marking a private

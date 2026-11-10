@@ -17,6 +17,8 @@ use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::{IdentityManager, IdentityWallet};
+#[cfg(feature = "shielded")]
+use super::persister::PrivatePaymentRestoreRetry;
 use super::persister::WalletPersister;
 #[cfg(feature = "shielded")]
 use super::platform_addresses::merge_platform_payment_candidate_addresses;
@@ -50,7 +52,9 @@ use {
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
     },
-    super::shielded::store::{PendingRedrive, PrivateContactPayment, PrivatePaymentRecord},
+    super::shielded::store::{
+        PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
+    },
     super::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
     },
@@ -66,6 +70,7 @@ use {
     dpp::shielded::builder::OrchardProver,
     dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0,
     dpp::state_transition::StateTransition,
+    sha2::{Digest, Sha256},
 };
 
 /// Unique identifier for a wallet (32-byte hash).
@@ -1902,10 +1907,50 @@ impl PlatformWallet {
     /// The handles a restoration of this wallet's private contact request
     /// payments runs on ([`Self::restore_private_contact_payments`]).
     #[cfg(feature = "shielded")]
+    ///
+    /// Installs on the persister one more restoration from `coordinator`, for
+    /// the wallet's views to run, without waiting on the store, before a
+    /// contact request is refused as not restored
+    /// (`WalletPersister::retry_private_payment_restore`): a failed or
+    /// deferred restoration then lifts at the next send.
     fn private_payment_restore(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> PrivatePaymentRestore {
+        let retry: PrivatePaymentRestoreRetry = {
+            let coordinator = Arc::downgrade(coordinator);
+            let wallet_manager = Arc::clone(&self.wallet_manager);
+            let generation = Arc::clone(&self.generation);
+            let restores = Arc::clone(&self.private_payment_restores);
+            let (wallet_id, network) = (self.wallet_id, self.sdk.network);
+            Arc::new(move |persister: WalletPersister| {
+                let restore = coordinator
+                    .upgrade()
+                    .map(|coordinator| PrivatePaymentRestore {
+                        coordinator,
+                        wallet_manager: Arc::clone(&wallet_manager),
+                        persister,
+                        generation: Arc::clone(&generation),
+                        restores: Arc::clone(&restores),
+                        wallet_id,
+                        network,
+                    });
+                Box::pin(async move {
+                    let Some(restore) = restore else {
+                        return;
+                    };
+                    if let Err(error) = restore.restore_and_release(false).await {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(wallet_id),
+                            %error,
+                            "private contact request payments not restored before a send; \
+                             the wallet's contact requests stay held"
+                        );
+                    }
+                })
+            })
+        };
+        self.persister.set_private_payment_restore_retry(retry);
         PrivatePaymentRestore {
             coordinator: Arc::clone(coordinator),
             wallet_manager: Arc::clone(&self.wallet_manager),
@@ -2889,7 +2934,7 @@ impl DerefMut for WalletStateWriteGuard<'_> {
 fn associated_payment_commitments(
     redrive: &PendingRedrive,
     dashpay_id: Identifier,
-) -> Result<Vec<[u8; 32]>, PlatformWalletError> {
+) -> Result<Vec<PrivatePaymentEntry>, PlatformWalletError> {
     let corrupted = |reason: String| PlatformWalletError::ShieldedRecoveryCorrupted {
         account_index: None,
         reason,
@@ -2928,7 +2973,7 @@ fn associated_payment_commitments(
         .entries()
         .iter()
         .map(|entry| {
-            entry
+            let commitment = entry
                 .as_slice()
                 .get(..32)
                 .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
@@ -2938,7 +2983,11 @@ fn associated_payment_commitments(
                          commitment"
                             .to_string(),
                     )
-                })
+                })?;
+            Ok(PrivatePaymentEntry {
+                commitment,
+                entry_hash: Sha256::digest(entry.as_slice()).into(),
+            })
         })
         .collect()
 }
@@ -3002,10 +3051,16 @@ impl PrivatePaymentRestore {
         match &restored {
             Ok(Some(_)) => {
                 self.restores_lock().restored_from = Arc::downgrade(self.coordinator.store());
+                self.persister.note_private_payment_restore(None);
                 self.persister.private_payments_restored();
             }
             Ok(None) if self.restored_from_this_store() => {}
-            Ok(None) | Err(_) => self.persister.hold_until_private_payments_restored(),
+            Ok(None) => self.persister.hold_until_private_payments_restored(),
+            Err(error) => {
+                self.persister
+                    .note_private_payment_restore(Some(error.to_string()));
+                self.persister.hold_until_private_payments_restored();
+            }
         }
         restored
     }
@@ -3219,8 +3274,8 @@ where
                  no request, so its pair cannot be restored",
             ));
         };
-        for commitment in associated_payment_commitments(&redrive, dashpay_id)? {
-            if !journaled.contains(&commitment) {
+        for entry in associated_payment_commitments(&redrive, dashpay_id)? {
+            if !journaled.contains(&entry.commitment) {
                 migrated.push(PrivatePaymentRecord {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
@@ -3229,9 +3284,13 @@ where
                     // heights were kept, whose expiry is then never proven,
                     // so its pair stays held.
                     anchor_height: redrive.anchor_height,
-                    commitment,
+                    commitment: entry.commitment,
                     payment: *payment,
                     nullifiers: redrive.nullifiers.clone(),
+                    entry_hash: Some(entry.entry_hash),
+                    // Not kept with a record saved before the journal: its
+                    // expiry reads the store from its start.
+                    store_position: None,
                 });
             }
         }

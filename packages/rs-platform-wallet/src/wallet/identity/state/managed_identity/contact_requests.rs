@@ -815,19 +815,22 @@ impl ManagedIdentity {
     }
 
     /// Note that a private sync read DashPay's private contact request store
-    /// to its end for this identity, with nothing held back: counted once
-    /// the read reaches the height a rewind left as its floor
-    /// (`DashPayState::private_store_read_floor`), so a read from a node
-    /// behind the store already seen does not count.
-    pub(crate) fn note_private_contact_requests_read(&mut self) {
+    /// to its end for this identity, with nothing held back, the page that
+    /// reached the end proved at `end_height` or above (the lowest height of
+    /// its reads): counted only when that is at or above the height a rewind
+    /// left as its floor (`DashPayState::private_store_read_floor`), so a read
+    /// whose end comes from a node behind the store already seen does not
+    /// count, whatever the heights of the pages before it. Returns whether it
+    /// counted.
+    pub(crate) fn note_private_contact_requests_read(&mut self, end_height: u64) -> bool {
         let dashpay = &mut self.dashpay;
-        if dashpay.private_store_read_floor.is_none_or(|floor| {
-            dashpay
-                .private_store_read_height
-                .is_some_and(|read| read >= floor)
-        }) {
+        let counted = dashpay
+            .private_store_read_floor
+            .is_none_or(|floor| end_height >= floor);
+        if counted {
             dashpay.private_contact_requests_read = true;
         }
+        counted
     }
 
     /// Rewind this identity's read of DashPay's private contact request
@@ -859,7 +862,7 @@ impl ManagedIdentity {
     /// crate that read an identity's state after a private sync.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn note_private_contact_requests_read_for_tests(&mut self) {
-        self.note_private_contact_requests_read();
+        self.dashpay.private_contact_requests_read = true;
     }
 
     /// Advance the private contact request cursor to `next_position` once
