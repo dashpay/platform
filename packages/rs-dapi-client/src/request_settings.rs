@@ -11,6 +11,7 @@ const DEFAULT_CONNECT_TIMEOUT: Option<Duration> = None;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_RETRIES: usize = 5;
 const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
+const DEFAULT_BAN_BUSY_ADDRESS: bool = true;
 
 /// DAPI request settings.
 ///
@@ -43,6 +44,16 @@ pub struct RequestSettings {
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,
+    /// Ban a DAPI address whose node answered that it is busy or rate limited (gRPC
+    /// `ResourceExhausted`), or that what was asked is not ready yet (gRPC `Unavailable`
+    /// with a `retry-after` header).
+    ///
+    /// Such a node is working. A request to a method with a tight limit of its own sets this
+    /// to `false`: the request then moves to another node, and this one stays available to
+    /// every other request. Every other failure is still banned as
+    /// [ban_failed_address](Self::ban_failed_address) says, which also turns this off when
+    /// it is `false`.
+    pub ban_busy_address: Option<bool>,
     /// Maximum gRPC response size in bytes (decoding limit).
     pub max_decoding_message_size: Option<usize>,
 }
@@ -56,6 +67,7 @@ impl RequestSettings {
             timeout: None,
             retries: None,
             ban_failed_address: None,
+            ban_busy_address: None,
             max_decoding_message_size: None,
         }
     }
@@ -69,6 +81,7 @@ impl RequestSettings {
             timeout: rhs.timeout.or(self.timeout),
             retries: rhs.retries.or(self.retries),
             ban_failed_address: rhs.ban_failed_address.or(self.ban_failed_address),
+            ban_busy_address: rhs.ban_busy_address.or(self.ban_busy_address),
             max_decoding_message_size: rhs
                 .max_decoding_message_size
                 .or(self.max_decoding_message_size),
@@ -84,6 +97,7 @@ impl RequestSettings {
             ban_failed_address: self
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
+            ban_busy_address: self.ban_busy_address.unwrap_or(DEFAULT_BAN_BUSY_ADDRESS),
             max_decoding_message_size: self.max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
@@ -108,6 +122,9 @@ pub struct AppliedRequestSettings {
     pub retries: usize,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
+    /// Ban a DAPI address whose node answered that it is busy or rate limited; see
+    /// [RequestSettings::ban_busy_address].
+    pub ban_busy_address: bool,
     /// Maximum gRPC response size in bytes (decoding limit).
     pub max_decoding_message_size: Option<usize>,
     /// Certificate Authority certificate to use for verifying the server's certificate.
@@ -180,6 +197,7 @@ impl AppliedRequestSettings {
             timeout: _,
             retries: _,
             ban_failed_address: _,
+            ban_busy_address: _,
             max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate,
@@ -233,6 +251,7 @@ mod tests {
             retries: Some(3),
             connect_timeout: Some(Duration::from_secs(2)),
             ban_failed_address: Some(true),
+            ban_busy_address: Some(false),
             max_decoding_message_size: Some(1024),
         };
 
@@ -242,6 +261,7 @@ mod tests {
             retries: None,
             connect_timeout: None,
             ban_failed_address: None,
+            ban_busy_address: None,
             max_decoding_message_size: None,
         };
 
@@ -250,6 +270,7 @@ mod tests {
         assert_eq!(result.retries, Some(3)); // preserved from base
         assert_eq!(result.connect_timeout, Some(Duration::from_secs(2))); // preserved
         assert_eq!(result.ban_failed_address, Some(true)); // preserved
+        assert_eq!(result.ban_busy_address, Some(false)); // preserved
         assert_eq!(result.max_decoding_message_size, Some(1024)); // preserved
     }
 
@@ -260,6 +281,7 @@ mod tests {
             retries: Some(3),
             connect_timeout: None,
             ban_failed_address: None,
+            ban_busy_address: None,
             max_decoding_message_size: None,
         };
 
@@ -277,6 +299,7 @@ mod tests {
         assert_eq!(applied.timeout, Duration::from_secs(10));
         assert_eq!(applied.retries, 5);
         assert!(applied.ban_failed_address);
+        assert!(applied.ban_busy_address);
         assert!(applied.max_decoding_message_size.is_none());
     }
 
@@ -287,6 +310,7 @@ mod tests {
             timeout: Some(Duration::from_secs(30)),
             retries: Some(10),
             ban_failed_address: Some(false),
+            ban_busy_address: Some(false),
             max_decoding_message_size: Some(4096),
         };
 
@@ -295,6 +319,7 @@ mod tests {
         assert_eq!(applied.timeout, Duration::from_secs(30));
         assert_eq!(applied.retries, 10);
         assert!(!applied.ban_failed_address);
+        assert!(!applied.ban_busy_address);
         assert_eq!(applied.max_decoding_message_size, Some(4096));
     }
 
@@ -392,6 +417,7 @@ mod tests {
             timeout: Some(Duration::from_secs(30)),
             retries: Some(1),
             ban_failed_address: Some(false),
+            ban_busy_address: Some(false),
             ..RequestSettings::default()
         }
         .finalize();

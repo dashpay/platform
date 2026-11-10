@@ -2590,7 +2590,8 @@ mod tests {
             IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
         };
         use dpp::tests::fixtures::{
-            instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
+            instant_asset_lock_is_lock_fixture,
+            instant_asset_lock_proof_transaction_fixture_with_inputs,
         };
         use dpp::tests::json_document::json_document_to_contract;
         use dpp::version::ProtocolVersion;
@@ -2718,6 +2719,9 @@ mod tests {
             /// The asset lock transaction's outpoint, chain locked at the genesis core height;
             /// Core is asked for the transaction
             Chain,
+            /// [`Self::Chain`], with an asset lock transaction of one input more than the asset
+            /// lock input cap
+            ChainOverTheInputCap,
         }
 
         struct Registration {
@@ -2812,12 +2816,26 @@ mod tests {
                 .random_public_and_private_key_data(&mut rng, platform_version)
                 .expect("expected to get key pair");
 
-            let asset_lock_transaction = instant_asset_lock_proof_transaction_fixture(
+            let input_count = match proof_kind {
+                AssetLockProofKind::Instant | AssetLockProofKind::Chain => 1,
+                AssetLockProofKind::ChainOverTheInputCap => {
+                    u32::from(
+                        platform_version
+                            .dpp
+                            .state_transitions
+                            .identities
+                            .asset_locks
+                            .max_asset_lock_transaction_inputs,
+                    ) + 1
+                }
+            };
+            let asset_lock_transaction = instant_asset_lock_proof_transaction_fixture_with_inputs(
                 Some(
                     PrivateKey::from_byte_array(&pk, Network::Testnet)
                         .expect("expected a private key"),
                 ),
                 None,
+                input_count,
             );
             let asset_lock_proof = match proof_kind {
                 AssetLockProofKind::Instant => AssetLockProof::Instant(InstantAssetLockProof::new(
@@ -2825,10 +2843,12 @@ mod tests {
                     asset_lock_transaction.clone(),
                     0,
                 )),
-                AssetLockProofKind::Chain => AssetLockProof::Chain(ChainAssetLockProof::new(
-                    0,
-                    OutPoint::new(asset_lock_transaction.txid(), 0).into(),
-                )),
+                AssetLockProofKind::Chain | AssetLockProofKind::ChainOverTheInputCap => {
+                    AssetLockProof::Chain(ChainAssetLockProof::new(
+                        0,
+                        OutPoint::new(asset_lock_transaction.txid(), 0).into(),
+                    ))
+                }
             };
 
             let identity: Identity = IdentityV0 {
@@ -3123,6 +3143,102 @@ mod tests {
                     "at protocol version {protocol_version}"
                 );
                 platform.core_rpc.checkpoint();
+            }
+        }
+
+        /// A chain proof carries only an outpoint and a height, so from protocol 15 check_tx
+        /// and a block, reading the protocol version from platform state, no longer hold the
+        /// transaction Core returns for it to the input cap that keeps an instant proof's
+        /// transition small: the identity is created and the asset lock consumed. Protocol 14
+        /// keeps refusing it unpaid, leaving the asset lock untouched.
+        #[tokio::test]
+        async fn should_admit_at_check_tx_an_identity_create_with_a_chain_asset_lock_over_the_input_cap_only_from_protocol_15(
+        ) {
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let mut platform = new_platform(protocol_version);
+                let registration = registration_proved_by(
+                    Keys::Valid,
+                    AssetLockProofKind::ChainOverTheInputCap,
+                    0,
+                    platform_version,
+                )
+                .await;
+
+                let transaction = registration.asset_lock_transaction.clone();
+                platform
+                    .core_rpc
+                    .expect_get_optional_transaction_extended_info()
+                    .returning(move |_| {
+                        Ok(Some(GetRawTransactionResult {
+                            in_active_chain: true,
+                            hex: serialize(&transaction),
+                            txid: transaction.txid(),
+                            size: 0,
+                            version: transaction.version as u32,
+                            tx_type: 8,
+                            locktime: transaction.lock_time,
+                            vin: vec![],
+                            vout: vec![],
+                            extra_payload_size: None,
+                            extra_payload: None,
+                            blockhash: Some(BlockHash::all_zeros()),
+                            confirmations: Some(1),
+                            time: Some(0),
+                            blocktime: Some(0),
+                            height: Some(0),
+                            instantlock: false,
+                            instantlock_internal: false,
+                            chainlock: true,
+                        }))
+                    });
+
+                let errors = check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                let block = process_block(&platform, &[&registration.transition]);
+                if protocol_version < 15 {
+                    assert_matches!(
+                        errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::IdentityAssetLockTransactionTooManyInputsError(_)
+                        )],
+                        "at protocol version {protocol_version}: {errors:?}"
+                    );
+                    assert_matches!(
+                        block.as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::BasicError(
+                                BasicError::IdentityAssetLockTransactionTooManyInputsError(_)
+                            )
+                        )],
+                        "at protocol version {protocol_version}: {block:?}"
+                    );
+                    assert_eq!(
+                        asset_lock_info(&platform, &registration, platform_version),
+                        StoredAssetLockInfo::NotPresent
+                    );
+                    assert_eq!(
+                        identity_balance(&platform, &registration, platform_version),
+                        None
+                    );
+                } else {
+                    assert_eq!(errors, vec![], "at protocol version {protocol_version}");
+                    assert_matches!(
+                        block.as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                        "at protocol version {protocol_version}: {block:?}"
+                    );
+                    assert_eq!(
+                        asset_lock_info(&platform, &registration, platform_version),
+                        StoredAssetLockInfo::FullyConsumed
+                    );
+                    assert!(identity_balance(&platform, &registration, platform_version)
+                        .is_some_and(|balance| balance > 0));
+                }
             }
         }
 

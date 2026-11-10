@@ -9,7 +9,7 @@ use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
+use crate::version::dpp_versions::dpp_state_transition_versions::v5::STATE_TRANSITION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v3::VOTING_VERSION_V3;
@@ -583,9 +583,52 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     document's flags name (contract user moderation `transform_into_action` 1,
 ///     `DRIVE_ABCI_VALIDATION_VERSIONS_V11`), so the moderator pays for the bytes the change
 ///     adds and a document a sponsor paid for stays the sponsor's.
+///
+/// 29. **A document that may be contested is looked up and verified**: a single document query
+///     in its "maybe contested" status looks among the documents of its type and in the
+///     contest's area at once. `verify_proof_keep_serialized` 1
+///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`) verifies its proof against the merged query and
+///     answers with the document from whichever place holds it. Generation 0 asked for the
+///     absent keys by name, which needs an overall limit the merged query does not have, and
+///     so refused every such query. The query of a document type that keeps history states
+///     its cap itself (`single_document_path_query` 1, `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`),
+///     as the merge of `GROVE_V5` (note 26) no longer derives one above a subquery, and builds
+///     the query protocol v14 built. No state transition is proved in this status, so block
+///     execution and the proofs of state transitions are unchanged.
+///
+/// 30. **A chain asset lock proof is not held to the input cap**: the asset lock transaction
+///     an instant proof embeds, with its InstantSend lock, may carry at most
+///     `max_asset_lock_transaction_inputs` (100) inputs, so that the proof fits a state
+///     transition. `validate_asset_lock_transaction_structure` 0 checked the cap, and Drive
+///     runs it on the transaction it fetches from Core for a chain proof too, though a chain
+///     proof carries only an outpoint and a height: a mined asset lock of more than 100
+///     inputs, which no instant proof may carry either, could not be redeemed at all
+///     (`IdentityAssetLockTransactionTooManyInputsError`, 10534). `STATE_TRANSITION_VERSIONS_V5`
+///     selects `validate_asset_lock_transaction_structure` 1, which drops the cap, and
+///     `validate_instant_asset_lock_proof_structure` 1, which checks it after the instant
+///     lock's txid and before the transaction's structure, where 0 reached it, so an instant
+///     proof gets the verdict and the error it got before. Both refusals are unpaid. Protocol
+///     v14 and earlier keep both at 0, so the blocks committed under them replay with the same
+///     verdicts.
+///
+/// 31. **A single document is looked up at a block time**: in a document type that keeps
+///     history, a single document query with a block time asks for the newest version stored
+///     at or before that time. A document's history holds one key per time a version was
+///     stored and, below them all, the pointer to the latest version at key `[0]`.
+///     `single_document_path_query` 1 (`DRIVE_DOCUMENT_METHOD_VERSIONS_V5`) stops the lookup
+///     above that pointer. Generation 0 reached it, so a time before the document was first
+///     stored answered with the latest version. `verify_proof_keep_serialized` 1
+///     (`DRIVE_VERIFY_METHOD_VERSIONS_V4`) verifies the proof against the query as it is.
+///     Generation 0 asked for the absent keys by name, which a range of times does not allow,
+///     and so refused every such lookup. A document with history that may be contested is
+///     refused at a block time: a contest's area keeps no history, so a contender submitted
+///     after the time would be found there. A document type without history has one version
+///     and ignores the time, as it does at every protocol version. No state transition is
+///     proved at a block time, so block execution and the proofs of state transitions are
+///     unchanged.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 stops a single document lookup at a block time above the pointer to the latest version, and verify_proof_keep_serialized 1 verifies it (note 31)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22)
@@ -600,7 +643,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
-        state_transitions: STATE_TRANSITION_VERSIONS_V4,
+        state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,

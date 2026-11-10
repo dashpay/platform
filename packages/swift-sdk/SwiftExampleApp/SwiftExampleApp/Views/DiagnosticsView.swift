@@ -621,6 +621,8 @@ struct DiagnosticsView: View {
                 return "Not Implemented: \(msg)"
             case .internalError(let msg):
                 return "Internal Error: \(msg)"
+            case .stateTransitionResultUnconfirmed:
+                return sdkError.localizedDescription
             case .consensusRejection(let consensus, let msg):
                 return "Rejected by Platform (code \(consensus.code)): \(msg)"
             case .unknown(let msg):

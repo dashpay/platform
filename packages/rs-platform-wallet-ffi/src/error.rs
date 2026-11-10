@@ -135,42 +135,51 @@ pub enum PlatformWalletFFIResultCode {
     /// result message for logging/detail.
     ErrorWalletAlreadyExists = 15,
     /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
-    /// transition (identity-create, unshield, transfer, or withdrawal) was
-    /// DEFINITIVELY not executed. For a shielded spend that consumes notes, it
-    /// never left the wallet: it was refused before anything was sent (no
-    /// address to send it to, or the SDK's own refusal). An endpoint's verdict
-    /// proves nothing for such a spend, as no proof backs it: that is
-    /// [`Self::ErrorShieldedSpendUnconfirmed`] ([`Self::ErrorShieldedBroadcastUnconfirmed`]
-    /// for an identity create), as is any broadcast that may have been
-    /// delivered. A shield into the pool also reports here a CheckTx
-    /// or execution verdict. Any note reservations were released and the
+    /// transition (a shield from Platform addresses, identity-create,
+    /// identity top-up, unshield, transfer, or withdrawal) was DEFINITIVELY
+    /// not executed: it never left the wallet, refused before anything was
+    /// sent (no address to send it to, or the SDK's own refusal). An
+    /// endpoint's refusal or verdict (CheckTx or execution) proves nothing,
+    /// as no proof backs it: that is [`Self::ErrorShieldedSpendUnconfirmed`]
+    /// ([`Self::ErrorShieldedBroadcastUnconfirmed`] for an identity create),
+    /// as is any broadcast that may have been delivered. Any note
+    /// reservations were released, with the spend's recovery record, and the
     /// caller is free to retry.
     /// For identity-create, the new identity does NOT exist and
     /// `out_identity_id` is left untouched (still zeroed).
     ErrorShieldedBroadcastFailed = 16,
     /// Maps `PlatformWalletError::ShieldedBroadcastUnconfirmed`. The broadcast
-    /// was ACCEPTED by the relay but the SDK could not confirm its execution
-    /// result (a transient result-proof fetch/verify failure, not a platform
-    /// rejection), and a direct fetch of the derived id also came back empty.
-    /// The identity may already exist on chain, so the caller must NOT treat
+    /// was accepted by the relay, or may have been delivered, but the SDK
+    /// could not confirm its execution result (a broadcast attempt that failed
+    /// in transport, an endpoint's refusal or verdict, a result-proof
+    /// fetch/verify failure, …), and a direct fetch of the derived id also
+    /// came back empty. The wallet keeps the notes reserved and the create's
+    /// recovery record, which it saved before the broadcast. The identity may
+    /// already exist on chain, so the caller must NOT treat
     /// it as unregistered or re-submit. UNLIKE every other error code,
     /// `out_identity_id` IS written (the 32-byte derived id) on this code so
     /// the caller can hold the slot and surface the pending identity.
     ErrorShieldedBroadcastUnconfirmed = 17,
-    /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (unshield /
-    /// shielded transfer / shielded withdrawal / identity top-up / private
-    /// document create from the pool; an identity created from the pool
-    /// reports [`Self::ErrorShieldedBroadcastUnconfirmed`] (17) instead), and
-    /// `PlatformWalletError::ShieldedBroadcastMaybeDelivered`. The spend
-    /// transition was accepted by the relay, or may have been delivered, but
-    /// its execution result could not be confirmed (a broadcast attempt that
-    /// failed in transport, a DAPI wait timeout, a result-proof fetch/verify
-    /// failure, …). The spend may have executed on chain, so the wallet
-    /// intentionally KEEPS the notes reserved and its recovery record: the
-    /// next nullifier sync promotes them to spent if the spend landed, and the
-    /// redrive and anchor-prune passes release them once it provably never
-    /// can. The host must NOT auto-retry — a retry would select different
-    /// unreserved notes and could double-send if the original spend landed.
+    /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (shield from
+    /// Platform addresses or from an identity / unshield / shielded transfer /
+    /// shielded withdrawal / identity top-up / private document create from
+    /// the pool; an identity created from the pool reports
+    /// [`Self::ErrorShieldedBroadcastUnconfirmed`] (17) instead), and
+    /// `PlatformWalletError::ShieldedBroadcastMaybeDelivered`.
+    /// The transition was accepted by the relay, or may have been delivered,
+    /// but its execution result could not be confirmed (a broadcast attempt
+    /// that failed in transport, an endpoint's refusal or consensus verdict,
+    /// a DAPI wait timeout, a result-proof fetch/verify failure, …). It may
+    /// have executed on chain, or may still execute. For a spend that consumes
+    /// notes the wallet intentionally KEEPS the notes reserved and its
+    /// recovery record, saved before the broadcast and restored after a
+    /// restart: the next nullifier sync promotes them to spent if the spend
+    /// landed, and the redrive and anchor-prune passes release them once it
+    /// provably never can. A shield from Platform addresses reserves nothing
+    /// and keeps no record: its activity row stays pending until the scan
+    /// sees its note. The host must NOT auto-retry: a retry would select
+    /// different unreserved notes, or sign a second shield with the inputs'
+    /// next nonces, and could double-send if the original landed.
     ErrorShieldedSpendUnconfirmed = 18,
     /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
     /// not build the spend against any Platform-recorded anchor yet: its local
@@ -182,27 +191,30 @@ pub enum PlatformWalletFFIResultCode {
     /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
     /// where a spend WAS broadcast and must NOT be retried.
     ErrorShieldedNoRecordedAnchor = 19,
-    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A core
+    /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A Core
     /// transaction broadcast (send-to-addresses, DashPay payment, or
     /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
     /// may already be on the network (transport timeout after delivery,
     /// partial peer send, or an internal multi-node retry whose earlier
     /// attempt may have delivered). The wallet intentionally KEEPS the spent
     /// inputs' UTXO reservation, so an immediate retry fails at input
-    /// selection instead of double-spending; the reservation TTL or a sync
-    /// observing the transaction reconciles the outcome. The host must NOT
+    /// selection instead of double-spending; observing the spend reconciles
+    /// the outcome. Also covers Platform state transitions whose result
+    /// could not be verified after possible acceptance, without Core UTXO
+    /// reservations. The host must reconcile the original operation and NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
-    /// address-funds transition (shield, or identity top-up-from-addresses)
+    /// address-funds transition (a transfer or withdrawal from Platform
+    /// addresses, or an identity registration or top-up from them)
     /// because the submitted address nonce raced Platform's expected next
-    /// value (a lagging DAPI replica stale read; consensus code 40603). Same
-    /// definitively-failed / notes-released / safe-to-retry contract as
-    /// [`Self::ErrorShieldedBroadcastFailed`] — the transition did NOT execute
-    /// and any note reservations were released (a shield reserves none) — but
-    /// as its OWN code so hosts can recognize this specific, self-healing
+    /// value (a lagging DAPI replica stale read; consensus code 40603). Its
+    /// OWN code so hosts can recognize this specific, self-healing
     /// failure and retry: the retry re-fetches the address nonce, resolving
-    /// the mismatch without host intervention. The submitted and Platform-
+    /// the mismatch without host intervention. A shield from Platform
+    /// addresses does not report it: an endpoint's nonce verdict on a shield
+    /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
+    /// as no proof backs it. The submitted and Platform-
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
@@ -439,13 +451,17 @@ pub enum PlatformWalletFFIResultCode {
     ErrorShieldedInsufficientBalance = 41,
     /// Maps `PlatformWalletError::MasternodeWithdrawalUnconfirmed`. A
     /// masternode (evonode) identity credit withdrawal was broadcast and
-    /// accepted, but its execution result could not be confirmed — it may
-    /// already have executed, and the identity nonce was consumed for it, so
+    /// accepted, or may have been delivered, but its execution result could
+    /// not be confirmed (a broadcast attempt that failed in transport, an
+    /// endpoint's refusal or consensus verdict, a wait timeout, …). It may
+    /// already have executed, or may still execute, and the identity nonce
+    /// was taken for it, so
     /// a blind retry could submit a SECOND withdrawal. The host must NOT
     /// retry; it must re-read the identity's claimable balance (and the
-    /// payout) and let the user decide from the reconciled state. Definitive
-    /// rejections (consensus errors, transport verdicts) keep their ordinary
-    /// codes and stay retryable. Siblings: [`Self::ErrorShieldedSpendUnconfirmed`],
+    /// payout) and let the user decide from the reconciled state. Only a
+    /// failure before the broadcast, or a broadcast refused before anything
+    /// was sent, keeps its ordinary code and stays retryable. Siblings:
+    /// [`Self::ErrorShieldedSpendUnconfirmed`],
     /// [`Self::ErrorTransactionBroadcastUnconfirmed`].
     ErrorMasternodeWithdrawalUnconfirmed = 42,
     /// The deterministic masternode list isn't available yet (SPV not
@@ -626,11 +642,11 @@ pub enum PlatformWalletFFIResultCode {
     ErrorSpvProcessRestartRequired = 59,
 
     /// An asset lock exceeds the asset-lock input cap (100: Dash Core relay
-    /// policy and Platform consensus): a drain of every eligible input, or a
-    /// fixed amount (registration, top-up, invitation, platform-address
-    /// funding) held only in many small coins. Nothing was broadcast. A drain
-    /// host must not silently substitute a partial drain; consolidating the
-    /// coins lets either lock fit.
+    /// policy, and Platform consensus for an instant proof): a drain of every
+    /// eligible input, or a fixed amount (registration, top-up, invitation,
+    /// platform-address funding) held only in many small coins. Nothing was
+    /// broadcast. A drain host must not silently substitute a partial drain;
+    /// consolidating the coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
     /// A shielded funding is being resumed to a different Orchard recipient
@@ -992,6 +1008,19 @@ fn trade_error_json_detail(
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        // Preserve the SDK's submission phase before any diagnostic can be
+        // interpreted as a definitive nonce, balance or marketplace refusal.
+        if matches!(
+            &error,
+            PlatformWalletError::Sdk(source)
+                | PlatformWalletError::TokenOperationFailed { source, .. }
+                if source.is_state_transition_result_unconfirmed()
+        ) {
+            return Self::err(
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+                error.to_string(),
+            );
+        }
         // The three value-carrying marketplace rejections replace the
         // Display rendering with a stable JSON detail object; everything
         // else keeps Display as the message.
@@ -1561,11 +1590,16 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 mod tests {
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
+    use dash_sdk::Error as SdkError;
+    use dpp::address_funds::PlatformAddress;
     use dpp::consensus::basic::{BasicError, UnsupportedVersionError};
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
     use dpp::consensus::state::token::TokenOncePerIdentityDistributionAlreadyClaimedError;
     use dpp::prelude::Identifier;
+    use dpp::ProtocolError;
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use std::time::Duration;
 
     #[test]
     fn ok_has_null_message() {
@@ -1879,6 +1913,51 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_sdk_submission_through_wallet_ffi() {
+        for token_wrapper in [false, true] {
+            for depth in 0..=2 {
+                for diagnostic in [
+                    SdkError::TimeoutReached(Duration::from_secs(1), "wait".into()),
+                    SdkError::InvalidProvedResponse("invalid result proof".into()),
+                    SdkError::Protocol(ProtocolError::ConsensusError(Box::new(
+                        AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+                    ))),
+                ] {
+                    let mut source =
+                        SdkError::StateTransitionResultUnconfirmed(Box::new(diagnostic));
+                    for _ in 0..depth {
+                        source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+                    }
+                    let error = if token_wrapper {
+                        PlatformWalletError::TokenOperationFailed {
+                            operation: "transfer",
+                            source,
+                        }
+                    } else {
+                        PlatformWalletError::Sdk(source)
+                    };
+                    let expected = error.to_string();
+                    let mut result = PlatformWalletFFIResult::from(error);
+                    assert_eq!(
+                        result.code,
+                        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+                    );
+                    assert_eq!(result.code as i32, 20);
+                    assert_eq!(result.consensus_code, 0);
+                    assert_eq!(
+                        result.consensus_kind,
+                        PlatformWalletFFIConsensusErrorKind::None
+                    );
+                    let copied = message_of(&result);
+                    unsafe { platform_wallet_ffi_result_free(&mut result) };
+                    assert!(result.message.is_null());
+                    assert_eq!(copied, expected);
+                }
+            }
+        }
     }
 
     #[test]
@@ -3118,6 +3197,27 @@ mod private_contact_request_error_tests {
                 98
             );
         }
+    }
+
+    /// The SDK's unconfirmed outcome keeps its unconfirmed code (20) through
+    /// the shielded spend contract, as through the blanket conversion: it may
+    /// have executed, so it never reads as a failure a host may retry.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_keep_an_unconfirmed_sdk_outcome_unconfirmed_through_the_spend_contract() {
+        let unconfirmed = || {
+            PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::Generic("the acknowledgement was lost".into()),
+            )))
+        };
+        assert_eq!(
+            map_spend_result(Err(unconfirmed()), "shielded transfer").code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(
+            PlatformWalletFFIResult::from(unconfirmed()).code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
     }
 
     /// An identity the wallet does not hold reaches the host by its own code,

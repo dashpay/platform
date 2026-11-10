@@ -119,9 +119,9 @@ impl PlatformWallet {
             estimated_recipient_credits: None,
         };
         // Dash Core relays at most `max_asset_lock_transaction_inputs` (100)
-        // asset-lock inputs and Platform consensus validates the same bound —
-        // tighter than the builder's standard-transaction limit — so report
-        // it before sizing the payload.
+        // asset-lock inputs and Platform consensus holds an instant proof to
+        // the same bound — tighter than the builder's standard-transaction
+        // limit — so report it before sizing the payload.
         if candidates.len() > max_asset_lock_inputs(self.sdk.version()) {
             preview.status = WalletDrainPreviewStatus::InputLimitMayBeExceeded;
             return Ok(preview);

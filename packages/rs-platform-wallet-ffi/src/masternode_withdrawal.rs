@@ -177,12 +177,13 @@ pub unsafe extern "C" fn platform_wallet_manager_masternode_withdrawal_keys(
 /// invalid. The resolver is invoked exactly once, at signing time; the
 /// handle-storage guard is not held across it.
 ///
-/// Outcome codes after the transition leaves the wallet: a definitive
-/// rejection returns an ordinary error (retryable); an AMBIGUOUS outcome —
-/// broadcast accepted (or its ACK lost) and the result wait failed — returns
-/// `ErrorMasternodeWithdrawalUnconfirmed` (42): the claim may have executed
-/// and the identity nonce was consumed, so the host must NOT retry until it
-/// has re-read the claimable balance.
+/// Outcome codes of the broadcast: a transition that never left the wallet
+/// (refused before anything was sent) returns an ordinary error (retryable).
+/// Once a dispatch may have reached a node, anything short of a proved
+/// result, an endpoint's refusal or consensus verdict included, returns
+/// `ErrorMasternodeWithdrawalUnconfirmed` (42): the claim may have executed,
+/// or may still execute, and the identity nonce was taken for it, so the
+/// host must NOT retry until it has re-read the claimable balance.
 ///
 /// # Safety
 /// `wallet_id` / `pro_tx_hash` must point at 32 readable bytes;

@@ -84,6 +84,13 @@ sealed class DashSdkError(
     class DriveInternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /** The transition may have executed; reconcile it before submitting again. */
+    class StateTransitionResultUnconfirmed(message: String, cause: Throwable? = null) :
+        DashSdkError(message, cause) {
+        override val userMessage: String get() =
+            "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again."
+    }
+
     class InternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
@@ -267,31 +274,32 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
-         * (transfer / unshield / withdraw / shield) was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already be on chain. Rust intentionally KEEPS the spent notes'
-         * reservations, so the caller must NOT retry (a retry would rebuild
-         * the bundle against other notes and could double-spend); the next
-         * shielded sync reconciles the outcome. The Android analog of
+         * (transfer / unshield / withdraw / shield from Platform addresses)
+         * may have reached a node and its result is not proved (a failed
+         * result wait, a node's refusal or a consensus verdict, stale address
+         * nonce included), so it may already be on chain. Do NOT retry: a
+         * retry signs a second transition. Spends keep their notes reserved
+         * for the wallet to resolve; a shield stays pending until the
+         * shielded scan observes its note. The Android analog of
          * Swift's `PlatformWalletError.shieldedSpendUnconfirmed`, which the
          * iOS send flow surfaces as a non-retryable "may have gone through"
          * outcome rather than an error.
          */
         class ShieldedSpendUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the spend may already be on chain; " +
-                    "the wallet keeps the spent notes reserved until the next " +
-                    "shielded sync reconciles the outcome)",
+                "$message (do NOT retry: it may already be on chain or may " +
+                    "still execute, and a retry signs a second transition)",
                 cause,
             )
 
         /**
          * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
-         * masternode (evonode) identity credit withdrawal was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already have executed, and the identity nonce was consumed for it,
-         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
-         * re-read the identity's claimable balance and reconcile first. The
+         * masternode (evonode) identity credit withdrawal may have reached a
+         * node and its remaining balance is not proved (a failed result wait,
+         * a node's refusal or a consensus verdict included). It may have
+         * executed; a retry signs a second withdrawal with the next identity
+         * nonce. Do NOT retry; re-read the claimable balance first. Only a
+         * failure before anything was sent keeps an ordinary code. The
          * Android analog of Swift's
          * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
          */
@@ -304,10 +312,10 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
-         * non-execution outcome — relay/CheckTx rejected the transaction
-         * before it entered the chain, and any note reservations were
-         * released. Safe to retry (the opposite of the ambiguous
-         * [ShieldedSpendUnconfirmed]).
+         * non-execution outcome: the transition never left the wallet
+         * (refused before anything was sent), so it can never execute, and
+         * any note reservations were released. Safe to retry (the opposite
+         * of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
@@ -334,16 +342,15 @@ sealed class DashSdkError(
         )
 
         /**
-         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
-         * transaction broadcast had an AMBIGUOUS outcome — it may already be
-         * on the network. The wallet keeps the spent inputs reserved so a
-         * retry can't double-spend; the reservation TTL or a later sync
-         * reconciles the outcome. Do **NOT** auto-retry.
+         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A Core
+         * transaction or Platform state transition may already have executed,
+         * but its result is unconfirmed. Reconcile the original operation
+         * before submitting again. Do **NOT** auto-retry.
          */
         class TransactionBroadcastUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the transaction may already be on the network; " +
-                    "the wallet keeps its inputs reserved until a sync reconciles the outcome)",
+                "$message (do NOT retry: the submission may already have executed; " +
+                    "reconcile the original operation before submitting again)",
                 cause,
             )
 
@@ -671,7 +678,7 @@ sealed class DashSdkError(
         /**
          * Offset the JNI bridge adds to a `PlatformWalletFFIResultCode`
          * before throwing it as a `DashSDKException`, keeping it clear of the
-         * rs-sdk-ffi `DashSDKErrorCode` range (1–10). Must stay in lockstep
+         * rs-sdk-ffi `DashSDKErrorCode` range (1–11, 99). Must stay in lockstep
          * with `support::PWFFI_CODE_OFFSET` in `rs-unified-sdk-jni`.
          */
         const val PLATFORM_WALLET_CODE_OFFSET = 1000
@@ -701,6 +708,7 @@ sealed class DashSdkError(
                 8 -> Timeout(message, e)
                 9 -> NotImplemented(message, e)
                 10 -> DriveInternalError(message, e)
+                11 -> StateTransitionResultUnconfirmed(message, e)
                 else -> InternalError(message, e)
             }
         }
