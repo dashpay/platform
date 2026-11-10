@@ -22,7 +22,9 @@ use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
 use super::get_blocks::{MAX_RESPONSE_BYTES, held_block_results};
 use crate::cache::make_cache_key;
-use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT, TenderdashClient};
+use crate::clients::tenderdash_client::{
+    BlockId, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultCommit, TenderdashClient,
+};
 use crate::error::{DAPIResult, DapiError};
 use crate::services::platform_service::{PlatformServiceImpl, run_holding_permit};
 
@@ -86,30 +88,58 @@ async fn read_owner_transactions(
     let platform_version = block_platform_version(block.header.version.app, height)?;
     let (block_txs, owned) =
         select_owned_transactions_blocking(block.data.txs, owner_id, platform_version).await?;
-    let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
     // Most blocks hold nothing of a given owner, so the results are read only when needed
     let results = if owned.is_empty() {
         Vec::new()
     } else {
         held_block_results(height, tenderdash_client.block_results(height).await)?
     };
+    let proof_source = if prove {
+        let commit = tenderdash_client.commit(height).await?;
+        let quorum_type = tenderdash_client.validator_quorum_type().await?;
+        Some((commit, quorum_type))
+    } else {
+        None
+    };
+
+    // Proving hashes every transaction of the block again and encodes every result, which
+    // for a full block would hold up the other requests an async thread serves, so the
+    // answer is built on the blocking pool.
+    tokio::task::spawn_blocking(move || {
+        build_response(height, &block_id, &block_txs, owned, &results, proof_source)
+    })
+    .await?
+}
+
+/// Build the answer out of what Tenderdash returned: the block's transactions, the owner's
+/// among them and the block's results. `proof_source` is the block's commit and the quorum
+/// type, given only when the answer is to be proved.
+fn build_response(
+    height: u64,
+    block_id: &BlockId,
+    block_txs: &[String],
+    owned: Vec<OwnedTransaction>,
+    results: &[BlockTxResult],
+    proof_source: Option<(ResultCommit, u32)>,
+) -> DAPIResult<GetOwnerTransactionsInBlockResponse> {
+    let indexes = owned.iter().map(|tx| tx.index).collect::<Vec<_>>();
     let mut transactions = if owned.is_empty() {
         Vec::new()
     } else {
-        attach_results(owned, &results, block_txs.len())?
+        attach_results(owned, results, block_txs.len())?
     };
 
-    let proof = if prove {
-        let commit = tenderdash_client.commit(height).await?;
-        let quorum_type = tenderdash_client.validator_quorum_type().await?;
-        let proof = build_block_proof(height, &block_id, commit, quorum_type)?;
-        let proofs = transaction_proofs(&proof, &block_txs, &results, &indexes)?;
-        for (transaction, transaction_proof) in transactions.iter_mut().zip(proofs) {
-            transaction.proof = Some(transaction_proof);
+    let prove = proof_source.is_some();
+    let proof = match proof_source {
+        Some((commit, quorum_type)) => {
+            let proof = build_block_proof(height, block_id, commit, quorum_type)?;
+            let proofs = transaction_proofs(&proof, block_txs, results, &indexes)?;
+            for (transaction, transaction_proof) in transactions.iter_mut().zip(proofs) {
+                transaction.proof = Some(transaction_proof);
+            }
+            Some(proof)
         }
-        Some(proof)
-    } else {
-        None
+        None => None,
     };
 
     let response = GetOwnerTransactionsInBlockResponse {
