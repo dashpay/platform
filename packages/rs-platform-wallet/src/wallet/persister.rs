@@ -183,34 +183,43 @@ impl WalletPersister {
     /// otherwise. Those a flush failed for are kept, with every one kept
     /// before, and noted by the next call whose flush succeeds: an empty one
     /// retries them. Their records, and so the pairs they hold, stay until
-    /// then.
+    /// then. The host's flush runs with none of the persister's locks held,
+    /// so a call during it, from another thread or the flush itself, neither
+    /// waits nor loses what it adds.
     #[cfg(feature = "shielded")]
     pub(crate) fn note_read_back_once_durable(
         &self,
         commitments: impl IntoIterator<Item = [u8; 32]>,
     ) {
-        let mut unflushed = self
-            .unflushed_read_back_private_entries
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        unflushed.extend(commitments);
-        if unflushed.is_empty() {
+        let pending = {
+            let mut unflushed = self.unflushed_read_back_entries();
+            unflushed.extend(commitments);
+            std::mem::take(&mut *unflushed)
+        };
+        if pending.is_empty() {
             return;
         }
         if !self.store_commits_inline() {
             if let Err(error) = self.flush() {
                 tracing::warn!(
                     %error,
-                    kept = unflushed.len(),
+                    kept = pending.len(),
                     "private requests read back are not durably recorded; their journal \
                      records stay until a later flush succeeds"
                 );
+                // With any added meanwhile.
+                self.unflushed_read_back_entries().extend(pending);
                 return;
             }
         }
-        let durable = std::mem::take(&mut *unflushed);
-        drop(unflushed);
-        self.note_read_back_private_entries(durable);
+        self.note_read_back_private_entries(pending);
+    }
+
+    #[cfg(feature = "shielded")]
+    fn unflushed_read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
+        self.unflushed_read_back_private_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Take the commitments [`Self::note_read_back_private_entries`] noted:
@@ -544,6 +553,10 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "shielded")]
+    use std::sync::{mpsc, OnceLock};
+    #[cfg(feature = "shielded")]
+    use std::time::Duration;
 
     /// `persists_durably` is a fail-closed security capability: an
     /// implementation that does NOT explicitly attest durability must read as
@@ -570,5 +583,65 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// The host's flush runs with no lock of the persister held: a flush that
+    /// notes another read-back commitment through the same persister, as a
+    /// reentrant backend or another thread would, completes, and nothing a
+    /// failed flush was given is lost: the next flush that succeeds notes
+    /// them all.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_flush_read_back_notices_without_holding_their_lock() {
+        struct Reentrant {
+            persister: OnceLock<WalletPersister>,
+            flush_fails: AtomicBool,
+            reentered: AtomicBool,
+        }
+        impl PlatformWalletPersistence for Reentrant {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                // The first flush notes another commitment before it ends.
+                if !self.reentered.swap(true, Ordering::SeqCst) {
+                    if let Some(persister) = self.persister.get() {
+                        persister.note_read_back_once_durable([[2; 32]]);
+                    }
+                }
+                if self.flush_fails.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend("the disk is full"));
+                }
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            let backend = Arc::new(Reentrant {
+                persister: OnceLock::new(),
+                flush_fails: AtomicBool::new(true),
+                reentered: AtomicBool::new(false),
+            });
+            let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+            let _ = backend.persister.set(persister.clone());
+            persister.note_read_back_once_durable([[1; 32]]);
+            let noted_on_failure = persister.has_read_back_private_entries();
+            backend.flush_fails.store(false, Ordering::SeqCst);
+            persister.note_read_back_once_durable([]);
+            let _ = done.send((noted_on_failure, persister.take_read_back_private_entries()));
+        });
+        let (noted_on_failure, noted) = finished
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the flushes complete");
+        assert!(!noted_on_failure, "a failed flush notes nothing");
+        assert_eq!(noted, BTreeSet::from([[1; 32], [2; 32]]), "nothing lost");
     }
 }
