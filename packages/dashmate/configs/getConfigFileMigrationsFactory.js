@@ -1868,6 +1868,29 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.0.4': (configFile) => {
+        // Core v23 rejects the blocks the network produces once Core's V24 deployment
+        // is active, so mainnet and testnet nodes still on the image every release
+        // since 3.0.1 stored move to v24. Any other image is the operator's choice.
+        //
+        // Local and devnet nodes stay on v23. Core v24 discards the sporks a v23 node
+        // stored, does not ask v23 peers for theirs, and marks older members bad in
+        // DKG, so a node moved ahead of its network runs without ChainLocks, InstantSend
+        // or quorums, and a whole network moved together has to sign its sporks again.
+        // Mainnet hard-codes its sporks.
+        // The `local` preset holds no chain; new local networks are created from it.
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const isPublicNetwork = [NETWORK_MAINNET, NETWORK_TESTNET].includes(options.network);
+            const docker = options.core?.docker;
+
+            if ((isPublicNetwork || name === 'local') && docker?.image === 'dashpay/dashd:23') {
+              docker.image = 'dashpay/dashd:24';
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
