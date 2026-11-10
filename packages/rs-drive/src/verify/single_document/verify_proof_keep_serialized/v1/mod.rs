@@ -497,6 +497,8 @@ mod tests {
         }
     }
 
+    /// A proof holding the document in both places is refused as a whole proof and as a subset,
+    /// which GroveDB verifies through different entry points
     #[test]
     fn should_refuse_a_document_proved_to_be_in_both_places() {
         let platform_version = PlatformVersion::latest();
@@ -525,11 +527,14 @@ mod tests {
             )
             .expect("expected a proof");
 
-        let result = query.verify_proof_keep_serialized(false, proof.as_slice(), platform_version);
+        for is_subset in [false, true] {
+            let result =
+                query.verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version);
 
-        assert!(
-            matches!(result, Err(Error::Proof(ProofError::CorruptedProof(_)))),
-            "{result:?}"
-        );
+            assert!(
+                matches!(result, Err(Error::Proof(ProofError::CorruptedProof(_)))),
+                "is_subset {is_subset}: {result:?}"
+            );
+        }
     }
 }
