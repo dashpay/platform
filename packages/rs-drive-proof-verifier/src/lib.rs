@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::result_large_err)]
 
+pub mod block_proof;
 /// Errors that can occur during proof verification
 pub mod error;
 /// Implementation of proof verification

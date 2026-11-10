@@ -82,6 +82,21 @@ pub enum BatchedTransitionBoundsCheck {
     },
 }
 
+/// Whether a key carrying contract bounds may be used with the documents of one document type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentTypeBoundsCheck {
+    /// The document type lies inside the bounds.
+    Allowed,
+    /// The document type lies outside the bounds.
+    Denied,
+    /// The bounds name a contract group. The type lies inside them when its contract holds it,
+    /// or is a whole-contract member, of the group: only state can answer that.
+    RequiresContractGroupMembership {
+        /// The group the bounds name.
+        contract_group_id: Identifier,
+    },
+}
+
 impl ContractBounds {
     /// Creates a new contract bounds for the key
     pub fn new_from_type(
@@ -172,6 +187,33 @@ impl ContractBounds {
                 ..
             } => Some(document_type),
             ContractGroup { .. } => None,
+        }
+    }
+
+    /// Whether a key carrying these bounds may be used with the documents of the type
+    /// `document_type_name` of the contract `contract_id`. Clients scope their ENCRYPTION and
+    /// DECRYPTION keys with this, as the bounds ask. A contract group bound is answered by the
+    /// group's members, which only state holds: a client that does not read them treats the
+    /// type as outside the bounds.
+    pub fn check_document_type(
+        &self,
+        contract_id: &Identifier,
+        document_type_name: &str,
+    ) -> DocumentTypeBoundsCheck {
+        match self {
+            SingleContract { id } if id == contract_id => DocumentTypeBoundsCheck::Allowed,
+            SingleContractDocumentType {
+                id,
+                document_type_name: bound_document_type_name,
+            } if id == contract_id && bound_document_type_name == document_type_name => {
+                DocumentTypeBoundsCheck::Allowed
+            }
+            SingleContract { .. } | SingleContractDocumentType { .. } => {
+                DocumentTypeBoundsCheck::Denied
+            }
+            ContractGroup { id } => DocumentTypeBoundsCheck::RequiresContractGroupMembership {
+                contract_group_id: *id,
+            },
         }
     }
 
@@ -372,6 +414,85 @@ mod core_tests {
             ContractBounds::contract_bounds_type_from_str(sctd.contract_bounds_type_string())
                 .unwrap(),
             sctd.contract_bounds_type()
+        );
+    }
+}
+
+#[cfg(test)]
+mod document_type_tests {
+    use super::{ContractBounds, DocumentTypeBoundsCheck};
+    use crate::identifier::Identifier;
+
+    #[test]
+    fn should_allow_only_the_bound_contract_or_document_type() {
+        let contract_id = Identifier::from([1; 32]);
+        let other_id = Identifier::from([2; 32]);
+        let contract = ContractBounds::SingleContract { id: contract_id };
+        let document_type = ContractBounds::SingleContractDocumentType {
+            id: contract_id,
+            document_type_name: "note".to_string(),
+        };
+        for (case, bounds, checked_contract, checked_type, expected) in [
+            (
+                "a contract bound, a type of it",
+                &contract,
+                contract_id,
+                "note",
+                DocumentTypeBoundsCheck::Allowed,
+            ),
+            (
+                "a contract bound, another type of it",
+                &contract,
+                contract_id,
+                "other",
+                DocumentTypeBoundsCheck::Allowed,
+            ),
+            (
+                "a contract bound, another contract",
+                &contract,
+                other_id,
+                "note",
+                DocumentTypeBoundsCheck::Denied,
+            ),
+            (
+                "a type bound, that type",
+                &document_type,
+                contract_id,
+                "note",
+                DocumentTypeBoundsCheck::Allowed,
+            ),
+            (
+                "a type bound, another type",
+                &document_type,
+                contract_id,
+                "other",
+                DocumentTypeBoundsCheck::Denied,
+            ),
+            (
+                "a type bound, that type's name in another contract",
+                &document_type,
+                other_id,
+                "note",
+                DocumentTypeBoundsCheck::Denied,
+            ),
+        ] {
+            assert_eq!(
+                bounds.check_document_type(&checked_contract, checked_type),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_leave_a_contract_group_bound_to_its_members() {
+        let contract_group_id = Identifier::from([3; 32]);
+        let bounds = ContractBounds::ContractGroup {
+            id: contract_group_id,
+        };
+        assert_eq!(
+            bounds.check_document_type(&Identifier::from([1; 32]), "note"),
+            DocumentTypeBoundsCheck::RequiresContractGroupMembership { contract_group_id }
         );
     }
 }

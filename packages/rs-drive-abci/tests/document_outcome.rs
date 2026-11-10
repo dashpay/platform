@@ -132,7 +132,6 @@ fn fixture_signed_as(
             true,
             None,
             producer,
-            None,
         )
         .unwrap();
     let transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {

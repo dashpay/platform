@@ -108,6 +108,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let lock = TrackedAssetLock {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -1105,7 +1106,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, out_point.vout, self.sdk.version())
+                    input_cap_violation(&tx, self.sdk.version())
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
@@ -2224,6 +2225,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2360,6 +2362,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2584,6 +2587,7 @@ mod tests {
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
             operation_id: None,
+            shielded_recipient: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2861,6 +2865,7 @@ mod tests {
                 self.out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4372,6 +4377,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4886,6 +4892,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5010,6 +5017,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5513,6 +5521,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5618,6 +5627,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5897,6 +5907,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6042,6 +6053,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -6244,6 +6256,7 @@ mod tests {
                             amount: amount_duffs,
                             status,
                             proof: None,
+                            shielded_recipient: None,
                         },
                     );
             }

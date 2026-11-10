@@ -21,6 +21,7 @@ use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyI
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+use dpp::state_transition::private_document_create_from_shielded_pool_transition::PrivateDocumentCreateFromShieldedPoolTransition;
 use dpp::state_transition::token_purchase_from_shielded_pool_transition::TokenPurchaseFromShieldedPoolTransition;
 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
 use dpp::state_transition::token_unshield_with_shielded_fee_transition::TokenUnshieldWithShieldedFeeTransition;
@@ -30,7 +31,8 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::shielded::{
-    shield_extra_sighash_data, shield_from_identity_extra_sighash_data, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
+    compute_private_document_create_from_shielded_pool_fee,
+    private_document_create_from_shielded_pool_extra_sighash_data, shield_extra_sighash_data, shield_from_identity_extra_sighash_data, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
@@ -157,6 +159,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::TokenShieldedTransferWithShieldedFee(_)
                 | StateTransition::TokenUnshieldWithShieldedFee(_)
                 | StateTransition::TokenPurchaseFromShieldedPool(_)
+                | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
         )
     }
 
@@ -206,6 +209,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             },
             StateTransition::IdentityCreateFromShieldedPool(st) => match st {
                 IdentityCreateFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
+            },
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => match st {
+                PrivateDocumentCreateFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
             },
             StateTransition::ShieldFromAssetLock(st) => match st {
                 dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition::V0(v0) => {
@@ -293,6 +299,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::TokenShieldedTransferWithShieldedFee(_)
                 | StateTransition::TokenUnshieldWithShieldedFee(_)
                 | StateTransition::TokenPurchaseFromShieldedPool(_)
+                | StateTransition::PrivateDocumentCreateFromShieldedPool(_)
         )
     }
 }
@@ -371,6 +378,14 @@ enum ShieldedMinFeeKind {
     /// minus the agreed price.
     TokenPurchase {
         token_actions: usize,
+    },
+    /// `compute_private_document_create_from_shielded_pool_fee` — the bundle plus, per entry, its
+    /// bytes and the flat entry fee; `validated_amount` is the bundle's value balance, which is
+    /// the fee. Priced at the first entry's size: basic structure holds every entry to it, and
+    /// the transform to the type's `entrySize`.
+    PrivateDocumentCreate {
+        entry_count: usize,
+        entry_size: u32,
     },
 }
 
@@ -512,6 +527,27 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             ShieldedMinFeeKind::TokenPurchase { token_actions: v0.token_actions.len() },
                         ),
                     },
+                    // Added in place: protocol version 14 selects this generation too, but refuses a
+                    // `PrivateDocumentCreateFromShieldedPool` before it gets here (its
+                    // `active_version_range` and `is_allowed` start it at 15).
+                    StateTransition::PrivateDocumentCreateFromShieldedPool(st) => match st {
+                        PrivateDocumentCreateFromShieldedPoolTransition::V0(v0) => (
+                            v0.value_balance as i64,
+                            v0.actions.len(),
+                            0,
+                            u64::MAX,
+                            true,
+                            ShieldedMinFeeKind::PrivateDocumentCreate {
+                                entry_count: v0.entries.len(),
+                                // Basic structure caps an entry at a u32 size.
+                                entry_size: v0
+                                    .entries
+                                    .first()
+                                    .map(|entry| entry.len().min(u32::MAX as usize) as u32)
+                                    .unwrap_or(0),
+                            },
+                        ),
+                    },
                     // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
@@ -599,6 +635,15 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             platform_version,
                         )?
                     }
+                    ShieldedMinFeeKind::PrivateDocumentCreate {
+                        entry_count,
+                        entry_size,
+                    } => compute_private_document_create_from_shielded_pool_fee(
+                        num_actions,
+                        entry_count,
+                        entry_size,
+                        platform_version,
+                    )?,
                 };
 
                 if (validated_amount as u64) < minimum_shielded_fee {
@@ -1419,6 +1464,32 @@ fn validate_shielded_proof_v1(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.top_up_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    // Added in place: protocol version 14 selects this generation too, but
+                    // refuses a `PrivateDocumentCreateFromShieldedPool` before it gets here
+                    // (`active_version_range` and `is_allowed` start it at 15), so the arm is
+                    // unreachable there. The bundle pays exactly the fee, so its value balance
+                    // is the whole amount leaving the pool, and its sighash binds the target and
+                    // every entry.
+                    StateTransition::PrivateDocumentCreateFromShieldedPool(st) => match st {
+                        PrivateDocumentCreateFromShieldedPoolTransition::V0(v0) => {
+                            let extra_sighash_data =
+                                private_document_create_from_shielded_pool_extra_sighash_data(
+                                    &v0.data_contract_id.to_buffer(),
+                                    &v0.document_type_name,
+                                    &v0.entries,
+                                    platform_version,
+                                )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.value_balance as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,

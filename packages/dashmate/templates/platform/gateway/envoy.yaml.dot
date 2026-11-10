@@ -212,6 +212,22 @@
                     # Entire stream/request timeout
                     max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                     grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+              # rs-dapi getBlocks endpoint with its own per-IP limit: must precede the Platform
+              # prefix below. A route with rate_limits replaces the virtual host's for its requests.
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/getBlocks"
+                route:
+                  cluster: rs_dapi
+                  # Upstream response timeout
+                  timeout: 60s
+                  {{? it.platform.gateway.rateLimiter.enabled }}
+                  rate_limits:
+                    - actions:
+                        - generic_key:
+                            descriptor_key: method
+                            descriptor_value: getBlocks
+                        - remote_address: {}
+                  {{?}}
               # rs-dapi Platform endpoints (now exposed directly)
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Platform"

@@ -32,11 +32,7 @@ pub enum AutoBackupOperation {
 }
 
 /// Errors produced by the wallet-storage SQLite backend.
-///
-/// `#[non_exhaustive]`: new failure modes get their own variant, so matches
-/// outside this crate need a wildcard arm.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum WalletStorageError {
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]

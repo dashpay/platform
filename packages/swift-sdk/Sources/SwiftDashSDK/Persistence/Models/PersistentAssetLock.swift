@@ -206,6 +206,19 @@ public final class PersistentAssetLock {
     /// completed transfer from an operation that never reached broadcast.
     public var operationId: Data?
 
+    /// Raw 43-byte Orchard recipient a shielded asset-lock funding
+    /// (`fundingTypeRaw == 5`) was built to pay — the `recipientShielded*`
+    /// field-family promised above. Written by Rust with the row before the
+    /// lock is dispatched and immutable afterwards: a resume pays this
+    /// recipient and refuses another (`assetLockRecipientMismatch`). `nil`
+    /// for other funding types and for shielded locks tracked before the
+    /// recipient was recorded (those accept the resuming caller's).
+    ///
+    /// Default `nil` on the column keeps SwiftData's lightweight migration
+    /// safe for rows that pre-date this field. Lands in the live, not yet
+    /// published, V4 schema (`schema-releases.json` registers 3.0.0 only).
+    public var shieldedRecipientRaw43: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -220,7 +233,8 @@ public final class PersistentAssetLock {
         amountDuffs: Int64,
         statusRaw: Int,
         proofBytes: Data? = nil,
-        operationId: Data? = nil
+        operationId: Data? = nil,
+        shieldedRecipientRaw43: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -232,6 +246,7 @@ public final class PersistentAssetLock {
         self.statusRaw = statusRaw
         self.proofBytes = proofBytes
         self.operationId = operationId
+        self.shieldedRecipientRaw43 = shieldedRecipientRaw43
         self.createdAt = Date()
         self.updatedAt = Date()
     }

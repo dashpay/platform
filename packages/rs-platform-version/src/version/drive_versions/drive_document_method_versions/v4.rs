@@ -113,6 +113,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // from any item element, so a `documentsSummable` type (stored as
             // `ItemWithSumItem`) can be paginated.
             start_at_document: 1,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -194,6 +195,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15
         prove_private_document_entries: None,
+        append_private_document_entries_operations: None, // no private document type before protocol version 15
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

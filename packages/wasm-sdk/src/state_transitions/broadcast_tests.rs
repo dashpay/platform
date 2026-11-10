@@ -140,6 +140,7 @@ fn dump<R: TransportRequest>(directory: &Path, request: &R, result: MockResult<R
 
 fn transport_failure() -> ExecutionError<DapiClientError> {
     ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(Status::new(
             Code::InvalidArgument,
             "request refused",
@@ -324,6 +325,12 @@ async fn should_preserve_strict_and_affected_state_rust_waits() {
             };
             if execution {
                 strict.expect("execution proof must satisfy a strict wait");
+            } else if combined {
+                assert!(matches!(
+                    strict,
+                    Err(SdkError::StateTransitionResultUnconfirmed(cause))
+                        if matches!(*cause, SdkError::ExecutionNotProved(_))
+                ));
             } else {
                 assert!(matches!(strict, Err(SdkError::ExecutionNotProved(_))));
             }
