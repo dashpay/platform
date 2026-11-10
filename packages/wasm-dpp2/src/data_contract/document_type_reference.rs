@@ -14,19 +14,18 @@
 use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serialization::{object_with_own_properties, platform_value_to_object};
 use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
-    ANY_PROPERTY_NAME, DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     DocumentTypeRequirements, IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey,
-    LookupKeyParam, LookupKeySource, PropertyReference, SLOT_CONDITION_KIND, SLOT_CONDITION_SELF,
-    SlotCondition, SlotConditionValue, SlotConditions, SlotPropertyName, SlotRequirement,
-    SlotRequirementTerm, SlotValue, WhereCondition, WhereContainsBound, WhereLiteral,
-    WhereNotEqualBound, WhereOrderingBound,
+    LookupKeyParam, LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound,
+    WhereLiteral, WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -1158,156 +1157,40 @@ fn set_reference_target_fields(
     Ok(())
 }
 
-/// `documentTypeRequirements` as the schema declares it: the slots under `properties`, and
-/// `require` when the declaration has one.
+/// `documentTypeRequirements` as the schema declares it. The shape is rs-dpp's
+/// (`DocumentTypeRequirements::to_schema_value`, which the parser reads back); only the
+/// slots are placed here, each an own property, since a slot may be named like an
+/// accessor every object inherits (`__proto__`).
 fn document_type_requirements_to_js(
     requirements: &DocumentTypeRequirements,
     path: &str,
 ) -> WasmDppResult<Object> {
-    let names =
-        |slots: &[String]| -> Array { slots.iter().map(|slot| JsValue::from_str(slot)).collect() };
-    let properties = Object::new();
-    for (slot_name, slot) in &requirements.slots {
-        let fields = Object::new();
-        let name = match &slot.name {
-            SlotPropertyName::Any => JsValue::from_str(ANY_PROPERTY_NAME),
-            SlotPropertyName::Named(name) => JsValue::from_str(name),
-            SlotPropertyName::FromProperty(property) => {
-                let from_property = Object::new();
-                set_field(
-                    &from_property,
-                    "property",
-                    &JsValue::from_str(property),
-                    path,
-                )?;
-                from_property.into()
-            }
-        };
-        set_field(&fields, "name", &name, path)?;
-        let value_type = match slot.value {
-            SlotValue::String => "string",
-            SlotValue::Identifier => "identifier",
-            SlotValue::Integer => "integer",
-            SlotValue::Boolean => "boolean",
-            SlotValue::ByteArray => "array",
-        };
-        set_field(&fields, "type", &JsValue::from_str(value_type), path)?;
-        if slot.value == SlotValue::ByteArray {
-            set_field(&fields, "byteArray", &JsValue::TRUE, path)?;
-        }
-        if let Some(max_bytes) = slot.max_bytes {
-            set_field(&fields, "maxBytes", &JsValue::from(max_bytes), path)?;
-        }
-        if !slot.distinct_from.is_empty() {
-            let others: Vec<String> = slot.distinct_from.iter().cloned().collect();
-            set_field(&fields, "distinctFrom", &names(&others), path)?;
-        }
-        if let Some(when) = &slot.when {
-            set_field(&fields, "when", &slot_condition_to_js(when, path)?, path)?;
-        }
-        set_schema_field(&properties, slot_name, fields.into(), path)?;
-    }
+    let slots = requirements
+        .slots
+        .iter()
+        .map(|(slot_name, slot)| {
+            Ok((
+                slot_name.as_str(),
+                platform_value_to_object(&slot.to_schema_value())?,
+            ))
+        })
+        .collect::<WasmDppResult<Vec<_>>>()?;
     let object = Object::new();
-    set_field(&object, "properties", &properties, path)?;
-
+    set_field(
+        &object,
+        "properties",
+        &object_with_own_properties(slots)?.into(),
+        path,
+    )?;
     if let Some(require) = &requirements.require {
-        let terms_to_js = |terms: &[SlotRequirementTerm], inner: &str| -> WasmDppResult<Array> {
-            let operands = Array::new();
-            for term in terms {
-                match term {
-                    SlotRequirementTerm::Slot(slot) => {
-                        operands.push(&JsValue::from_str(slot));
-                    }
-                    SlotRequirementTerm::Group(slots) => {
-                        let group = Object::new();
-                        set_field(&group, inner, &names(slots), path)?;
-                        operands.push(&group);
-                    }
-                }
-            }
-            Ok(operands)
-        };
-        let require: JsValue = match require {
-            SlotRequirement::Slot(slot) => JsValue::from_str(slot),
-            SlotRequirement::AnyOf(terms) => {
-                let combinator = Object::new();
-                set_field(
-                    &combinator,
-                    "anyOf",
-                    &terms_to_js(terms, "allOf")?.into(),
-                    path,
-                )?;
-                combinator.into()
-            }
-            SlotRequirement::AllOf(terms) => {
-                let combinator = Object::new();
-                set_field(
-                    &combinator,
-                    "allOf",
-                    &terms_to_js(terms, "anyOf")?.into(),
-                    path,
-                )?;
-                combinator.into()
-            }
-        };
-        set_field(&object, "require", &require, path)?;
+        set_field(
+            &object,
+            "require",
+            &platform_value_to_object(&require.to_schema_value())?,
+            path,
+        )?;
     }
     Ok(object)
-}
-
-/// A condition of a slot's `when` as the schema declares it: an object of one key.
-fn slot_condition_to_js(condition: &SlotCondition, path: &str) -> WasmDppResult<JsValue> {
-    let string = |value: &SlotConditionValue| -> WasmDppResult<JsValue> {
-        Ok(match value {
-            SlotConditionValue::Kind => JsValue::from_str(SLOT_CONDITION_KIND),
-            SlotConditionValue::PropertyName => JsValue::from_str(SLOT_CONDITION_SELF),
-            SlotConditionValue::Constant(constant) => {
-                let object = Object::new();
-                set_field(&object, "const", &JsValue::from_str(constant), path)?;
-                object.into()
-            }
-        })
-    };
-    let pair = |left: JsValue, right: JsValue| -> JsValue { Array::of2(&left, &right).into() };
-    let among = |values: &BTreeSet<String>| -> JsValue {
-        values
-            .iter()
-            .map(|value| JsValue::from_str(value))
-            .collect::<Array>()
-            .into()
-    };
-    let listed = |conditions: &SlotConditions| -> WasmDppResult<JsValue> {
-        let operands = Array::new();
-        for condition in conditions.conditions() {
-            operands.push(&slot_condition_to_js(condition, path)?);
-        }
-        Ok(operands.into())
-    };
-    let (key, operand) = match condition {
-        SlotCondition::Equal(left, right) => ("equal", pair(string(left)?, string(right)?)),
-        SlotCondition::NotEqual(left, right) => ("notEqual", pair(string(left)?, string(right)?)),
-        SlotCondition::In(value, values) => ("in", pair(string(value)?, among(values))),
-        SlotCondition::NotIn(value, values) => ("notIn", pair(string(value)?, among(values))),
-        SlotCondition::Contains(list, value) => (
-            "contains",
-            pair(JsValue::from_str(list.wire_name()), string(value)?),
-        ),
-        // `not` holds its one condition bare, not in a list
-        SlotCondition::Not(conditions) => (
-            "not",
-            match conditions.conditions() {
-                [negated] => slot_condition_to_js(negated, path)?,
-                _ => listed(conditions)?,
-            },
-        ),
-        SlotCondition::AnyOf(conditions) => ("anyOf", listed(conditions)?),
-        SlotCondition::AllOf(conditions) => ("allOf", listed(conditions)?),
-        SlotCondition::IfThen(conditions) => ("ifThen", listed(conditions)?),
-        SlotCondition::IfThenElse(conditions) => ("ifThenElse", listed(conditions)?),
-    };
-    let object = Object::new();
-    set_field(&object, key, &operand, path)?;
-    Ok(object.into())
 }
 
 /// Collect every reference declaration of one document type: its

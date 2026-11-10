@@ -17,9 +17,12 @@ const PLAIN: &str = "plain";
 const EITHER_NOTE: &str = "eitherNote";
 const KEPT_POST: &str = "keptPost";
 const ARTICLE: &str = "article";
+const PERMANENT_NOTE: &str = "permanentNote";
+const TALLY: &str = "tally";
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
 const REFERENCED_DOCUMENT_TYPE_NOT_FOUND: u32 = 40121;
 const REFERENCED_DOCUMENT_TYPE_NOT_MODERATED: u32 = 40143;
+const REFERENCED_DOCUMENT_TYPE_INDEX_ONLY: u32 = 40146;
 const REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET: u32 = 40153;
 
 fn id_value(id: Identifier) -> Value {
@@ -100,6 +103,48 @@ fn plain_schema() -> Value {
     })
 }
 
+/// A document type kept only as index entries, which nobody deletes: its documents never leave
+/// state, and none can be fetched by its id
+fn tally_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": false,
+        "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 63, "position": 0 },
+        },
+        "indices": [{
+            "name": "byLabel",
+            "properties": [{ "label": "asc" }],
+            "terminal": "$ownerId",
+        }],
+        "required": ["label"],
+        "additionalProperties": false,
+    })
+}
+
+/// A note describing itself with a permanent document of a type it names, of which it asks
+/// nothing else.
+fn permanent_note_schema() -> Value {
+    let mut schema = note_schema(text_or_bytes());
+    let refers_to = platform_value!({
+        "type": "permanentDocument",
+        "contractIdProperty": "descriptionContractId",
+        "documentTypeProperty": "descriptionDocumentType",
+    });
+    schema
+        .get_mut("properties")
+        .expect("expected properties")
+        .expect("expected properties")
+        .get_mut("descriptionId")
+        .expect("expected the reference property")
+        .expect("expected the reference property")
+        .insert("refersTo".to_string(), refers_to)
+        .expect("expected to declare the reference");
+    schema
+}
+
 /// A contract whose named moderator removes posts, with notes referring to a document of a
 /// type they name: `note` asks for text or bytes, `bytesNote` for bytes, and `namedNote` for
 /// a string property the note names.
@@ -114,7 +159,9 @@ async fn setup() -> Setup {
                 post_schema_with(platform_value!({ "canBeDeleted": false })),
             );
             add_document_type(contract, PLAIN, plain_schema());
+            add_document_type(contract, TALLY, tally_schema());
             add_document_type(contract, NOTE, note_schema(text_or_bytes()));
+            add_document_type(contract, PERMANENT_NOTE, permanent_note_schema());
             add_document_type(
                 contract,
                 BYTES_NOTE,
@@ -224,6 +271,28 @@ async fn should_check_a_reference_into_the_document_type_the_document_names() {
         &setup.process(&no_document, &transaction),
         REFERENCED_ENTITY_NOT_FOUND,
     );
+
+    // A type kept only as index entries has no document to find by its id. Its documents
+    // never leave state, so it is of the kind a permanent reference admits: it is refused,
+    // paid, before anything is fetched, whatever the reference asks of the type
+    assert!(setup
+        .contract
+        .document_type_for_name(TALLY)
+        .expect("expected the tally type")
+        .index_only());
+    for note_type in [PERMANENT_NOTE, NOTE] {
+        let (_, index_only) = create_with(
+            &setup,
+            &setup.stranger,
+            note_type,
+            note_naming(contract_id, TALLY, Identifier::random()),
+        )
+        .await;
+        assert_paid_with_code(
+            &setup.process(&index_only, &transaction),
+            REFERENCED_DOCUMENT_TYPE_INDEX_ONLY,
+        );
+    }
 }
 
 /// The named type must have the properties the reference's requirements ask for: `post`
@@ -337,6 +406,29 @@ async fn should_keep_a_dynamic_reference_until_a_replace_points_it_elsewhere() {
     note.set("descriptionId", id_value(other_post.id()));
     let repoint = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
     assert_success(&setup.process(&repoint, &transaction));
+
+    // A slot reading its property name from the note is part of where the reference points:
+    // naming another property checks the reference again, though its id, its contract and
+    // its document type are the ones it was created with
+    let (mut named, create_named) = create_with(
+        &setup,
+        &setup.stranger,
+        NAMED_NOTE,
+        note_naming(contract_id, POST, other_post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&create_named, &transaction));
+    let mut renamed = named.clone();
+    renamed.set("textProperty", "summary".into());
+    let rename = replacement(&setup.stranger, &setup.contract, NAMED_NOTE, &mut renamed).await;
+    assert_paid_with_code(
+        &setup.process(&rename, &transaction),
+        REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET,
+    );
+    // while an edit of another property keeps it
+    named.set("body", "an edit".into());
+    let edit = replacement(&setup.stranger, &setup.contract, NAMED_NOTE, &mut named).await;
+    assert_success(&setup.process(&edit, &transaction));
 }
 
 /// The contract a note names need not be its own: a note of another contract describes
@@ -384,6 +476,18 @@ async fn should_follow_a_dynamic_reference_into_another_contract() {
     )
     .await;
     assert_success(&setup.process(&create_note, &transaction));
+    // An index-only type of the posts contract is refused there as it is at home
+    let (_, index_only) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(posts_contract.id(), TALLY, Identifier::random()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&index_only, &transaction),
+        REFERENCED_DOCUMENT_TYPE_INDEX_ONLY,
+    );
     // The notes contract has no `post` type of its own to find the post in
     let (_, names_itself) = create_with(
         &setup,

@@ -8,7 +8,7 @@ A document reference normally names its target in the schema: a `documentType`, 
 | **Value** | `contractIdProperty` and `documentTypeProperty`, both required, and optionally `documentTypeRequirements`, in a `"type": "permanentDocument"` or `"type": "moderatedDocument"` declaration, or one [listing both](#either-kind), that carries nothing else. |
 | **Since** | protocol version 15 |
 | **On update** | Fixed, like the rest of `refersTo` (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | When a document is written: `ReferencedDocumentTypeNotFoundError` (40121), `ReferencedDocumentTypePrivateError` (40150), `ReferencedDocumentTypeRequirementNotMetError` (40153), `ReferencedDocumentTypeDeletableError` (40122), `ReferencedDocumentTypeNotModeratedError` (40143), `ReferencedDocumentTypeModeratedError` (40144), `ReferencedEntityNotFoundError` (40120). At registration: `InvalidContractStructure` (10231), `JsonSchemaError` (10101). |
+| **Errors** | When a document is written: `ReferencedDocumentTypeNotFoundError` (40121), `ReferencedDocumentTypePrivateError` (40150), `ReferencedDocumentTypeIndexOnlyError` (40146), `ReferencedDocumentTypeRequirementNotMetError` (40153), `ReferencedDocumentTypeDeletableError` (40122), `ReferencedDocumentTypeNotModeratedError` (40143), `ReferencedDocumentTypeModeratedError` (40144), `ReferencedEntityNotFoundError` (40120). At registration: `InvalidContractStructure` (10231), `JsonSchemaError` (10101). |
 
 ## Example
 
@@ -153,7 +153,7 @@ Nothing about the target is known when the contract is registered, so registrati
 
 1. The document names a contract and a document type. A document that holds the reference but leaves out `contractIdProperty`'s or `documentTypeProperty`'s property points nowhere: `ReferencedEntityNotFoundError` (40120).
 2. The contract exists and has a document type of that name: `ReferencedDocumentTypeNotFoundError` (40121) otherwise. Another contract costs a billed fetch, once per write.
-3. The type is not [private](../contract-keywords.md#document-type): `ReferencedDocumentTypePrivateError` (40150).
+3. The type is not [private](../contract-keywords.md#document-type), `ReferencedDocumentTypePrivateError` (40150), and not `indexOnly`, `ReferencedDocumentTypeIndexOnlyError` (40146): the documents of such a type are index entries, and none can be found by its id.
 4. The type meets `documentTypeRequirements`, each slot filled by a property its `when` holds for: `ReferencedDocumentTypeRequirementNotMetError` (40153).
 5. The type is of the declared kind, as a reference naming it in the schema is held to at registration: for `permanentDocument` its documents never disappear (40122 or 40144 otherwise), for `moderatedDocument` they disappear only through a moderator's recorded removal (40143). A declaration listing both kinds is a moderated reference into a moderated type and a permanent one into any other, so it refuses only a type whose documents can be deleted (40122).
 6. The document exists: `ReferencedEntityNotFoundError` (40120).
@@ -167,7 +167,7 @@ Nothing about the target is known when the contract is registered, so registrati
 - Both `contractIdProperty` and `documentTypeProperty` are present, name two different properties, and `type` is `permanentDocument`, `moderatedDocument` or the list of both. A `deletableDocument` reference always names its type in the schema: a dynamic target is trusted for what its type promises about its documents staying, and a deletable type promises nothing.
 - The declaration carries nothing else: no `contractId`, `documentType`, `findBy`, `where`, `inList`, `consume` or `constraints`. Each needs the referenced type when the contract is registered.
 - It sits on a single identifier property: not on the elements of a typed array, in a reference expression, or in `ownerRefersTo` and `creatorRefersTo`.
-- `contractIdProperty` names a top-level identifier property, and `documentTypeProperty` and every slot's `{ "property": ... }` a top-level string property. None is transient or the reference property itself, and each is required wherever the reference property is, so a document that must hold the reference always says where it points.
+- `contractIdProperty` names a top-level identifier property, and `documentTypeProperty` and every slot's `{ "property": ... }` a top-level string property. None is transient or the reference property itself, and each is required wherever the reference property is, so a document that must hold the reference always says where it points. None is listed under [`moderatorAbilities.changeFields`](moderator-abilities.md), like the reference property itself: a moderator's change checks no reference again, so it could point a stored one somewhere nobody checked.
 - `documentTypeRequirements` holds 1 to 4 slots (`max_document_type_requirement_slots`), each well formed; `distinctFrom` names other slots of the same `properties`; `require` names slots, and all of them.
 - A slot's `when` is a condition of at most 16 conditions (`max_document_type_requirement_condition_nodes`) over the operands above, each comparison pairing what it may pair.
 - No [`propertyConstraints` rule](property-constraints.md#values-of-a-referenced-document) reads a value through the reference, no [index](derived-index-properties.md) holds one, and no chained query joins through it: each resolves the referenced type from the schema.
@@ -197,6 +197,7 @@ The decision proposals contract does the first for the description of a multiple
 | `ReferencedDocumentTypeRequirementNotMetError` | 40153 | Write: the named document type does not meet the reference's `documentTypeRequirements`. |
 | `ReferencedDocumentTypeNotFoundError` | 40121 | Write: the named contract does not exist, or has no document type of that name. |
 | `ReferencedDocumentTypePrivateError` | 40150 | Write: the named document type is private. |
+| `ReferencedDocumentTypeIndexOnlyError` | 40146 | Write: the named document type is `indexOnly`. |
 | `ReferencedDocumentTypeDeletableError`, `ReferencedDocumentTypeModeratedError`, `ReferencedDocumentTypeNotModeratedError` | 40122, 40144, 40143 | Write: the named document type is not of the declared kind. |
 | `ReferencedEntityNotFoundError` | 40120 | Write: the document does not say where the reference points, or no document with that id exists in the named type. |
 

@@ -34,6 +34,7 @@ use crate::data_contract::document_type::property::DocumentReferenceKind;
 use bincode::de::{BorrowDecoder, BorrowUntrustedDecoder, Decoder, UntrustedDecoder};
 use bincode::error::DecodeError;
 use bincode::{BorrowDecode, BorrowDecodeUntrusted, Decode, DecodeUntrusted, Encode};
+use platform_value::Value;
 use serde::Serialize;
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -138,7 +139,76 @@ impl SlotConditionValue {
     }
 }
 
+impl SlotConditionValue {
+    /// The operand as a contract schema declares it: `$kind`, `$self` or
+    /// `{ "const": <string> }`.
+    pub fn to_schema_value(&self) -> Value {
+        match self {
+            SlotConditionValue::Kind => Value::Text(SLOT_CONDITION_KIND.to_string()),
+            SlotConditionValue::PropertyName => Value::Text(SLOT_CONDITION_SELF.to_string()),
+            SlotConditionValue::Constant(constant) => Value::Map(vec![(
+                Value::Text("const".to_string()),
+                Value::Text(constant.clone()),
+            )]),
+        }
+    }
+}
+
 impl SlotCondition {
+    /// The condition as a contract schema declares it: an object of one key. What the
+    /// parser reads back to this condition.
+    pub fn to_schema_value(&self) -> Value {
+        let pair = |left: Value, right: Value| Value::Array(vec![left, right]);
+        let among = |values: &BTreeSet<String>| {
+            Value::Array(values.iter().cloned().map(Value::Text).collect())
+        };
+        let listed = |conditions: &SlotConditions| {
+            Value::Array(
+                conditions
+                    .conditions()
+                    .iter()
+                    .map(SlotCondition::to_schema_value)
+                    .collect(),
+            )
+        };
+        let (key, operand) = match self {
+            SlotCondition::Equal(left, right) => (
+                "equal",
+                pair(left.to_schema_value(), right.to_schema_value()),
+            ),
+            SlotCondition::NotEqual(left, right) => (
+                "notEqual",
+                pair(left.to_schema_value(), right.to_schema_value()),
+            ),
+            SlotCondition::In(value, values) => {
+                ("in", pair(value.to_schema_value(), among(values)))
+            }
+            SlotCondition::NotIn(value, values) => {
+                ("notIn", pair(value.to_schema_value(), among(values)))
+            }
+            SlotCondition::Contains(list, value) => (
+                "contains",
+                pair(
+                    Value::Text(list.wire_name().to_string()),
+                    value.to_schema_value(),
+                ),
+            ),
+            // `not` holds its one condition bare, not in a list
+            SlotCondition::Not(conditions) => (
+                "not",
+                match conditions.conditions() {
+                    [negated] => negated.to_schema_value(),
+                    _ => listed(conditions),
+                },
+            ),
+            SlotCondition::AnyOf(conditions) => ("anyOf", listed(conditions)),
+            SlotCondition::AllOf(conditions) => ("allOf", listed(conditions)),
+            SlotCondition::IfThen(conditions) => ("ifThen", listed(conditions)),
+            SlotCondition::IfThenElse(conditions) => ("ifThenElse", listed(conditions)),
+        };
+        Value::Map(vec![(Value::Text(key.to_string()), operand)])
+    }
+
     /// Whether the condition holds for `subject`.
     ///
     /// A `not`, `ifThen` or `ifThenElse` holding another number of conditions than it takes
