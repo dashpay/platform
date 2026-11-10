@@ -323,7 +323,8 @@ pub unsafe extern "C" fn managed_identity_get_private_contact(
 /// sync in between.
 ///
 /// `out_held` is reset to false first. An unknown `wallet_handle` is
-/// `NotFound`; a sender the wallet does not hold is refused as its lookup is.
+/// `NotFound`; a sender the wallet does not hold is `ErrorIdentityNotFound`
+/// (7).
 ///
 /// # Safety
 /// - `sender_id` and `recipient_id` must each point to 32 readable bytes.
@@ -367,8 +368,8 @@ pub unsafe extern "C" fn platform_wallet_get_private_pair_held(
 /// applied first, as there.
 ///
 /// `out_reason` is reset to null first. An unknown `wallet_handle` is
-/// `NotFound`; an identity the wallet does not hold is refused as its lookup
-/// is.
+/// `NotFound`; an identity the wallet does not hold is
+/// `ErrorIdentityNotFound` (7).
 ///
 /// # Safety
 /// - `identity_id` must point to 32 readable bytes.
@@ -1743,8 +1744,8 @@ mod tests {
 
     /// A wallet whose identity is paying for nothing to a contact reads the
     /// pair as free and has no restoration failure to give; an unknown wallet
-    /// is not found and an unknown sender refused, each leaving the output
-    /// reset; a null output is refused. Holding a pair is the wallet's own
+    /// is not found and an identity the wallet does not hold is code 7, each
+    /// leaving the output reset; a null output is refused. Holding a pair is the wallet's own
     /// (its tests pin the reservation and the journal mirror), so this pins
     /// the reads.
     #[test]
@@ -1836,8 +1837,24 @@ mod tests {
                 &mut held,
             )
         };
-        assert_ne!(unknown_sender.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            unknown_sender.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
         assert!(!held);
+        let mut reason: *mut c_char = std::ptr::dangling_mut();
+        let unknown_identity = unsafe {
+            platform_wallet_get_private_payments_restore_failure(
+                handle,
+                stranger.as_ptr(),
+                &mut reason,
+            )
+        };
+        assert_eq!(
+            unknown_identity.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert!(reason.is_null(), "reset");
 
         assert_eq!(
             unsafe {

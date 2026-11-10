@@ -172,12 +172,25 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 =
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: u64 = 1 << 14;
 /// The private contact request sync's scan state (each identity's read
 /// position and its private contacts' shielded addresses) is persisted AND
-/// restored across restarts. Requires the extension trio
+/// restored across restarts. Requires the extension slots
 /// `on_persist_private_contact_scan_state_fn` +
 /// `on_load_private_contact_scan_state_fn` +
-/// `on_load_private_contact_scan_state_free_fn`, the wallet-list restore
-/// callbacks, `on_persist_contacts_fn` (a read position vouches for the
-/// contact requests read before it), and the host declaring the bit. The
+/// `on_load_private_contact_scan_state_free_fn` +
+/// `on_load_private_contact_scan_state_wallets_fn` +
+/// `on_load_private_contact_scan_state_wallets_free_fn`, the wallet-list
+/// restore callbacks, `on_persist_contacts_fn` (a read position vouches for
+/// the contact requests read before it), and the host declaring the bit.
+///
+/// A host declaring it keeps a position record whose
+/// `private_payments_unresolved` is set through the removal of its wallet
+/// and any purge of that wallet's rows, until a record stored cleared for
+/// the same wallet and owner replaces it, and lists that wallet's id from
+/// `on_load_private_contact_scan_state_wallets_fn`. The marker stands for a
+/// private payment that may still execute: the load hands such records
+/// (those of a wallet it does not return, or of an identity it does not
+/// restore) to the wallet as `ClientStartState::retained_private_contact_scan_states`,
+/// and a wallet registered or loaded under the id holds the identity they
+/// name. The
 /// wallet keeps the state only together with
 /// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS`]
 /// (`PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART`), which
@@ -420,6 +433,29 @@ pub type FreePrivateContactScanStateFn = unsafe extern "C" fn(
     addresses_count: usize,
 );
 
+/// Return the ids of every wallet the host keeps private contact request
+/// scan state for, those of wallets it no longer holds included: a removed
+/// wallet whose position records it kept marked (see
+/// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE`]).
+/// Rust reads each id the wallet-list load does not return through
+/// [`LoadPrivateContactScanStateFn`]. The host allocates the array and keeps
+/// it valid until Rust hands it back through
+/// [`FreePrivateContactScanStateWalletsFn`]; a null array with a zero count is
+/// an empty one. An unreadable store must return an error, not an empty
+/// array.
+pub type LoadPrivateContactScanStateWalletsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    out_wallet_ids: *mut *const [u8; 32],
+    out_wallet_ids_count: *mut usize,
+) -> i32;
+
+/// Release the array a [`LoadPrivateContactScanStateWalletsFn`] returned.
+pub type FreePrivateContactScanStateWalletsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_ids: *const [u8; 32],
+    wallet_ids_count: usize,
+);
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -612,8 +648,9 @@ pub struct PersistenceCallbacksExtension {
     /// The private contact request scan state a round writes (see
     /// [`PersistPrivateContactScanStateFn`]). Appended under the same
     /// version for the same reason as the slots above. Wired together with
-    /// the load + free pair below: `PRIVATE_CONTACT_REQUEST_SCAN_STATE` is
-    /// attested only when all three are present (and declared).
+    /// the load + free pair and the wallet-list pair below:
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE` is attested only when all five
+    /// are present (and declared).
     #[allow(clippy::type_complexity)]
     pub on_persist_private_contact_scan_state_fn: Option<
         unsafe extern "C" fn(
@@ -651,6 +688,27 @@ pub struct PersistenceCallbacksExtension {
             addresses_count: usize,
         ),
     >,
+    /// The ids of every wallet the host keeps scan state for (see
+    /// [`LoadPrivateContactScanStateWalletsFn`]). Appended under the same
+    /// version; wired with the free slot below and the three slots above,
+    /// `PRIVATE_CONTACT_REQUEST_SCAN_STATE` is attested only when all five
+    /// are present (and declared).
+    pub on_load_private_contact_scan_state_wallets_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_wallet_ids: *mut *const [u8; 32],
+            out_wallet_ids_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Release the array `on_load_private_contact_scan_state_wallets_fn`
+    /// returned.
+    pub on_load_private_contact_scan_state_wallets_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_ids: *const [u8; 32],
+            wallet_ids_count: usize,
+        ),
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -676,6 +734,8 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_private_contact_scan_state_fn: None,
             on_load_private_contact_scan_state_fn: None,
             on_load_private_contact_scan_state_free_fn: None,
+            on_load_private_contact_scan_state_wallets_fn: None,
+            on_load_private_contact_scan_state_wallets_free_fn: None,
         }
     }
 }
@@ -702,6 +762,8 @@ pub struct PersistenceExtensionCallbacks {
     pub persist_private_contact_scan_state: Option<PersistPrivateContactScanStateFn>,
     pub load_private_contact_scan_state: Option<LoadPrivateContactScanStateFn>,
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
+    pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
+    pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1872,7 +1934,7 @@ impl FFIPersister {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
         }
         // The scan state is restored per wallet during the wallet-list load,
-        // so that load is required alongside the extension trio. So is the
+        // so that load is required alongside the extension slots. So is the
         // contacts callback: a read position vouches for the contact
         // requests read before it, and without that callback `store` skips
         // them, so a restored position would skip entries whose requests
@@ -1890,6 +1952,16 @@ impl FFIPersister {
             && self
                 .tracked_masternodes_callbacks
                 .load_private_contact_scan_state_free
+                .is_some()
+            // A host that keeps marked records past their wallet's removal
+            // must also hand them back.
+            && self
+                .tracked_masternodes_callbacks
+                .load_private_contact_scan_state_wallets
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_private_contact_scan_state_wallets_free
                 .is_some()
         {
             capabilities =
@@ -1951,6 +2023,53 @@ impl FFIPersister {
         // Deliberately absent: PersistenceCallbacks has no deferred contact
         // crypto add/clear callback pair, so FFI hosts cannot attest it.
         capabilities
+    }
+}
+
+impl FFIPersister {
+    /// Hand the wallet the marked private contact request scan state records
+    /// no restored identity took: `retained` holds those of the wallets the
+    /// load returned, and the records of every other wallet the host keeps
+    /// scan state for are read here
+    /// (`ClientStartState::retained_private_contact_scan_states`). Read only
+    /// for a host whose capabilities meet the wallet's rule for keeping the
+    /// state; another host's records reach nothing.
+    fn load_retained_private_contact_scan_states(
+        &self,
+        out: &mut ClientStartState,
+        mut retained: BTreeMap<WalletId, BTreeMap<Identifier, PrivateContactRequestsPosition>>,
+    ) -> Result<(), PersistenceError> {
+        let callbacks = &self.tracked_masternodes_callbacks;
+        if let (Some(list), Some(list_free), Some(load), Some(free)) = (
+            callbacks.load_private_contact_scan_state_wallets,
+            callbacks.load_private_contact_scan_state_wallets_free,
+            callbacks.load_private_contact_scan_state,
+            callbacks.load_private_contact_scan_state_free,
+        ) {
+            if self
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
+            {
+                let context = self.callbacks.context;
+                for wallet_id in load_private_contact_scan_state_wallets(list, list_free, context)?
+                {
+                    if out.wallets.contains_key(&wallet_id) {
+                        continue;
+                    }
+                    // A wallet the host no longer holds restores no
+                    // identity: every marked record it kept is retained.
+                    let mut none = IdentityManagerStartState::default();
+                    let unapplied = load_private_contact_scan_state(
+                        load, free, context, &wallet_id, &mut none,
+                    )?;
+                    if !unapplied.is_empty() {
+                        retained.insert(wallet_id, unapplied);
+                    }
+                }
+            }
+        }
+        out.retained_private_contact_scan_states = retained;
+        Ok(())
     }
 }
 
@@ -3720,7 +3839,11 @@ impl PlatformWalletPersistence for FFIPersister {
                 "wallet restore: missing row buffer",
             ));
         }
+        // The marked scan state records no restored identity takes, by wallet:
+        // a wallet the host no longer holds keeps them too.
+        let mut retained = BTreeMap::new();
         if count == 0 {
+            self.load_retained_private_contact_scan_states(&mut out, retained)?;
             return Ok(out);
         }
 
@@ -3772,13 +3895,16 @@ impl PlatformWalletPersistence for FFIPersister {
                     .persistence_capabilities()
                     .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
                 {
-                    load_private_contact_scan_state(
+                    let unapplied = load_private_contact_scan_state(
                         load,
                         free,
                         self.callbacks.context,
                         &entry.wallet_id,
                         &mut wallet_state.identity_manager,
                     )?;
+                    if !unapplied.is_empty() {
+                        retained.insert(entry.wallet_id, unapplied);
+                    }
                 }
             }
             if let Some(cb) = self.load_identity_balance_block_time_callback {
@@ -3815,6 +3941,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     .insert(entry.wallet_id, platform_address_state);
             }
         }
+        self.load_retained_private_contact_scan_states(&mut out, retained)?;
 
         // Restore shielded sub-wallet state if the host has wired
         // up the optional callbacks. Notes and per-subwallet sync
@@ -6685,7 +6812,7 @@ fn load_private_contact_scan_state(
     context: *mut c_void,
     wallet_id: &WalletId,
     identity_manager: &mut IdentityManagerStartState,
-) -> Result<(), PersistenceError> {
+) -> Result<BTreeMap<Identifier, PrivateContactRequestsPosition>, PersistenceError> {
     struct Guard {
         free: FreePrivateContactScanStateFn,
         context: *mut c_void,
@@ -6759,13 +6886,22 @@ fn load_private_contact_scan_state(
         .flat_map(BTreeMap::values_mut)
         .map(|managed| (managed.id(), managed))
         .collect();
+    // A marked record of an identity not restored here still stands for a
+    // private payment that may execute: it is returned, so the wallet holds
+    // the identity when it is added. An unmarked one has nothing to hold.
+    let mut unapplied = BTreeMap::new();
     for row in positions {
-        if let Some(managed) = identities.get_mut(&Identifier::new(row.identity_id)) {
-            managed.apply_private_contact_requests_position(PrivateContactRequestsPosition {
-                position: row.position,
-                key_fingerprint: row.key_fingerprint,
-                private_payments_unresolved: row.private_payments_unresolved,
-            });
+        let record = PrivateContactRequestsPosition {
+            position: row.position,
+            key_fingerprint: row.key_fingerprint,
+            private_payments_unresolved: row.private_payments_unresolved,
+        };
+        match identities.get_mut(&Identifier::new(row.identity_id)) {
+            Some(managed) => managed.apply_private_contact_requests_position(record),
+            None if record.private_payments_unresolved => {
+                unapplied.insert(Identifier::new(row.identity_id), record);
+            }
+            None => {}
         }
     }
     for row in addresses {
@@ -6773,7 +6909,55 @@ fn load_private_contact_scan_state(
             managed.apply_private_shielded_address(Identifier::new(row.contact_id), row.address);
         }
     }
-    Ok(())
+    Ok(unapplied)
+}
+
+/// The ids of every wallet the host keeps private contact request scan state
+/// for ([`LoadPrivateContactScanStateWalletsFn`]), the host's array released
+/// before this returns.
+fn load_private_contact_scan_state_wallets(
+    load: LoadPrivateContactScanStateWalletsFn,
+    free: FreePrivateContactScanStateWalletsFn,
+    context: *mut c_void,
+) -> Result<Vec<WalletId>, PersistenceError> {
+    struct Guard {
+        free: FreePrivateContactScanStateWalletsFn,
+        context: *mut c_void,
+        wallet_ids: *const [u8; 32],
+        count: usize,
+    }
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if !self.wallet_ids.is_null() {
+                unsafe { (self.free)(self.context, self.wallet_ids, self.count) };
+            }
+        }
+    }
+
+    let mut guard = Guard {
+        free,
+        context,
+        wallet_ids: std::ptr::null(),
+        count: 0,
+    };
+    let rc = unsafe { load(context, &mut guard.wallet_ids, &mut guard.count) };
+    if rc != 0 {
+        return Err(persist_callback_error(
+            rc,
+            format!("on_load_private_contact_scan_state_wallets_fn returned error code {rc}"),
+        ));
+    }
+    if guard.wallet_ids.is_null() && guard.count != 0 {
+        return Err(PersistenceError::backend(
+            "private contact request scan state wallets: missing row buffer",
+        ));
+    }
+    if guard.count == 0 {
+        return Ok(Vec::new());
+    }
+    // SAFETY: the host keeps `count` contiguous ids valid until `guard`
+    // hands them back.
+    Ok(unsafe { slice::from_raw_parts(guard.wallet_ids, guard.count) }.to_vec())
 }
 
 /// Rebuild tracked locks from the host's frozen `AssetLockEntryFFI` rows.
@@ -8224,6 +8408,37 @@ mod tests {
         load_mode: u8,
         loads: std::sync::atomic::AtomicUsize,
         frees: std::sync::atomic::AtomicUsize,
+        /// What `load_scan_state_wallets` lists.
+        wallet_ids: std::sync::Mutex<Vec<[u8; 32]>>,
+    }
+
+    unsafe extern "C" fn load_scan_state_wallets(
+        ctx: *mut c_void,
+        out_wallet_ids: *mut *const [u8; 32],
+        out_count: *mut usize,
+    ) -> i32 {
+        let host = &*(ctx as *const ScanStateHost);
+        let ids = host.wallet_ids.lock().unwrap().clone();
+        *out_count = ids.len();
+        *out_wallet_ids = if ids.is_empty() {
+            std::ptr::null()
+        } else {
+            Box::into_raw(ids.into_boxed_slice()).cast()
+        };
+        0
+    }
+
+    unsafe extern "C" fn free_scan_state_wallets(
+        _: *mut c_void,
+        wallet_ids: *const [u8; 32],
+        count: usize,
+    ) {
+        if !wallet_ids.is_null() {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                wallet_ids.cast_mut(),
+                count,
+            )));
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -8407,6 +8622,8 @@ mod tests {
             persist_private_contact_scan_state: Some(persist_scan_state),
             load_private_contact_scan_state: Some(load_scan_state),
             load_private_contact_scan_state_free: Some(free_scan_state),
+            load_private_contact_scan_state_wallets: Some(load_scan_state_wallets),
+            load_private_contact_scan_state_wallets_free: Some(free_scan_state_wallets),
             ..Default::default()
         }
     }
@@ -8651,7 +8868,7 @@ mod tests {
     }
 
     /// A host that does not declare the capability, wires only part of the
-    /// trio, keeps no contact requests, or has no atomic changesets (no
+    /// slots (the wallet list included), keeps no contact requests, or has no atomic changesets (no
     /// begin and end callbacks, or no declaration) does not meet the
     /// wallet's rule for keeping the scan state, has nothing read at load,
     /// and still stores and loads everything else. A host without the slots
@@ -8679,6 +8896,17 @@ mod tests {
                 ..Default::default()
             },
         );
+        // A host that cannot list the wallets it keeps marked records for
+        // could not hand back a removed wallet's.
+        let without_wallet_list = scan_state_persister(
+            &host,
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            PersistenceExtensionCallbacks {
+                load_private_contact_scan_state_wallets: None,
+                load_private_contact_scan_state_wallets_free: None,
+                ..scan_state_trio()
+            },
+        );
         let unwired = scan_state_persister(
             &host,
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
@@ -8693,7 +8921,7 @@ mod tests {
             false,
         );
         // The state is kept only with atomic changesets: a host declaring
-        // both, with the trio, but no changeset begin and end callbacks, and
+        // both, with every slot, but no changeset begin and end callbacks, and
         // a host bracketing its rounds but not declaring them atomic.
         let without_brackets = scan_state_persister_with(
             &host,
@@ -8710,6 +8938,7 @@ mod tests {
         for persister in [
             &undeclared,
             &half_wired,
+            &without_wallet_list,
             &unwired,
             &without_contacts,
             &without_brackets,
@@ -8752,6 +8981,343 @@ mod tests {
                 },
             )
             .expect("a host without the slots stores the round");
+    }
+
+    /// A host keeping marked scan state records: the per-wallet rows of
+    /// several wallets, the wallets listed, the wallet-list load returning
+    /// some of them.
+    #[derive(Default)]
+    struct RetainedHost {
+        rows: std::sync::Mutex<BTreeMap<[u8; 32], Vec<PrivateContactRequestsPositionFFI>>>,
+        wallets_returned: Vec<([u8; 32], [u8; 32])>,
+        list_fails: bool,
+        list_frees: std::sync::atomic::AtomicUsize,
+    }
+
+    unsafe extern "C" fn retained_load_rows(
+        ctx: *mut c_void,
+        wallet: *const u8,
+        out_positions: *mut *const PrivateContactRequestsPositionFFI,
+        out_positions_count: *mut usize,
+        out_addresses: *mut *const PrivateShieldedAddressFFI,
+        out_addresses_count: *mut usize,
+    ) -> i32 {
+        let host = &*(ctx as *const RetainedHost);
+        let wallet: [u8; 32] = std::slice::from_raw_parts(wallet, 32).try_into().unwrap();
+        let rows = host
+            .rows
+            .lock()
+            .unwrap()
+            .get(&wallet)
+            .cloned()
+            .unwrap_or_default();
+        *out_positions_count = rows.len();
+        *out_positions = if rows.is_empty() {
+            std::ptr::null()
+        } else {
+            Box::into_raw(rows.into_boxed_slice()).cast()
+        };
+        *out_addresses = std::ptr::null();
+        *out_addresses_count = 0;
+        0
+    }
+
+    /// Stores nothing: these tests load what the host kept.
+    #[allow(clippy::too_many_arguments)]
+    unsafe extern "C" fn retained_persist_rows(
+        _: *mut c_void,
+        _: *const u8,
+        _: *const PrivateContactRequestsPositionFFI,
+        _: usize,
+        _: *const PrivateShieldedAddressFFI,
+        _: usize,
+        _: *const ContactRequestRemovalFFI,
+        _: usize,
+        _: *const [u8; 32],
+        _: usize,
+    ) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn retained_free_rows(
+        _: *mut c_void,
+        positions: *const PrivateContactRequestsPositionFFI,
+        positions_count: usize,
+        _: *const PrivateShieldedAddressFFI,
+        _: usize,
+    ) {
+        if !positions.is_null() {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                positions.cast_mut(),
+                positions_count,
+            )));
+        }
+    }
+
+    unsafe extern "C" fn retained_list_wallets(
+        ctx: *mut c_void,
+        out_wallet_ids: *mut *const [u8; 32],
+        out_count: *mut usize,
+    ) -> i32 {
+        let host = &*(ctx as *const RetainedHost);
+        if host.list_fails {
+            return -1;
+        }
+        let ids: Vec<[u8; 32]> = host.rows.lock().unwrap().keys().copied().collect();
+        *out_count = ids.len();
+        *out_wallet_ids = if ids.is_empty() {
+            std::ptr::null()
+        } else {
+            Box::into_raw(ids.into_boxed_slice()).cast()
+        };
+        0
+    }
+
+    unsafe extern "C" fn retained_free_wallets(
+        ctx: *mut c_void,
+        wallet_ids: *const [u8; 32],
+        count: usize,
+    ) {
+        let host = &*(ctx as *const RetainedHost);
+        host.list_frees
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if !wallet_ids.is_null() {
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                wallet_ids.cast_mut(),
+                count,
+            )));
+        }
+    }
+
+    unsafe extern "C" fn retained_load_wallets(
+        ctx: *mut c_void,
+        entries: *mut *const WalletRestoreEntryFFI,
+        count: *mut usize,
+    ) -> i32 {
+        let host = &*(ctx as *const RetainedHost);
+        let rows: Vec<WalletRestoreEntryFFI> = host
+            .wallets_returned
+            .iter()
+            .map(|(wallet_id, identity_id)| {
+                let mut identity: IdentityRestoreEntryFFI = std::mem::zeroed();
+                identity.identity_id = *identity_id;
+                WalletRestoreEntryFFI {
+                    wallet_id: *wallet_id,
+                    identities: Box::into_raw(Box::new(identity)),
+                    identities_count: 1,
+                    ..Default::default()
+                }
+            })
+            .collect();
+        *count = rows.len();
+        *entries = if rows.is_empty() {
+            std::ptr::null()
+        } else {
+            Box::into_raw(rows.into_boxed_slice()).cast()
+        };
+        0
+    }
+
+    unsafe extern "C" fn retained_free_loaded_wallets(
+        _: *mut c_void,
+        entries: *const WalletRestoreEntryFFI,
+        count: usize,
+    ) {
+        if entries.is_null() {
+            return;
+        }
+        let rows = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            entries.cast_mut(),
+            count,
+        ));
+        for row in rows.iter() {
+            drop(Box::from_raw(row.identities.cast_mut()));
+        }
+    }
+
+    fn retained_persister(host: &RetainedHost) -> FFIPersister {
+        FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (host as *const RetainedHost).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                on_load_wallet_list_fn: Some(retained_load_wallets),
+                on_load_wallet_list_free_fn: Some(retained_free_loaded_wallets),
+                on_persist_contacts_fn: Some(keep_scan_state_contacts),
+                ..Default::default()
+            },
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            PersistenceExtensionCallbacks {
+                persist_private_contact_scan_state: Some(retained_persist_rows),
+                load_private_contact_scan_state: Some(retained_load_rows),
+                load_private_contact_scan_state_free: Some(retained_free_rows),
+                load_private_contact_scan_state_wallets: Some(retained_list_wallets),
+                load_private_contact_scan_state_wallets_free: Some(retained_free_wallets),
+                ..Default::default()
+            },
+        )
+    }
+
+    fn position_row(
+        identity: u8,
+        position: u64,
+        marked: bool,
+    ) -> PrivateContactRequestsPositionFFI {
+        PrivateContactRequestsPositionFFI {
+            identity_id: [identity; 32],
+            position,
+            key_fingerprint: [identity; 32],
+            private_payments_unresolved: marked,
+        }
+    }
+
+    /// A load hands the wallet every marked record no restored identity
+    /// takes, as `retained_private_contact_scan_states`: a removed wallet's,
+    /// which the host lists but no longer returns, and a returned wallet's
+    /// for an identity it did not restore. A record a restored identity takes
+    /// is applied to it instead, an unmarked record of an absent identity is
+    /// passed over, and a host holding no wallet still hands back what it
+    /// kept. A host that cannot list its wallets fails the load.
+    #[test]
+    fn should_hand_back_the_marked_records_no_restored_identity_takes() {
+        let host = RetainedHost {
+            wallets_returned: vec![([42; 32], [7; 32])],
+            ..Default::default()
+        };
+        host.rows.lock().unwrap().extend([
+            (
+                [42; 32],
+                vec![
+                    position_row(7, 12, true),
+                    position_row(9, 13, true),
+                    position_row(10, 14, false),
+                ],
+            ),
+            (
+                [43; 32],
+                vec![position_row(11, 15, true), position_row(12, 16, false)],
+            ),
+        ]);
+        let restored = retained_persister(&host).load().expect("the load");
+        let managed = &restored.wallets[&[42; 32]]
+            .identity_manager
+            .wallet_identities[&[42; 32]][&0];
+        assert!(
+            managed.dashpay().private_payments_unresolved(),
+            "a restored identity takes its own record"
+        );
+        let retained = &restored.retained_private_contact_scan_states;
+        assert_eq!(
+            retained.keys().copied().collect::<Vec<_>>(),
+            vec![[42; 32], [43; 32]]
+        );
+        assert_eq!(
+            retained[&[42; 32]].keys().copied().collect::<Vec<_>>(),
+            vec![Identifier::from([9; 32])],
+            "only the marked record of an identity the load did not restore"
+        );
+        assert_eq!(
+            retained[&[43; 32]],
+            BTreeMap::from([(
+                Identifier::from([11; 32]),
+                PrivateContactRequestsPosition {
+                    position: 15,
+                    key_fingerprint: [11; 32],
+                    private_payments_unresolved: true,
+                },
+            )]),
+            "a removed wallet's marked record, as stored"
+        );
+        assert_eq!(
+            host.list_frees.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the listed ids are handed back"
+        );
+
+        let no_wallets = RetainedHost::default();
+        no_wallets
+            .rows
+            .lock()
+            .unwrap()
+            .insert([43; 32], vec![position_row(11, 15, true)]);
+        let restored = retained_persister(&no_wallets).load().expect("the load");
+        assert!(restored.wallets.is_empty());
+        assert!(restored.retained_private_contact_scan_states[&[43; 32]]
+            .contains_key(&Identifier::from([11; 32])));
+
+        let failing = RetainedHost {
+            list_fails: true,
+            ..Default::default()
+        };
+        assert!(
+            retained_persister(&failing).load().is_err(),
+            "a host that cannot list its wallets fails the load"
+        );
+    }
+
+    /// A wallet registered under an id whose record the host kept marked
+    /// after the wallet was removed holds the identity the record names as it
+    /// is added, and no other.
+    #[test]
+    fn should_hold_an_identity_a_kept_marked_record_names_when_its_wallet_is_registered_again() {
+        use crate::runtime::runtime;
+        use crate::test_fixtures::{mock_manager, mock_manager_with};
+        use dpp::identity::{Identity, IdentityV0};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+        let seed = [21u8; 64];
+        let create = |manager: &platform_wallet::PlatformWalletManager<FFIPersister>| {
+            runtime()
+                .block_on(manager.create_wallet_from_seed_bytes(
+                    key_wallet::Network::Testnet,
+                    &seed,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                ))
+                .expect("a wallet")
+        };
+        let wallet_id = create(&mock_manager()).wallet_id();
+
+        let marked = Identifier::from([31; 32]);
+        let other = Identifier::from([32; 32]);
+        let host = RetainedHost::default();
+        host.rows
+            .lock()
+            .unwrap()
+            .insert(wallet_id, vec![position_row(31, 5, true)]);
+        let manager = mock_manager_with(retained_persister(&host));
+        let wallet = create(&manager);
+        assert_eq!(wallet.wallet_id(), wallet_id);
+
+        let held = |id: Identifier| {
+            runtime().block_on(async {
+                let mut wm = wallet.wallet_manager().write().await;
+                let identities = &mut wm
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .expect("the wallet's info")
+                    .identity_manager;
+                identities
+                    .add_identity(
+                        Identity::V0(IdentityV0 {
+                            id,
+                            public_keys: Default::default(),
+                            balance: 0,
+                            revision: 0,
+                        }),
+                        0,
+                        wallet.wallet_id(),
+                        wallet.persister(),
+                    )
+                    .expect("the identity");
+                identities
+                    .managed_identity(&id)
+                    .expect("the identity")
+                    .dashpay()
+                    .private_payments_unrestored()
+            })
+        };
+        assert!(held(marked), "the identity the kept record names is held");
+        assert!(!held(other), "an identity no kept record names is not");
     }
 
     #[test]
@@ -11538,6 +12104,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_wallets_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_wallets_fn
+            ) + std::mem::size_of::<Option<LoadPrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_wallets_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_private_contact_scan_state_wallets_free_fn
+            ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
