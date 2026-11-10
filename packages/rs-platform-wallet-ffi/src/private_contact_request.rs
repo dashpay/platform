@@ -28,6 +28,10 @@
 //! - [`platform_wallet_get_private_pair_held`]: whether a contact request
 //!   from one of the wallet's identities to a contact is held for a private
 //!   one, as a send decides it, so a host offers no second send or reply.
+//! - [`platform_wallet_get_public_contact_request_unconfirmed`]: whether a
+//!   public contact request from one of the wallet's identities to a contact
+//!   was broadcast and its outcome is not proved yet, which holds the pair
+//!   as a private request pending does.
 //! - [`platform_wallet_get_private_payments_restore_failure`]: why the last
 //!   restoration of the wallet's private payments failed, which
 //!   `platform_wallet_get_private_contact_readiness` reports only as a flag.
@@ -354,6 +358,56 @@ pub unsafe extern "C" fn platform_wallet_get_private_pair_held(
     });
     let held = unwrap_result_or_return!(result);
     unsafe { *out_held = held };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Whether a public contact request from `sender_id`, one of the wallet's
+/// identities, to `recipient_id` was broadcast and may have been delivered,
+/// with no proof settling its outcome yet
+/// (`DashPayView::public_contact_request_unconfirmed`), into
+/// `out_unconfirmed`. The send or accept that broadcast it reported
+/// `ErrorTransactionBroadcastUnconfirmed` (20); while it stands, every
+/// contact request or acceptance to the recipient, public or private, is
+/// refused with `ErrorPublicContactRequestUnconfirmed` (76), nothing signed,
+/// so a host shows the pair as unconfirmed and offers neither. A public
+/// contact request sync settles it: the request proved on Platform is
+/// recorded as sent, and one proved unable to write it frees the pair. The
+/// per-contact read beside `platform_wallet_get_private_pair_held`, so a
+/// host tells a public request awaiting its outcome from a private one
+/// pending.
+///
+/// `out_unconfirmed` is reset to false first. An unknown `wallet_handle` is
+/// `NotFound`; a sender the wallet does not hold is `ErrorIdentityNotFound`
+/// (7).
+///
+/// # Safety
+/// - `sender_id` and `recipient_id` must each point to 32 readable bytes.
+/// - `out_unconfirmed` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_public_contact_request_unconfirmed(
+    wallet_handle: Handle,
+    sender_id: *const u8,
+    recipient_id: *const u8,
+    out_unconfirmed: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_unconfirmed);
+    unsafe { *out_unconfirmed = false };
+    let sender_id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
+    let recipient_id = unwrap_result_or_return!(unsafe { read_identifier(recipient_id) });
+    // Look the wallet up under the registry guard, but read outside it: the
+    // read waits on the wallet's lock, and a registry guard held across that
+    // wait would stall `platform_wallet_destroy`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .public_contact_request_unconfirmed(&sender_id, &recipient_id)
+            .await
+    });
+    let unconfirmed = unwrap_result_or_return!(result);
+    unsafe { *out_unconfirmed = unconfirmed };
     PlatformWalletFFIResult::ok()
 }
 
@@ -1743,7 +1797,8 @@ mod tests {
     }
 
     /// A wallet whose identity is paying for nothing to a contact reads the
-    /// pair as free and has no restoration failure to give; an unknown wallet
+    /// pair as free, no public request to it as unconfirmed, and has no
+    /// restoration failure to give; an unknown wallet
     /// is not found and an identity the wallet does not hold is code 7, each
     /// leaving the output reset; a null output is refused. Holding a pair is the wallet's own
     /// (its tests pin the reservation and the journal mirror), so this pins
@@ -1793,6 +1848,58 @@ mod tests {
         };
         assert_eq!(free.code, PlatformWalletFFIResultCode::Success);
         assert!(!held, "nothing holds the pair");
+
+        let mut unconfirmed = true;
+        let none = unsafe {
+            platform_wallet_get_public_contact_request_unconfirmed(
+                handle,
+                sender_id.as_ptr(),
+                recipient_id.as_ptr(),
+                &mut unconfirmed,
+            )
+        };
+        assert_eq!(none.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            !unconfirmed,
+            "no public request to the pair awaits its outcome"
+        );
+        let mut unconfirmed = true;
+        let unknown_wallet = unsafe {
+            platform_wallet_get_public_contact_request_unconfirmed(
+                Handle::MAX,
+                sender_id.as_ptr(),
+                recipient_id.as_ptr(),
+                &mut unconfirmed,
+            )
+        };
+        assert_eq!(unknown_wallet.code, PlatformWalletFFIResultCode::NotFound);
+        assert!(!unconfirmed, "reset");
+        let mut unconfirmed = true;
+        let unknown_sender = unsafe {
+            platform_wallet_get_public_contact_request_unconfirmed(
+                handle,
+                [0xC1u8; 32].as_ptr(),
+                recipient_id.as_ptr(),
+                &mut unconfirmed,
+            )
+        };
+        assert_eq!(
+            unknown_sender.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert!(!unconfirmed);
+        assert_eq!(
+            unsafe {
+                platform_wallet_get_public_contact_request_unconfirmed(
+                    handle,
+                    sender_id.as_ptr(),
+                    recipient_id.as_ptr(),
+                    std::ptr::null_mut(),
+                )
+            }
+            .code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
 
         let mut reason: *mut c_char = std::ptr::dangling_mut();
         let none = unsafe {
