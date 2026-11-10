@@ -2127,7 +2127,9 @@ impl NetworkShieldedCoordinator {
         let mut held = HashSet::new();
         let mut read = false;
         while let Some(page) = pages.next().await {
-            let (page, height) = page?;
+            let (page, heights) = page?;
+            // Every read the page holds, at or above the floor.
+            let height = heights.min;
             if height < floor {
                 return Err(PlatformWalletError::ShieldedSyncFailed(format!(
                     "the private contact request store's page from position {} is proved at \

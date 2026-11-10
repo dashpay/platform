@@ -54,6 +54,10 @@ pub struct MockDashPlatformSdk {
     /// The block height the metadata of a response of one type answered from an expectation
     /// reports, by the type's name ([Self::set_response_height_of]), over `response_height`.
     response_heights_of: BTreeMap<&'static str, u64>,
+    /// The block height the metadata of the response to one request answered from an
+    /// expectation reports, by the request's key ([Self::set_response_height_for]), over
+    /// `response_heights_of`.
+    response_heights_for: BTreeMap<Key, u64>,
 }
 
 impl MockDashPlatformSdk {
@@ -88,6 +92,7 @@ impl MockDashPlatformSdk {
             response_time_ms: 0,
             response_height: 0,
             response_heights_of: BTreeMap::new(),
+            response_heights_for: BTreeMap::new(),
         }
     }
 
@@ -111,6 +116,20 @@ impl MockDashPlatformSdk {
     pub fn set_response_height_of<O>(&mut self, height: u64) -> &mut Self {
         self.response_heights_of
             .insert(std::any::type_name::<O>(), height);
+        self
+    }
+
+    /// Sets the block height the metadata of the response to `query`, a fetch of `O` answered
+    /// from an expectation, reports, over [Self::set_response_height_of]: for code under test
+    /// that reads responses of one type proved at different heights.
+    pub fn set_response_height_for<O: Fetch, Q: Query<<O as Fetch>::Query>>(
+        &mut self,
+        query: Q,
+        height: u64,
+    ) -> &mut Self {
+        let (rich, _) = self
+            .encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query, identity);
+        self.response_heights_for.insert(Key::new(&rich), height);
         self
     }
 
@@ -633,8 +652,9 @@ impl MockDashPlatformSdk {
                         protocol_version: dpp::version::LATEST_VERSION,
                         time_ms: self.response_time_ms,
                         height: self
-                            .response_heights_of
-                            .get(std::any::type_name::<O>())
+                            .response_heights_for
+                            .get(&key)
+                            .or_else(|| self.response_heights_of.get(std::any::type_name::<O>()))
                             .copied()
                             .unwrap_or(self.response_height),
                         ..Default::default()

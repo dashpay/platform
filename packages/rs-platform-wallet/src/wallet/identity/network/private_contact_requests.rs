@@ -1880,8 +1880,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )));
             }
             let mut reached_end = false;
-            // The height each page was proved at, in the scans' order.
-            let page_heights: Vec<u64> = fetched.iter().map(|(_, height)| *height).collect();
+            // The highest height each page's reads were proved at, in the scans' order: no
+            // entry a page holds was appended above it, nor sealed to a key added above it.
+            let page_heights: Vec<u64> = fetched.iter().map(|(_, heights)| heights.max).collect();
             for (scan, page_height) in scans.into_iter().zip(page_heights) {
                 report.pages_read += 1;
                 let stale: BTreeMap<Identifier, u64> = private_contact_request_identities(&scan)
@@ -6728,6 +6729,116 @@ mod tests {
         .await;
     }
 
+    /// A store page completed from two reads, the first from a node a block
+    /// behind, counts the higher one: Bob's page from 2 is read at H - 1 up to
+    /// that node's end, and completed at H with Alice's private request sealed
+    /// to the decryption key another device added at H. His identity proved at
+    /// H - 1, between the page's two heights, without the key, does not cover
+    /// the read: his public request is refused with the SDK's stale node error
+    /// against H. Once proved at H with the key, the store is read again, her
+    /// request is found, and the public request is refused.
+    #[tokio::test]
+    async fn should_cover_the_highest_read_of_a_completed_store_page_before_a_public_request() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &stale], vec![]).await;
+        // Chunks of two: the page from 0, then the page from 2, read from a
+        // node whose store held 3 entries and completed from 3.
+        let filler = |byte: u8| vec![byte; 589];
+        let page = |start: u64, entries: Vec<Vec<u8>>, total: u64| {
+            let mut page = store_page(start, entries);
+            page.chunk_power = Some(1);
+            page.total_count = total;
+            page
+        };
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let query = |start| {
+            PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            )
+        };
+        let mut sdk = (*bob_wallet.identity().sdk).clone();
+        {
+            let mut mock = sdk.mock();
+            for (start, page) in [
+                (0, page(0, vec![filler(0xA0), filler(0xA1)], 4)),
+                (2, page(2, vec![filler(0xA2)], 3)),
+                (3, page(3, vec![entry], 4)),
+            ] {
+                mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query(start))
+                    .await;
+                mock.expect_fetch(query(start), Some(page))
+                    .await
+                    .expect("page expectation");
+            }
+            mock.set_response_height(H - 1)
+                .set_response_height_for::<PrivateDocumentEntries, _>(query(3), H);
+        }
+        let view = bob_wallet.identity().dashpay();
+        let (bob_id, alice_id) = (bob.id(), alice.id());
+        let send = || {
+            view.send_contact_request_with_external_signer(
+                &bob_id,
+                &alice_id,
+                None,
+                AutoAcceptProofSource::None,
+                &bob_signer,
+                &bob_crypto,
+            )
+        };
+
+        let between = send().await;
+        assert!(
+            matches!(
+                &between,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::StaleNode(
+                    StaleNodeError::Height {
+                        expected_height: H,
+                        received_height,
+                        ..
+                    }
+                ))) if *received_height == H - 1
+            ),
+            "{between:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(managed.dashpay().private_store_read_height(), Some(H));
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
+            assert!(
+                managed.dashpay().outgoing_request(&alice.id()).is_none(),
+                "nothing sent"
+            );
+        })
+        .await;
+
+        // The identity is proved at H, with the key.
+        set_identity_known(&bob_wallet, &bob, true).await;
+        sdk.mock().set_response_height_of::<Identity>(H);
+        let covered = send().await;
+        assert!(
+            matches!(
+                covered,
+                Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(sender))
+                    if sender == alice.id()
+            ),
+            "{covered:?}"
+        );
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(
+                managed.dashpay().incoming_request(&alice.id()).is_some(),
+                "her private request is recorded"
+            );
+        })
+        .await;
+    }
+
     /// A public request, or a public acceptance, whose sender identity cannot
     /// be fetched is refused as the SDK reported the fetch, before the store is
     /// read again or anything is signed: the keys a read would scan with are
@@ -8652,6 +8763,64 @@ mod tests {
             ),
             "{public:?}"
         );
+    }
+
+    /// The store read that shows a payment's entry absent counts a page by the
+    /// lowest of its reads: a page completed at the floor from a first read
+    /// one block below it does not show the store at the floor, and the read
+    /// fails; read wholly at the floor, it shows the entry absent.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_take_a_store_page_completed_from_below_the_floor_as_absence() {
+        let fixture = ExpiryFixture::new().await;
+        let floor = ExpiryFixture::ANCHOR_SET_HEIGHT;
+        let filler = |byte: u8| vec![byte; 64];
+        let page = |start: u64, entries: Vec<Vec<u8>>, total: u64| {
+            let mut page = store_page(start, entries);
+            page.chunk_power = Some(1);
+            page.total_count = total;
+            page
+        };
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let query = |start| {
+            PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            )
+        };
+        let mut sdk = (*fixture.wallet.identity().sdk).clone();
+        {
+            let mut mock = sdk.mock();
+            for (start, page) in [
+                (0, page(0, vec![filler(0xA0), filler(0xA1)], 4)),
+                (2, page(2, vec![filler(0xA2)], 3)),
+                (3, page(3, vec![filler(0xA3)], 4)),
+            ] {
+                mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query(start))
+                    .await;
+                mock.expect_fetch(query(start), Some(page))
+                    .await
+                    .expect("page expectation");
+            }
+            mock.set_response_height(floor)
+                .set_response_height_for::<PrivateDocumentEntries, _>(query(2), floor - 1);
+        }
+        let candidates = HashSet::from([[0x72; 32]]);
+        let below = fixture
+            .coordinator
+            .private_contact_requests_held(&candidates, floor)
+            .await;
+        assert!(below.is_err(), "{below:?}");
+
+        sdk.mock()
+            .set_response_height_for::<PrivateDocumentEntries, _>(query(2), floor);
+        let held = fixture
+            .coordinator
+            .private_contact_requests_held(&candidates, floor)
+            .await
+            .expect("read at the floor");
+        assert!(held.is_empty(), "absent");
     }
 
     /// A private payment that never executes is proven expired once its

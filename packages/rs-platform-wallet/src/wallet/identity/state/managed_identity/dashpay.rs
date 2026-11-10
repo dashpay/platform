@@ -124,9 +124,10 @@ pub struct DashPayState {
     /// In memory only; a cursor rewind leaves it set.
     pub(super) private_contact_requests_read: bool,
 
-    /// The highest height a page of DashPay's private contact request store
-    /// was proved at among those a private sync read for this identity since
-    /// load: what `private_contact_requests_read` rests on. A request sealed
+    /// The highest height a read of a page of DashPay's private contact
+    /// request store was proved at, among the pages a private sync read for
+    /// this identity since load, a page completed from several reads counting
+    /// its highest: what `private_contact_requests_read` rests on. A request sealed
     /// to one of its keys is in such a page only if the key was added at or
     /// below it, so the store read covers the identity's keys as proved at or
     /// above it, and a public request is decided only with those
