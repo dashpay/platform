@@ -8,9 +8,13 @@ use super::reference_test_helpers::{
     assert_refused, assert_refused_by_the_parser, contract, contract_on, identifier, CONTRACT_ID,
 };
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRequirements,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType, DocumentTypeRequirements,
     DynamicDocumentReference, DynamicDocumentReferenceKind, RequiredPropertySlot, SlotPropertyName,
     SlotRequirement, SlotRequirementTerm, SlotValue,
 };
@@ -748,7 +752,11 @@ fn should_refuse_a_rule_or_an_index_reading_through_a_dynamic_reference() {
             "equal": [{ "referenced": ["descriptionId", "$ownerId"] }, "$ownerId"]
         }
     });
-    assert_refused(contract(with_a_rule), "descriptionId");
+    // The refusal says why: the reference is to a document, of a type the schema does not name
+    assert_refused(
+        contract(with_a_rule),
+        "\"descriptionId\", whose refersTo names its target through the referring document",
+    );
 
     // and an index holds a value of one
     let mut with_an_index = note_contract(text_or_bytes());
@@ -756,4 +764,136 @@ fn should_refuse_a_rule_or_an_index_reading_through_a_dynamic_reference() {
         { "name": "byDescriptionOwner", "properties": [{ "descriptionId.$ownerId": "asc" }] }
     ]);
     contract(with_an_index).expect_err("an index reads no value through a dynamic reference");
+}
+
+/// A `note` of a contract its owner moderates, describing itself with a document of a type
+/// it names whose text is the string property the note names. Nothing of the description
+/// is required, so a moderator could be given any of its properties to write. `abilities`
+/// is the type's `moderatorAbilities`.
+fn moderated_note(abilities: serde_json::Value) -> Result<DocumentType, crate::ProtocolError> {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config")
+        .with_moderation(Some(ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            moderators: ContractModerators::ContractOwner,
+            warnings: false,
+        }));
+    let mut description_id = identifier(0);
+    description_id["refersTo"] = requiring(json!({
+        "properties": {
+            "body": { "name": { "property": "bodyProperty" }, "type": "string" }
+        }
+    }));
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "descriptionId": description_id,
+            "descriptionContractId": identifier(1),
+            "descriptionDocumentType": string(2),
+            "bodyProperty": string(3),
+            "label": string(4)
+        },
+        "additionalProperties": false,
+        "moderatorAbilities": abilities
+    });
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "note",
+        platform_value::to_value(schema).expect("the schema should convert"),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
+}
+
+/// A moderator's change of a field is not a replace: no reference is checked again. So a
+/// moderator is given none of the properties a reference reads its target from, or it could
+/// point a stored reference at a document type, or a property of one, nobody checked.
+#[test]
+fn should_not_let_a_moderator_write_what_a_dynamic_target_is_read_from() {
+    // A property no reference reads is the moderators' to write
+    let note = moderated_note(json!({ "changeFields": ["label"] })).expect("parses");
+    assert_eq!(
+        note.moderator_changeable_fields(),
+        &BTreeSet::from(["label".to_string()])
+    );
+
+    for source in [
+        // The reference, the contract id, the document type name, and a slot's property name
+        "descriptionId",
+        "descriptionContractId",
+        "descriptionDocumentType",
+        "bodyProperty",
+    ] {
+        let error = moderated_note(json!({ "changeFields": [source] }))
+            .expect_err("a moderator must not write what the reference reads");
+        let message = error.to_string();
+        assert!(
+            message.contains(&format!("can not list \"{source}\"")),
+            "{source}: {message}"
+        );
+        assert!(
+            message.contains("it holds a reference or is read by one"),
+            "{source}: {message}"
+        );
+    }
+}
+
+/// The requirements are written back as a schema declares them, in one place, and the
+/// parser reads what is written back to the same requirements: what a client is shown of a
+/// declaration is a declaration.
+#[test]
+fn should_write_requirements_as_a_schema_declares_them() {
+    let declared = json!({
+        "properties": {
+            "title": { "name": "$any", "type": "string", "maxBytes": 256 },
+            "body": {
+                "name": { "property": "bodyProperty" },
+                "type": "string",
+                "distinctFrom": ["title"]
+            },
+            "bytes": { "name": "blob", "type": "array", "byteArray": true },
+            "count": { "name": "$any", "type": "integer" }
+        },
+        "require": { "allOf": ["title", { "anyOf": ["body", "bytes"] }, "count"] }
+    });
+    let parsed = requirements(declared.clone());
+    let written = parsed
+        .to_schema_value()
+        .try_into_validating_json()
+        .expect("the schema value converts to JSON");
+    assert_eq!(written, declared);
+    assert_eq!(requirements(written), parsed);
+
+    // Every other form: one slot name, `anyOf` over groups, a `distinctFrom` written as
+    // one name (which is written back as a list), and no `require`
+    for declared in [
+        json!({
+            "properties": { "body": { "name": "$any", "type": "boolean" } },
+            "require": "body"
+        }),
+        json!({
+            "properties": {
+                "a": { "name": "$any", "type": "string" },
+                "b": { "name": "$any", "type": "string", "distinctFrom": "a" },
+                "c": { "name": "$any", "type": "identifier" }
+            },
+            "require": { "anyOf": [{ "allOf": ["a", "b"] }, "c"] }
+        }),
+        json!({ "properties": { "body": { "name": "body", "type": "string" } } }),
+    ] {
+        let parsed = requirements(declared);
+        let written = parsed
+            .to_schema_value()
+            .try_into_validating_json()
+            .expect("the schema value converts to JSON");
+        assert_eq!(requirements(written), parsed);
+    }
 }

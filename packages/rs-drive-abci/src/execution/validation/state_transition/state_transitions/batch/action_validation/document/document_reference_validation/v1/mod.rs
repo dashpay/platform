@@ -36,6 +36,7 @@ use dpp::errors::consensus::state::document::referenced_document_preceded_error:
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::errors::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use dpp::errors::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
@@ -1276,13 +1277,25 @@ fn validate_reference_target_v1(
             // What registration checks of a reference naming its target in the schema, a
             // reference naming it through the referring document meets here, on every
             // write that checks it: the type is not private, whose documents are encrypted
-            // entries the chain never reads, and it has the properties the reference's
-            // `documentTypeRequirements` ask for. A slot naming its property through the
-            // referring document reads the name there
+            // entries the chain never reads, it is not indexOnly, whose documents are index
+            // entries Drive refuses to fetch by id (the read below would fail the block's
+            // processing of the transition instead of refusing it, paid), and it has the
+            // properties the reference's `documentTypeRequirements` ask for. A slot naming
+            // its property through the referring document reads the name there
             if let Some(dynamic) = reference_target.as_dynamic_document_reference() {
                 if referenced_document_type.is_private() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         ReferencedDocumentTypePrivateError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if referenced_document_type.index_only() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeIndexOnlyError::new(
                             effective_contract_id,
                             document_type_name.to_string(),
                             path.to_string(),

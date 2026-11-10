@@ -4565,6 +4565,14 @@ fn referencing_property_error(document_type: DocumentTypeRef, reference: &str) -
                 .to_string(),
         );
     }
+    if target.as_dynamic_document_reference().is_some() {
+        return Some(
+            "whose refersTo names its target through the referring document: the document type \
+             a rule reads through is one the schema names, known when the contract is \
+             registered"
+                .to_string(),
+        );
+    }
     let Some(declaration) = target.as_any_document_reference() else {
         return Some(
             "whose refersTo names an identity, a contract, a token or a key, not a document"

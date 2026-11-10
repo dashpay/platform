@@ -14,13 +14,13 @@
 use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serialization::{object_with_own_properties, platform_value_to_object};
 use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
-    ANY_PROPERTY_NAME, DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     DocumentTypeRequirements, IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey,
-    LookupKeyParam, LookupKeySource, PropertyReference, SlotPropertyName, SlotRequirement,
-    SlotRequirementTerm, SlotValue, WhereCondition, WhereContainsBound, WhereLiteral,
-    WhereNotEqualBound, WhereOrderingBound,
+    LookupKeyParam, LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound,
+    WhereLiteral, WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
@@ -1087,96 +1087,38 @@ fn set_reference_target_fields(
     Ok(())
 }
 
-/// `documentTypeRequirements` as the schema declares it: the slots under `properties`, and
-/// `require` when the declaration has one.
+/// `documentTypeRequirements` as the schema declares it. The shape is rs-dpp's
+/// (`DocumentTypeRequirements::to_schema_value`, which the parser reads back); only the
+/// slots are placed here, each an own property, since a slot may be named like an
+/// accessor every object inherits (`__proto__`).
 fn document_type_requirements_to_js(
     requirements: &DocumentTypeRequirements,
     path: &str,
 ) -> WasmDppResult<Object> {
-    let names =
-        |slots: &[String]| -> Array { slots.iter().map(|slot| JsValue::from_str(slot)).collect() };
-    let properties = Object::new();
-    for (slot_name, slot) in &requirements.slots {
-        let fields = Object::new();
-        let name = match &slot.name {
-            SlotPropertyName::Any => JsValue::from_str(ANY_PROPERTY_NAME),
-            SlotPropertyName::Named(name) => JsValue::from_str(name),
-            SlotPropertyName::FromProperty(property) => {
-                let from_property = Object::new();
-                set_field(
-                    &from_property,
-                    "property",
-                    &JsValue::from_str(property),
-                    path,
-                )?;
-                from_property.into()
-            }
-        };
-        set_field(&fields, "name", &name, path)?;
-        let value_type = match slot.value {
-            SlotValue::String => "string",
-            SlotValue::Identifier => "identifier",
-            SlotValue::Integer => "integer",
-            SlotValue::Boolean => "boolean",
-            SlotValue::ByteArray => "array",
-        };
-        set_field(&fields, "type", &JsValue::from_str(value_type), path)?;
-        if slot.value == SlotValue::ByteArray {
-            set_field(&fields, "byteArray", &JsValue::TRUE, path)?;
-        }
-        if let Some(max_bytes) = slot.max_bytes {
-            set_field(&fields, "maxBytes", &JsValue::from(max_bytes), path)?;
-        }
-        if !slot.distinct_from.is_empty() {
-            let others: Vec<String> = slot.distinct_from.iter().cloned().collect();
-            set_field(&fields, "distinctFrom", &names(&others), path)?;
-        }
-        set_schema_field(&properties, slot_name, fields.into(), path)?;
-    }
+    let slots = requirements
+        .slots
+        .iter()
+        .map(|(slot_name, slot)| {
+            Ok((
+                slot_name.as_str(),
+                platform_value_to_object(&slot.to_schema_value())?,
+            ))
+        })
+        .collect::<WasmDppResult<Vec<_>>>()?;
     let object = Object::new();
-    set_field(&object, "properties", &properties, path)?;
-
+    set_field(
+        &object,
+        "properties",
+        &object_with_own_properties(slots)?.into(),
+        path,
+    )?;
     if let Some(require) = &requirements.require {
-        let terms_to_js = |terms: &[SlotRequirementTerm], inner: &str| -> WasmDppResult<Array> {
-            let operands = Array::new();
-            for term in terms {
-                match term {
-                    SlotRequirementTerm::Slot(slot) => {
-                        operands.push(&JsValue::from_str(slot));
-                    }
-                    SlotRequirementTerm::Group(slots) => {
-                        let group = Object::new();
-                        set_field(&group, inner, &names(slots), path)?;
-                        operands.push(&group);
-                    }
-                }
-            }
-            Ok(operands)
-        };
-        let require: JsValue = match require {
-            SlotRequirement::Slot(slot) => JsValue::from_str(slot),
-            SlotRequirement::AnyOf(terms) => {
-                let combinator = Object::new();
-                set_field(
-                    &combinator,
-                    "anyOf",
-                    &terms_to_js(terms, "allOf")?.into(),
-                    path,
-                )?;
-                combinator.into()
-            }
-            SlotRequirement::AllOf(terms) => {
-                let combinator = Object::new();
-                set_field(
-                    &combinator,
-                    "allOf",
-                    &terms_to_js(terms, "anyOf")?.into(),
-                    path,
-                )?;
-                combinator.into()
-            }
-        };
-        set_field(&object, "require", &require, path)?;
+        set_field(
+            &object,
+            "require",
+            &platform_value_to_object(&require.to_schema_value())?,
+            path,
+        )?;
     }
     Ok(object)
 }

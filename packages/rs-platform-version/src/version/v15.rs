@@ -676,11 +676,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
 ///     `creatorRefersTo`, and no rule, derived index property or chained query reads through
 ///     it, each of which resolves the referenced type from the schema. Registration checks
-///     the declaration and the properties it reads alone. `document_reference_validation` 1
+///     the declaration and the properties it reads alone, none of which a moderator may be
+///     given to write (`moderatorAbilities.changeFields`). `document_reference_validation` 1
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the target when a document is written:
 ///     the document names a contract and a document type (`ReferencedEntityNotFoundError`,
 ///     40120, when it does not), they exist (`ReferencedDocumentTypeNotFoundError`, 40121),
-///     the type is not private (`ReferencedDocumentTypePrivateError`, 40150), meets the
+///     the type is not private (`ReferencedDocumentTypePrivateError`, 40150) and not
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146), meets the
 ///     requirements (`ReferencedDocumentTypeRequirementNotMetError`, 40153, new) and is of
 ///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
 ///     moderated one a replace keeps, was removed on the record. A replace checks the
