@@ -4,8 +4,9 @@ import SwiftDashSDK
 /// How a contact request send or accept that threw ended, for the DashPay
 /// views. Follows `SendViewModel`: a shielded spend whose result could not be
 /// confirmed (code 18) may already be on chain (Rust keeps its notes
-/// reserved), so the view keeps it pending and never offers a fresh
-/// submission; the next sync settles it. A pair Rust reports as held for a
+/// reserved), and so may a state transition the SDK could not confirm after
+/// it may have been accepted (code 20), so the view keeps either pending and
+/// never offers a fresh submission; the next sync settles it. A pair Rust reports as held for a
 /// private request (code 71), which a public send or accept can also meet,
 /// sent nothing new: the view shows it as pending until the wallet's
 /// per-contact read says the pair is free. Unrestored private payments
@@ -102,7 +103,7 @@ enum ContactRequestSubmissionOutcome: Equatable {
     static func of(_ error: Error) -> ContactRequestSubmissionOutcome {
         if let walletError = error as? PlatformWalletError {
             switch walletError {
-            case .shieldedSpendUnconfirmed:
+            case .shieldedSpendUnconfirmed, .transactionBroadcastUnconfirmed:
                 return .mayHaveGoneThrough
             case .privateContactRequestPending:
                 return .privateRequestPending

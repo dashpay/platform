@@ -264,9 +264,11 @@ extension PlatformWalletManager {
     /// signs a public request's transition. Before anything is paid the
     /// wallet reads DashPay's private store for the sender to its end.
     /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the payment
-    /// may already be on chain, and `.privateContactRequestPending` when the
+    /// may already be on chain, `.transactionBroadcastUnconfirmed` when the
+    /// SDK could not confirm a transition it may have accepted, and
+    /// `.privateContactRequestPending` when the
     /// pair is held for a private request (in flight, paid and not yet read
-    /// back, or kept by the journal): either way do not send again.
+    /// back, or kept by the journal): in each case do not send again.
     /// `.privateContactStoreNotRead` sent nothing; calling again continues
     /// the read. `.privateContactPaymentsNotRestored` and
     /// `.privateContactRecoveryUnsupported` refuse before the read.
@@ -389,8 +391,9 @@ extension PlatformWalletManager {
     /// `shieldedAddress` is the 43-byte Orchard address the contact may pay
     /// us at privately; a public reply ignores it. A public or adopted reply
     /// needs neither shielded support nor a mnemonic read for the payment.
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when a private
-    /// reply may already be on chain, or `.privateContactRequestPending` when
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` (or
+    /// `.transactionBroadcastUnconfirmed`) when a private reply may already be
+    /// on chain, or `.privateContactRequestPending` when
     /// the pair is held for one: do not accept again; `.privateContactStoreNotRead`
     /// when the private store read every accept runs first did not finish
     /// (nothing sent; calling again continues it); and

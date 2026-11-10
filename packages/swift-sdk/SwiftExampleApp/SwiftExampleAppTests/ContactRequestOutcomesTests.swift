@@ -21,6 +21,25 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertEqual(outcome, .mayHaveGoneThrough)
     }
 
+    /// Code 20: a state transition the SDK could not confirm after it may
+    /// have been accepted, which a private send or accept can now return
+    /// through the spend contract, and a public one through the blanket
+    /// conversion. It may have executed: nothing is offered again.
+    func testShouldKeepAnUnconfirmedStateTransitionPending() {
+        XCTAssertEqual(
+            ContactRequestSubmissionOutcome.of(
+                PlatformWalletError.transactionBroadcastUnconfirmed("result could not be confirmed")),
+            .mayHaveGoneThrough)
+    }
+
+    /// A shielded send treats code 20 as it treats 18: it may have gone
+    /// through, so no retry is offered; an ordinary failure is not.
+    func testShouldNotOfferARetryForAShieldedOperationThatMayHaveGoneThrough() {
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.shieldedSpendUnconfirmed("not proved")))
+        XCTAssertTrue(SendViewModel.mayHaveGoneThrough(.transactionBroadcastUnconfirmed("not confirmed")))
+        XCTAssertFalse(SendViewModel.mayHaveGoneThrough(.shieldedBroadcastFailed("never sent")))
+    }
+
     /// A pending private request (code 71), which a public send or accept
     /// can meet too, sent nothing: it is shown as pending rather than as a
     /// submission that may have gone through.

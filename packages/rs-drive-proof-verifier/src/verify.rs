@@ -155,14 +155,7 @@ pub(crate) fn verify_tenderdash_signature(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes = provider
-        .get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)
-        .map_err(|error| Error::QuorumKeyUnavailable {
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height: core_locked_height,
-            error,
-        })?;
+    let pubkey_bytes = quorum_public_key(provider, quorum_type, quorum_hash, core_locked_height)?;
 
     let state_id = StateId {
         app_version: version,
@@ -204,36 +197,83 @@ pub(crate) fn verify_tenderdash_signature(
             error: e.to_string(),
         })?;
 
-    let signature = TryInto::<[u8; 96]>::try_into(proof.signature.as_slice()).map_err(|e| {
-        Error::InvalidSignatureFormat {
+    tracing::trace!(?state_id, "verify the signature over a state id");
+
+    verify_quorum_signature(
+        provider,
+        quorum_type,
+        quorum_hash,
+        core_locked_height,
+        &pubkey_bytes,
+        &sign_digest,
+        &proof.signature,
+    )
+}
+
+/// The public key the provider holds for the quorum a response names as its signer.
+///
+/// The arguments come from a response that is not verified yet: they say which key to look
+/// for, not that the quorum exists.
+pub(crate) fn quorum_public_key(
+    provider: &dyn ContextProvider,
+    quorum_type: u32,
+    quorum_hash: [u8; 32],
+    core_chain_locked_height: u32,
+) -> Result<[u8; 48], Error> {
+    provider
+        .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        .map_err(|error| Error::QuorumKeyUnavailable {
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+            error,
+        })
+}
+
+/// Verify a quorum's threshold `signature` over `sign_digest` with `public_key`, the key
+/// [`quorum_public_key`] returned for the same quorum and height.
+///
+/// Once the signature verifies, and only then, the Core ChainLocked height is reported to
+/// [ContextProvider::core_height_verified], with the quorum type and hash its key was looked
+/// up by. The caller passes a height the signed data covers, so it is a height Platform
+/// committed.
+pub(crate) fn verify_quorum_signature(
+    provider: &dyn ContextProvider,
+    quorum_type: u32,
+    quorum_hash: [u8; 32],
+    core_chain_locked_height: u32,
+    public_key: &[u8; 48],
+    sign_digest: &[u8],
+    signature: &[u8],
+) -> Result<(), Error> {
+    let signature =
+        TryInto::<[u8; 96]>::try_into(signature).map_err(|e| Error::InvalidSignatureFormat {
             error: "invalid signature size: ".to_string() + &e.to_string(),
-        }
-    })?;
+        })?;
 
     let pubkey =
-        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
+        bls::PublicKey::try_from(public_key.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
         })?;
 
     tracing::trace!(
-        ?state_id,
         signature = hex::encode(signature),
-        sign_digest = hex::encode(&sign_digest),
+        sign_digest = hex::encode(sign_digest),
         ?pubkey,
         "verify signature"
     );
 
-    match verify_signature_digest(&sign_digest, &signature, &pubkey)? {
+    match verify_signature_digest(sign_digest, &signature, &pubkey)? {
         true => {
             // Only now is the Core height one the quorum signed.
-            provider.core_height_verified(quorum_type, quorum_hash, core_locked_height);
+            provider.core_height_verified(quorum_type, quorum_hash, core_chain_locked_height);
             Ok(())
         }
         false => Err(Error::InvalidSignature {
             error: format!(
                 "signature {} could not be verified with public key {} for sign digest {}",
                 hex::encode(signature),
-                hex::encode(pubkey_bytes),
+                hex::encode(public_key),
                 hex::encode(sign_digest)
             ),
         }),

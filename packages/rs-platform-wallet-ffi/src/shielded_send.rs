@@ -602,12 +602,13 @@ pub(crate) fn map_spend_result(
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed — the host must NOT re-submit. For the
-        // spend-based operations the notes stay reserved wallet-side; a
-        // shield reserves nothing. Either way the next sync (or an app
-        // restart) reconciles the outcome; the typed Display already
-        // carries the operation name and guidance.
+        // Outcome not known: a dispatch may have reached a node and the
+        // execution result couldn't be confirmed, so the host must NOT
+        // re-submit. For the spend-based operations the notes stay reserved
+        // wallet-side, with the recovery record saved before the broadcast;
+        // a shield from Platform addresses reserves nothing. Either way the
+        // next sync reconciles a transition that landed; the typed Display
+        // already carries the operation name and guidance.
         // A broadcast that may have been delivered reads the same: it may
         // still execute, so its notes and recovery record stay, and a host
         // must not pay again.
@@ -654,18 +655,19 @@ pub(crate) fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the transition never left the wallet (for a note
-        // spend, refused before anything was sent); the notes were released
-        // and the host may retry.
+        // Definitive failure: the transition never left the wallet (refused
+        // before anything was sent); a spend's notes were released and the
+        // host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
         ),
-        // Definitively failed on an address-nonce race (a shield spends platform
-        // address funds; a shield reserves no notes). Its own code carries the
-        // safe-to-retry contract AND lets the host recognize the self-healing
-        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
-        // it would regress to the generic `ErrorWalletOperation` below.
+        // An address-nonce race keeps its own code, so the host can recognize
+        // the self-healing nonce mismatch: a plain retry re-fetches the nonce.
+        // No operation mapped here reports it today: a shield from Platform
+        // addresses reads an endpoint's nonce verdict on a dispatched shield
+        // as unconfirmed, above. The arm keeps the code from regressing to the
+        // generic `ErrorWalletOperation` below if one does.
         Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
@@ -686,6 +688,18 @@ pub(crate) fn map_spend_result(
         // here as the blanket `From` conversion does, so hosts route to key
         // repair instead of reading a generic wallet failure. Structural
         // position-0 check only, never a substring sniff of the rendering.
+        // The SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`)
+        // that reached here unclassified: the transition may have executed,
+        // so it keeps the blanket conversion's unconfirmed code rather than
+        // reading as a failure a host may retry.
+        Err(e)
+            if matches!(
+                &e,
+                PlatformWalletError::Sdk(source) if source.is_state_transition_result_unconfirmed()
+            ) =>
+        {
+            e.into()
+        }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),
@@ -769,7 +783,7 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
-/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
+/// in place, and the next nullifier sync reconciles whether the spend landed.
 pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
