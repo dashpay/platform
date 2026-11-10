@@ -133,6 +133,19 @@ mod tests {
         Vec<u8>,
         Transaction,
     ) {
+        create_chain_asset_lock_proof_with_key_and_tx_with_inputs(rng, 1)
+    }
+
+    /// [`create_chain_asset_lock_proof_with_key_and_tx`] whose transaction spends
+    /// `input_count` outputs (vout 0, 1, …) of the same funding transaction.
+    fn create_chain_asset_lock_proof_with_key_and_tx_with_inputs(
+        rng: &mut StdRng,
+        input_count: u32,
+    ) -> (
+        dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
+        Vec<u8>,
+        Transaction,
+    ) {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
         let platform_version = PlatformVersion::latest();
@@ -146,16 +159,18 @@ mod tests {
         let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 
-        // Create a fake input (doesn't need to be real for our tests)
+        // Create fake inputs (they don't need to be real for our tests)
         let input_txid =
             Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458")
                 .unwrap();
-        let input = TxIn {
-            previous_output: OutPoint::new(input_txid, 0),
-            script_sig: ScriptBuf::new(),
-            sequence: 0xffffffff,
-            witness: Default::default(),
-        };
+        let inputs = (0..input_count)
+            .map(|vout| TxIn {
+                previous_output: OutPoint::new(input_txid, vout),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Default::default(),
+            })
+            .collect();
 
         // Create the funding output (P2PKH to the one-time key)
         let funding_output = TxOut {
@@ -179,7 +194,7 @@ mod tests {
         let transaction = Transaction {
             version: 3,
             lock_time: 0,
-            input: vec![input],
+            input: inputs,
             output: vec![burn_output],
             special_transaction_payload: Some(payload),
         };
@@ -5491,6 +5506,7 @@ mod tests {
 
     mod chain_asset_lock {
         use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 
         #[tokio::test]
         async fn test_chain_asset_lock_proof_basic() {
@@ -5572,6 +5588,84 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// A chain proof names only an outpoint and a height, so from protocol 15 the input cap
+        /// that keeps an instant proof's transition small does not hold its transaction: a
+        /// mined asset lock of more than 100 inputs, whose Dash no instant proof can redeem,
+        /// funds an address.
+        #[tokio::test]
+        async fn should_fund_an_address_from_a_chain_asset_lock_over_the_input_cap() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut rng = StdRng::seed_from_u64(701);
+            let (chain_asset_lock_proof, asset_lock_pk, asset_lock_tx) =
+                create_chain_asset_lock_proof_with_key_and_tx_with_inputs(&mut rng, 101);
+
+            // Mined at core height 50, below the proof's chain locked height of 100.
+            let platform =
+                create_platform_with_chain_asset_lock_mock(platform_config, asset_lock_tx, 50);
+            let platform = platform.set_genesis_state_with_activation_info(0, 1);
+            fast_forward_to_block(&platform, 0, 1, 200, 0, false);
+
+            let recipient = create_platform_address(1);
+            let mut outputs = BTreeMap::new();
+            outputs.insert(recipient, None);
+
+            let signer = TestAddressSigner::new();
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                chain_asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            )
+            .await;
+
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let block_info = BlockInfo {
+                time_ms: 0,
+                height: 1,
+                core_height: 200,
+                epoch: Default::default(),
+            };
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => fee_result.clone()
+            );
+            // The whole 1 Dash lock is credited, less the transition's fees.
+            assert_eq!(
+                get_address_balance(&platform, recipient, &transaction),
+                dash_to_credits!(1.0) - fee_result.total_base_fee()
             );
         }
 
