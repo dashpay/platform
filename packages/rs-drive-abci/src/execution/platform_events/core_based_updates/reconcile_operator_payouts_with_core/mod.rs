@@ -6,10 +6,15 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::ProTxHash;
-use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeListItem};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::KeyType;
 use dpp::version::PlatformVersion;
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
+};
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How many masternodes of each side a membership mismatch names.
 const MISMATCHES_REPORTED: usize = 10;
@@ -35,6 +40,14 @@ where
     /// An identity a masternode already left is not reconciled: a switch back to it leaves its
     /// TRANSFER keys, and its next payout change reconciles them.
     ///
+    /// Nor is a current identity the masternode left and came back to before version 15
+    /// (`has_returned_to_operator_identity`). It keeps its TRANSFER keys, as a switch back to it
+    /// would from version 15 on: the owner alone authorizes a key change, so the payout Core
+    /// reports for an identity the masternode returned to need not be its operator's own
+    /// choice, and that operator must not lose withdrawal authority over the credits it earned.
+    /// Its keys follow the payout changes Core reports while it stays current, the first of
+    /// which also disables a key an earlier operator left on it.
+    ///
     /// `block_platform_state` must hold Platform's copy of Core's list at `core_height`, a chain
     /// locked height every node agrees on, so every node reads the same list from its Core. A
     /// Core error, or a Core list whose masternodes are not the ones Platform lists, fails the
@@ -43,7 +56,8 @@ where
     /// Part of protocol version 15's upgrade block (`transition_to_version_15`), its only caller:
     /// once that version ships, a change in what this does needs a new step in the upgrade
     /// ladder, not an edit here. It relies on an `update_operator_identity` generation that
-    /// reconciles every TRANSFER key with the payout, 1 or later.
+    /// reconciles every TRANSFER key with the payout, 1 or later, and on the operator identities
+    /// earlier versions wrote, whose operator key only a departure disables.
     pub(in crate::execution::platform_events) fn reconcile_operator_payouts_with_core(
         &self,
         block_platform_state: &mut PlatformState,
@@ -120,11 +134,18 @@ where
             })
             .map(|(masternode, core_payout)| (masternode.clone(), *core_payout))
             .collect::<Vec<_>>();
+        let mut returned_to = BTreeSet::new();
+        for masternode in stored_list.values() {
+            if self.has_returned_to_operator_identity(masternode, transaction, platform_version)? {
+                returned_to.insert(masternode.pro_tx_hash);
+            }
+        }
 
         tracing::info!(
             core_height,
             masternodes = core_payouts.len(),
             corrected = corrections.len(),
+            returned_to = returned_to.len(),
             "reconciling the operator payouts of the masternode list with Dash Core"
         );
 
@@ -134,6 +155,7 @@ where
         }
         let updated_mns = core_payouts
             .into_iter()
+            .filter(|(pro_tx_hash, _)| !returned_to.contains(pro_tx_hash))
             .map(|(pro_tx_hash, core_payout)| (pro_tx_hash, operator_payout_diff(core_payout)))
             .collect();
 
@@ -153,6 +175,38 @@ where
             transaction,
             platform_version,
         )
+    }
+
+    /// Whether `masternode`'s current operator identity is one the masternode left and came back
+    /// to. Up to protocol version 14, `update_operator_identity` 0 disables the BLS operator key
+    /// of the identity a masternode leaves and enables it on no later update, also not when the
+    /// masternode switches back. So a current identity whose operator key is disabled is one the
+    /// masternode returned to, and one created for the masternode's current key has it enabled.
+    fn has_returned_to_operator_identity(
+        &self,
+        masternode: &MasternodeListItem,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        let operator_identifier =
+            Self::get_operator_identifier_from_masternode_list_item(masternode, platform_version)?;
+        let keys = self
+            .drive
+            .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                IdentityKeysRequest {
+                    identity_id: operator_identifier.to_buffer(),
+                    request_type: KeyRequestType::AllKeys,
+                    limit: None,
+                    offset: None,
+                },
+                Some(transaction),
+                platform_version,
+            )?;
+        Ok(keys.values().any(|key| {
+            key.key_type() == KeyType::BLS12_381
+                && key.data().as_slice() == masternode.state.pub_key_operator
+                && key.is_disabled()
+        }))
     }
 }
 

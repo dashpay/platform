@@ -3,24 +3,37 @@
 
 use crate::config::PlatformConfig;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::dash_to_credits;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, Txid};
 use dpp::dashcore_rpc::dashcore_rpc_json::{
     DMNState, DMNStateDiff, ExtendedQuorumListResult, MasternodeListDiff, MasternodeListItem,
     MasternodeType,
 };
+use dpp::fee::Credits;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Purpose;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
+use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+    IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
+};
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::version::{PlatformVersion, ProtocolVersion};
+use dpp::withdrawal::Pooling;
 use drive::grovedb::Transaction;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use simple_signer::signer::SimpleSigner;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -190,16 +203,19 @@ fn platform_after_history(
         listed,
         diffs,
         at_committed,
+        upgrade_block_diff(),
     )
 }
 
-/// `platform_after_history` with `config`.
+/// `platform_after_history` with `config`, and with Core printing `upgrade_diff` after
+/// `COMMITTED_AT`.
 fn platform_with_config_after_history(
     config: PlatformConfig,
     previous: ProtocolVersion,
     listed: Vec<MasternodeListItem>,
     diffs: Vec<MasternodeListDiff>,
     at_committed: Vec<MasternodeListItem>,
+    upgrade_diff: MasternodeListDiff,
 ) -> (TempPlatform<MockCoreRPCLike>, PlatformState, CoreCalls) {
     let previous_version = PlatformVersion::get(previous).expect("expected the protocol version");
     let mut platform = TestPlatformBuilder::new()
@@ -225,7 +241,7 @@ fn platform_with_config_after_history(
             let added_mns = match (base_block, block) {
                 (None, block) if block == listed_at => listed.clone(),
                 (None, COMMITTED_AT) => at_committed.clone(),
-                (Some(COMMITTED_AT), UPGRADE_AT) => return Ok(upgrade_block_diff()),
+                (Some(COMMITTED_AT), UPGRADE_AT) => return Ok(upgrade_diff.clone()),
                 (Some(base), block) if base >= listed_at && block == base + 1 => {
                     return Ok(diffs[(base - listed_at) as usize].clone())
                 }
@@ -693,6 +709,7 @@ fn should_reconcile_masternodes_that_share_a_new_payout_in_one_batch() {
             listed,
             vec![shared_payout_diff],
             at_committed,
+            upgrade_block_diff(),
         );
         let transaction = platform.drive.grove.start_transaction();
 
@@ -706,5 +723,277 @@ fn should_reconcile_masternodes_that_share_a_new_payout_in_one_batch() {
                 "masternode {id:#x}, consistency checks {batching_consistency_verification}"
             );
         }
+    }
+}
+
+/// A diff whose entries each change a masternode's operator key, the masternode named by the
+/// entry's first byte to `[key; 48]`, printed without a payout as Core prints a key change.
+fn operator_key_changes(changes: &[(u8, u8)]) -> MasternodeListDiff {
+    MasternodeListDiff {
+        base_height: 0,
+        block_height: 0,
+        added_mns: vec![],
+        removed_mns: vec![],
+        updated_mns: changes
+            .iter()
+            .map(|(id, key)| {
+                (
+                    ProTxHash::from_byte_array([*id; 32]),
+                    diff_entry(
+                        serde_json::json!({ "pubKeyOperator": format!("{key:02x}").repeat(48) }),
+                    ),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// The credits, 0.5 Dash, the returning operator's identity holds.
+const ACCRUED: Credits = 50_000_000_000;
+
+/// Runs the first block of protocol version 15, and then its own diff, after a history at 14 in
+/// which the owner of masternode `id` rotated its operator key from operator A to B and back to
+/// A, each in a block of its own and without a payout, with `ACCRUED` on A's identity. Core lists
+/// `core_payout` for the masternode at `COMMITTED_AT`, and the block's own diff rotates to B
+/// again. Asserts that A's payout key stays its only TRANSFER key, enabled, and that a withdrawal
+/// signed with it executes.
+async fn assert_a_returning_operator_keeps_its_payout_key_through_the_upgrade(
+    id: u8,
+    core_payout: Option<[u8; 20]>,
+) {
+    let platform_version = PlatformVersion::latest();
+    let (payout_key, payout_private_key) = IdentityPublicKey::random_key_with_known_attributes(
+        0,
+        &mut StdRng::seed_from_u64(id as u64),
+        Purpose::TRANSFER,
+        SecurityLevel::CRITICAL,
+        KeyType::ECDSA_HASH160,
+        None,
+        platform_version,
+    )
+    .expect("expected a payout key");
+    let payout = payout_key.data().to_vec();
+    let mut listed = masternode(id, id, None);
+    listed.state.operator_payout_address = Some(
+        payout
+            .as_slice()
+            .try_into()
+            .expect("expected a 20-byte payout"),
+    );
+    let operator_b = id ^ 0x10;
+    let mut at_committed = listed.clone();
+    at_committed.state.operator_payout_address = core_payout;
+    let (platform, committed, _calls) = platform_with_config_after_history(
+        PlatformConfig::default(),
+        14,
+        vec![listed.clone()],
+        vec![
+            operator_key_changes(&[(id, operator_b)]),
+            operator_key_changes(&[(id, id)]),
+        ],
+        vec![at_committed],
+        MasternodeListDiff {
+            base_height: COMMITTED_AT,
+            block_height: UPGRADE_AT,
+            ..operator_key_changes(&[(id, operator_b)])
+        },
+    );
+    let transaction = platform.drive.grove.start_transaction();
+    assert_eq!(
+        transfer_keys(&platform, &transaction, id, id),
+        [(payout.clone(), false)],
+        "PV14 kept A's payout key on A's identity"
+    );
+    let operator_a_identity = Identifier::create_operator_identifier(&[id; 32], &[id; 48]);
+    platform
+        .drive
+        .add_to_system_credits(ACCRUED, Some(&transaction), platform_version)
+        .expect("expected to add to system credits");
+    platform
+        .drive
+        .add_to_identity_balance(
+            operator_a_identity.to_buffer(),
+            ACCRUED,
+            &BlockInfo::default(),
+            true,
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("expected to credit A's identity");
+
+    let mut block_state = run_upgrade_events(&platform, &committed, 14, &transaction);
+
+    let pro_tx_hash = ProTxHash::from_byte_array([id; 32]);
+    assert_eq!(
+        block_state.full_masternode_list()[&pro_tx_hash]
+            .state
+            .operator_payout_address,
+        core_payout,
+        "the stored payout follows Core"
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, id, id),
+        [(payout.clone(), false)],
+        "the upgrade left the TRANSFER keys of the identity the masternode returned to"
+    );
+    platform
+        .update_core_info(
+            Some(&committed),
+            &mut block_state,
+            UPGRADE_AT,
+            false,
+            &BlockInfo {
+                height: 3,
+                core_height: UPGRADE_AT,
+                ..Default::default()
+            },
+            &transaction,
+            platform_version,
+        )
+        .expect("expected to apply the upgrade block's diff");
+    assert_eq!(
+        block_state.full_masternode_list()[&pro_tx_hash]
+            .state
+            .pub_key_operator,
+        vec![operator_b; 48]
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, id, id),
+        [(payout.clone(), false)],
+        "A's identity keeps its payout key after the owner rotates away again"
+    );
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("expected to commit");
+
+    let identity = platform
+        .drive
+        .fetch_full_identity(operator_a_identity.to_buffer(), None, platform_version)
+        .expect("expected to fetch A's identity")
+        .expect("expected A's identity");
+    assert_eq!(identity.balance(), ACCRUED);
+    let payout_key = identity
+        .public_keys()
+        .values()
+        .find(|key| key.purpose() == Purpose::TRANSFER && key.data().to_vec() == payout)
+        .cloned()
+        .expect("expected A's payout key");
+    let mut signer = SimpleSigner::default();
+    signer.add_identity_public_key(payout_key.clone(), payout_private_key);
+    let withdrawal = IdentityCreditWithdrawalTransition::try_from_identity(
+        &identity,
+        None,
+        dash_to_credits!(0.1),
+        Pooling::Never,
+        1,
+        0,
+        signer,
+        Some(&payout_key),
+        PreferredKeyPurposeForSigningWithdrawal::TransferOnly,
+        1,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected a withdrawal signed with A's payout key");
+    let transaction = platform.drive.grove.start_transaction();
+    let processing_result = platform
+        .platform
+        .process_raw_state_transitions(
+            &[withdrawal
+                .serialize_to_bytes()
+                .expect("expected to serialize the withdrawal")],
+            &block_state,
+            &BlockInfo::default_with_time(1_200_001_000),
+            &transaction,
+            platform_version,
+            false,
+            None,
+        )
+        .expect("expected to process the withdrawal");
+    assert_matches!(
+        processing_result.execution_results().as_slice(),
+        [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+    );
+}
+
+/// Core authenticates an operator key change with the owner's key alone, so before protocol
+/// version 15 an owner could rotate the operator key from operator A to B and back to A without
+/// A. Core then has no payout for A, while A's identity still holds A's payout key. The first
+/// block of 15 leaves the TRANSFER keys of an identity the masternode returned to as they are,
+/// the rule a key change follows from 15 on: A's payout key stays enabled when the owner rotates
+/// away again, and A can still withdraw the credits it accrued.
+#[tokio::test]
+async fn should_keep_a_returning_operators_payout_key_through_the_upgrade_when_core_reports_no_payout(
+) {
+    assert_a_returning_operator_keeps_its_payout_key_through_the_upgrade(0x69, None).await;
+}
+
+/// The payout Core reports for an identity a masternode returned to before protocol version 15
+/// need not be its operator's own choice: the owner alone authorizes a key change. The first
+/// block of 15 stores Core's payout but adds no key for it to the identity: A's payout key stays
+/// enabled, and A can still withdraw the credits it accrued.
+#[tokio::test]
+async fn should_keep_a_returning_operators_payout_key_through_the_upgrade_when_core_reports_another_payout(
+) {
+    assert_a_returning_operator_keeps_its_payout_key_through_the_upgrade(0x6a, Some([0x9a; 20]))
+        .await;
+}
+
+/// Only an identity a masternode returned to keeps its TRANSFER keys in the first block of
+/// protocol version 15. An identity a masternode moved to and has not left is reconciled with
+/// Core's payout, also after the masternode returned to an earlier identity and moved on again:
+/// it loses the payout key it inherited from the previous operator up to 14, and takes Core's.
+/// The identities the masternode left keep their keys.
+#[test]
+fn should_reconcile_an_operator_identity_the_masternode_never_left_in_the_upgrade_block() {
+    let moved = masternode(0x6b, 0x6b, Some(0x6b));
+    let moved_on = masternode(0x6c, 0x6c, Some(0x6c));
+    let mut at_committed = vec![moved.clone(), moved_on.clone()];
+    at_committed[0].state.pub_key_operator = vec![0x7b; 48];
+    at_committed[0].state.operator_payout_address = Some([0x9b; 20]);
+    at_committed[1].state.pub_key_operator = vec![0x8c; 48];
+    at_committed[1].state.operator_payout_address = None;
+    let (platform, committed, _calls) = platform_after_history(
+        14,
+        vec![moved.clone(), moved_on.clone()],
+        vec![
+            operator_key_changes(&[(0x6b, 0x7b), (0x6c, 0x7c)]),
+            operator_key_changes(&[(0x6c, 0x6c)]),
+            operator_key_changes(&[(0x6c, 0x8c)]),
+        ],
+        at_committed,
+    );
+    let transaction = platform.drive.grove.start_transaction();
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x6b, 0x7b),
+        [(vec![0x6b; 20], false)],
+        "PV14 gave the new operator the previous operator's payout key"
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x6c, 0x8c),
+        [(vec![0x6c; 20], false)],
+        "PV14 gave the new operator the previous operator's payout key"
+    );
+
+    run_upgrade_events(&platform, &committed, 14, &transaction);
+
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x6b, 0x7b),
+        [(vec![0x6b; 20], true), (vec![0x9b; 20], false)]
+    );
+    assert_eq!(
+        transfer_keys(&platform, &transaction, 0x6c, 0x8c),
+        [(vec![0x6c; 20], true)]
+    );
+    for (id, key) in [(0x6b, 0x6b), (0x6c, 0x6c), (0x6c, 0x7c)] {
+        assert_eq!(
+            transfer_keys(&platform, &transaction, id, key),
+            [(vec![id; 20], false)],
+            "the identity of {key:#x} that masternode {id:#x} left keeps its keys"
+        );
     }
 }
