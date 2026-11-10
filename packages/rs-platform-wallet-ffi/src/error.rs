@@ -631,6 +631,13 @@ pub enum PlatformWalletFFIResultCode {
     /// coins lets either lock fit.
     ErrorAssetLockTooManyInputs = 60,
 
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. Nothing
+    /// was submitted and nothing was paid; resume with the recorded recipient
+    /// (the row exposes it). Rows tracked before the recipient was recorded
+    /// carry none and accept the caller's.
+    ErrorAssetLockRecipientMismatch = 61,
+
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
     /// the contact requests with that identity came or went privately
     /// (protocol version 15), so a public `contactRequest` to it, in reply or
@@ -640,7 +647,7 @@ pub enum PlatformWalletFFIResultCode {
     /// with `platform_wallet_manager_accept_contact_request_replying_in_kind`
     /// (which replies privately itself) or
     /// `platform_wallet_manager_accept_private_contact_request`, instead.
-    /// 61 to 67 are claimed by open branches, so this takes 68.
+    /// 62 to 67 are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The operation needs the shielded pool, and this library was built
@@ -691,7 +698,7 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::PrivateContactRecoveryUnsupported`: the
     /// persister does not declare that it keeps the private contact request
-    /// scan state (`PRIVATE_CONTACT_REQUEST_SCAN_STATE`, bit 14) in atomic
+    /// scan state (`PRIVATE_CONTACT_REQUEST_SCAN_STATE`, bit 15) in atomic
     /// changesets (`ATOMIC_CHANGESETS`, bit 0, with the changeset begin and end
     /// callbacks wired), so a private contact request is not paid for, nothing
     /// sealed or paid. Its recovery
@@ -1131,6 +1138,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+            }
+            PlatformWalletError::AssetLockRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -2367,6 +2377,35 @@ mod tests {
     /// starts emitting it. The message must carry the typed `Display` —
     /// including the spender's finality — since that is the only detail
     /// channel the frozen `{ code, message }` ABI has.
+    /// The recipient-mismatch refusal a shielded resume raises, pinned so the
+    /// Swift/Kotlin mirrors decode it, together with the conversion that keeps
+    /// it from flattening to `ErrorUnknown`.
+    #[test]
+    fn asset_lock_recipient_mismatch_code_is_pinned_at_61() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch as i32,
+            61
+        );
+        let recorded = [1u8; 43];
+        let requested = [2u8; 43];
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockRecipientMismatch {
+            out_point: dashcore::OutPoint::null(),
+            recorded,
+            requested,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("cannot be resumed to"),
+            "the typed Display must survive the conversion: {message}"
+        );
+        assert!(message.contains(&hex::encode(recorded)));
+    }
+
     #[test]
     fn asset_lock_input_conflict_code_is_pinned_at_47() {
         use dashcore::OutPoint;

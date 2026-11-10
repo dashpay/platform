@@ -330,6 +330,7 @@ impl PlatformAddressWallet {
                 funding,
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
+                None,
                 asset_lock_signer,
                 on_asset_lock_built,
             )
