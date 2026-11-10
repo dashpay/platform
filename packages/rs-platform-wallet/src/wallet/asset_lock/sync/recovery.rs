@@ -1106,7 +1106,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if local_finality.is_none() {
             if let Some(cap_error) = match status {
                 AssetLockStatus::Built | AssetLockStatus::Broadcast => {
-                    input_cap_violation(&tx, out_point.vout, self.sdk.version())
+                    input_cap_violation(&tx, self.sdk.version())
                 }
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
