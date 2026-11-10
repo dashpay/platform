@@ -345,6 +345,14 @@ impl WalletPersister {
         self.note_read_back_private_entries(pending);
     }
 
+    /// Whether the read-back of `commitment` waits for a flush that failed
+    /// transiently ([`Self::note_read_back_once_durable`]): that path
+    /// discharges its journal record once a flush succeeds.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn read_back_awaiting_flush(&self, commitment: &[u8; 32]) -> bool {
+        self.unflushed_read_back_entries().contains(commitment)
+    }
+
     #[cfg(feature = "shielded")]
     fn unflushed_read_back_entries(&self) -> std::sync::MutexGuard<'_, BTreeSet<[u8; 32]>> {
         self.unflushed_read_back_private_entries

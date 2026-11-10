@@ -3923,6 +3923,193 @@ mod tests {
             .expect("the hold"));
     }
 
+    /// A restoration discharges a record its sender's tracked request settles
+    /// only once what records that request is durable. A newer request to the
+    /// pair, stored but not flushed as a flush fails transiently, leaves the
+    /// record; once a flush succeeds the next restoration discharges it. A
+    /// read-back whose flush failed transiently is left to its own path, and a
+    /// flush that then fails for good leaves the record journaled after a
+    /// restart.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_discharge_a_settled_record_only_once_its_request_is_durable() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+
+        // A newer request to the pair, buffered.
+        let fixture = ExpiryFixture::new().await;
+        fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        let journal = fixture.journal_snapshot().await;
+        let reference = journal[0].1.payment.account_reference;
+        assert_eq!(platform_encryption::account_reference_version(reference), 0);
+        fixture
+            .persistence
+            .flush_fails
+            .store(true, Ordering::SeqCst);
+        {
+            let iw = fixture.wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&fixture.wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice")
+                .add_sent_contact_request(
+                    public_request(
+                        &alice,
+                        &bob,
+                        reference + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT),
+                    ),
+                    &iw.persister,
+                )
+                .expect("stored, not flushed");
+        }
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(
+            fixture.journaled().await,
+            1,
+            "kept while the request is buffered"
+        );
+        fixture
+            .persistence
+            .flush_fails
+            .store(false, Ordering::SeqCst);
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(fixture.journaled().await, 0, "discharged once flushed");
+
+        // A read-back awaiting its flush, which then succeeds.
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        fixture
+            .persistence
+            .flush_fails
+            .store(true, Ordering::SeqCst);
+        fixture
+            .wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(
+            fixture.journaled().await,
+            1,
+            "its read-back waits for a flush"
+        );
+        fixture
+            .persistence
+            .flush_fails
+            .store(false, Ordering::SeqCst);
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(
+            fixture.journaled().await,
+            0,
+            "discharged once its read-back is flushed"
+        );
+
+        // A read-back awaiting its flush, which then fails for good.
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        fixture
+            .persistence
+            .flush_fails
+            .store(true, Ordering::SeqCst);
+        fixture
+            .wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        assert!(fixture
+            .wallet
+            .persister()
+            .read_back_awaiting_flush(&journal_commitment(&fixture).await));
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(
+            fixture.journaled().await,
+            1,
+            "its read-back waits for a flush"
+        );
+        fixture
+            .persistence
+            .flush_fails
+            .store(false, Ordering::SeqCst);
+        fixture
+            .persistence
+            .flush_fails_fatally
+            .store(true, Ordering::SeqCst);
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(fixture.journaled().await, 1, "the buffer was lost");
+        let wallet_id = fixture.wallet.wallet_id();
+        assert_eq!(
+            FileBackedShieldedStore::open_path(&fixture.db_path, 100)
+                .expect("reopened")
+                .private_payment_journal(wallet_id)
+                .expect("the journal")
+                .len(),
+            1,
+            "still journaled after a restart"
+        );
+    }
+
+    /// The commitment of `fixture`'s one journal record.
+    #[cfg(feature = "shielded")]
+    async fn journal_commitment(fixture: &ExpiryFixture) -> [u8; 32] {
+        fixture.journal_snapshot().await[0].1.commitment
+    }
+
     /// A restoration that finds a journal record its sender's tracked request
     /// already records, as a private sync read it back in a process that ended
     /// before the shielded sync discharged it, discharges the record.
