@@ -139,6 +139,14 @@ impl SingleDocumentDriveQuery {
                     .merge
                     == 2
                 {
+                    // A block-time lookup through the legacy history subtree also reaches
+                    // its latest-version pointer. Its range cannot authenticate an earlier
+                    // absence, so this merged lookup refuses it.
+                    if self.document_type_keeps_history && self.block_time_ms.is_some() {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
+                            "a document with history that may be contested can not be looked up at a block time".to_string(),
+                        )));
+                    }
                     // Each branch selects one document, so turning its global limit into an
                     // instance cap produces the same merged bytes as the earlier limit lift.
                     for selection in [&mut non_contested, &mut contested] {
@@ -517,6 +525,92 @@ mod tests {
             .set_document_type_name(document_type_name.to_string());
         *create.prefunded_voting_balances_mut() = stated_fund;
         DocumentTransition::Create(create)
+    }
+
+    fn maybe_contested(
+        document_type_keeps_history: bool,
+        block_time_ms: Option<u64>,
+    ) -> SingleDocumentDriveQuery {
+        SingleDocumentDriveQuery {
+            contract_id: [7; 32],
+            document_type_name: "card".to_string(),
+            document_type_keeps_history,
+            document_id: [9; 32],
+            block_time_ms,
+            contested_status: SingleDocumentDriveQueryContestedStatus::MaybeContested,
+        }
+    }
+
+    /// Lowering the cap preserves the released query for the legacy history layout.
+    #[test]
+    fn should_build_the_maybe_contested_query_the_protocol_version_before_built() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        for document_type_keeps_history in [false, true] {
+            let query = maybe_contested(document_type_keeps_history, None);
+
+            let mut caller = PlatformVersion::latest().clone();
+            caller
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = 0;
+            assert_eq!(
+                query
+                    .construct_path_query(&caller)
+                    .expect("expected to build the query"),
+                query
+                    .construct_path_query(protocol_version_14)
+                    .expect("expected to build the query at protocol version 14"),
+                "keeps history: {document_type_keeps_history}"
+            );
+            let current = query
+                .construct_path_query(PlatformVersion::latest())
+                .unwrap();
+            let legacy = query.construct_path_query(&caller).unwrap();
+            if document_type_keeps_history {
+                assert_ne!(current, legacy, "current documents use primary pointers");
+            } else {
+                assert_eq!(current, legacy);
+            }
+        }
+    }
+
+    /// Protocol version 14 does not enter the new branch: it builds the plain merge of the two
+    /// lookups, with and without a block time
+    #[test]
+    fn should_leave_the_maybe_contested_query_of_protocol_version_14_as_it_was() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        for block_time_ms in [None, Some(1500)] {
+            let query = maybe_contested(true, block_time_ms);
+
+            assert_eq!(
+                query
+                    .construct_path_query(protocol_version_14)
+                    .expect("expected to build the query"),
+                PathQuery::merge(
+                    vec![
+                        &query
+                            .construct_non_contested_path_query(true, protocol_version_14)
+                            .unwrap(),
+                        &query.construct_contested_path_query(true),
+                    ],
+                    &protocol_version_14.drive.grove_version,
+                )
+                .expect("expected to merge the two lookups"),
+                "block time: {block_time_ms:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_maybe_contested_lookup_at_a_block_time() {
+        let result =
+            maybe_contested(true, Some(1500)).construct_path_query(PlatformVersion::latest());
+
+        assert!(
+            matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
+            "{result:?}"
+        );
     }
 
     /// A create stating a contest fund is looked for in the contest's area, while a decision

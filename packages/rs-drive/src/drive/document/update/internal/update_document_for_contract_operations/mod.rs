@@ -104,6 +104,7 @@ impl Drive {
             // v2 (platform v15+): keeps the v1 shared-prefix index fixes
             // and addresses current keep-history documents directly in the
             // primary-key tree.
+            // v2 moves the references of unchanged indexes to a new owner.
             2 => self.update_document_for_contract_operations_v2(
                 document_and_contract_info,
                 block_info,

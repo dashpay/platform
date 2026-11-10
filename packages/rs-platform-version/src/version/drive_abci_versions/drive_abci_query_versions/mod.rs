@@ -63,7 +63,9 @@ pub struct DriveAbciDocumentQueryHelperVersions {
     /// Version of the helper that picks the `(group_by × where)`
     /// mode for `SELECT COUNT / SUM / AVG` and enforces the
     /// per-mode `accepts_limit()` contract. See
-    /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
+    /// `drive::query::aggregate_routing::compute_aggregate_mode_and_check_limit`,
+    /// which drive-abci's v1 document query handler and the SDK's count,
+    /// sum and average views both route through.
     ///
     /// The SDK reads it too, to know from which protocol version every node routes a ranked
     /// aggregate (from 1) and a having-range aggregate (from 2)

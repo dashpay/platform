@@ -93,7 +93,8 @@ impl Drive {
     /// protocol 15: the old document is read from the primary-key entry
     /// itself instead of the per-document history subtree, and index
     /// references are built by the v1 reference builders, which point at
-    /// that entry. Everything below describes the v1 behaviour it keeps.
+    /// that entry. Unchanged index references follow a new storage owner.
+    /// Everything below describes the v1 behaviour it keeps.
     ///
     /// v1 (platform v14+) applies the shared-prefix aggregate fix to the
     /// branches a key-changing update materializes, keeping them
@@ -342,6 +343,19 @@ impl Drive {
             )));
         };
 
+        // An update naming a new owner moves the references of the indexes it leaves unchanged
+        // too. An untrusted refresh writes the stored flags back, so those are refreshed as
+        // trusted: what they point at is unchanged.
+        //
+        // The document's stored owner decides, not each reference's. Earlier generations could
+        // leave a reference with whoever paid for it while the document went to a new owner;
+        // such a reference stays with its payer until an update names another owner. No gas
+        // sponsor holds one: flags name a sponsor only from the generation that follows owners.
+        let references_take_new_owner = old_document_info
+            .get_storage_flags_ref()
+            .and_then(|flags| flags.owner_id())
+            != storage_flags.and_then(|flags| flags.owner_id());
+
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // Pre-built tree of every index path in the doctype. Walking
         // this in parallel with each `index.properties` chain below
@@ -516,6 +530,7 @@ impl Drive {
                     current_index_level,
                     &index_document_reference,
                     index_storage_flags,
+                    references_take_new_owner,
                     &mut batch_insertion_cache,
                     previous_batch_operations,
                     index_batch_operations,
@@ -1052,7 +1067,7 @@ impl Drive {
                 // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
-                let trust_refresh_reference = storage_flags.is_none();
+                let trust_refresh_reference = storage_flags.is_none() || references_take_new_owner;
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
@@ -1204,6 +1219,7 @@ impl Drive {
         top_index_level: &IndexLevel,
         index_document_reference: &Element,
         storage_flags: Option<&StorageFlags>,
+        references_take_new_owner: bool,
         batch_insertion_cache: &mut HashSet<Vec<Vec<u8>>>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
@@ -1399,7 +1415,7 @@ impl Drive {
                     refresh_path,
                     refresh_key,
                     index_document_reference.clone(),
-                    storage_flags.is_none(),
+                    storage_flags.is_none() || references_take_new_owner,
                     batch_operations,
                     drive_version,
                 )?;
@@ -1718,3 +1734,6 @@ fn index_names_indexed_array(index: &Index, top_index_level: &IndexLevel) -> boo
     }
     false
 }
+
+#[cfg(test)]
+mod tests;

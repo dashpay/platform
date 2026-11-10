@@ -9,8 +9,9 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
@@ -289,6 +290,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_shielded_recipient: slot!(
+            on_persist_asset_lock_shielded_recipient_fn,
+            PersistAssetLockShieldedRecipientFn
+        ),
+        load_asset_lock_shielded_recipient: slot!(
+            on_load_asset_lock_shielded_recipient_fn,
+            LoadAssetLockShieldedRecipientFn
         ),
     }
 }
