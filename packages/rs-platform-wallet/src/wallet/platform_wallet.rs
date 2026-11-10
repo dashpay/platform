@@ -3078,6 +3078,27 @@ impl PrivatePaymentRestore {
         restored
     }
 
+    /// Whether the requests the wallet tracks are durable now: at once for a
+    /// backend that commits inline, as each was stored before it was
+    /// tracked; after a flush that succeeds otherwise.
+    fn settled_requests_durable(&self) -> bool {
+        if self.persister.store_commits_inline() {
+            return true;
+        }
+        match self.persister.flush() {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    %error,
+                    "the requests settling private payments are not flushed; their journal \
+                     records stay for a later restoration"
+                );
+                false
+            }
+        }
+    }
+
     fn restores_lock(&self) -> std::sync::MutexGuard<'_, PrivatePaymentRestores> {
         self.restores
             .lock()
@@ -3157,6 +3178,10 @@ impl PrivatePaymentRestore {
             )));
         }
         let dashpay_id = dashpay_contract()?.id();
+        // Read-backs whose flush failed transiently are noted once a flush
+        // succeeds now, so the journal read below discharges their records.
+        self.persister
+            .note_read_back_once_durable(std::iter::empty());
         let (payments, journal_authoritative) = {
             let mut store = if wait {
                 self.coordinator.store().write().await
@@ -3180,11 +3205,24 @@ impl PrivatePaymentRestore {
         // A record whose request the tracked one records or supersedes was
         // read back by an earlier process, which ended before it discharged
         // it: discharged now, so its store is not read for it on every launch.
-        // A busy store leaves it for the next restoration. Not once a flush of
-        // the wallet's records failed for good in this process: the tracked
-        // request may be in memory only, and a restart would then find neither
-        // it nor the record.
-        if !settled.is_empty() && !self.persister.buffered_writes_lost() {
+        // A busy store leaves it for the next restoration.
+        //
+        // Only once what records that request is durable, as a restart would
+        // otherwise find neither it nor the record. A backend that commits
+        // inline stored it before the wallet tracked it. Any other is flushed
+        // first, and a flush that fails leaves the records for a later
+        // restoration; so does a flush that failed for good earlier in this
+        // process, after which the tracked request may be in memory only. A
+        // record whose read-back still waits for its flush is left to that
+        // path, which discharges it once a flush succeeds.
+        let settled: Vec<[u8; 32]> = settled
+            .into_iter()
+            .filter(|commitment| !self.persister.read_back_awaiting_flush(commitment))
+            .collect();
+        if !settled.is_empty()
+            && !self.persister.buffered_writes_lost()
+            && self.settled_requests_durable()
+        {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {

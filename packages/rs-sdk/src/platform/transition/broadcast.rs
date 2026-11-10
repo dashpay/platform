@@ -299,7 +299,7 @@ fn finish_broadcast(
 }
 
 /// Check the SAME signed transition after possible submission. No replacement is built here.
-pub(super) async fn wait_after_broadcast<T>(
+pub(crate) async fn wait_after_broadcast<T>(
     broadcast: Result<(), Error>,
     wait: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {

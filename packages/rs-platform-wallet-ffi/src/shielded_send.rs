@@ -635,10 +635,13 @@ pub(crate) fn map_spend_result(
         // read before any payment keeps the blanket conversion's split: a
         // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
         // the catch-all.
+        // So does a public request to the pair whose outcome is unconfirmed,
+        // which holds the private send and accepts as it holds a public one.
         // So does a private store read that did not finish before deciding
         // (nothing reserved or sent), and a pair whose requests came or went
         // privately, which the in-kind accept can raise.
         Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::PublicContactRequestUnconfirmed(..))
         | Err(e @ PlatformWalletError::PrivateContactStoreNotRead(..))
         | Err(e @ PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..))
         | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)

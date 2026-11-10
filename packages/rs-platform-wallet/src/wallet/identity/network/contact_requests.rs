@@ -18,6 +18,7 @@ use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::ManagedIdentity;
@@ -27,12 +28,22 @@ use key_wallet_manager::WalletManager;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::private_contact_requests::{apply_detached, with_journaled_marker};
-use dash_sdk::platform::dashpay::PrivateContactRequest;
+use super::private_contact_requests::{apply_detached, generation_info_mut, with_journaled_marker};
+use crate::broadcast_outcome::{
+    broadcast_tracking_delivery, carries_consensus_rejection, BroadcastDelivery,
+};
+use dash_sdk::drive::query::{WhereClause, WhereOperator};
+use dash_sdk::platform::dashpay::{PrivateContactRequest, SignedContactRequest};
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+use dash_sdk::platform::transition::outcome::{OutcomeEvidence, TransitionOutcome};
+use dash_sdk::platform::transition::waitable::Waitable;
+use dash_sdk::platform::{DocumentQuery, FetchMany};
+use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::platform_value::BinaryData;
+use dpp::state_transition::StateTransition;
+use key_wallet::bip32::ExtendedPubKey;
 use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
@@ -574,6 +585,51 @@ pub(super) enum ReplyOutcome {
     AlreadyReplied,
 }
 
+/// The proved query for the `contactRequest` from `sender` to `recipient`
+/// carrying `account_reference`: equality on every property of DashPay's
+/// `ownerIdUserIdAndAccountRef` unique index, as DPNS reads a preorder.
+pub(super) fn sent_contact_request_query(
+    sender: &Identifier,
+    recipient: &Identifier,
+    account_reference: u32,
+) -> Result<DocumentQuery, PlatformWalletError> {
+    let mut query = DocumentQuery::new(dashpay_contract()?, "contactRequest").map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to build the contact request query: {e}"
+        ))
+    })?;
+    query.where_clauses = vec![
+        WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(sender.to_buffer()),
+        },
+        WhereClause {
+            field: "toUserId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(recipient.to_buffer()),
+        },
+        WhereClause {
+            field: "accountReference".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U32(account_reference),
+        },
+    ];
+    query.limit = 1;
+    Ok(query)
+}
+
+/// `error` under the SDK's unconfirmed-outcome envelope
+/// (`StateTransitionResultUnconfirmed`), once: the transition it reports on
+/// may have been delivered.
+fn unconfirmed(error: dash_sdk::Error) -> dash_sdk::Error {
+    if error.is_state_transition_result_unconfirmed() {
+        error
+    } else {
+        dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(error))
+    }
+}
+
 /// The claim a public request holds on its pair from before its channel is
 /// decided until it is submitted and recorded
 /// (`DashPayView::claim_public_pair`): while it is held no private request to
@@ -581,6 +637,10 @@ pub(super) enum ReplyOutcome {
 pub(super) struct PublicContactClaim {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: WalletId,
+    /// The wallet generation the claim was taken on: its release acts only
+    /// on that generation, so a wallet removed and re-created under its id
+    /// since is left alone.
+    generation: Arc<WalletGeneration>,
     sender: Identifier,
     recipient: Identifier,
     /// The attempt the claim was taken under: only it releases the claim.
@@ -596,6 +656,7 @@ impl PublicContactClaim {
         release_public_claim(
             &mut wm,
             &self.wallet_id,
+            &self.generation,
             &self.sender,
             &self.recipient,
             self.attempt,
@@ -611,24 +672,28 @@ impl Drop for PublicContactClaim {
         }
         let (wallet_id, sender, recipient, attempt) =
             (self.wallet_id, self.sender, self.recipient, self.attempt);
+        let generation = Arc::clone(&self.generation);
         apply_detached(
             &self.wallet_manager,
             "a dropped public contact request's claim",
-            move |wm| release_public_claim(wm, &wallet_id, &sender, &recipient, attempt),
+            move |wm| {
+                release_public_claim(wm, &wallet_id, &generation, &sender, &recipient, attempt)
+            },
         );
     }
 }
 
-/// Release the claim `attempt` holds on `sender`'s pair with `recipient`.
+/// Release the claim `attempt` holds on `sender`'s pair with `recipient`, on
+/// the wallet generation `generation` only.
 fn release_public_claim(
     wm: &mut WalletManager<PlatformWalletInfo>,
     wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
     sender: &Identifier,
     recipient: &Identifier,
     attempt: u64,
 ) {
-    if let Some(managed) = wm
-        .get_wallet_info_mut(wallet_id)
+    if let Some(managed) = generation_info_mut(wm, wallet_id, generation)
         .and_then(|info| info.identity_manager.managed_identity_mut(sender))
     {
         managed.release_public_contact_request(recipient, attempt);
@@ -694,6 +759,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// the signer and only the (public) xpub, the shared secret, and the masked
     /// reference cross back.
     ///
+    /// A broadcast that may have been delivered and is not confirmed reports
+    /// the SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`) and
+    /// leaves the pair held as an unconfirmed public request, its signed
+    /// transition kept, until a proved read settles it
+    /// (`DashPayView::settle_unconfirmed_public_request`): until then a request
+    /// to the recipient is refused
+    /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]). A request
+    /// already on Platform that this one would repeat is adopted as sent,
+    /// with nothing signed.
+    ///
     /// A recipient whose requests with this identity came or went privately is
     /// refused ([`PlatformWalletError::PrivateContactRequestNeedsPrivateReply`]).
     /// So is one a private request is pending to
@@ -725,7 +800,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // The pair is claimed before its channel is decided and held until
         // the request is submitted and recorded, so a private request cannot
         // be reserved and paid for in between; the claim is released when
-        // the send ends, however it ends.
+        // the send ends, however it ends, a request that may have been
+        // delivered holding the pair from then on as unconfirmed.
         self.send_public_contact_request(
             sender_identity_id,
             recipient_identity_id,
@@ -779,6 +855,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // callers nest it in their own.
         let read =
             Box::pin(self.read_private_store_before_deciding(sender_identity_id, crypto)).await;
+        // A public request to the recipient whose outcome is unconfirmed is
+        // settled first where proof allows; while it stands the claim refuses.
+        Box::pin(
+            self.settle_unconfirmed_public_request_logged(
+                sender_identity_id,
+                recipient_identity_id,
+            ),
+        )
+        .await;
         let claim = {
             let _lifecycle = self.generation.payment_guard().await;
             if !self.is_current_generation().await {
@@ -801,16 +886,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 None => return Ok(None),
             }
         };
-        let sent = self
-            .send_claimed_contact_request(
-                sender_identity_id,
-                recipient_identity_id,
-                account_label,
-                auto_accept_proof,
-                signer,
-                crypto,
-            )
-            .await;
+        // Boxed: the send's future (its reads, the broadcast and the result
+        // wait) is large, and its callers nest it in their own.
+        let sent = Box::pin(self.send_claimed_contact_request(
+            sender_identity_id,
+            recipient_identity_id,
+            account_label,
+            auto_accept_proof,
+            signer,
+            crypto,
+        ))
+        .await;
         claim.release().await;
         sent.map(Some)
     }
@@ -847,9 +933,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         store_read: bool,
     ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
-        let managed = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+        // A handle whose wallet was removed, or re-created under its id, since
+        // claims nothing on the replacement.
+        let managed = generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
+            })?
             .identity_manager
             .managed_identity_mut(sender)
             .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
@@ -859,6 +948,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         if store_read && !managed.dashpay().private_contact_requests_read() {
             return Err(PlatformWalletError::PrivateContactStoreNotRead(*sender));
+        }
+        if managed
+            .dashpay()
+            .public_contact_request_unconfirmed(recipient)
+        {
+            return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
+                *recipient,
+            ));
         }
         if managed.dashpay().private_reply_pending(recipient)
             || self.persister.private_pair_journaled(sender, recipient)
@@ -876,6 +973,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(Some(PublicContactClaim {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
+            generation: Arc::clone(&self.generation),
             sender: *sender,
             recipient: *recipient,
             attempt,
@@ -921,6 +1019,52 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await?;
 
+        // 4d. A request this one repeats may be on Platform already: DashPay's
+        //    unique index keys a request by its sender, recipient and account
+        //    reference, which a request built from the same tracked requests
+        //    repeats. One this wallet signed in a process that ended before
+        //    recording it, or one another device of the sender sent, is
+        //    adopted: recorded as sent, with nothing signed. A read that fails
+        //    sends on: the unique index refuses this request if that one is
+        //    there, and the refused request is held as unconfirmed until a read
+        //    finds the one on Platform.
+        match self
+            .find_sent_contact_request(sender_identity_id, recipient_identity_id, account_reference)
+            .await
+        {
+            Ok((Some(request), _)) => {
+                let _lifecycle = self.generation.payment_guard().await;
+                if !self.is_current_generation().await {
+                    return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                        self.wallet_id,
+                    )));
+                }
+                tracing::info!(
+                    sender = %sender_identity_id,
+                    recipient = %recipient_identity_id,
+                    account_reference,
+                    "contact request already on Platform; adopting it instead of sending another"
+                );
+                return self
+                    .record_sent_contact_request(
+                        sender_identity_id,
+                        recipient_identity_id,
+                        request,
+                        None,
+                        account_index,
+                        contact_xpub_ext,
+                    )
+                    .await;
+            }
+            Ok((None, _)) => {}
+            Err(error) => tracing::warn!(
+                sender = %sender_identity_id,
+                recipient = %recipient_identity_id,
+                %error,
+                "could not read whether the contact request is on Platform already; sending it"
+            ),
+        }
+
         // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
             // Contact-request send writes a document state transition,
@@ -953,22 +1097,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
             .await?;
 
-        // 7. Broadcast through the write helper. All inputs are resolved
-        //    above; the helper assembles the SDK `EcdhProvider` + xpub
-        //    closure and dispatches `Sdk::send_contact_request`, keeping
-        //    the seven-generic SDK signature out of this call site — see
-        //    `sdk_writer.rs`. The host signs through `GatedSigner`, which
-        //    takes the wallet generation's lifecycle gate once the signature
-        //    returns and keeps it, to the end of this call, through the
-        //    broadcast the SDK makes right after and the bookkeeping below.
+        // 7. Sign through the write helper. All inputs are resolved above; the
+        //    helper assembles the SDK `EcdhProvider` + xpub closure and calls
+        //    `Sdk::sign_contact_request`, keeping the seven-generic SDK
+        //    signature out of this call site (see `sdk_writer.rs`). The host
+        //    signs through `GatedSigner`, which takes the wallet generation's
+        //    lifecycle gate once the signature returns and keeps it, to the end
+        //    of this call, through the broadcast right after and the
+        //    bookkeeping below.
         let gated = GatedSigner {
             signer,
             wallet: self,
             gate: std::sync::Mutex::new(SigningGate::Unsigned),
         };
-        let result = self
+        let signed = self
             .sdk_writer
-            .send_contact_request(SendContactRequestParams {
+            .sign_contact_request(SendContactRequestParams {
                 sender_identity: sender_identity.clone(),
                 recipient_identity,
                 sender_key_index,
@@ -988,7 +1132,55 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 false => error,
             })?;
 
-        // 8. Mirror the local-state bookkeeping in `send_contact_request`.
+        // 8. Broadcast the signed bytes, keeping what every dispatch proved,
+        //    by the rule shielded spends use (`broadcast_tracking_delivery`):
+        //    only a refusal before anything was sent shows the request can
+        //    never execute. A dispatch that reached an endpoint may have
+        //    delivered it whatever the endpoint answered, as no proof backs
+        //    the answer, and the request may execute later under its identity
+        //    contract nonce, while a second request would take the next one.
+        //    So the request is then held as unconfirmed, the pair with it,
+        //    until a proved read settles it
+        //    (`DashPayView::settle_unconfirmed_public_request`), and the host
+        //    gets the SDK's unconfirmed outcome. An endpoint's verdict skips
+        //    the wait for a result that would only time out.
+        let SignedContactRequest {
+            state_transition, ..
+        } = signed;
+        let delivery = Box::pin(broadcast_tracking_delivery(&self.sdk, &state_transition)).await;
+        let confirmed = match delivery {
+            BroadcastDelivery::NeverDelivered(error) => {
+                return Err(PlatformWalletError::Sdk(error))
+            }
+            BroadcastDelivery::MaybeDelivered(error) if carries_consensus_rejection(&error) => {
+                Err(error)
+            }
+            BroadcastDelivery::Admitted | BroadcastDelivery::MaybeDelivered(_) => {
+                Box::pin(<Document as Waitable>::wait_for_response(
+                    &self.sdk,
+                    state_transition.clone(),
+                    None,
+                ))
+                .await
+            }
+        };
+        let document = match confirmed {
+            Ok(document) => document,
+            Err(error) => {
+                self.hold_unconfirmed_public_request(
+                    sender_identity_id,
+                    recipient_identity_id,
+                    state_transition,
+                    account_reference,
+                    account_index,
+                    contact_xpub_ext,
+                )
+                .await;
+                return Err(PlatformWalletError::Sdk(unconfirmed(error)));
+            }
+        };
+
+        // 9. Record the request as a confirmed send records it.
         //
         // Store the REAL 96-byte ciphertext off the broadcast
         // document (not a zero placeholder) so the persisted /
@@ -1002,8 +1194,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // broadcast already landed on-chain, so the sweep re-ingests
         // the real document on the next pass — returning an error here is
         // strictly safer than silently storing poison in release builds.
-        let encrypted_public_key = result
-            .document
+        let encrypted_public_key = document
             .properties()
             .get("encryptedPublicKey")
             .and_then(|v: &Value| v.to_binary_bytes().ok())
@@ -1016,54 +1207,310 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             })?;
         let mut contact_request = ContactRequest::new(
             *sender_identity_id,
-            result.recipient_id,
+            *recipient_identity_id,
             sender_key_index,
             recipient_key_index,
-            result.account_reference,
+            account_reference,
             encrypted_public_key,
-            result.document.created_at_core_block_height().unwrap_or(0),
-            result.document.created_at().unwrap_or(0),
+            document.created_at_core_block_height().unwrap_or(0),
+            document.created_at().unwrap_or(0),
         );
         // Mirror the broadcast doc's optional `encryptedAccountLabel` onto the
         // local outgoing row so it matches what landed on Platform (same reason
         // the 96-byte ciphertext is read off the doc above). Without this the
         // sender's own row never reflects the label it just sent.
-        contact_request.encrypted_account_label = result
-            .document
+        contact_request.encrypted_account_label = document
             .properties()
             .get("encryptedAccountLabel")
             .and_then(|v: &Value| v.to_binary_bytes().ok());
 
+        // Register our receiving (friendship) account from the xpub the signer
+        // already derived above: same friendship key, no second derivation and
+        // no resident seed.
+        self.record_sent_contact_request(
+            sender_identity_id,
+            recipient_identity_id,
+            contact_request,
+            None,
+            account_index,
+            contact_xpub_ext,
+        )
+        .await
+    }
+
+    /// Record `request` as sent from `sender` to `recipient` and register our
+    /// receiving (friendship) account for the pair from `contact_xpub`, as a
+    /// send that saw its document confirmed does. `settles` is the attempt of
+    /// the unconfirmed public request to the recipient this request settles,
+    /// released in the same lock it is recorded in. Only on this handle's
+    /// wallet generation: the caller holds the generation's lifecycle gate.
+    async fn record_sent_contact_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        request: ContactRequest,
+        settles: Option<u64>,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) -> Result<ContactRequest, PlatformWalletError> {
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm
-                .get_wallet_info_mut(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let managed = info
+            let managed = generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
                 .identity_manager
-                .managed_identity_mut(sender_identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
+                .managed_identity_mut(sender)
+                .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
             managed
-                .add_sent_contact_request(contact_request.clone(), &self.persister)
+                .add_sent_contact_request(request.clone(), &self.persister)
                 .map_err(|e| {
                     PlatformWalletError::Persistence(format!(
                         "sent contact request not persisted: {e}"
                     ))
                 })?;
+            if let Some(attempt) = settles {
+                managed.settle_unconfirmed_public_request(recipient, attempt);
+            }
         }
+        self.register_contact_account(sender, recipient, account_index, contact_xpub)
+            .await?;
+        Ok(request)
+    }
 
-        // Register our receiving (friendship) account from the xpub the signer
-        // already derived above — same friendship key, no second derivation and
-        // no resident seed.
-        self.register_contact_account(
-            sender_identity_id,
-            recipient_identity_id,
-            account_index,
-            contact_xpub_ext,
-        )
-        .await?;
+    /// Hold the pair `sender`, `recipient` for the public request
+    /// `transition` signs, whose broadcast may have been delivered
+    /// (`ManagedIdentity::hold_unconfirmed_public_request`). Only on this
+    /// handle's wallet generation: a wallet removed, or re-created under its
+    /// id, since is left alone.
+    #[allow(clippy::too_many_arguments)]
+    async fn hold_unconfirmed_public_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        transition: StateTransition,
+        account_reference: u32,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) {
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(managed) = generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
+            .and_then(|info| info.identity_manager.managed_identity_mut(sender))
+        {
+            managed.hold_unconfirmed_public_request(
+                *recipient,
+                transition,
+                account_reference,
+                account_index,
+                contact_xpub,
+            );
+        }
+    }
 
-        Ok(contact_request)
+    /// The `contactRequest` from `sender` to `recipient` carrying
+    /// `account_reference`, as a proved read shows it, and the height the read
+    /// was proved at: `None` when the read proves there is none. DashPay's
+    /// `ownerIdUserIdAndAccountRef` unique index keys it, so there is at most
+    /// one, and as the type's documents are neither mutable nor deletable,
+    /// one found stays.
+    pub(super) async fn find_sent_contact_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        account_reference: u32,
+    ) -> Result<(Option<ContactRequest>, u64), PlatformWalletError> {
+        let query = sent_contact_request_query(sender, recipient, account_reference)?;
+        let (documents, metadata) = Document::fetch_many_with_metadata(&self.sdk, query, None)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+        let request = documents
+            .values()
+            .flatten()
+            .filter(|document| {
+                document.owner_id() == *sender
+                    && document
+                        .properties()
+                        .get("toUserId")
+                        .and_then(|value: &Value| value.to_identifier().ok())
+                        == Some(*recipient)
+            })
+            .find_map(|document| {
+                Self::parse_sent_contact_request_doc(document, *sender, *recipient)
+            })
+            .filter(|request| request.account_reference == account_reference);
+        Ok((request, metadata.height))
+    }
+
+    /// Whether a public contact request from `sender` to `recipient` was
+    /// broadcast and may have been delivered, with no proof settling its
+    /// outcome yet: until one does, no other contact request to the recipient
+    /// is sent, public or private
+    /// ([`PlatformWalletError::PublicContactRequestUnconfirmed`]). A public
+    /// contact request sync settles it. The per-contact read a host shows next
+    /// to `DashPayView::private_pair_held`, so it tells a public request
+    /// awaiting its outcome from a private one pending.
+    pub async fn public_contact_request_unconfirmed(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> Result<bool, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        Ok(wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .identity_manager
+            .managed_identity(sender)
+            .ok_or(PlatformWalletError::IdentityNotFound(*sender))?
+            .dashpay()
+            .public_contact_request_unconfirmed(recipient))
+    }
+
+    /// Settle the unconfirmed public request from `sender` to `recipient`,
+    /// if this handle's wallet generation holds one, as far as proved reads
+    /// allow:
+    ///
+    /// - its document found by a proved read (the sender, the recipient and
+    ///   its account reference, DashPay's unique index): recorded as sent, as
+    ///   a send that saw it confirmed records it, and the pair released;
+    /// - otherwise, the transition proved unable to execute
+    ///   (`TransitionOutcome::CannotExecute`), or its identity contract nonce
+    ///   proved used at a height the read that missed the document was proved
+    ///   at or above (`TransitionOutcome::ExecutedOrSuperseded`): it never
+    ///   wrote the document and never will, so the pair is released and a new
+    ///   request may be sent;
+    /// - otherwise it may still execute: the same signed bytes are broadcast
+    ///   again, whatever that answers, and the pair stays held.
+    ///
+    /// The nonce is read before the document: a nonce used at height `h`
+    /// proves the transition cannot execute after `h`, so only a document
+    /// read at or above `h` that misses it shows it never wrote it.
+    pub(super) async fn settle_unconfirmed_public_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let held = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+                .and_then(|info| info.identity_manager.managed_identity(sender))
+                .and_then(|managed| {
+                    managed
+                        .dashpay()
+                        .unconfirmed_public_request(recipient)
+                        .cloned()
+                })
+        };
+        let Some(held) = held else {
+            return Ok(());
+        };
+        let outcome = self
+            .sdk
+            .state_transition_outcome(&held.transition, OutcomeEvidence::default())
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+        let (found, read_at) = self
+            .find_sent_contact_request(sender, recipient, held.account_reference)
+            .await?;
+        let settled = match outcome {
+            TransitionOutcome::CannotExecute(_) => true,
+            TransitionOutcome::ExecutedOrSuperseded { consumed_by_height } => {
+                read_at >= consumed_by_height
+            }
+            TransitionOutcome::StillPossible { .. } => false,
+        };
+        if found.is_none() && !settled {
+            if matches!(outcome, TransitionOutcome::StillPossible { .. }) {
+                // The same bytes, so never a second request; an endpoint's
+                // answer proves nothing either way.
+                let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
+                tracing::debug!(
+                    sender = %sender,
+                    recipient = %recipient,
+                    ?delivery,
+                    "unconfirmed public contact request broadcast again"
+                );
+            }
+            return Ok(());
+        }
+        let _lifecycle = self.generation.payment_guard().await;
+        if !self.is_current_generation().await {
+            return Ok(());
+        }
+        match found {
+            Some(request) => {
+                self.record_sent_contact_request(
+                    sender,
+                    recipient,
+                    request,
+                    Some(held.attempt),
+                    held.account_index,
+                    held.contact_xpub,
+                )
+                .await?;
+            }
+            None => {
+                let mut wm = self.wallet_manager.write().await;
+                if let Some(managed) =
+                    generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
+                        .and_then(|info| info.identity_manager.managed_identity_mut(sender))
+                {
+                    managed.settle_unconfirmed_public_request(recipient, held.attempt);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// [`Self::settle_unconfirmed_public_request`], logging a read that could
+    /// not settle it: the request stays held.
+    pub(super) async fn settle_unconfirmed_public_request_logged(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+    ) {
+        // Boxed: its reads and broadcast make a large future, which sends and
+        // syncs nest in their own.
+        if let Err(error) =
+            Box::pin(self.settle_unconfirmed_public_request(sender, recipient)).await
+        {
+            tracing::warn!(
+                sender = %sender,
+                recipient = %recipient,
+                %error,
+                "an unconfirmed public contact request could not be settled; it stays held"
+            );
+        }
+    }
+
+    /// Settle every unconfirmed public request this handle's wallet
+    /// generation holds ([`Self::settle_unconfirmed_public_request`]).
+    async fn settle_unconfirmed_public_requests(&self) {
+        let pairs: Vec<(Identifier, Identifier)> = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+                .map(|info| {
+                    info.identity_manager
+                        .all_identities()
+                        .iter()
+                        .filter_map(|identity| {
+                            info.identity_manager.managed_identity(&identity.id())
+                        })
+                        .flat_map(|managed| {
+                            let sender = managed.identity.id();
+                            managed
+                                .dashpay()
+                                .unconfirmed_public_request_recipients()
+                                .into_iter()
+                                .map(move |recipient| (sender, recipient))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        for (sender, recipient) in pairs {
+            self.settle_unconfirmed_public_request_logged(&sender, &recipient)
+                .await;
+        }
     }
 
     /// Steps 1 to 4c of a contact request send, shared by the document send
@@ -2099,6 +2546,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn sync_contact_requests_reporting(
         &self,
     ) -> Result<ContactSyncReport, PlatformWalletError> {
+        // Public requests whose outcome is unconfirmed are settled first, so
+        // one proved on Platform is recorded, and one that can no longer
+        // execute frees its pair, before anything is decided from this pass.
+        self.settle_unconfirmed_public_requests().await;
         // Snapshot each identity's high-water cursors up front so the
         // incremental query bound is read before any mutation this sweep.
         let identities: Vec<(Identifier, Option<u64>, Option<u64>)> = {

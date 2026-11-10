@@ -699,6 +699,20 @@ pub enum PlatformWalletError {
     )]
     PrivateContactRequestPending(Identifier),
 
+    /// A public contact request to this identity was broadcast and may have
+    /// been delivered, and no proof settled its outcome yet: the wallet keeps
+    /// its signed transition and sends no other contact request to the
+    /// identity, public or private, until a proved read shows the request on
+    /// Platform (it is then recorded as sent) or shows the transition can no
+    /// longer write it. A public contact request sync settles it, broadcasting
+    /// the same transition again while it may still execute. Unconfirmed, not
+    /// failed: it is not submitted again.
+    #[error(
+        "a public contact request to {0} was broadcast and its outcome is not proved yet; sync \
+         contact requests to settle it"
+    )]
+    PublicContactRequestUnconfirmed(Identifier),
+
     /// DashPay's private contact request store was not read to its end for
     /// this identity with the keys Platform proves it holds, before a contact
     /// request from it, public or private, or an acceptance, was decided: a
