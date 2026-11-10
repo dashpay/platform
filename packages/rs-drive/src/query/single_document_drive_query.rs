@@ -136,8 +136,8 @@ impl SingleDocumentDriveQuery {
                     // stored would answer with that version.
                     if self.block_time_ms.is_some() {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
-                            "a document that may be contested can not be looked up at a block \
-                             time"
+                            "a document with history that may be contested can not be looked \
+                             up at a block time"
                                 .to_string(),
                         )));
                     }

@@ -80,7 +80,13 @@ mod tests {
         "tests/supporting_files/contract/family/family-contract-with-history-only-message-index.json";
 
     fn drive_with_contract(path: &str) -> (Drive, DataContract) {
-        let platform_version = PlatformVersion::latest();
+        drive_with_contract_at(path, PlatformVersion::latest())
+    }
+
+    fn drive_with_contract_at(
+        path: &str,
+        platform_version: &PlatformVersion,
+    ) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
             &drive,
@@ -357,6 +363,79 @@ mod tests {
             matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
             "{result:?}"
         );
+    }
+
+    #[test]
+    fn should_ignore_a_block_time_for_a_document_type_without_history() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = drive_with_contract(DPNS);
+        let document = domain(&contract, 1, "quantum");
+        drive
+            .add_document_for_contract(
+                info(&document, &contract, "domain"),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the document");
+
+        let found = prove_and_verify(
+            &drive,
+            &contract,
+            &maybe_contested(&contract, "domain", document.id().to_buffer(), Some(1500)),
+        );
+
+        assert_eq!(found.map(|found| found.id()), Some(document.id()));
+    }
+
+    #[test]
+    fn should_still_refuse_a_document_that_may_be_contested_at_protocol_version_14() {
+        // Generation 1 is protocol version 15's. The version before keeps refusing a proof
+        // that generation 1 accepts.
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let (drive, contract) = drive_with_contract_at(DPNS, protocol_version_14);
+        let document = domain(&contract, 1, "quantum");
+        drive
+            .add_document_for_contract(
+                info(&document, &contract, "domain"),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                protocol_version_14,
+            )
+            .expect("expected to add the document");
+        let query = maybe_contested(&contract, "domain", document.id().to_buffer(), None);
+        let proof = drive
+            .grove_get_proved_path_query(
+                &query
+                    .construct_path_query(protocol_version_14)
+                    .expect("expected to build the query"),
+                None,
+                &mut vec![],
+                &protocol_version_14.drive,
+            )
+            .expect("expected a proof");
+
+        for is_subset in [false, true] {
+            let refused = query.verify_proof_keep_serialized(
+                is_subset,
+                proof.as_slice(),
+                protocol_version_14,
+            );
+            assert!(refused.is_err(), "is_subset {is_subset}: {refused:?}");
+
+            let (_, accepted) = query
+                .verify_proof_keep_serialized(
+                    is_subset,
+                    proof.as_slice(),
+                    PlatformVersion::latest(),
+                )
+                .expect("expected generation 1 to verify the same proof");
+            assert!(accepted.is_some(), "is_subset {is_subset}");
+        }
     }
 
     /// A proof of the document's query in `proved_status`, which looks in one place only.
