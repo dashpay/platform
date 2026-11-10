@@ -41,7 +41,7 @@ use super::{
 ///   only: a block runs state validation.
 /// - the contract update `basic_structure` 3, `nonce` 1 and `state` 2, with
 ///   `transform_into_action` 1, admit version 1 of the transition, the delta form, which
-///   carries only what an update changes (protocol v15 note 32). An update that carries the
+///   carries only what an update changes (protocol v15 note 33). An update that carries the
 ///   whole contract runs the generations protocol version 14 selects (`basic_structure` 2,
 ///   `nonce` 0, `state` 1) unchanged. For a delta, `basic_structure` 3 refuses, without a fee,
 ///   one that names an entry in two sections that cannot both apply; `nonce` 1 reads the owner

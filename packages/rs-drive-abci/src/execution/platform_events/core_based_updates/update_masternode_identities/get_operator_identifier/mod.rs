@@ -25,7 +25,7 @@ where
     /// # Returns
     ///
     /// * Result<Identifier, Error> - Returns the derived operator identifier if successful. Otherwise, returns an error.
-    pub(super) fn get_operator_identifier_from_masternode_list_item(
+    pub(in crate::execution::platform_events::core_based_updates) fn get_operator_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, Error> {

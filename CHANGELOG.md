@@ -23,7 +23,7 @@
 ### Changed
 
 - **dpp, drive (Rust API):** `DataContractUpdateTransition` gains version 1, the delta form,
-  which carries only what an update changes (protocol v15 note 32). An exhaustive match on
+  which carries only what an update changes (protocol v15 note 33). An exhaustive match on
   the transition or on `DataContractUpdateTransitionAction` needs a `V1` arm.
   `DataContractUpdateTransitionAccessorsV0::data_contract()` returns
   `Option<&DataContractInSerializationFormat>`, `None` for a delta, which embeds no contract,

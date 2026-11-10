@@ -38,7 +38,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         // `jsonschema` crate, reaching the same verdicts but for one rule of its own: in a
         // `uniqueItems` list, `0.0` and `-0.0` are one value however long the list
         validate_document: 2,
-        // changed: merges a delta contract update onto the stored contract (v15 note 32)
+        // changed: merges a delta contract update onto the stored contract (v15 note 33)
         apply_update: Some(0),
         ..CONTRACT_VERSIONS_V6.methods
     },

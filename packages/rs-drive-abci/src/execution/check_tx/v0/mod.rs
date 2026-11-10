@@ -2434,7 +2434,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        // We have one invalid paid for state transition
+        // The delta is valid and paid for
         assert_eq!(update_processing_result.valid_count(), 1);
 
         assert_eq!(
