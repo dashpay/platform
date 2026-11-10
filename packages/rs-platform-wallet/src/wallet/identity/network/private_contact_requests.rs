@@ -3625,6 +3625,57 @@ mod tests {
         );
     }
 
+    /// A private request read back while its journal record waits for the
+    /// shielded sync to discharge it still counts as unresolved, in the
+    /// readiness and the pair's hold alike, as a send holds the pair until
+    /// the discharge; both clear with it.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_report_a_journaled_payment_unresolved_until_its_record_is_discharged() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let fixture = ExpiryFixture::new().await;
+        let entry = fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        publish(&fixture.wallet, 0, vec![entry.to_vec()]).await;
+        let view = fixture.wallet.identity().dashpay();
+        view.sync_private_contact_requests(&alice_crypto, 4)
+            .await
+            .expect("the entry is read back");
+        let readiness = view
+            .private_contact_readiness(&alice.id())
+            .await
+            .expect("the readiness");
+        assert!(
+            readiness.unresolved_private_payment,
+            "its record is not discharged yet"
+        );
+        assert!(view
+            .private_pair_held(&alice.id(), &bob.id())
+            .await
+            .expect("the hold"));
+        fixture
+            .coordinator
+            .discharge_read_back_private_payments()
+            .await;
+        let readiness = view
+            .private_contact_readiness(&alice.id())
+            .await
+            .expect("the readiness");
+        assert!(!readiness.unresolved_private_payment, "discharged");
+        assert!(!view
+            .private_pair_held(&alice.id(), &bob.id())
+            .await
+            .expect("the hold"));
+    }
+
     /// A restoration that finds a journal record its sender's tracked request
     /// already records, as a private sync read it back in a process that ended
     /// before the shielded sync discharged it, discharges the record.
@@ -3657,6 +3708,44 @@ mod tests {
             0,
             "discharged by the restoration"
         );
+    }
+
+    /// A public pair's claim checks again, in its lock, that the read the send
+    /// made before it still reaches the store's end: one rewound since, as
+    /// keys that changed or a sender unignored leave it, refuses it as not
+    /// read; one that still stands claims it.
+    #[tokio::test]
+    async fn should_refuse_claiming_a_public_pair_once_the_read_before_it_is_rewound() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let view = wallet.identity().dashpay();
+        let refused = view
+            .claim_public_pair(&alice.id(), &bob.id(), false, true)
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::PrivateContactStoreNotRead(sender))
+                    if sender == alice.id()
+            ),
+            "{:?}",
+            refused.err()
+        );
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("managed identity")
+                .note_private_contact_requests_read_for_tests();
+        }
+        let claimed = view
+            .claim_public_pair(&alice.id(), &bob.id(), false, true)
+            .await;
+        assert!(matches!(claimed, Ok(Some(_))), "{:?}", claimed.err());
     }
 
     /// The store's end as the pass's highest proved total: with chunks of two,
@@ -10274,6 +10363,148 @@ mod tests {
         .await;
         assert!(restored.is_ok(), "restored once the store frees");
         let _ = alice;
+    }
+
+    /// A restoration left unfinished, deferred for a busy store and its task
+    /// gone, is run again by the next contact request before it is refused as
+    /// not restored: once the store frees, a public request to the pair the
+    /// journal keeps is refused as pending, not as unrestored.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_retry_an_unfinished_restoration_before_a_contact_request() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, wallet) = wallet_on(
+            RecordingPersistence::attesting(
+                PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            ),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let path = dir.path().join("tree.sqlite");
+        journal_alice_to_bob(&path, wallet.wallet_id());
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&wallet.identity().sdk),
+            Network::Testnet,
+            path.clone(),
+            FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
+        ));
+        let scan = coordinator.store().write().await;
+        let deferred = wallet
+            .restore_private_payments_or_defer(&coordinator)
+            .await
+            .expect("deferred for the busy store");
+        deferred.abort();
+        let _ = deferred.await;
+        drop(scan);
+        assert!(wallet.private_payments_held().await, "its task is gone");
+        let view = wallet.identity().dashpay();
+        let readiness = view
+            .private_contact_readiness(&alice.id())
+            .await
+            .expect("the readiness");
+        assert!(!readiness.private_payments_restored);
+        assert_eq!(
+            readiness.private_payments_restore_failure, None,
+            "not failed, only not run"
+        );
+        let public = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                    if recipient == bob.id()
+            ),
+            "{public:?}"
+        );
+        assert!(
+            !wallet.private_payments_held().await,
+            "restored by the send"
+        );
+    }
+
+    /// A restoration that fails holds the wallet and is reported with its
+    /// reason while it does; a contact request is refused as not restored.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_report_why_a_restoration_failed_while_the_wallet_is_held() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, wallet) = wallet_on(
+            RecordingPersistence::attesting(
+                PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+            ),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let path = dir.path().join("tree.sqlite");
+        journal_alice_to_bob(&path, wallet.wallet_id());
+        rusqlite::Connection::open(&path)
+            .expect("the store's file")
+            .execute(
+                "UPDATE shielded_private_payment_journal SET record = x'00'",
+                [],
+            )
+            .expect("the record damaged");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&wallet.identity().sdk),
+            Network::Testnet,
+            path.clone(),
+            FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
+        ));
+        let failed = wallet.restore_private_contact_payments(&coordinator).await;
+        assert!(failed.is_err(), "{failed:?}");
+        let view = wallet.identity().dashpay();
+        let readiness = view
+            .private_contact_readiness(&alice.id())
+            .await
+            .expect("the readiness");
+        assert!(!readiness.private_payments_restored);
+        assert!(
+            readiness
+                .private_payments_restore_failure
+                .as_deref()
+                .is_some_and(|reason| reason.contains("does not read back")),
+            "{readiness:?}"
+        );
+        let public = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                public,
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+            ),
+            "{public:?}"
+        );
     }
 
     /// A private payment that never executes is proven expired once its
