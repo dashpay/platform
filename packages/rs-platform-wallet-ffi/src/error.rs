@@ -709,7 +709,9 @@ pub enum PlatformWalletFFIResultCode {
     /// after binding a shielded account in an earlier process; or its last
     /// restoration failed, or waits for a busy store. In every build: the
     /// identity was loaded with its private scan state marking a private
-    /// payment that may be unresolved. Configuring the shielded store restores
+    /// payment that may be unresolved, or was added to a wallet whose backend
+    /// kept its record marked after an earlier wallet under the id was
+    /// removed. Configuring the shielded store restores
     /// them with no keys, as binding the wallet's shielded account does, and a
     /// contact request retries a failed restoration once without waiting; a
     /// private sync does not. A host whose persister declares the private
@@ -1026,6 +1028,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
+            }
+            // An identity the wallet does not hold, as a read or a contact
+            // request names one: its own code, which Swift and Kotlin type.
+            PlatformWalletError::IdentityNotFound(..) => {
+                PlatformWalletFFIResultCode::ErrorIdentityNotFound
             }
             // The two shielded broadcast/wait variants. Today nothing routes
             // them through this blanket impl — the dedicated match in
@@ -3122,5 +3129,18 @@ mod private_contact_request_error_tests {
                 98
             );
         }
+    }
+
+    /// An identity the wallet does not hold reaches the host by its own code,
+    /// not the catch-all.
+    #[test]
+    fn should_report_an_identity_the_wallet_does_not_hold_by_its_own_code() {
+        let result =
+            PlatformWalletFFIResult::from(PlatformWalletError::IdentityNotFound([7; 32].into()));
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert_eq!(result.code as u32, 7);
     }
 }

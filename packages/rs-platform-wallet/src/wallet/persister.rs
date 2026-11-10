@@ -5,7 +5,7 @@
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dashcore::Txid;
@@ -106,6 +106,10 @@ pub struct WalletPersister {
     /// next process tracks what its load read from disk.
     #[cfg(feature = "shielded")]
     buffered_writes_lost: Arc<AtomicBool>,
+    /// The largest size of DashPay's private contact request store a page
+    /// this wallet read proved, in this process
+    /// ([`Self::private_store_size_proved`]). In memory only.
+    private_store_size_proved: Arc<AtomicU64>,
     /// Why the last restoration of this wallet's private payments failed,
     /// while no later one succeeded (`PlatformWalletError::PrivateContactPaymentsNotRestored`
     /// then holds for it, not only for one not run yet). Shared by the
@@ -170,6 +174,7 @@ impl WalletPersister {
             stored_private_markers: Arc::default(),
             #[cfg(feature = "shielded")]
             buffered_writes_lost: Arc::default(),
+            private_store_size_proved: Arc::default(),
             private_payment_restore_failure: Arc::default(),
             #[cfg(feature = "shielded")]
             private_payment_restore_retry: Arc::default(),
@@ -273,6 +278,14 @@ impl WalletPersister {
     /// the pairs they hold, stay until noted. The host's flush runs with none
     /// of the persister's locks held, so a call during it, from another thread
     /// or the flush itself, neither waits nor loses what it adds.
+    ///
+    /// None is noted once a flush of the wallet's records failed for good in
+    /// this process ([`Self::buffered_writes_lost`]): a request read back
+    /// since may be one the wallet tracked before the loss, which a read of
+    /// its entry again finds tracked and stores nothing for, so its record
+    /// may be in memory only. Those journal records stay for the next
+    /// process, whose restoration reads their entries again from what is on
+    /// disk.
     #[cfg(feature = "shielded")]
     pub(crate) fn note_read_back_once_durable(
         &self,
@@ -284,6 +297,14 @@ impl WalletPersister {
             std::mem::take(&mut *unflushed)
         };
         if pending.is_empty() {
+            return;
+        }
+        if self.buffered_writes_lost() {
+            tracing::warn!(
+                dropped = pending.len(),
+                "private requests read back after this wallet's records were lost are not \
+                 noted; their journal records stay for the next process"
+            );
             return;
         }
         if !self.store_commits_inline() {
@@ -540,11 +561,29 @@ impl WalletPersister {
     /// Whether a flush of this wallet's records failed for good in this
     /// process (anything but a transient failure, which keeps the buffer):
     /// what the wallet tracked before it may not be on disk, though it is in
-    /// memory. A restoration then leaves the journal records it finds settled
-    /// by tracked requests for the next process to discharge.
+    /// memory. For the rest of the process no journal record is discharged on
+    /// the strength of a tracked request: no read-back is noted
+    /// ([`Self::note_read_back_once_durable`]), and a restoration leaves the
+    /// records it finds settled for the next process.
     #[cfg(feature = "shielded")]
     pub(crate) fn buffered_writes_lost(&self) -> bool {
         self.buffered_writes_lost.load(Ordering::SeqCst)
+    }
+
+    /// Note that a page this wallet read proved DashPay's private contact
+    /// request store held `size` entries.
+    pub(crate) fn note_private_store_size_proved(&self, size: u64) {
+        self.private_store_size_proved
+            .fetch_max(size, Ordering::SeqCst);
+    }
+
+    /// The largest size of DashPay's private contact request store a page
+    /// this wallet read proved, in this process, 0 before any. The store only
+    /// grows and every size is read from a proof, so the store holds at least
+    /// this many entries from then on: a read reaches its end only once its
+    /// cursor reaches it, whatever a later page from a node behind shows.
+    pub(crate) fn private_store_size_proved(&self) -> u64 {
+        self.private_store_size_proved.load(Ordering::SeqCst)
     }
 
     pub(crate) fn store_commits_inline(&self) -> bool {

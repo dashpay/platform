@@ -96,6 +96,11 @@ impl IdentityManager {
         // iterate values know which wallet + slot they came from
         // without re-threading the keys.
         managed_identity.wallet_id = Some(wallet_id);
+        // Held before anything can send or accept for it, when a persister
+        // kept its record marked.
+        if self.retained_private_payment_markers.remove(&identity_id) {
+            managed_identity.hold_for_retained_private_payment_marker();
+        }
 
         self.wallet_identities
             .entry(wallet_id)
@@ -112,6 +117,29 @@ impl IdentityManager {
         );
 
         Ok(())
+    }
+
+    /// Hold every identity in `owners`, whose private contact request scan
+    /// state record a persister kept marked
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), as a
+    /// load holds one loaded with its record marked
+    /// (`DashPayState::private_payments_unrestored`): one this manager holds
+    /// now at once, every other when it is added. Its private payment may
+    /// still execute, while the identity, added afresh, holds no reservation
+    /// or record of it. Only a restoration from the shielded store's journal
+    /// releases the hold.
+    pub(crate) fn retain_private_payment_markers(
+        &mut self,
+        owners: impl IntoIterator<Item = Identifier>,
+    ) {
+        for owner in owners {
+            match self.managed_identity_mut(&owner) {
+                Some(managed) => managed.hold_for_retained_private_payment_marker(),
+                None => {
+                    self.retained_private_payment_markers.insert(owner);
+                }
+            }
+        }
     }
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
