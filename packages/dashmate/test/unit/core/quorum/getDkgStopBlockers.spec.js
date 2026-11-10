@@ -504,57 +504,78 @@ describe('getDkgStopBlockers', () => {
     });
   });
 
-  describe('a DKG that starts at the tip, before Core records it (Core older than 24.1)', () => {
+  describe('a session Core has not recorded (Core older than 24.1)', () => {
     // `quorum dkgstatus` lists every enabled quorum with the start of its
-    // current session. At a start block Core's DKG worker records the session
-    // only after it has computed the members, and nothing says whether this
-    // node is one of them until then.
-    const startsHere = {
-      llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: HEIGHT,
+    // current session. Core records a session only once it has computed its
+    // members, which has no time bound, and until then nothing says whether
+    // this node is one of them.
+    const start = HEIGHT;
+    const current = {
+      llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start,
     };
     const dkgInfo = { active_dkgs: 0, next_dkg: 24 };
 
     function blockersWith(dkgStatus, options = {}) {
+      const height = options.height ?? start;
+
       return getBlockersAt(getDkgStopBlockers({
-        dkgInfo, dkgStatus, height: HEIGHT, coreVersion: CORE_23, ...options,
-      }), HEIGHT);
+        dkgInfo, dkgStatus, coreVersion: CORE_23, ...options, height,
+      }), height);
     }
 
-    it('should block the start block while Core has no record of the session', () => {
-      const blockers = blockersWith({ session: [], quorumConnections: [startsHere] });
+    it('should block the session from its start until its Commit phase ends', () => {
+      const blockers = blockersWith({ session: [], quorumConnections: [current] });
 
       expect(blockers).to.have.lengthOf(1);
       expect(blockers[0]).to.include({
-        reason: 'starting', llmqType: 'llmq_100_67', quorumIndex: 0, from: HEIGHT, until: HEIGHT + 1,
+        reason: 'unrecorded', llmqType: 'llmq_100_67', quorumIndex: 0, from: start, until: start + 10,
       });
+    });
+
+    it('should keep blocking after the start block while Core still has no record', () => {
+      expect(blockersWith({ session: [], quorumConnections: [current] }, { height: start + 1 }))
+        .to.have.lengthOf(1);
+      expect(blockersWith({ session: [], quorumConnections: [current] }, { height: start + 9 }))
+        .to.have.lengthOf(1);
+      expect(blockersWith({ session: [], quorumConnections: [current] }, { height: start + 10 }))
+        .to.be.empty();
+    });
+
+    it('should block a 400-member session for its 20 blocks', () => {
+      const large = { llmqType: 'llmq_400_60', quorumIndex: 0, pQuorumBaseBlockIndex: start };
+
+      expect(blockersWith({ session: [], quorumConnections: [large] }, { height: start + 19 }))
+        .to.have.lengthOf(1);
+      expect(blockersWith({ session: [], quorumConnections: [large] }, { height: start + 20 }))
+        .to.be.empty();
     });
 
     it('should leave the session to its record once Core has one', () => {
       const blockers = blockersWith({
-        session: [record('llmq_100_67', HEIGHT)],
-        quorumConnections: [startsHere],
-      });
+        session: [record('llmq_100_67', start)],
+        quorumConnections: [current],
+      }, { height: start + 2 });
 
       expect(blockers.map(({ reason }) => reason)).to.deep.equal(['session']);
     });
 
-    it('should not block a session that started before the tip', () => {
+    it('should not block a session that has not started', () => {
       expect(blockersWith({
         session: [],
-        quorumConnections: [{ ...startsHere, pQuorumBaseBlockIndex: HEIGHT - 1 }],
+        quorumConnections: [{ llmqType: 'llmq_60_75', quorumIndex: 5 }],
       })).to.be.empty();
     });
 
     it('should not block a DKG this node was announced to be no member of', () => {
       expect(blockersWith(
-        { session: [], quorumConnections: [startsHere] },
-        { knownNonMemberDkgs: new Set([`llmq_100_67:0:${HEIGHT}`]) },
+        { session: [], quorumConnections: [current] },
+        { height: start + 3, knownNonMemberDkgs: new Set([`llmq_100_67:0:${start}`]) },
       )).to.be.empty();
     });
 
     it('should rely on Core\'s count on Core 24.1, which includes such a session', () => {
       expect(blockersWith(
-        { session: [], quorumConnections: [startsHere] },
+        { session: [], quorumConnections: [current] },
         { coreVersion: CORE_24_1 },
       )).to.be.empty();
     });
@@ -564,6 +585,18 @@ describe('getDkgStopBlockers', () => {
 
       expect(blockers).to.have.lengthOf(1);
       expect(blockers[0]).to.include({ reason: 'unreadable', source: 'quorum dkgstatus quorumConnections' });
+    });
+
+    it('should block on a quorum type dashmate does not know', () => {
+      const blockers = blockersWith({
+        session: [],
+        quorumConnections: [{ llmqType: 'llmq_future', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+      });
+
+      expect(blockers).to.have.lengthOf(1);
+      expect(blockers[0]).to.include({
+        reason: 'unreadable', source: 'quorum dkgstatus quorumConnections llmq_future',
+      });
     });
   });
 

@@ -7,6 +7,23 @@ import checkMasternodeSafeToStop, {
 import { getBlockersAt } from '../../core/quorum/getDkgStopBlockers.js';
 import { NETWORK_LOCAL } from '../../constants.js';
 
+/**
+ * Group commands stop a local network's miner before its masternodes. Without
+ * it no block comes, so a DKG wait could never end, and with every masternode
+ * of the network going down together their DKG produces no commitment to
+ * penalize them in. Only masternodes of that local network, the miner's group,
+ * are exempt: a group may hold configs of other networks.
+ *
+ * @param {Config} config
+ * @param {Object} ctx
+ * @return {boolean}
+ */
+function isLocalNetworkHalted(config, ctx) {
+  return config.get('network') === NETWORK_LOCAL
+    && !!ctx.stoppedLocalMinerGroups
+    && ctx.stoppedLocalMinerGroups.has(config.get('group'));
+}
+
 // A check comes back unsettled while the chain moves too fast to read a
 // consistent DKG state, such as while Core catches up after a restart.
 const SAFE_STOP_CHECK_ATTEMPTS = 3;
@@ -54,7 +71,7 @@ export default function stopNodeTaskFactory(
       {
         title: 'Check node is participating in DKG',
         enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe
-          && !ctx.platformOnly && !ctx.isLocalMinerStopped,
+          && !ctx.platformOnly && !isLocalNetworkHalted(config, ctx),
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -99,7 +116,7 @@ export default function stopNodeTaskFactory(
       {
         title: 'Wait for DKG window to pass',
         enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe
-          && !ctx.platformOnly && !ctx.isLocalMinerStopped,
+          && !ctx.platformOnly && !isLocalNetworkHalted(config, ctx),
         task: async () => waitForDKGWindowPass(createRpcClient({
           port: config.get('core.rpc.port'),
           user: 'dashmate',
@@ -116,12 +133,11 @@ export default function stopNodeTaskFactory(
 
           await dockerCompose.stop(config, { profiles });
 
-          // Group commands stop a local network's miner before its masternodes.
-          // Without it no block comes, so a DKG wait could never end, and with
-          // every masternode of the network going down together their DKG
-          // produces no commitment to penalize them in.
           if (config.get('network') === NETWORK_LOCAL && config.get('core.miner.enable')) {
-            ctx.isLocalMinerStopped = true;
+            ctx.stoppedLocalMinerGroups = new Set([
+              ...(ctx.stoppedLocalMinerGroups || []),
+              config.get('group'),
+            ]);
           }
         },
       },

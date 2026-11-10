@@ -245,4 +245,29 @@ describe('checkMasternodeSafeToStop', () => {
 
     expect(state.result.status).to.equal('safe');
   });
+
+  it('should report a replaced chain when the previous check\'s tip is gone', async () => {
+    // Anything learned on the replaced branch, such as which DKGs leave this
+    // node out, may not hold on the new one.
+    core.version = CORE_24_1;
+    const state = {};
+    checkMasternodeSafeToStop(rpcClient, core.version, {
+      ancestor: { height: 1010, hash: 'replaced-1010' },
+    }).then((result) => { state.result = result; });
+    await clock.tickAsync(0);
+
+    expect(state.result).to.include({ status: 'unsettled', isReorg: true });
+  });
+
+  it('should not report a replaced chain when the previous check\'s tip is still there', async () => {
+    core.version = CORE_24_1;
+    const state = {};
+    checkMasternodeSafeToStop(rpcClient, core.version, {
+      ancestor: { height: 1010, hash: 'hash-1010' },
+    }).then((result) => { state.result = result; });
+    await clock.tickAsync(0);
+
+    expect(state.result.status).to.equal('safe');
+    expect(state.result.isReorg).to.not.equal(true);
+  });
 });

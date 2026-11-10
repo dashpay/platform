@@ -15,7 +15,9 @@ export const CHECK_INTERVAL_MS = 10000;
  * older than 24.1 reports it only after its DKG worker has computed the
  * session's members and recorded it, which can take a while at the start
  * of a rotation cycle. DKGs announced without this node are remembered too,
- * so their start blocks need not wait for a record that never comes.
+ * so their sessions need not wait for a record that never comes, as long as
+ * the chain they were announced on stays: a reorg replacing it may make this
+ * node a member after all.
  *
  * @param {RpcClient} rpcClient
  * @return {Promise<void>}
@@ -25,13 +27,21 @@ export default async function waitForDKGWindowPass(rpcClient) {
 
   const announcedDkgs = new Map();
   let nonMemberDkgs = new Set();
+  let lastTip;
 
   for (;;) {
     const check = await checkMasternodeSafeToStop(rpcClient, coreVersion, {
       knownNonMemberDkgs: nonMemberDkgs,
+      ancestor: lastTip,
     });
 
-    nonMemberDkgs = new Set([...nonMemberDkgs, ...check.nonMemberDkgs]);
+    nonMemberDkgs = check.isReorg
+      ? check.nonMemberDkgs
+      : new Set([...nonMemberDkgs, ...check.nonMemberDkgs]);
+
+    if (check.tip) {
+      lastTip = check.tip;
+    }
 
     if (check.height !== null) {
       // A key ends with the DKG's start block; one that has passed no longer

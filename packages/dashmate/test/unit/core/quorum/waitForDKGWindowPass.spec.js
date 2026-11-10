@@ -473,12 +473,35 @@ describe('waitForDKGWindowPass', () => {
     await clock.tickAsync(60000);
     await expectStillPolling(waiting, rpcClient);
 
-    // The next block arrives without a record: this node is not a member.
+    // Without a record, nothing shows this node is not a member, so the
+    // session blocks until its Commit phase ends.
     core.height = start + 1;
     core.dkgInfo = { active_dkgs: 0, next_dkg: 23, upcoming_dkgs: [] };
+    await expectStillPolling(waiting, rpcClient);
+
+    core.height = start + 10;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 14, upcoming_dkgs: [] };
     await clock.tickAsync(NEXT_POLL_MS);
 
     expect(waiting.resolved).to.be.true();
+  });
+
+  it('should not stop in a session Core has not recorded when waiting starts after its start block', async function it() {
+    const start = 24 * 5000;
+    const rpcClient = getCoreRpcMock(this.sinon, {
+      version: CORE_24_0,
+      height: start + 1,
+      dkgInfo: { active_dkgs: 0, next_dkg: 23, upcoming_dkgs: [] },
+      dkgStatus: {
+        session: [],
+        quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+      },
+    });
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(60000);
+
+    await expectStillPolling(waiting, rpcClient);
   });
 
   it('should not hold a DKG start it saw announced without this node', async function it() {
@@ -516,5 +539,40 @@ describe('waitForDKGWindowPass', () => {
     await clock.tickAsync(NEXT_POLL_MS);
 
     expect(waiting.resolved).to.be.true();
+  });
+
+  it('should forget DKGs announced without this node when a reorg replaces their chain', async function it() {
+    // On the replacing branch the work block differs, so this node may be a
+    // member after all.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: false,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    // While the first result waits to be confirmed, a reorg replaces the tip
+    // and the replacing branch reaches the DKG's start.
+    core.hashAt = (height) => `other-branch-${height}`;
+    core.height = start;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [],
+      quorumConnections: [{ llmqType: 'llmq_100_67', quorumIndex: 0, pQuorumBaseBlockIndex: start }],
+    };
+    await clock.tickAsync(NEXT_POLL_MS * 2);
+
+    await expectStillPolling(waiting, rpcClient);
   });
 });

@@ -99,6 +99,11 @@ function haveSessionRecordsChanged({ dkgInfo, dkgStatus }, coreVersion) {
  * @property {Set<string>} nonMemberDkgs DKGs Core announced without this
  *   node, see {@link getAnnouncedNonMemberDkgs}
  * @property {boolean} [isSyncing] Core is in initial block download
+ * @property {boolean} [isReorg] the chain no longer has the tip of an earlier
+ *   check; what was learned on that branch, such as `nonMemberDkgs`, no
+ *   longer holds
+ * @property {{ height: number, hash: string }|null} tip chain tip
+ *   `nonMemberDkgs` were read on, or `null` when no consistent read was made
  */
 
 /**
@@ -113,7 +118,7 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
 
   if (!snapshot) {
     return {
-      status: 'unsettled', height: null, blockers: [], nonMemberDkgs: new Set(),
+      status: 'unsettled', height: null, blockers: [], nonMemberDkgs: new Set(), tip: null,
     };
   }
 
@@ -123,6 +128,7 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
     hash,
     ancestorHash: snapshot.ancestorHash,
     nonMemberDkgs: getAnnouncedNonMemberDkgs(snapshot.dkgInfo, height),
+    tip: { height, hash },
   };
 
   // Core's DKG worker does nothing during initial block download, and Core
@@ -160,19 +166,30 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
  * many new blocks on top of the first check's tip; more than that, a lower
  * tip, or a chain without the first check's tip is `unsettled`.
  *
+ * `knownNonMemberDkgs` may only hold what earlier checks learned on the
+ * current chain: pass the tip of the latest of them as `ancestor`, and a
+ * check that finds it replaced reports `isReorg`.
+ *
  * @param {RpcClient} rpcClient
  * @param {number} coreVersion from {@link readCoreVersion}
  * @param {Object} [options]
  * @param {Set<string>} [options.knownNonMemberDkgs] DKGs Core announced
  *   without this node at earlier checks
+ * @param {{ height: number, hash: string }} [options.ancestor] tip of the
+ *   latest earlier check
  * @return {Promise<SafeStopCheck>}
  */
 export default async function checkMasternodeSafeToStop(
   rpcClient,
   coreVersion,
-  { knownNonMemberDkgs = new Set() } = {},
+  { knownNonMemberDkgs = new Set(), ancestor } = {},
 ) {
-  const first = await evaluate(rpcClient, coreVersion, knownNonMemberDkgs);
+  const first = await evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestor && ancestor.height);
+
+  if (ancestor && first.height !== null
+    && (first.height < ancestor.height || first.ancestorHash !== ancestor.hash)) {
+    return { ...first, status: 'unsettled', isReorg: true };
+  }
 
   if (first.status !== 'safe' || first.isSyncing || hasMembershipActiveDkgs(coreVersion)) {
     return first;
@@ -182,13 +199,21 @@ export default async function checkMasternodeSafeToStop(
 
   const nonMemberDkgs = new Set([...knownNonMemberDkgs, ...first.nonMemberDkgs]);
   const second = await evaluate(rpcClient, coreVersion, nonMemberDkgs, first.height);
+
+  // The confirming read was discarded: keep what the first check verified.
+  if (second.height === null) {
+    return { ...second, nonMemberDkgs, tip: first.tip };
+  }
+
+  // The first check's tip was replaced: none of it holds on this chain.
+  if (second.height < first.height || second.ancestorHash !== first.hash) {
+    return { ...second, status: 'unsettled', isReorg: true };
+  }
+
   second.nonMemberDkgs = new Set([...nonMemberDkgs, ...second.nonMemberDkgs]);
 
-  const hasChainMoved = second.height < first.height
-    || second.ancestorHash !== first.hash
-    || second.height > first.height + MIN_BLOCKS_BEFORE_DKG;
-
-  if (second.status === 'safe' && !second.isSyncing && hasChainMoved) {
+  if (second.status === 'safe' && !second.isSyncing
+    && second.height > first.height + MIN_BLOCKS_BEFORE_DKG) {
     return { ...second, status: 'unsettled' };
   }
 

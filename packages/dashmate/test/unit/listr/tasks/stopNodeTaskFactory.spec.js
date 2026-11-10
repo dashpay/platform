@@ -140,8 +140,10 @@ describe('stopNodeTaskFactory', () => {
     minerConfig.get.withArgs('core.masternode.enable').returns(false);
     minerConfig.get.withArgs('core.miner.enable').returns(true);
     minerConfig.get.withArgs('network').returns('local');
+    minerConfig.get.withArgs('group').returns('local');
     minerConfig.getName.returns('local_seed');
     config.get.withArgs('network').returns('local');
+    config.get.withArgs('group').returns('local');
     core.dkgInfo = { active_dkgs: 1, next_dkg: 3, upcoming_dkgs: [] };
 
     const state = {};
@@ -169,5 +171,30 @@ describe('stopNodeTaskFactory', () => {
 
     expect(error.message).to.include('may result in a PoSe ban');
     expect(dockerCompose.stop).to.not.have.been.called();
+  });
+
+  it('should still check a masternode of another network after a local miner stopped', async function it() {
+    // A group may hold configs of several networks; stopping a local miner
+    // does not stop blocks on any other.
+    const minerConfig = getConfigMock(this.sinon);
+    minerConfig.get.withArgs('core.masternode.enable').returns(false);
+    minerConfig.get.withArgs('core.miner.enable').returns(true);
+    minerConfig.get.withArgs('network').returns('local');
+    minerConfig.get.withArgs('group').returns('mixed');
+    minerConfig.getName.returns('local_seed');
+    config.get.withArgs('group').returns('mixed');
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 3, upcoming_dkgs: [] };
+
+    const state = {};
+    new Listr([
+      { task: () => stopNodeTask(minerConfig) },
+      { task: () => stopNodeTask(config) },
+    ], { renderer: 'silent' })
+      .run({ isForce: false, isSafe: false, platformOnly: false })
+      .then(() => { state.stopped = true; }, (e) => { state.error = e; });
+    await clock.tickAsync(1);
+
+    expect(state.error).to.be.an('error');
+    expect(dockerCompose.stop).to.have.been.calledOnce();
   });
 });

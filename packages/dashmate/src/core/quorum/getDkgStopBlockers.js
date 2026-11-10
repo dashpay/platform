@@ -86,7 +86,7 @@ export function hasMembershipActiveDkgs(coreVersion) {
 
 /**
  * @typedef {Object} DkgStopBlocker
- * @property {string} reason `session`, `new-round`, `starting`, `upcoming`,
+ * @property {string} reason `session`, `new-round`, `unrecorded`, `upcoming`,
  *   `imminent`, `active-count` or `unreadable`
  * @property {string|number|null} [llmqType] LLMQ name, or Core's numeric id
  *   when dashmate does not know the type
@@ -280,14 +280,15 @@ export function getAnnouncedNonMemberDkgs(dkgInfo, height) {
 }
 
 /**
- * At its start block Core older than 24.1 erases the previous round's record,
- * computes the new session's members and only then records the session if
- * this node is one of them; nothing tells whether it is until then, however
- * long that takes. `quorum dkgstatus` lists every enabled quorum with the
- * start of its current session, so a session starting at the tip without a
- * record blocks that block, unless Core announced it without this node.
+ * At a session's start block Core older than 24.1 erases the previous round's
+ * record, computes the new session's members and only then records the
+ * session if this node is one of them; until then nothing tells whether it
+ * is, however long that takes. `quorum dkgstatus` lists every enabled quorum
+ * with the start of its current session, so a current session without a
+ * record blocks until its Commit phase ends, unless Core announced it
+ * without this node.
  */
-function getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs) {
+function getUnrecordedSessionBlockers(dkgStatus, height, knownNonMemberDkgs) {
   const connections = dkgStatus && dkgStatus.quorumConnections;
 
   if (!Array.isArray(connections)) {
@@ -295,23 +296,36 @@ function getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs) {
   }
 
   const sessions = Array.isArray(dkgStatus.session) ? dkgStatus.session : [];
-
-  return connections
-    .filter((quorum) => quorum && quorum.pQuorumBaseBlockIndex === height)
-    .filter(({ llmqType, quorumIndex }) => !knownNonMemberDkgs
-      .has(getDkgKey(llmqType, quorumIndex, height)))
-    .filter(({ llmqType, quorumIndex }) => !sessions.some((entry) => entry
+  const isRecorded = ({ llmqType, quorumIndex, pQuorumBaseBlockIndex: start }) => sessions
+    .some((entry) => entry
       && entry.llmqType === llmqType
       && entry.quorumIndex === quorumIndex
       && entry.status
-      && entry.status.quorumHeight === height))
-    .map(({ llmqType, quorumIndex }) => ({
-      reason: 'starting',
-      llmqType,
-      quorumIndex,
-      from: height,
-      until: height + 1,
-    }));
+      && entry.status.quorumHeight === start);
+
+  return connections
+    // A quorum whose current session has not started yet has no start block.
+    .filter((quorum) => quorum && isCount(quorum.pQuorumBaseBlockIndex)
+      && quorum.pQuorumBaseBlockIndex <= height)
+    .flatMap((quorum) => {
+      const { llmqType, quorumIndex, pQuorumBaseBlockIndex: start } = quorum;
+      const llmq = LLMQ_TYPES.find(({ name }) => name === llmqType);
+
+      if (!llmq) {
+        return [unreadable(`quorum dkgstatus quorumConnections ${llmqType}`)];
+      }
+
+      const until = start + getActiveDkgBlocks(llmq);
+
+      if (height >= until || isRecorded(quorum)
+        || knownNonMemberDkgs.has(getDkgKey(llmqType, quorumIndex, start))) {
+        return [];
+      }
+
+      return [{
+        reason: 'unrecorded', llmqType, quorumIndex, from: start, until,
+      }];
+    });
 }
 
 /**
@@ -322,9 +336,10 @@ function getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs) {
  *
  * All inputs must come from the same chain tip, `height`. Core older than
  * {@link MEMBERSHIP_ACTIVE_DKGS_CORE_VERSION} reports a session only after
- * its DKG worker has recorded it, after the start block connects. The start
- * block blocks until then; callers must also confirm a safe result a while
- * later, once Core has had time to replace records of previous rounds.
+ * its DKG worker has recorded it, after the start block connects; until then
+ * the session blocks unless Core announced it without this node. Callers
+ * must also confirm a safe result a while later, once Core has had time to
+ * replace records of previous rounds.
  *
  * Unreadable Core data blocks with no known end.
  *
@@ -363,7 +378,7 @@ export default function getDkgStopBlockers({
   ];
 
   if (!hasMembershipActiveDkgs(coreVersion)) {
-    blockers.push(...getStartingDkgBlockers(dkgStatus, height, knownNonMemberDkgs));
+    blockers.push(...getUnrecordedSessionBlockers(dkgStatus, height, knownNonMemberDkgs));
   }
 
   // Core 24.1+ counts every session this node is a member of, or whose
