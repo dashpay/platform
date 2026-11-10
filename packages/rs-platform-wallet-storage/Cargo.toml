@@ -48,7 +48,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
     "dashpay-contract",
     "dpns-contract",
 ], optional = true }
-rusqlite = { version = "0.38", features = [
+rusqlite = { version = "0.41", features = [
     "bundled",
     "backup",
     "blob",
@@ -56,12 +56,12 @@ rusqlite = { version = "0.38", features = [
     "limits",
     "trace",
 ], optional = true }
-refinery = { version = "=0.9.2", default-features = false, features = [
+refinery = { version = "=0.10.0", default-features = false, features = [
     "rusqlite",
 ], optional = true }
 # The migration adapter uses refinery's supported synchronous driver traits.
 # Match refinery's driver traits and applied-history timestamp types.
-refinery-core = { version = "=0.9.2", default-features = false, optional = true }
+refinery-core = { version = "=0.10.1", default-features = false, optional = true }
 time = { version = "=0.3.49", features = ["parsing"], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
@@ -164,7 +164,7 @@ windows-native-keyring-store = { version = "=1.0.0", optional = true }
 async-trait = "=0.1.89"
 dash-spv = { workspace = true, features = ["test-utils"] }
 # Safe SQLite fault injection for migration rollback tests.
-rusqlite = { version = "0.38", features = ["functions"] }
+rusqlite = { version = "0.41", features = ["functions"] }
 # `test-utils` reaches `provider_key_test_wallet`, shared with
 # `platform-wallet`'s own `rebuild_provider_key_account` tests — see its use
 # in `sqlite/provider_accounts.rs`'s test module. It also exposes

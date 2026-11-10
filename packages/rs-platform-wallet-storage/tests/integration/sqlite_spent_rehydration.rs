@@ -995,6 +995,7 @@ async fn assert_conflict_restart(case: ConflictCase) {
                 status,
                 proof: None,
                 operation_id: None,
+                shielded_recipient: None,
             };
             (out_point, entry)
         };

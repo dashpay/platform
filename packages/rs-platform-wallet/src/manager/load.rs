@@ -1515,6 +1515,7 @@ mod idempotent_load_tests {
                 dash_spv::test_utils::InstantLockFixture::new(Network::Testnet, &spend).unwrap();
             let lock = TrackedAssetLock {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point: OutPoint::new(spend.txid(), 0),
                 transaction: spend.clone(),
                 account_index: 0,
@@ -1921,6 +1922,7 @@ mod idempotent_load_tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: asset_lock,
                         account_index: 0,
@@ -2077,6 +2079,7 @@ mod idempotent_load_tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: asset_lock.clone(),
                         account_index: 0,
@@ -2435,6 +2438,7 @@ mod idempotent_load_tests {
                 asset_locks: {
                     let lock = TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: asset_lock.clone(),
                         account_index: 0,
@@ -2615,6 +2619,7 @@ mod idempotent_load_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: asset_lock.clone(),
                     account_index: 0,
@@ -2719,6 +2724,7 @@ mod idempotent_load_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: asset_lock,
                     account_index: 0,

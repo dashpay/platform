@@ -113,9 +113,14 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// funding transaction cannot resurrect a spent output. Mirrors
     /// `PersistenceCapabilities::CORE_HISTORY_RESTORE`; Rust only honours the
     /// declaration when the wallet-list load callbacks are wired.
-    public static let coreHistoryRestore: UInt64 = 1 << 14
+    public static let coreHistoryRestore: UInt64 = 1 << 16
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// The Orchard recipient of a shielded asset-lock funding survives store
+    /// and load with its row, so a resume after restart pays the confirmed
+    /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
+    /// Rust only honours the declaration when both recipient slots are wired.
+    public static let assetLockShieldedRecipients: UInt64 = 1 << 14
 
     public let version: UInt32
     public let bits: UInt64

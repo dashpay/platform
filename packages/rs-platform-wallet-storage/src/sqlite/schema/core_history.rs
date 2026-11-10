@@ -113,7 +113,7 @@ pub(crate) fn apply(
     apply_records(tx, wallet_id, cs, false)
 }
 
-/// Project live producer spends; V020 accounting backfill never calls this path.
+/// Project live producer spends; V021 accounting backfill never calls this path.
 pub(super) fn apply_live(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

@@ -3755,7 +3755,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     )
     .unwrap();
     migrations::runner()
-        .set_target(refinery::Target::Version(20))
+        .set_target(refinery::Target::Version(21))
         .run(&mut conn)
         .unwrap();
     assert_eq!(
@@ -3774,7 +3774,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     migrations::run(&mut conn).unwrap();
     assert!(
         !row_exists(&conn, &w, &input),
-        "V021 rescans mined sweep holds"
+        "V022 rescans mined sweep holds"
     );
 }
 

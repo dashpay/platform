@@ -323,10 +323,10 @@ mod tests {
 
             contract.increment_version();
             let estimated_fee = drive
-                .update_contract(&contract, block(2000), false, None, platform_version, None)
+                .update_contract(&contract, block(2000), false, None, platform_version)
                 .expect("expected the stateless update estimate to succeed");
             let actual_fee = drive
-                .update_contract(&contract, block(2000), true, None, platform_version, None)
+                .update_contract(&contract, block(2000), true, None, platform_version)
                 .expect("expected the update to succeed");
 
             assert!(

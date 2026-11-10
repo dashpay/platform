@@ -922,7 +922,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete a rewritten item");
         insert_document(
@@ -963,7 +962,6 @@ mod tests {
                 Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to update a rewritten item");
         assert_eq!(
@@ -1184,7 +1182,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete a document written at protocol version 13");
         insert_document(
@@ -1761,7 +1758,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to award the document");
 

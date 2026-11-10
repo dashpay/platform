@@ -61,15 +61,15 @@ members = [
 [workspace.dependencies]
 secp256k1 = { version = "=0.33.1", features = ["rand", "serde", "recovery"] }
 bincode = { package = "grovedb-bincode", version = "=2.1.0" }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21", default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21", default-features = false }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b19035f51905b156e8a628c10b71b85797ffa21" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1", default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1", default-features = false }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
 # TODO(upstream-merge): move this wallet-restore authorization pin to merged rust-dashcore dev after PR #1336 lands.
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "6f206d482d38def57b866f9dae1a6e98f84d25a9" }

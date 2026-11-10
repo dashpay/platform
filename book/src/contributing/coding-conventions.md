@@ -174,11 +174,14 @@ already owns a new schedule, amend that schedule instead of creating another
 generation nobody references.
 
 `fee_version_number` is a separate concept from the schedule generation: it
-keys persisted fee history and storage-refund behaviour, and it is stored in
-platform state. Inspect its consumers before changing it. `FEE_VERSION1` and
-`FEE_VERSION2` both carry `fee_version_number: 1` because storage rates did not
-change between them, only a fee group did. See the
-[Fee System Overview](../fees/overview.md).
+keys the fee history saved in platform state. Inspect its consumers before
+changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
+`fee_version_number: 1` because storage rates did not change between them, only
+a fee group did.
+
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 
@@ -225,8 +228,7 @@ The observed order in `drive` and `drive-abci` is: `&self`, domain inputs,
 `block_info`, mode flags (`apply`, `stateful`), the estimation map,
 `transaction`, the operations accumulator, `platform_version`. A new parameter
 goes up with the context items, never after `platform_version`. The same holds
-for fields on context structs such as parse contexts. The known exception is
-`previous_fee_versions`, which trails it on fee-returning methods.
+for fields on context structs such as parse contexts.
 
 Why: readers of a few hundred versioned signatures expect the closing
 parameter to be the version. Appending after it breaks that scan.
@@ -359,6 +361,22 @@ carries a code, and is serialized to the client. A `ProtocolError`, `DriveError`
 or `ExecutionError` means the build is wrong, data is corrupt, or an API was
 misused. Never return a consensus error for an internal failure or an internal
 error for a user mistake; the block loop treats the two classes differently.
+
+### Error enums stay exhaustive
+
+Do not mark the workspace's own error enums `#[non_exhaustive]`. A `match`
+that decides something per variant (transient or not, an FFI error code, a
+user-facing message) lists every variant instead of ending in `_`. A new
+variant must break the build at each such `match`, so the author of the
+variant sees every caller in the compiler output and handles it in the same
+PR. With
+`#[non_exhaustive]`, callers outside the defining crate need a wildcard arm,
+and that arm silently absorbs every later variant: the code still compiles and
+the new failure takes whatever path the wildcard picked, typically a generic
+error or a test panic, without anyone being told. The workspace crates ship
+together, so the compile break costs nothing for a consumer outside the crate.
+A wildcard is correct only over enums from other repositories that are
+`#[non_exhaustive]` upstream (for example `rusqlite::ErrorCode`).
 
 ## Module layout and style
 

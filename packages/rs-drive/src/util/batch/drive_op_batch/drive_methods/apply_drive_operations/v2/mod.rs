@@ -17,7 +17,6 @@ use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::util::estimated_layers::EstimatedLayers;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
@@ -102,7 +101,6 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
@@ -134,6 +132,8 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
+        let owner_handover =
+            DriveOperation::owner_handover(&operations, self, transaction, platform_version)?;
         // The document operations of a moderator's deletion go in a batch of their own only
         // when something else in the batch may free bytes someone is owed.
         let separates_forfeited_operations = forfeits_storage_refunds
@@ -220,10 +220,11 @@ impl Drive {
             } else {
                 Some(estimated_costs_only_with_layer_info.clone())
             };
-        self.apply_batch_low_level_drive_operations(
+        self.apply_batch_low_level_drive_operations_with_owner_handover(
             estimated_costs_only_with_layer_info,
             transaction,
             low_level_operations,
+            owner_handover,
             &mut cost_operations,
             &platform_version.drive,
         )?;
@@ -281,13 +282,11 @@ impl Drive {
             }
         }
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )
     }
 }

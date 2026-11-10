@@ -319,6 +319,7 @@ fn tc045_v004_widens_asset_lock_status_on_existing_db() {
     let outpoint_a = [1u8; 36];
     let lifecycle = encode_entry_for_test(&AssetLockEntry {
         operation_id: None,
+        shielded_recipient: None,
         out_point: OutPoint::null(),
         transaction: Transaction {
             version: 1,
@@ -505,9 +506,9 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // Check the purge before V021 intentionally removes recordless unspent rows.
+    // Check the purge before V022 intentionally removes recordless unspent rows.
     mig::runner()
-        .set_target(refinery::Target::Version(20))
+        .set_target(refinery::Target::Version(21))
         .run(&mut conn)
         .unwrap();
 
@@ -576,7 +577,7 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         )
         .unwrap(),
         0,
-        "V021 rebuilds recordless unspent outputs through rescan"
+        "V022 rebuilds recordless unspent outputs through rescan"
     );
 }
 

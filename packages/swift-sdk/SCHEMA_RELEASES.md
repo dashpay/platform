@@ -25,9 +25,10 @@ frozen V3 exactly, entity hashes and checksum alike. The alias remains supported
 when the live graph changes; other stores labelled `2.0.0` fail closed.
 
 V5 adds the `PersistentTransactionAccounting` and `PersistentCoreInstantLock`
-entities and the `PersistentWallet.transactionAccountingBackfilled` attribute
-(default `false`) through a lightweight migration. Both entities belong to the same unreleased
-V5 graph; V4 remains frozen. `PersistentCoreInstantLock` stores raw consensus
+entities, the `PersistentWallet.transactionAccountingBackfilled` attribute
+(default `false`) and the optional `PersistentAssetLock.shieldedRecipientRaw43`
+attribute (default `nil`) through a lightweight migration. All of them belong to
+the same unreleased V5 graph; V4 remains frozen. `PersistentCoreInstantLock` stores raw consensus
 bytes per `(networkRaw, walletId, txid)` for Rust's load-time SPV verification
 after restore; storing the bytes does not establish finality.
 

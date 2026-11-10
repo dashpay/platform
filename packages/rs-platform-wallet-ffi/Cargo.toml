@@ -67,6 +67,7 @@ zeroize = { version = "1", features = ["derive"] }
 [dev-dependencies]
 dash-spv = { workspace = true, features = ["test-utils"] }
 key-wallet-manager = { workspace = true, features = ["test-utils"] }
+tempfile = "3.27.0"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 

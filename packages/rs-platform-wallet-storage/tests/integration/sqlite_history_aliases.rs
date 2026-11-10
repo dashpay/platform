@@ -47,7 +47,7 @@ fn migrated_fixture(
         conn.execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
              DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant; \
-             DELETE FROM refinery_schema_history WHERE version >= 20;",
+             DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
         .unwrap();
         for line in fixture.lines() {
@@ -76,7 +76,7 @@ fn migrated_fixture(
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
     }
     drop(persister);
     let migrated = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();

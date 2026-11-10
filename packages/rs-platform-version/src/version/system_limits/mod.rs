@@ -45,7 +45,7 @@ pub struct SystemLimits {
     /// this does not count.
     pub max_private_document_entry_size: Option<u32>,
     /// The bytes a compacted chunk of a private document store is kept near (protocol version
-    /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
     /// document type. Read with the two chunk power bounds below by Drive's
     /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
     /// type's store; the chunk power it picks is committed into the store, so a store keeps the
@@ -59,6 +59,11 @@ pub struct SystemLimits {
     /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
     /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
     pub private_document_store_max_chunk_power: Option<u8>,
+    /// Most entries one `PrivateDocumentCreateFromShieldedPool` transition may append to a
+    /// private document type's store (protocol version 15): 16 from `SYSTEM_LIMITS_V5`, `None`
+    /// in the earlier tables, which refuse the transition before validating it. Read by the
+    /// transition's basic structure 0.
+    pub max_private_document_entries_per_transition: Option<u16>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -579,10 +584,11 @@ mod tests {
     fn mock_platform_versions_carry_the_same_documents_batch_cap() {
         use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
         use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
         use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
 
-        let versions =
-            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        let versions = PLATFORM_TEST_VERSIONS
+            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
         assert!(
             !versions.is_empty(),
             "the mock version registry is empty; this test would assert nothing"

@@ -77,6 +77,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
             amount: 10_000,
             status: AssetLockStatus::RecoveredFromChain,
             proof: Some(proof),
+            shielded_recipient: None,
         },
         BTreeMap::from([(0, keys)]),
     )
@@ -93,6 +94,7 @@ struct RecoveryPersistence {
     fail_flush: AtomicBool,
     commits_inline: AtomicBool,
     fail_load: AtomicBool,
+    records_recipients: AtomicBool,
 }
 
 impl PlatformWalletPersistence for RecoveryPersistence {
@@ -100,7 +102,12 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         self.commits_inline.load(Ordering::SeqCst)
     }
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
-        PersistenceCapabilities::WALLET_DRAIN
+        if self.records_recipients.load(Ordering::SeqCst) {
+            PersistenceCapabilities::WALLET_DRAIN
+                .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
+        } else {
+            PersistenceCapabilities::WALLET_DRAIN
+        }
     }
     fn store(
         &self,
@@ -111,7 +118,13 @@ impl PlatformWalletPersistence for RecoveryPersistence {
             return Err(PersistenceError::backend("store failed"));
         }
         if let Some(cs) = cs.asset_locks {
-            self.staged.lock().unwrap().extend(cs.asset_locks);
+            let mut staged = self.staged.lock().unwrap();
+            staged.extend(cs.asset_locks);
+            // A removal cancels a row that is still only staged; committed
+            // rows are kept so tests can read what a broadcast saw.
+            for out_point in &cs.removed {
+                staged.remove(out_point);
+            }
         }
         if self.store_commits_inline() {
             self.commit_staged();
@@ -147,6 +160,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                         amount: row.amount_duffs,
                         status: row.status.clone(),
                         proof: row.proof.clone(),
+                        shielded_recipient: row.shielded_recipient,
                     },
                 )
             })
@@ -232,6 +246,7 @@ async fn signed_wallet_fixture(
         // exists for `should_refuse_drain_on_a_buffered_persistence_backend`.
         commits_inline: AtomicBool::new(true),
         fail_load: AtomicBool::new(false),
+        records_recipients: AtomicBool::new(true),
     });
     let sdk = Arc::new(
         dash_sdk::SdkBuilder::new_mock()
@@ -699,6 +714,7 @@ async fn should_refuse_drain_on_a_buffered_persistence_backend() {
                 },
                 lock.funding_type,
                 0,
+                None,
                 &signer,
                 None,
             )
@@ -902,4 +918,336 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     let snapshot = operation.snapshot();
     assert_eq!(snapshot.state, AssetLockOperationState::NotSent);
     assert!(snapshot.out_point.is_none());
+}
+
+/// A generic outpoint resume that names a different recipient than the row
+/// recorded is refused before any funding resolution: no send, no staged
+/// write, the row unchanged.
+#[tokio::test]
+async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recorded = crate::test_support::orchard_address_fixture(0x51);
+    let other = crate::test_support::orchard_address_fixture(0x52);
+    lock.shielded_recipient = Some(recorded.to_raw_bytes());
+    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: lock.out_point,
+                consume_invitation_voucher: false,
+            },
+            vec![(other, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: r,
+                requested: q,
+            } if *out_point == lock.out_point && *r == recorded.to_raw_bytes() && *q == other.to_raw_bytes()
+        ),
+        "{error}"
+    );
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::RecoveredFromChain
+    );
+    assert_eq!(
+        live_status(&wallet, &lock.out_point).await,
+        AssetLockStatus::RecoveredFromChain
+    );
+}
+
+/// A repeated-UUID drain that names a different recipient is refused the
+/// same way, and the operation stays Pending with its outpoint: the lock
+/// exists and nothing was sent, so a later resume with the recorded
+/// recipient can still complete it.
+#[tokio::test]
+async fn should_refuse_a_repeated_uuid_drain_to_a_recipient_other_than_the_recorded_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    let recorded = crate::test_support::orchard_address_fixture(0x53);
+    let other = crate::test_support::orchard_address_fixture(0x54);
+    lock.shielded_recipient = Some(recorded.to_raw_bytes());
+    let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+    let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            },
+            vec![(other, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            PlatformWalletError::AssetLockRecipientMismatch { .. }
+        ),
+        "{error}"
+    );
+    let snapshot = operation.snapshot();
+    assert_eq!(snapshot.state, AssetLockOperationState::Pending);
+    assert_eq!(snapshot.out_point, Some(lock.out_point));
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_ne!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::DrainCompleted
+    );
+    assert_eq!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await
+            .unwrap()
+            .state,
+        AssetLockOperationState::Pending
+    );
+}
+
+/// A row tracked before recipients were recorded carries none and accepts
+/// the resuming caller's recipient: the resume gets past the recipient check
+/// (and fails later, at the network, in this fixture).
+#[tokio::test]
+async fn should_accept_the_callers_recipient_for_a_legacy_row_without_one() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    assert_eq!(lock.shielded_recipient, None);
+    let recipient = crate::test_support::orchard_address_fixture(0x55);
+    let (wallet, _persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: lock.out_point,
+                consume_invitation_voucher: false,
+            },
+            vec![(recipient, None)],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            Some(std::time::Duration::from_millis(10)),
+            None,
+        )
+        .await
+        .unwrap_err();
+    // The recipient check passed and funding resolution ran: this fixture's
+    // lock address is not in the funding account, which is where it fails.
+    assert!(
+        matches!(error, PlatformWalletError::AssetLockTransaction(_)),
+        "a legacy row must not refuse the caller's recipient: {error}"
+    );
+}
+
+/// A fresh shielded funding records its recipient on the row before the
+/// lock is dispatched: the drain's durable checkpoint and the typed-amount
+/// path's flushed row both carry it, even when the broadcast is then refused.
+/// The typed-amount run is on a buffered backend, where only a flush commits.
+#[tokio::test]
+async fn should_record_the_recipient_with_the_lock_before_dispatch() {
+    for drain in [false, true] {
+        let (mut lock, keys) = drain_lock_fixture();
+        lock.operation_id = None;
+        let recipient = crate::test_support::orchard_address_fixture(0x56);
+        let (wallet, persistence, coordinator, _dir, signer) =
+            signed_wallet_fixture(&lock, keys).await;
+        persistence.commits_inline.store(drain, Ordering::SeqCst);
+        let coordinator = Arc::new(coordinator);
+        let prover = super::prover::CachedOrchardProver::new();
+        let operation = Arc::new(AssetLockOperationContext::new([0x57; 16]));
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        let funding = if drain {
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            }
+        } else {
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            }
+        };
+        wallet
+            .shielded_fund_from_asset_lock(
+                &coordinator,
+                funding,
+                vec![(recipient, None)],
+                &signer,
+                &prover,
+                None,
+                0,
+                None,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a lock the SPV client refuses to send must fail the call");
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        let stored = persistence
+            .committed
+            .lock()
+            .unwrap()
+            .get(&seen[0])
+            .cloned()
+            .expect("the built lock's row was committed before the broadcast");
+        assert_eq!(
+            stored.shielded_recipient,
+            Some(recipient.to_raw_bytes()),
+            "drain={drain}"
+        );
+        assert_eq!(stored.operation_id, drain.then_some([0x57; 16]));
+    }
+}
+
+/// One typed-amount shielded funding against the fixture, returning the call's
+/// error and the outpoints the caller was told about.
+async fn fund_typed_amount(
+    wallet: &PlatformWallet,
+    coordinator: &Arc<NetworkShieldedCoordinator>,
+    signer: &WalletSigner,
+    recipient: dpp::address_funds::OrchardAddress,
+) -> (PlatformWalletError, Vec<OutPoint>) {
+    let prover = super::prover::CachedOrchardProver::new();
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            coordinator,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            },
+            vec![(recipient, None)],
+            signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await
+        .expect_err("the fixture's SPV client never sends");
+    (error, seen.into_inner().unwrap())
+}
+
+/// A typed-amount funding whose recipient cannot be made durable stops before
+/// the broadcaster: a rejected store and a rejected flush of a buffered store
+/// both fail the call with a persistence error, leave the lock untracked and
+/// uncommitted, and hand the inputs back so the next attempt builds again.
+/// The abandoned row of a failed flush is withdrawn from the buffer, so the
+/// next successful flush does not commit it.
+#[tokio::test]
+async fn should_abort_typed_amount_funding_when_the_recipient_cannot_be_made_durable() {
+    for fail_flush in [false, true] {
+        let (mut lock, keys) = drain_lock_fixture();
+        lock.operation_id = None;
+        let recipient = crate::test_support::orchard_address_fixture(0x58);
+        let (wallet, persistence, coordinator, _dir, signer) =
+            signed_wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        persistence.commits_inline.store(false, Ordering::SeqCst);
+        let switch = if fail_flush {
+            &persistence.fail_flush
+        } else {
+            &persistence.fail_store
+        };
+
+        switch.store(true, Ordering::SeqCst);
+        let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        assert!(
+            matches!(&error, PlatformWalletError::Persistence(message)
+                if message.contains("shielded recipient was not made durable")),
+            "fail_flush={fail_flush}: {error}"
+        );
+        assert_eq!(seen.len(), 1, "fail_flush={fail_flush}");
+        assert!(!wallet
+            .asset_locks
+            .list_tracked_locks()
+            .await
+            .iter()
+            .any(|tracked| tracked.out_point == seen[0]));
+        assert!(!persistence.committed.lock().unwrap().contains_key(&seen[0]));
+
+        // The inputs were handed back: the retry builds a lock again and gets
+        // as far as the broadcaster.
+        switch.store(false, Ordering::SeqCst);
+        let (error, retried) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+        assert!(
+            !matches!(error, PlatformWalletError::Persistence(_)),
+            "fail_flush={fail_flush}: {error}"
+        );
+        assert_eq!(retried.len(), 1, "fail_flush={fail_flush}");
+        assert_ne!(retried[0], seen[0]);
+        assert!(
+            !persistence.committed.lock().unwrap().contains_key(&seen[0]),
+            "fail_flush={fail_flush}: the abandoned row was committed by a later flush"
+        );
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&retried[0]].shielded_recipient,
+            Some(recipient.to_raw_bytes())
+        );
+    }
+}
+
+/// A backend that cannot record a recipient keeps the best-effort row every
+/// other funding has: a rejected store does not stop the dispatch.
+#[tokio::test]
+async fn should_keep_best_effort_dispatch_on_a_backend_without_recipient_support() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = crate::test_support::orchard_address_fixture(0x59);
+    let (wallet, persistence, coordinator, _dir, signer) = signed_wallet_fixture(&lock, keys).await;
+    let coordinator = Arc::new(coordinator);
+    persistence
+        .records_recipients
+        .store(false, Ordering::SeqCst);
+    persistence.fail_store.store(true, Ordering::SeqCst);
+
+    let (error, seen) = fund_typed_amount(&wallet, &coordinator, &signer, recipient).await;
+
+    assert!(
+        !matches!(error, PlatformWalletError::Persistence(_)),
+        "{error}"
+    );
+    assert_eq!(seen.len(), 1);
 }

@@ -215,6 +215,7 @@ async fn should_verify_tracked_funding_before_atomic_history_settlement() {
                         0,
                     ))),
                     operation_id: None,
+                    shielded_recipient: None,
                 },
             )]),
             ..Default::default()
@@ -316,6 +317,7 @@ async fn should_atomically_withhold_final_asset_lock_input_at_nonzero_vout_and_r
                     status,
                     proof: None,
                     operation_id: Some([7; 16]),
+                    shielded_recipient: None,
                 },
             )]
             .into(),

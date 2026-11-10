@@ -159,7 +159,7 @@ fn transaction_height_and_blob(conn: &Connection, wallet: &WalletId) -> (Option<
     .unwrap()
 }
 
-/// Assert V021 rewinds mined Core data while retaining wallet and identity state.
+/// Assert V022 rewinds mined Core data while retaining wallet and identity state.
 fn assert_migrated_data(conn: &Connection) {
     let full = wid(FULL_WALLET);
     assert_eq!(
@@ -186,7 +186,7 @@ fn assert_migrated_data(conn: &Connection) {
         "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
         &full,
     );
-    assert_eq!(utxos, 0, "V021 rescans mined outputs from birth");
+    assert_eq!(utxos, 0, "V022 rescans mined outputs from birth");
     assert_eq!(
         count(
             conn,
@@ -194,7 +194,7 @@ fn assert_migrated_data(conn: &Connection) {
             &full
         ),
         0,
-        "V021 rescans mined history with no retained unmined claims"
+        "V022 rescans mined history with no retained unmined claims"
     );
     let (synced, birth): (i64, i64) = conn.query_row(
         "SELECT s.synced_height, w.birth_height FROM core_sync_state s JOIN wallets w USING(wallet_id) WHERE wallet_id=?1",
@@ -259,17 +259,17 @@ fn v4_2_dev_database_opens_and_migrates_forward() {
     let record: key_wallet::managed_account::transaction_record::TransactionRecord =
         platform_wallet_storage::sqlite::schema::blob::decode(&original_transaction.1).unwrap();
     assert_eq!(record.height(), Some(200));
-    // Pin preservation through V020 before the deliberate V021 rescan.
+    // Pin preservation through V021 before the deliberate V022 rescan.
     {
         let mut conn = Connection::open(&path).unwrap();
         mig::runner()
-            .set_target(refinery::Target::Version(20))
+            .set_target(refinery::Target::Version(21))
             .run(&mut conn)
             .unwrap();
         assert_eq!(
             transaction_height_and_blob(&conn, &wid(FULL_WALLET)),
             original_transaction,
-            "V010 rebuild and V020 accounting preserve this fixture byte-for-byte"
+            "V010 rebuild and V021 accounting preserve this fixture byte-for-byte"
         );
         assert_eq!(
             count(
@@ -346,7 +346,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
 
     let mut conn = Connection::open(&path).unwrap();
     mig::runner()
-        .set_target(refinery::Target::Version(20))
+        .set_target(refinery::Target::Version(21))
         .run(&mut conn)
         .unwrap();
     let (height, record_blob): (Option<i64>, Option<Vec<u8>>) = conn
@@ -393,7 +393,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
             &wallet_id
         ),
         0,
-        "V021 removes the height-only record when its funding is rescanned"
+        "V022 removes the height-only record when its funding is rescanned"
     );
 }
 

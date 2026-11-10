@@ -126,7 +126,6 @@ fn insert_post(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -267,7 +266,6 @@ fn should_preallocate_trees_bound_to_the_referenced_owner_id() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert author like");
     level.push(vec![0]);
@@ -653,7 +651,6 @@ fn should_not_attach_flags_to_preallocated_trees_of_a_permanent_contract() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert post with owned flags");
 
@@ -689,7 +686,6 @@ fn should_not_attach_flags_to_preallocated_trees_of_a_permanent_contract() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert like with owned flags");
 
@@ -757,7 +753,6 @@ fn should_attach_creator_flags_to_preallocated_trees_of_a_deletable_contract() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert post with owned flags");
 
@@ -807,7 +802,6 @@ fn should_not_emit_partial_paths_when_a_bound_property_is_absent() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert note")
     };

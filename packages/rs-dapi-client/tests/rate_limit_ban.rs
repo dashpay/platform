@@ -5,8 +5,9 @@
 mod common;
 
 use common::ScriptedRequest;
+use dapi_grpc::platform::v0::{GetBlocksRequest, GetOwnerTransactionsInBlockRequest};
 use dapi_grpc::tonic::metadata::MetadataValue;
-use rs_dapi_client::transport::{AppliedRequestSettings, TransportError};
+use rs_dapi_client::transport::{AppliedRequestSettings, TransportError, TransportRequest};
 use rs_dapi_client::{
     update_address_ban_status, Address, AddressList, CanRetry, DapiClient, DapiClientError,
     DapiRequestExecutor, ExecutionError, ExecutionResult, RequestSettings,
@@ -45,6 +46,7 @@ fn test_resource_exhausted_with_header_bans_for_advertised_period() {
         .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(status)),
         retries: 0,
         address: Some(addr.clone()),
@@ -86,6 +88,7 @@ fn test_ratelimit_reset_clamped_to_max() {
         .insert("ratelimit-reset", MetadataValue::try_from("9999").unwrap());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(status)),
         retries: 0,
         address: Some(addr.clone()),
@@ -132,6 +135,7 @@ fn test_zero_and_garbage_header_falls_back_to_ladder() {
         }
 
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(status)),
             retries: 0,
             address: Some(addr.clone()),
@@ -184,6 +188,7 @@ fn test_missing_header_falls_back_to_ladder() {
     address_list.add(addr.clone());
 
     let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc(
             dapi_grpc::tonic::Status::resource_exhausted("429"),
         )),
@@ -364,6 +369,7 @@ fn test_rate_limit_ban_duration_trait_delegation() {
 
     // ExecutionError delegates.
     let ee: ExecutionError<DapiClientError> = ExecutionError {
+        possibly_accepted: false,
         inner: DapiClientError::Transport(TransportError::Grpc({
             let mut s3 = dapi_grpc::tonic::Status::resource_exhausted("429");
             s3.metadata_mut()
@@ -452,5 +458,18 @@ async fn rate_limited_node_banned_for_advertised_window_via_execute() {
     assert!(
         lo >= 299.5 && hi <= 300.5,
         "ban window must be ~300 s (ratelimit-reset header); got lo={lo:.3}s hi={hi:.3}s"
+    );
+}
+
+/// A node refuses these when its limits are reached, which says nothing about its health.
+#[test]
+fn should_not_ban_a_node_for_failing_a_block_query() {
+    assert_eq!(
+        GetBlocksRequest::SETTINGS_OVERRIDES.ban_failed_address,
+        Some(false)
+    );
+    assert_eq!(
+        GetOwnerTransactionsInBlockRequest::SETTINGS_OVERRIDES.ban_failed_address,
+        Some(false)
     );
 }

@@ -1723,6 +1723,7 @@ mod tests {
         });
         let tracked = TrackedAssetLock {
             operation_id: None,
+            shielded_recipient: None,
             out_point,
             transaction: asset_lock,
             account_index: 0,

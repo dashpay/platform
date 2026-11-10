@@ -33,11 +33,7 @@ pub enum AutoBackupOperation {
 }
 
 /// Errors produced by the wallet-storage SQLite backend.
-///
-/// `#[non_exhaustive]`: new failure modes get their own variant, so matches
-/// outside this crate need a wildcard arm.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
 pub enum WalletStorageError {
     /// Persisted authorization uses rules this wallet cannot verify.
     #[error("cannot verify pending spend authorization")]

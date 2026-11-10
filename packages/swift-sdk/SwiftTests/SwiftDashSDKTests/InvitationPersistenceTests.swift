@@ -72,6 +72,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // `recorded_transactions` for the load replay.
             | PlatformWalletPersistenceCapabilities.coreHistoryRestore
             | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+            // Shielded recipients: the handler wires both recipient slots and
+            // lands the bytes on `PersistentAssetLock.shieldedRecipientRaw43`.
+            | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
 
         XCTAssertEqual(
             capabilities.version,

@@ -9,6 +9,7 @@ pub(crate) mod finalize_task;
 mod group;
 mod identity;
 mod prefunded_specialized_balance;
+mod private_document;
 mod shielded;
 mod system;
 mod token;
@@ -38,6 +39,7 @@ pub use document::UpdateOperationInfo;
 pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
+pub use private_document::PrivateDocumentOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
@@ -117,6 +119,8 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// An operation on the store of a private document type
+    PrivateDocumentOperation(PrivateDocumentOperationType),
     /// A vote poll operation: the opening of a yes/no vote poll
     VotePollOperation(VotePollOperationType),
     /// A single low level groveDB operation
@@ -197,6 +201,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     platform_version,
                 )
             }
+            DriveOperation::PrivateDocumentOperation(private_document_operation_type) => {
+                private_document_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
             DriveOperation::VotePollOperation(vote_poll_operation_type) => vote_poll_operation_type
                 .into_low_level_drive_operations(
                     drive,
@@ -269,6 +282,29 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
+    /// The batch's owner handover (protocol version 15): `None` for a batch that updates no
+    /// document, and otherwise the owners of the contracts offering gas sponsorship on the
+    /// documents it updates, for whom an owner change is a full handover.
+    pub(crate) fn owner_handover(
+        operations: &[DriveOperation],
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
+        let mut owner_handover = None;
+        for operation in operations {
+            if let DriveOperation::DocumentOperation(document_operation) = operation {
+                document_operation.add_to_owner_handover(
+                    &mut owner_handover,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+        Ok(owner_handover)
+    }
+
     /// Whether the batch this operation is in refunds nobody for the storage its document
     /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
@@ -860,7 +896,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert contract and document");
 
@@ -980,7 +1015,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1091,7 +1125,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1226,7 +1259,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1337,7 +1369,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1397,7 +1428,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -1554,7 +1584,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1608,7 +1637,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -2067,7 +2095,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("add token balance");
         }
@@ -2121,7 +2148,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2162,7 +2188,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(
