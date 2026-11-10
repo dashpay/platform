@@ -432,6 +432,8 @@ pub(crate) mod json_convertible_tests {
             json!(Identifier::new([2; 32]).to_string(Encoding::Base58))
         );
         assert_eq!(json["version"], json!(2));
+        // A delta that keeps the stored config writes a null, not an absent field
+        assert_eq!(json.get("config"), Some(&serde_json::Value::Null));
         assert_eq!(json["newGroups"]["0"]["requiredPower"], json!(2));
         assert_eq!(
             json["newGroups"]["0"]["members"][Identifier::new([3; 32]).to_string(Encoding::Base58)],

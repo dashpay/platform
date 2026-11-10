@@ -96,7 +96,8 @@ export interface DataContractUpdateTransitionV1JSON {
     dataContractId: string;
     ownerId: string;
     version: number;
-    config?: DataContractConfig;
+    /** `null` when the delta keeps the stored config. */
+    config?: DataContractConfig | null;
     updatedSchemaDefs?: Record<string, object>;
     newSchemaDefs?: Record<string, object>;
     updatedDocumentSchemas?: Record<string, object>;

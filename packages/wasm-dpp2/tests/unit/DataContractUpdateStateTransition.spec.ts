@@ -266,6 +266,8 @@ describe('DataContractUpdateTransition', () => {
       expect(json.dataContractId).to.equal(value.id);
       expect(json.ownerId).to.equal(value.ownerId);
       expect(json.version).to.equal(2);
+      // A delta that keeps the stored config writes a null
+      expect(json.config).to.equal(null);
       expect(json.newGroups['0'].requiredPower).to.equal(2);
       expect(json.addKeywords).to.deep.equal(['wallet']);
       expect(json.description).to.deep.equal({ set: 'a described contract' });
