@@ -239,15 +239,26 @@ struct PrivateRepliesPendingSnapshot: Equatable {
 /// store did not open, and only then reads the readiness it shows: the
 /// readiness is read after the attempt, never cached from before it. While
 /// the payments stay unrestored (a deferred restoration completes later,
-/// changing nothing a view observes), the view refreshes again on a bounded
-/// timer, so the gate lifts without a bind, a restart or a submitted
-/// request. The views change no hold themselves.
+/// changing nothing a view observes but the end of the shielded scan that
+/// held the store), the view keeps refreshing on a timer for as long as it
+/// is shown, and again when a shielded sync pass ends, so the gate lifts
+/// without a bind, a restart or a submitted request. The views change no
+/// hold themselves.
 enum PrivatePaymentsRecovery {
-    /// How many times a view refreshes again on its own while the payments
-    /// stay unrestored.
-    static let recheckLimit = 20
-    /// How long a view waits before it refreshes again.
-    static let recheckInterval: Duration = .seconds(3)
+    /// The cadence of the automatic refreshes while the payments stay
+    /// unrestored: every `fastRecheckInterval` for the first `fastRechecks`
+    /// of them (a minute), then every `slowRecheckInterval`, for as long as
+    /// the view is shown. It never stops on a count: a shielded scan can hold
+    /// the store for minutes, and the wallet runs a restoration it deferred
+    /// only once the scan frees it. Each refresh is local and cheap, reads of
+    /// in-memory wallet state and a repeat `configureShielded` that checks
+    /// which wallets are still held and queues at most one deferred
+    /// restoration per wallet, with no network call, so an open-ended poll at
+    /// this cadence costs little. It stops when the readiness reads restored
+    /// or the view goes away; a view for another identity starts its own.
+    static let fastRechecks = 20
+    static let fastRecheckInterval: Duration = .seconds(3)
+    static let slowRecheckInterval: Duration = .seconds(15)
 
     /// Whether a refresh asks the wallet to retry before it reads the
     /// readiness it shows: the store did not open last time, or the last
@@ -256,12 +267,31 @@ enum PrivatePaymentsRecovery {
         storeFailure != nil || readiness?.privatePaymentsRestored == false
     }
 
-    /// Whether a view refreshes again on its own after `attempt` automatic
-    /// refreshes: the payments are still not restored and the limit is not
-    /// reached. A failed read (nil) is left to the next refresh the view
-    /// makes anyway.
-    static func rechecks(after readiness: PrivateContactReadiness?, attempt: Int) -> Bool {
-        readiness?.privatePaymentsRestored == false && attempt < recheckLimit
+    /// The pause before the next automatic refresh after `attempt` of them,
+    /// or nil when there is none: the readiness reads restored, or no read
+    /// succeeded yet (left to the refresh the view makes anyway).
+    static func recheckDelay(after readiness: PrivateContactReadiness?, attempt: Int) -> Duration? {
+        guard readiness?.privatePaymentsRestored == false else { return nil }
+        return attempt < fastRechecks ? fastRecheckInterval : slowRecheckInterval
+    }
+
+    /// Wait for the next automatic refresh and say whether to make it: false
+    /// at once when none is due (`recheckDelay`), false when the wait is cut
+    /// short (`sleep` throws, as the view's task does when the view goes
+    /// away), true otherwise. The views pass `Task.sleep`.
+    @MainActor
+    static func waitForRecheck(
+        after readiness: PrivateContactReadiness?,
+        attempt: Int,
+        sleep: (Duration) async throws -> Void
+    ) async -> Bool {
+        guard let delay = recheckDelay(after: readiness, attempt: attempt) else { return false }
+        do {
+            try await sleep(delay)
+        } catch {
+            return false
+        }
+        return !Task.isCancelled
     }
 
     /// One refresh. `lastReadiness` is the readiness the view shows now;

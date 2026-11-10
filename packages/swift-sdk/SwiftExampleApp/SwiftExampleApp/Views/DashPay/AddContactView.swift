@@ -82,7 +82,7 @@ struct AddContactView: View {
     @State private var shieldedStoreFailure: String?
 
     /// The automatic refreshes made since the wallet's private payments were
-    /// last read restored (`PrivatePaymentsRecovery.rechecks`).
+    /// last read restored (`PrivatePaymentsRecovery.recheckDelay`).
     @State private var readinessRechecks = 0
 
     /// A private sync the footer started is running.
@@ -181,9 +181,15 @@ struct AddContactView: View {
             // observes.
             .task(id: readinessRechecks) {
                 guard readinessRechecks > 0 else { return }
-                try? await Task.sleep(for: PrivatePaymentsRecovery.recheckInterval)
-                guard !Task.isCancelled else { return }
-                reloadRecipientPending()
+                let due = await PrivatePaymentsRecovery.waitForRecheck(
+                    after: recipientPending.readiness, attempt: readinessRechecks - 1,
+                    sleep: { try await Task.sleep(for: $0) })
+                if due { reloadRecipientPending() }
+            }
+            // A deferred restoration runs once the shielded scan holding the store
+            // ends: refresh then too, ahead of the timer.
+            .onChange(of: shieldedService.isSyncing) { _, syncing in
+                if !syncing { reloadRecipientPending() }
             }
             .onChange(of: shieldedService.isBound) { _, _ in reloadRecipientPending() }
             .navigationBarTitleDisplayMode(.inline)
@@ -488,7 +494,7 @@ struct AddContactView: View {
     /// the wallet is asked to retry a restoration first when its payments are
     /// not restored, and the readiness shown is read after that), then
     /// whether it holds the pair with the resolved recipient for a private
-    /// request, and refresh again on a bounded timer while the payments stay
+    /// request, and keep refreshing on a timer while the payments stay
     /// unrestored.
     private func reloadRecipientPending() {
         let contactIds = resolvedRecipient.map { [$0] } ?? []
@@ -506,7 +512,7 @@ struct AddContactView: View {
             privateRepliesPending(wallet: wallet, identityId: identityId, contactIds: contactIds),
             for: contactIds
         )
-        if PrivatePaymentsRecovery.rechecks(after: recipientPending.readiness, attempt: readinessRechecks) {
+        if PrivatePaymentsRecovery.recheckDelay(after: recipientPending.readiness, attempt: readinessRechecks) != nil {
             readinessRechecks += 1
         } else if recipientPending.readiness?.privatePaymentsRestored == true {
             readinessRechecks = 0

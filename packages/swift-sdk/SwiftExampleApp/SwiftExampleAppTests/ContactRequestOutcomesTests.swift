@@ -316,7 +316,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertNil(refreshed.storeFailure)
         XCTAssertFalse(snapshot.allowsSubmission(to: contact))
         XCTAssertEqual(snapshot.restoreFailure, "the journal could not be read")
-        XCTAssertTrue(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 0))
+        XCTAssertNotNil(PrivatePaymentsRecovery.recheckDelay(after: snapshot.readiness, attempt: 0))
 
         // The failure was transient: the next refresh asks first, the retry
         // restores, and the readiness shown is the one read after it.
@@ -328,7 +328,7 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertFalse(snapshot.isRestoringPrivatePayments)
         XCTAssertNil(snapshot.restoreFailure)
         XCTAssertTrue(snapshot.allowsSubmission(to: contact), "the gate lifts on the refresh alone")
-        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 1))
+        XCTAssertNil(PrivatePaymentsRecovery.recheckDelay(after: snapshot.readiness, attempt: 1))
     }
 
     /// A refresh asks for the retry before it reads the readiness it shows:
@@ -380,12 +380,13 @@ final class ContactRequestOutcomesTests: XCTestCase {
         XCTAssertNil(refreshed.storeFailure)
     }
 
-    /// A restoration the wallet deferred behind a busy store completes later,
-    /// changing nothing the view observes: the view refreshes again on its
-    /// own, bounded, while the payments stay unrestored, and the refresh after
-    /// the deferred restoration lifts the gate.
+    /// A restoration the wallet deferred behind a scan that holds the store
+    /// for minutes: the view keeps refreshing past the first minute (every
+    /// 3 s for 20 refreshes, then every 15 s, with no last one), and the
+    /// refresh after the deferred restoration completes re-enables submission
+    /// and schedules no more.
     @MainActor
-    func testShouldRefreshAgainWhileARestorationIsDeferred() {
+    func testShouldKeepRefreshingWhileARestorationStaysDeferred() async {
         let contact = Data(repeating: 1, count: 32)
         var deferredDone = false
         var snapshot = PrivateRepliesPendingSnapshot()
@@ -393,25 +394,45 @@ final class ContactRequestOutcomesTests: XCTestCase {
         let read = { () -> (readiness: PrivateContactReadiness?, restoreFailure: String?) in
             (self.readiness(restored: deferredDone), nil)
         }
-        var refreshed = PrivatePaymentsRecovery.refresh(
-            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
-            configureAgain: { nil })
-        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
-        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
-        XCTAssertTrue(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 0))
-        XCTAssertFalse(
-            PrivatePaymentsRecovery.rechecks(
-                after: snapshot.readiness, attempt: PrivatePaymentsRecovery.recheckLimit),
-            "bounded")
-        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: nil, attempt: 0))
-
-        deferredDone = true
-        refreshed = PrivatePaymentsRecovery.refresh(
-            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
-            configureAgain: { nil })
-        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        var pauses: [Duration] = []
+        var refreshes = 0
+        // Well past the first minute: 200 automatic refreshes, about 46 minutes.
+        for attempt in 0..<200 {
+            let refreshed = PrivatePaymentsRecovery.refresh(
+                lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
+                configureAgain: { nil })
+            snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+            refreshes += 1
+            if attempt == 150 { deferredDone = true }
+            let due = await PrivatePaymentsRecovery.waitForRecheck(
+                after: snapshot.readiness, attempt: attempt, sleep: { pauses.append($0) })
+            if !due { break }
+        }
+        XCTAssertEqual(refreshes, 152, "it kept refreshing until the restoration completed")
         XCTAssertTrue(snapshot.allowsSubmission(to: contact))
-        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 1))
+        XCTAssertEqual(pauses.count, 151, "no pause once the payments read restored")
+        XCTAssertEqual(Array(pauses.prefix(20)), Array(repeating: .seconds(3), count: 20))
+        XCTAssertEqual(Set(pauses.dropFirst(20)), [.seconds(15)])
+    }
+
+    /// The timer stops when the payments read restored, before any read
+    /// succeeded, and when the view goes away (its task's sleep is cut
+    /// short), however many refreshes came before.
+    @MainActor
+    func testShouldStopRefreshingWhenRestoredOrWhenTheViewGoesAway() async {
+        var slept = false
+        let restored = await PrivatePaymentsRecovery.waitForRecheck(
+            after: readiness(restored: true), attempt: 0, sleep: { _ in slept = true })
+        XCTAssertFalse(restored)
+        XCTAssertFalse(slept, "nothing is due once restored")
+        let unread = await PrivatePaymentsRecovery.waitForRecheck(
+            after: nil, attempt: 0, sleep: { _ in slept = true })
+        XCTAssertFalse(unread)
+        XCTAssertFalse(slept)
+        let dismissed = await PrivatePaymentsRecovery.waitForRecheck(
+            after: readiness(restored: false), attempt: 500,
+            sleep: { _ in throw CancellationError() })
+        XCTAssertFalse(dismissed, "a view that went away refreshes no more")
     }
 
     func testShouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {
