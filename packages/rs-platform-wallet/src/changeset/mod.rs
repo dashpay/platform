@@ -42,7 +42,8 @@ pub use changeset::{
     PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
     PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
     ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
-    SentContactRequestKey, TokenBalanceChangeSet, WalletMetadataEntry,
+    SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet, WalletMetadataEntry,
+    SHIELDED_RECIPIENT_SIZE,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
