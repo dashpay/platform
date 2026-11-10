@@ -7,8 +7,10 @@ import org.dashfoundation.dashsdk.tokens.Dashpay
  * How a contact request send or accept that threw ended, for the DashPay
  * screens. Follows the send screen (and iOS `SendViewModel.swift`): a shielded
  * spend whose result could not be confirmed (code 18) may already be on chain
- * (Rust keeps its notes reserved), so the screen keeps it pending and never
- * offers a fresh submission; the next sync settles it. A pair Rust reports as
+ * (Rust keeps its notes reserved), and so may a state transition the SDK could
+ * not confirm after it may have been accepted (code 20), so the screen keeps
+ * either pending and never offers a fresh submission; the next sync settles
+ * it. A pair Rust reports as
  * held for a private request (code 71), which a public send or accept can
  * also meet, sent nothing new: the screen shows it as pending until the
  * wallet's per-contact read says the pair is free. Unrestored private
@@ -92,7 +94,10 @@ sealed interface ContactRequestSubmissionOutcome {
         }
 
         fun of(error: Throwable): ContactRequestSubmissionOutcome = when (error) {
-            is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed -> MayHaveGoneThrough
+            is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed,
+            is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed,
+            is DashSdkError.StateTransitionResultUnconfirmed,
+            -> MayHaveGoneThrough
             is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
             is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored -> PrivatePaymentsNotRestored
             is DashSdkError.PlatformWallet.PrivateContactStoreNotRead -> PrivateStoreNotRead

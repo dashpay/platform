@@ -3,6 +3,7 @@ package org.dashfoundation.example.ui.dashpay
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.tokens.Dashpay
+import org.dashfoundation.example.ui.wallet.shieldedOperationMayHaveGoneThrough
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -35,6 +36,32 @@ class ContactRequestOutcomesTest {
      * meet too, sent nothing: it is shown as pending, with a private sync to
      * settle it, rather than as a submission that may have gone through.
      */
+    /**
+     * Code 20: a state transition the SDK could not confirm after it may have
+     * been accepted, which a private send or accept can now return through
+     * the spend contract, and a public one through the blanket conversion. It
+     * may have executed: nothing is offered again, on a contact request or a
+     * shielded send alike.
+     */
+    @Test
+    fun shouldKeepAnUnconfirmedStateTransitionPending() {
+        val wallet = DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("result could not be confirmed")
+        val sdk = DashSdkError.StateTransitionResultUnconfirmed("result could not be confirmed")
+        assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(wallet))
+        assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, ContactRequestSubmissionOutcome.of(sdk))
+        assertTrue(shieldedOperationMayHaveGoneThrough(wallet))
+        assertTrue(
+            shieldedOperationMayHaveGoneThrough(
+                DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved"),
+            ),
+        )
+        assertFalse(
+            shieldedOperationMayHaveGoneThrough(
+                DashSdkError.PlatformWallet.ShieldedBroadcastFailed("never sent"),
+            ),
+        )
+    }
+
     @Test
     fun shouldKeepAPendingPrivateRequestPending() {
         val error = DashSdkError.PlatformWallet.PrivateContactRequestPending("not yet read back from the store")

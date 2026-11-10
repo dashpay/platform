@@ -2159,9 +2159,11 @@ class PlatformWalletManager(
      * Before anything is paid the wallet reads DashPay's private store for
      * the sender to its end. Throws
      * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when the payment
-     * may already be on chain, and
+     * may already be on chain,
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] when the
+     * SDK could not confirm a transition it may have accepted, and
      * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the
-     * pair is held for a private request: either way do not send again.
+     * pair is held for a private request: in each case do not send again.
      * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] sent nothing;
      * calling again continues the read.
      * [DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored] and
@@ -2252,8 +2254,9 @@ class PlatformWalletManager(
      *
      * A public or adopted reply needs neither shielded support nor a
      * mnemonic read for the payment. Throws
-     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when a private
-     * reply may already be on chain, or
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] (or
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]) when a
+     * private reply may already be on chain, or
      * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the pair
      * is held for one: do not accept again;
      * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] when the
