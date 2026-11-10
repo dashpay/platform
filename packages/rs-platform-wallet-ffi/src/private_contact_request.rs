@@ -25,13 +25,18 @@
 //! - [`managed_identity_get_private_contact`]: what a contact's private
 //!   requests carry beyond the `ContactRequest`: whether they came or went
 //!   privately, and the contact's shielded address.
-//! - [`managed_identity_get_private_reply_pending`]: whether a private request
-//!   to a contact is in flight or not yet read back, so a host offers no
-//!   second send or reply.
+//! - [`platform_wallet_get_private_pair_held`]: whether a contact request
+//!   from one of the wallet's identities to a contact is held for a private
+//!   one, as a send decides it, so a host offers no second send or reply.
+//! - [`platform_wallet_get_private_payments_restore_failure`]: why the last
+//!   restoration of the wallet's private payments failed, which
+//!   `platform_wallet_get_private_contact_readiness` reports only as a flag.
 //!
 //! The explicitly public send and accept refuse a contact whose requests came
 //! or went privately with `ErrorPrivateContactRequestNeedsPrivateReply`.
 
+use std::ffi::CString;
+use std::os::raw::c_char;
 use std::sync::{Arc, Mutex};
 
 use platform_wallet::{PlatformWalletError, PrivateContact};
@@ -51,8 +56,6 @@ use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 
 #[cfg(feature = "shielded")]
 use std::ffi::CStr;
-#[cfg(feature = "shielded")]
-use std::os::raw::c_char;
 #[cfg(feature = "shielded")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -143,8 +146,11 @@ fn saturating_count(count: usize) -> u32 {
 ///
 /// `core_signer_handle` is the wallet-HD resolver signer: the store is opened
 /// with keys derived inside it. Each request's signature is checked against
-/// its sender's keys, which needs no secret. The cursors live in memory only,
-/// so the first pass of a process reads the store from its start.
+/// its sender's keys, which needs no secret. Each identity's cursor is stored
+/// with the requests read before it and restored at load when the persister
+/// attests `PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE`
+/// with atomic changesets; otherwise the first pass of a process reads the
+/// store from its start.
 ///
 /// Writes the requests the pass ingested, received and sent (including ones
 /// already held), to `out_requests` (release with
@@ -299,36 +305,100 @@ pub unsafe extern "C" fn managed_identity_get_private_contact(
     PlatformWalletFFIResult::ok()
 }
 
-/// Whether a private contact request from this identity to `contact_id` is
-/// being paid for, or was paid for and is not yet read back from the store
-/// (`DashPayState::private_reply_pending`), into `out_pending`. While it is,
-/// the wallet refuses another private send or reply to the contact with
-/// `ErrorPrivateContactRequestPending`, so a host shows the contact as pending
-/// and offers neither; a later `platform_wallet_sync_private_contact_requests`
-/// settles it. A read of the managed-identity snapshot, which does not consume
-/// the wallet's rejection notices: read
-/// `platform_wallet_get_private_contact_readiness` (or refresh) first, so a
-/// pair whose payment was rejected for good is already released. After a
-/// restart a reply paid for in an earlier process is pending again once the
-/// wallet restores its private payments from the shielded store.
+/// Whether a contact request from `sender_id`, one of the wallet's
+/// identities, to `recipient_id`, public or private, is held for a private
+/// one, as a send decides it (`DashPayView::private_pair_held`), into
+/// `out_held`: a private request to the recipient is being paid for, or was
+/// paid for and is not yet read back from the store, or a private payment the
+/// shielded store's journal keeps unresolved holds the pair, also after the
+/// sender identity was removed and added again. While it is, a private send
+/// or reply to the recipient is refused with `ErrorPrivateContactRequestPending`
+/// (71) and a public one is held, so a host shows the pair as pending and
+/// offers neither. The entry read back
+/// (`platform_wallet_sync_private_contact_requests`) frees it, as does the
+/// payment proven never to execute (its anchor pruned, which the shielded
+/// sync judges); an endpoint's refusal of the payment does not. Not a pure
+/// read: a journal record discharged since is applied first, briefly taking
+/// the wallet's write lock, so a discharge reads as freed with no send or
+/// sync in between.
+///
+/// `out_held` is reset to false first. An unknown `wallet_handle` is
+/// `NotFound`; a sender the wallet does not hold is refused as its lookup is.
 ///
 /// # Safety
-/// - `contact_id` must point to 32 readable bytes.
-/// - `out_pending` must be a valid, writable pointer.
+/// - `sender_id` and `recipient_id` must each point to 32 readable bytes.
+/// - `out_held` must be a valid, writable pointer.
 #[no_mangle]
-pub unsafe extern "C" fn managed_identity_get_private_reply_pending(
-    identity_handle: Handle,
-    contact_id: *const u8,
-    out_pending: *mut bool,
+pub unsafe extern "C" fn platform_wallet_get_private_pair_held(
+    wallet_handle: Handle,
+    sender_id: *const u8,
+    recipient_id: *const u8,
+    out_held: *mut bool,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(out_pending);
-    unsafe { *out_pending = false };
-    let contact_id = unwrap_result_or_return!(unsafe { read_identifier(contact_id) });
-    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
-        identity.dashpay().private_reply_pending(&contact_id)
+    check_ptr!(out_held);
+    unsafe { *out_held = false };
+    let sender_id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
+    let recipient_id = unwrap_result_or_return!(unsafe { read_identifier(recipient_id) });
+    // Look the wallet up under the registry guard, but read outside it: the
+    // read may wait on the wallet's write lock, and a registry guard held
+    // across that wait would stall `platform_wallet_destroy`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .private_pair_held(&sender_id, &recipient_id)
+            .await
     });
-    let pending = unwrap_option_or_return!(option);
-    unsafe { *out_pending = pending };
+    let held = unwrap_result_or_return!(result);
+    unsafe { *out_held = held };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Why the last restoration of the wallet's private payments failed, while
+/// they are not restored for `identity_id` and none succeeded since
+/// (`PrivateContactReadiness::private_payments_restore_failure`, which
+/// `platform_wallet_get_private_contact_readiness` reports as
+/// `private_payments_restore_failed`), into `out_reason`: a NUL-terminated
+/// UTF-8 string the caller releases with `platform_wallet_string_free`, or
+/// null when none failed (the payments are restored, or only not restored
+/// yet). It reads the readiness, so a journal record discharged since is
+/// applied first, as there.
+///
+/// `out_reason` is reset to null first. An unknown `wallet_handle` is
+/// `NotFound`; an identity the wallet does not hold is refused as its lookup
+/// is.
+///
+/// # Safety
+/// - `identity_id` must point to 32 readable bytes.
+/// - `out_reason` must be a valid, writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_private_payments_restore_failure(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    out_reason: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_reason);
+    unsafe { *out_reason = std::ptr::null_mut() };
+    let identity_id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
+    // Look the wallet up under the registry guard, but read outside it: the
+    // read may wait on the wallet's write lock, and a registry guard held
+    // across that wait would stall `platform_wallet_destroy`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .private_contact_readiness(&identity_id)
+            .await
+    });
+    let readiness = unwrap_result_or_return!(result);
+    if let Some(reason) = readiness.private_payments_restore_failure {
+        let reason = unwrap_result_or_return!(CString::new(reason));
+        unsafe { *out_reason = reason.into_raw() };
+    }
     PlatformWalletFFIResult::ok()
 }
 
@@ -1671,52 +1741,129 @@ mod tests {
         assert!(*replied_reads > 0, "the DashPay crypto reads the mnemonic");
     }
 
-    /// A managed identity with no private request in flight reports none; an
-    /// unknown handle is not found and leaves the flag false; a null output is
-    /// refused. Reserving a reply is the wallet's own (its tests pin the
-    /// reservation), so this pins the read.
+    /// A wallet whose identity is paying for nothing to a contact reads the
+    /// pair as free and has no restoration failure to give; an unknown wallet
+    /// is not found and an unknown sender refused, each leaving the output
+    /// reset; a null output is refused. Holding a pair is the wallet's own
+    /// (its tests pin the reservation and the journal mirror), so this pins
+    /// the reads.
     #[test]
-    fn should_read_whether_a_private_reply_is_pending() {
+    fn should_read_a_pair_s_hold_and_the_restore_failure_from_the_wallet() {
+        use crate::runtime::runtime;
+        use crate::test_fixtures::mock_manager;
         use dpp::identity::{Identity, IdentityV0};
-        use platform_wallet::ManagedIdentity;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
+        let sender_id = [0xB0u8; 32];
+        let recipient_id = [0xA0u8; 32];
+        let manager = mock_manager();
+        let wallet = runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &[11; 64],
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            ))
+            .expect("a wallet");
         let identity = Identity::V0(IdentityV0 {
-            id: [0xB0; 32].into(),
+            id: sender_id.into(),
             public_keys: Default::default(),
             balance: 0,
             revision: 0,
         });
-        let handle = MANAGED_IDENTITY_STORAGE.insert(ManagedIdentity::new(identity, 0));
-        let contact_id = [0xA0u8; 32];
+        runtime().block_on(async {
+            let mut wm = wallet.wallet_manager().write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("the wallet's info")
+                .identity_manager
+                .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())
+                .expect("the identity");
+        });
+        let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
 
-        let mut pending = true;
-        let result = unsafe {
-            managed_identity_get_private_reply_pending(handle, contact_id.as_ptr(), &mut pending)
-        };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert!(!pending, "nothing is in flight to the contact");
-
-        let mut pending = true;
-        let result = unsafe {
-            managed_identity_get_private_reply_pending(
-                0xDEAD_BEEF,
-                contact_id.as_ptr(),
-                &mut pending,
-            )
-        };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
-        assert!(!pending);
-
-        let result = unsafe {
-            managed_identity_get_private_reply_pending(
+        let mut held = true;
+        let free = unsafe {
+            platform_wallet_get_private_pair_held(
                 handle,
-                contact_id.as_ptr(),
-                std::ptr::null_mut(),
+                sender_id.as_ptr(),
+                recipient_id.as_ptr(),
+                &mut held,
             )
         };
-        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(free.code, PlatformWalletFFIResultCode::Success);
+        assert!(!held, "nothing holds the pair");
 
-        let _ = MANAGED_IDENTITY_STORAGE.remove(handle);
+        let mut reason: *mut c_char = std::ptr::dangling_mut();
+        let none = unsafe {
+            platform_wallet_get_private_payments_restore_failure(
+                handle,
+                sender_id.as_ptr(),
+                &mut reason,
+            )
+        };
+        assert_eq!(none.code, PlatformWalletFFIResultCode::Success);
+        assert!(reason.is_null(), "no restoration failed");
+
+        let mut held = true;
+        let unknown_wallet = unsafe {
+            platform_wallet_get_private_pair_held(
+                Handle::MAX,
+                sender_id.as_ptr(),
+                recipient_id.as_ptr(),
+                &mut held,
+            )
+        };
+        assert_eq!(unknown_wallet.code, PlatformWalletFFIResultCode::NotFound);
+        assert!(!held, "reset");
+        let mut reason: *mut c_char = std::ptr::dangling_mut();
+        let unknown_wallet = unsafe {
+            platform_wallet_get_private_payments_restore_failure(
+                Handle::MAX,
+                sender_id.as_ptr(),
+                &mut reason,
+            )
+        };
+        assert_eq!(unknown_wallet.code, PlatformWalletFFIResultCode::NotFound);
+        assert!(reason.is_null(), "reset");
+
+        let stranger = [0xC0u8; 32];
+        let mut held = true;
+        let unknown_sender = unsafe {
+            platform_wallet_get_private_pair_held(
+                handle,
+                stranger.as_ptr(),
+                recipient_id.as_ptr(),
+                &mut held,
+            )
+        };
+        assert_ne!(unknown_sender.code, PlatformWalletFFIResultCode::Success);
+        assert!(!held);
+
+        assert_eq!(
+            unsafe {
+                platform_wallet_get_private_pair_held(
+                    handle,
+                    sender_id.as_ptr(),
+                    recipient_id.as_ptr(),
+                    std::ptr::null_mut(),
+                )
+            }
+            .code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+        assert_eq!(
+            unsafe {
+                platform_wallet_get_private_payments_restore_failure(
+                    handle,
+                    sender_id.as_ptr(),
+                    std::ptr::null_mut(),
+                )
+            }
+            .code,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+
+        let _ = PLATFORM_WALLET_STORAGE.remove(handle);
     }
 
     #[test]

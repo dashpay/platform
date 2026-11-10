@@ -254,8 +254,8 @@ pub struct PrivateContactReadinessFFI {
     pub unresolved_private_payment: bool,
     /// Whether the last restoration of the wallet's private payments failed,
     /// while `private_payments_restored` is false for it: then 72 holds until
-    /// a restoration succeeds, not only until one runs. The reason is in the
-    /// wallet's log; an export for it is left to the FFI PR.
+    /// a restoration succeeds, not only until one runs. The reason is
+    /// `platform_wallet_get_private_payments_restore_failure`.
     pub private_payments_restore_failed: bool,
 }
 
@@ -274,13 +274,12 @@ impl From<PrivateContactReadiness> for PrivateContactReadinessFFI {
 /// waits for, as the wallet decides it, into `out_readiness`
 /// ([`PrivateContactReadinessFFI`]): so a host tells "restoring private
 /// payments" from "reading the private store" and from a contact's pending
-/// request by the wallet's own state. Not a pure read: it first releases the
-/// private requests whose payment was settled as never executing, briefly
-/// taking the wallet's write lock to consume the wallet's rejection notices,
-/// so a pair rejected for good reads as free with no restart and no other
-/// request; then it reads live wallet state. Read it before
-/// `managed_identity_get_private_reply_pending`, whose snapshot does not
-/// consume the notices.
+/// request by the wallet's own state. Not a pure read: a journal record
+/// discharged since (a payment proven never to execute) is applied first,
+/// briefly taking the wallet's write lock, as a send would see it; then it
+/// reads live wallet state. Why a failed restoration failed is
+/// `platform_wallet_get_private_payments_restore_failure`; one pair's hold is
+/// `platform_wallet_get_private_pair_held`.
 ///
 /// `out_readiness` is reset to all false first. An unknown `wallet_handle` is
 /// `NotFound`; an identity the wallet does not hold is refused as its lookup

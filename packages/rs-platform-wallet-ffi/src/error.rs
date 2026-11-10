@@ -647,15 +647,18 @@ pub enum PlatformWalletFFIResultCode {
     /// public accept refuse it, and nothing was sent: the request goes
     /// privately instead, and the in-kind accept picks the private reply
     /// itself. The shielded spend contract (`map_spend_result`) keeps the code,
-    /// as the in-kind accept can raise it. The exports that send and accept
-    /// contact requests are added by the FFI PR. 62 to 67 are claimed by open
-    /// branches, so this takes 68.
+    /// as the in-kind accept can raise it. Send it with
+    /// `platform_wallet_manager_send_private_contact_request`, or accept it
+    /// with `platform_wallet_manager_accept_contact_request_replying_in_kind`
+    /// or `platform_wallet_manager_accept_private_contact_request`. 62 to 67
+    /// are claimed by open branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The operation needs the shielded pool, and this library was built
     /// without the `shielded` feature: accepting a contact request that came
-    /// privately in kind, whose private reply is paid from the pool (the
-    /// export is added by the FFI PR; no export in this crate returns it yet).
+    /// privately with
+    /// `platform_wallet_manager_accept_contact_request_replying_in_kind`
+    /// (exported in every build), whose private reply is paid from the pool.
     /// Nothing was sent. Not retryable on this build; a build with shielded
     /// support accepts it.
     ErrorShieldedBuildRequired = 69,
