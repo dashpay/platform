@@ -57,6 +57,8 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 A key that belongs to another target is refused when the contract is registered.
 
+From protocol version 15 a `permanentDocument` or `moderatedDocument` reference may leave its target to the document: `contractIdProperty` and `documentTypeProperty` name the properties holding the contract and the document type, in place of `contractId` and `documentType`, and `documentTypeRequirements` says what that type must look like. See [A Target the Document Names](refers-to-dynamic.md).
+
 ### `identity`
 
 The value is the id of an identity that exists. The check reads the identity's revision. Identities are never removed, so a validated reference never dangles.
@@ -413,6 +415,7 @@ A contract's declarations are checked when it is registered, and again for the w
 | `ReferencedDocumentRuleReadInvalidError` | 40148 | Registration: a [`propertyConstraints` rule](property-constraints.md#values-of-a-referenced-document) reads, through a reference into another contract's document type, a field that type can not give it. A rule reading a type of the declaring contract is refused by the contract parse instead (10231). |
 | `ReferencedDocumentPrecededError` | 40149 | Write: the commitment a [`chooseFirst`](refers-to-lookup.md#choosing-the-first-commitment-choosefirst) reference found is preceded, in its `by` order, by a valid, unexpired commitment of another identity holding the same value at `among`. |
 | `ReferencedDocumentTypePrivateError` | 40150 | Registration: a reference of any kind names a private type, whose documents are encrypted entries the chain never reads (protocol version 15). |
+| `ReferencedDocumentTypeRequirementNotMetError` | 40153 | Write: a reference [naming its target through the document](refers-to-dynamic.md) points at a document type that does not meet its `documentTypeRequirements` (protocol version 15). |
 
 The registration errors name the declaration as `<documentType>.<property>`, `<documentType>.<property>[]` for typed array elements, `<documentType>.$ownerId` or `<documentType>.$creatorId` for the writer and creator references, and add the operand for a leaf of an expression (`resignation.memberId.anyOf[1]`). When a document is written, the referenced document type is looked up and its kind checked again as a safeguard (40121, 40122, 40131, 40143), but a registered contract cannot fail those checks later: contracts and document types are never removed, and neither the deletion flags nor `ttl` nor `moderatorAbilities` can change. Nor can `indexOnly`, so the indexOnly rule (40146) is checked at registration only. The other codes in the range (40128 to 40130, 40132 to 40134, 40139 to 40142, 40147) belong to other keywords. See [Error Codes](../error-handling/error-codes.md).
 
@@ -421,6 +424,7 @@ The registration errors name the declaration as `<documentType>.<property>`, `<d
 - [findBy](refers-to-lookup.md): a `permanentDocument` or `deletableDocument` found through the unique index of its type over exactly the properties `findBy` names, with the value as one part of the key. The value can be an identity (a member, an author) instead of a document id.
 - [Expressions](refers-to-expressions.md): `anyOf` and `allOf`, several targets combined in one declaration.
 - [List Elements](refers-to-list-element.md): `inList` on a `permanentDocument`, a value that must be one of the identifiers a list on another document holds.
+- [A Target the Document Names](refers-to-dynamic.md): `contractIdProperty` and `documentTypeProperty` on a `permanentDocument` or `moderatedDocument`, a document of whichever contract and document type the referring document names, held to `documentTypeRequirements` (protocol version 15).
 - [Writer and Creator References](owner-refers-to.md): `ownerRefersTo` and `creatorRefersTo`, the same declaration applied to the document's writer or creator instead of a property.
 - [References on the elements](../data-model/documents.md#references-on-the-elements) of a typed array: a declaration on `items`, checked for every element.
 

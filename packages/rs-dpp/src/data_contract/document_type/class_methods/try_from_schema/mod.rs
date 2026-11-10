@@ -54,6 +54,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
+mod dynamic_reference;
 #[cfg(feature = "validation")]
 mod native_schema;
 mod v0;
@@ -756,10 +757,50 @@ pub(in crate::data_contract::document_type::class_methods) fn apply_property_ref
     {
         None => Ok(property_type),
         Some(0) => apply_property_reference_v0(inner_properties, property_type),
+        Some(1) => apply_property_reference_v1(inner_properties, property_type, platform_version),
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_property_reference version {version} is not supported"
         ))),
     }
+}
+
+/// Version 1 (protocol version 15): also reads a reference whose target the referring
+/// document names (`contractIdProperty`, `documentTypeProperty`,
+/// `documentTypeRequirements`), on an identifier property. Every other declaration is
+/// version 0's, except that an operand of a reference expression naming its target that way
+/// is refused, where version 0 does not read those keys.
+fn apply_property_reference_v1(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentPropertyType, DataContractError> {
+    let Some(refers_to_value) = inner_properties
+        .get(property_names::REFERS_TO)
+        .filter(|refers_to_value| dynamic_reference::declares_dynamic_target(refers_to_value))
+    else {
+        dynamic_reference::refuse_dynamic_target(
+            inner_properties.get(property_names::REFERS_TO).copied(),
+            "in a reference expression",
+        )?;
+        return apply_property_reference_v0(inner_properties, property_type);
+    };
+    if !matches!(
+        property_type,
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+    ) {
+        return Err(DataContractError::InvalidContractStructure(
+            "a refersTo naming its target through contractIdProperty and documentTypeProperty              is only allowed on identifier properties: its value is the referenced document's id"
+                .to_string(),
+        ));
+    }
+    Ok(DocumentPropertyType::IdentifierWithReference(
+        DocumentPropertyReferenceTarget::DynamicDocument(
+            dynamic_reference::parse_dynamic_document_reference(
+                &refers_to_value.to_btree_ref_string_map()?,
+                platform_version,
+            )?,
+        ),
+    ))
 }
 
 fn apply_property_reference_v0(
@@ -874,6 +915,19 @@ fn apply_revealed_reference(
     {
         None => Ok(None),
         Some(0) => apply_revealed_reference_v0(inner_properties, property_type),
+        // Version 1 reads a dynamic target on an identifier property alone
+        Some(1) => {
+            dynamic_reference::refuse_dynamic_target(
+                inner_properties
+                    .get(property_names::REFERS_TO)
+                    .copied()
+                    .filter(|refers_to_value| {
+                        is_revealed_declaration(property_type, refers_to_value)
+                    }),
+                "on a string or byte array property",
+            )?;
+            apply_revealed_reference_v0(inner_properties, property_type)
+        }
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_property_reference version {version} is not supported"
         ))),
@@ -2004,6 +2058,14 @@ pub(in crate::data_contract::document_type::class_methods) fn apply_element_refe
     {
         None => Ok(element_type),
         Some(0) => apply_element_reference_v0(items, element_type),
+        // Version 1 reads a dynamic target on an identifier property alone
+        Some(1) => {
+            dynamic_reference::refuse_dynamic_target(
+                items.get(property_names::REFERS_TO).copied(),
+                "on the elements of a typed array",
+            )?;
+            apply_element_reference_v0(items, element_type)
+        }
         Some(version) => Err(DataContractError::Unsupported(format!(
             "apply_element_reference version {version} is not supported"
         ))),
@@ -2079,6 +2141,18 @@ pub(super) fn parse_doctype_reference(
     let Some(declaration) = schema_map.get_optional_key(keyword) else {
         return Ok(None);
     };
+    // Version 1 (protocol version 15) reads a dynamic target on an identifier property
+    // alone; version 0 does not read its keys at all
+    if platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+        == Some(1)
+    {
+        dynamic_reference::refuse_dynamic_target(Some(declaration), &format!("in {keyword}"))?;
+    }
 
     let reference_type = declaration
         .to_btree_ref_string_map()?

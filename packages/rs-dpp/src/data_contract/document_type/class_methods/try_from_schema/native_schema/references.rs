@@ -3,13 +3,24 @@
 
 use super::*;
 
+/// The keys only a `refersTo` naming its target through the referring document carries
+/// (protocol version 15).
+const DYNAMIC_TARGET_KEYS: [&str; 3] = [
+    "contractIdProperty",
+    "documentTypeProperty",
+    "documentTypeRequirements",
+];
+
 /// The keys of a `refersTo` declaration.
-const REFERS_TO_KEYS: [&str; 14] = [
+const REFERS_TO_KEYS: [&str; 17] = [
     "type",
     "anyOf",
     "allOf",
     "contractId",
     "documentType",
+    "contractIdProperty",
+    "documentTypeProperty",
+    "documentTypeRequirements",
     "contractRequirements",
     "keyIdProperty",
     "identityProperty",
@@ -53,7 +64,26 @@ impl Checker<'_> {
             self.required(map, &["type"])?;
             self.member_constant(map, "type", json!("deletableDocument"))?;
         }
-        if matches!(
+        // A reference naming its target through the referring document: a permanent or
+        // moderated document found by its id, with nothing beside it that needs the
+        // referenced type at registration
+        if DYNAMIC_TARGET_KEYS.iter().any(|key| has(key)) {
+            self.required(map, &["type", "contractIdProperty", "documentTypeProperty"])?;
+            self.member(map, "type", |c, target| {
+                c.one_of_strings(target, &["permanentDocument", "moderatedDocument"])
+            })?;
+            for name in [
+                "contractId",
+                "documentType",
+                "findBy",
+                "where",
+                "inList",
+                "consume",
+                "constraints",
+            ] {
+                self.absent(map, name)?;
+            }
+        } else if matches!(
             target,
             Some("permanentDocument" | "deletableDocument" | "moderatedDocument")
         ) {
@@ -144,10 +174,11 @@ impl Checker<'_> {
                 }
                 Err(self.fail("oneOfNotValid", format!("{value} is not a contract id")))
             }
-            "documentType" => {
+            "documentType" | "contractIdProperty" | "documentTypeProperty" => {
                 self.string_of_length(value, 1, Some(64))?;
                 self.word(value)
             }
+            "documentTypeRequirements" => self.document_type_requirements(value),
             "contractRequirements" => {
                 let map = self.object(value)?;
                 self.closed(
@@ -248,6 +279,108 @@ impl Checker<'_> {
         }
     }
 
+    /// `documentTypeRequirements`: named slots, each describing a property the referenced
+    /// document type must have, and `require`, which of them must be filled. That the names
+    /// it uses are slots is the parser's to check.
+    fn document_type_requirements(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.closed(map, &["properties", "require"])?;
+        self.required(map, &["properties"])?;
+        self.member(map, "properties", |c, properties| {
+            let slots = c.object(properties)?;
+            c.property_count(slots, Some(1), None)?;
+            for (name, slot) in slots {
+                c.at(name, |c| {
+                    c.name_of_length(name, 1, 64)?;
+                    c.requirement_slot(slot)
+                })?;
+            }
+            Ok(())
+        })?;
+        self.member(map, "require", |c, require| {
+            if require.is_string() {
+                return c.word(require);
+            }
+            c.slot_combinator(require, true)
+        })
+    }
+
+    /// One slot of `documentTypeRequirements.properties`.
+    fn requirement_slot(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.closed(
+            map,
+            &["name", "type", "byteArray", "maxBytes", "distinctFrom"],
+        )?;
+        self.required(map, &["name", "type"])?;
+        self.member(map, "name", |c, name| {
+            if name.is_string() {
+                return c.string_of_length(name, 1, Some(64)).map(drop);
+            }
+            let from_property = c.object(name)?;
+            c.closed(from_property, &["property"])?;
+            c.required(from_property, &["property"])?;
+            c.member(from_property, "property", |c, property| {
+                c.string_of_length(property, 1, Some(64))?;
+                c.word(property)
+            })
+        })?;
+        self.member(map, "type", |c, value_type| {
+            c.one_of_strings(
+                value_type,
+                &["string", "identifier", "integer", "boolean", "array"],
+            )
+        })?;
+        self.member(map, "byteArray", |c, byte_array| {
+            c.constant(byte_array, &json!(true))
+        })?;
+        self.member(map, "maxBytes", |c, max_bytes| {
+            c.integer(max_bytes, Some(1), Some(i64::from(u32::MAX)))
+        })?;
+        self.member(map, "distinctFrom", |c, distinct_from| {
+            if distinct_from.is_string() {
+                return c.word(distinct_from);
+            }
+            let others = c.array(distinct_from)?;
+            c.item_count(others, Some(1), None)?;
+            c.unique(others)?;
+            for (index, other) in others.iter().enumerate() {
+                c.at(index, |c| c.word(other))?;
+            }
+            Ok(())
+        })
+    }
+
+    /// `anyOf` or `allOf` over slots: the one key of `value`, holding two or more terms. A
+    /// term is a slot name or, at the top level alone, the other combinator over slot
+    /// names.
+    fn slot_combinator(&self, value: &JsonValue, top_level: bool) -> Checked {
+        let map = self.object(value)?;
+        self.closed(map, &["anyOf", "allOf"])?;
+        self.property_count(map, Some(1), Some(1))?;
+        for (combinator, terms) in map {
+            self.at(combinator, |c| {
+                let terms = c.array(terms)?;
+                c.item_count(terms, Some(2), None)?;
+                for (index, term) in terms.iter().enumerate() {
+                    c.at(index, |c| {
+                        if term.is_string() {
+                            return c.word(term);
+                        }
+                        if !top_level {
+                            return Err(c.no_branch(term));
+                        }
+                        let inner = c.object(term)?;
+                        c.absent(inner, combinator)?;
+                        c.slot_combinator(term, false)
+                    })?;
+                }
+                Ok(())
+            })?;
+        }
+        Ok(())
+    }
+
     /// The operands of a `refersTo` `anyOf` or `allOf`.
     fn reference_operands(&self, combinator: &str, value: &JsonValue) -> Checked {
         let items = self.array(value)?;
@@ -259,6 +392,9 @@ impl Checker<'_> {
                 let map = c.object(operand)?;
                 c.absent(map, combinator)?;
                 c.absent(map, "identityProperty")?;
+                for key in DYNAMIC_TARGET_KEYS {
+                    c.absent(map, key)?;
+                }
                 c.member(map, "type", |c, target| {
                     c.one_of_strings(
                         target,
@@ -279,6 +415,9 @@ impl Checker<'_> {
     pub(super) fn owner_refers_to(&self, value: &JsonValue) -> Checked {
         self.refers_to(value)?;
         let map = self.object(value)?;
+        for key in DYNAMIC_TARGET_KEYS {
+            self.absent(map, key)?;
+        }
         self.member(map, "type", |c, target| {
             c.one_of_strings(
                 target,

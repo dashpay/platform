@@ -91,6 +91,14 @@ pub struct SystemLimits {
     /// it. Read by document type parser generation 3 (protocol version 14) and never reached
     /// before.
     pub max_reference_expression_depth: u16,
+    /// Maximum number of slots the `documentTypeRequirements` of a `refersTo` naming its
+    /// target through `contractIdProperty` and `documentTypeProperty` may declare (it holds
+    /// at least one). Every write that checks such a reference looks for properties of the
+    /// referenced document type to fill them with, a search that stays small only while
+    /// the slots are few. Refused on every parse. Read by `apply_property_reference` 1
+    /// (protocol version 15), the only version that parses such a reference, and never
+    /// reached before.
+    pub max_document_type_requirement_slots: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
     /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one

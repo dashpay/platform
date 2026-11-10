@@ -1,0 +1,401 @@
+//! A document reference naming its target through the referring document
+//! (`contractIdProperty`, `documentTypeProperty`, `documentTypeRequirements`, protocol version
+//! 15): the document says which contract and which document type its value points into, so
+//! everything about the target is checked when the document is written. The target here is
+//! `post`, a type whose documents only the contract's moderators remove, each removal leaving
+//! a record.
+
+use super::*;
+
+const NOTE: &str = "note";
+const BYTES_NOTE: &str = "bytesNote";
+const NAMED_NOTE: &str = "namedNote";
+const PLAIN: &str = "plain";
+const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
+const REFERENCED_DOCUMENT_TYPE_NOT_FOUND: u32 = 40121;
+const REFERENCED_DOCUMENT_TYPE_NOT_MODERATED: u32 = 40143;
+const REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET: u32 = 40153;
+
+fn id_value(id: Identifier) -> Value {
+    Value::Identifier(id.to_buffer())
+}
+
+fn identifier_property(position: u64) -> Value {
+    platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": position,
+    })
+}
+
+/// A note describing itself with a moderated document of a type it names, which must meet
+/// `requirements`. `textProperty` is there for a slot to read its property name from.
+fn note_schema(requirements: Value) -> Value {
+    let mut description_id = identifier_property(0);
+    description_id
+        .insert(
+            "refersTo".to_string(),
+            platform_value!({
+                "type": "moderatedDocument",
+                "contractIdProperty": "descriptionContractId",
+                "documentTypeProperty": "descriptionDocumentType",
+                "documentTypeRequirements": requirements,
+            }),
+        )
+        .expect("expected to declare the reference");
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "descriptionId": description_id,
+            "descriptionContractId": identifier_property(1),
+            "descriptionDocumentType": { "type": "string", "minLength": 1, "maxLength": 64, "position": 2 },
+            "textProperty": { "type": "string", "minLength": 1, "maxLength": 64, "position": 3 },
+            "body": { "type": "string", "minLength": 1, "maxLength": 50, "position": 4 },
+        },
+        "required": [
+            "descriptionId",
+            "descriptionContractId",
+            "descriptionDocumentType",
+            "textProperty",
+            "body"
+        ],
+        "additionalProperties": false,
+    })
+}
+
+/// A type holding text, as a string or as bytes: `post` holds a string
+fn text_or_bytes() -> Value {
+    platform_value!({
+        "properties": {
+            "body": { "name": "$any", "type": "string" },
+            "bodyBytes": { "name": "$any", "type": "array", "byteArray": true },
+        },
+        "require": { "anyOf": ["body", "bodyBytes"] },
+    })
+}
+
+/// A document type anyone's documents of which their owner deletes: not a moderated one
+fn plain_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "text": { "type": "string", "maxLength": 50, "position": 0 },
+        },
+        "required": ["text"],
+        "additionalProperties": false,
+    })
+}
+
+/// A contract whose named moderator removes posts, with notes referring to a document of a
+/// type they name: `note` asks for text or bytes, `bytesNote` for bytes, and `namedNote` for
+/// a string property the note names.
+async fn setup() -> Setup {
+    Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({ "canBeDeleted": false })),
+            );
+            add_document_type(contract, PLAIN, plain_schema());
+            add_document_type(contract, NOTE, note_schema(text_or_bytes()));
+            add_document_type(
+                contract,
+                BYTES_NOTE,
+                note_schema(platform_value!({
+                    "properties": {
+                        "bodyBytes": { "name": "$any", "type": "array", "byteArray": true },
+                    },
+                })),
+            );
+            add_document_type(
+                contract,
+                NAMED_NOTE,
+                note_schema(platform_value!({
+                    "properties": {
+                        "text": { "name": { "property": "textProperty" }, "type": "string" },
+                    },
+                })),
+            );
+        },
+    )
+    .await
+}
+
+/// The properties of a note describing itself with `document_id` of `document_type_name` in
+/// `contract_id`
+fn note_naming(
+    contract_id: Identifier,
+    document_type_name: &str,
+    document_id: Identifier,
+) -> Vec<(&'static str, Value)> {
+    vec![
+        ("descriptionId", id_value(document_id)),
+        ("descriptionContractId", id_value(contract_id)),
+        ("descriptionDocumentType", document_type_name.into()),
+        ("textProperty", "text".into()),
+        ("body", "first".into()),
+    ]
+}
+
+/// The document names where its reference points: the contract and the type must exist, the
+/// type must be a moderated one, and the document must be there.
+#[tokio::test]
+async fn should_check_a_reference_into_the_document_type_the_document_names() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract_id = setup.contract.id();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (plain, create_plain) = setup.create_document_of_type(&setup.user, PLAIN).await;
+    assert_success(&setup.process(&create_plain, &transaction));
+
+    let (_, create_note) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&create_note, &transaction));
+
+    // A contract that does not exist, and a type the contract does not have
+    let (_, no_contract) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(Identifier::random(), POST, post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&no_contract, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_FOUND,
+    );
+    let (_, no_type) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, "essay", post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&no_type, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_FOUND,
+    );
+
+    // A type whose documents their owner deletes is not one a moderated reference names
+    let (_, not_moderated) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, PLAIN, plain.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&not_moderated, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_MODERATED,
+    );
+
+    // A document that is not there, though its type qualifies
+    let (_, no_document) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, POST, Identifier::random()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&no_document, &transaction),
+        REFERENCED_ENTITY_NOT_FOUND,
+    );
+}
+
+/// The named type must have the properties the reference's requirements ask for: `post`
+/// holds a string, so it fills a string slot and not a byte array one, and a slot reading
+/// its property name from the note is filled by the property the note names.
+#[tokio::test]
+async fn should_hold_the_named_document_type_to_the_requirements() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract_id = setup.contract.id();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+
+    let (_, needs_bytes) = create_with(
+        &setup,
+        &setup.stranger,
+        BYTES_NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&needs_bytes, &transaction),
+        REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET,
+    );
+
+    // `textProperty` names `text`, the post's string
+    let (_, names_the_text) = create_with(
+        &setup,
+        &setup.stranger,
+        NAMED_NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&names_the_text, &transaction));
+    // and a property the post does not have fills nothing
+    let mut names_nothing = note_naming(contract_id, POST, post.id());
+    names_nothing[3] = ("textProperty", "summary".into());
+    let (_, names_nothing) = create_with(&setup, &setup.stranger, NAMED_NOTE, names_nothing).await;
+    assert_paid_with_code(
+        &setup.process(&names_nothing, &transaction),
+        REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET,
+    );
+}
+
+/// A replace keeps a note describing itself with a post a moderator removed, as it keeps a
+/// moderated reference naming its type in the schema. A replace that changes where the note
+/// says its reference points checks the reference again, against the new target.
+#[tokio::test]
+async fn should_keep_a_dynamic_reference_until_a_replace_points_it_elsewhere() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract_id = setup.contract.id();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (other_post, create_other_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_other_post, &transaction));
+
+    let (mut note, create_note) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&create_note, &transaction));
+
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+    assert!(setup
+        .stored_document(POST, post.id(), Some(&transaction))
+        .is_none());
+
+    // The reference is kept: nothing it reads changed
+    note.set("body", "an edit".into());
+    let edit = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
+    assert_success(&setup.process(&edit, &transaction));
+
+    // A new note cannot name the removed post
+    let (_, names_removed) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&names_removed, &transaction),
+        REFERENCED_ENTITY_NOT_FOUND,
+    );
+
+    // Naming another type points the same id somewhere else: the reference is checked
+    // again, and that type is not a moderated one
+    let mut retyped = note.clone();
+    retyped.set("descriptionDocumentType", PLAIN.into());
+    let retype = replacement(&setup.stranger, &setup.contract, NOTE, &mut retyped).await;
+    assert_paid_with_code(
+        &setup.process(&retype, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_MODERATED,
+    );
+    // Naming another contract too
+    let mut moved = note.clone();
+    moved.set("descriptionContractId", id_value(Identifier::random()));
+    let move_it = replacement(&setup.stranger, &setup.contract, NOTE, &mut moved).await;
+    assert_paid_with_code(
+        &setup.process(&move_it, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_FOUND,
+    );
+    // and a new value names a post in state
+    note.set("descriptionId", id_value(other_post.id()));
+    let repoint = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
+    assert_success(&setup.process(&repoint, &transaction));
+}
+
+/// The contract a note names need not be its own: a note of another contract describes
+/// itself with a post of the posts contract, whose moderators' removal record it keeps
+/// resolving to.
+#[tokio::test]
+async fn should_follow_a_dynamic_reference_into_another_contract() {
+    let mut setup = setup().await;
+    let posts_contract = setup.contract.clone();
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+
+    // Nothing about the posts contract is in the notes contract's schema
+    let identity_nonce = setup.stranger.identity_nonce();
+    let mut notes_contract = get_data_contract_fixture(
+        Some(setup.stranger.id()),
+        identity_nonce,
+        PlatformVersion::latest().protocol_version,
+    )
+    .data_contract_owned();
+    add_document_type(&mut notes_contract, NOTE, note_schema(text_or_bytes()));
+    let create = DataContractCreateTransition::new_from_data_contract(
+        notes_contract.clone(),
+        identity_nonce,
+        &setup.stranger.identity.clone().into_partial_identity_info(),
+        CRITICAL_KEY_ID,
+        &setup.stranger.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the contract create");
+    assert_success(&setup.process(&create, &transaction));
+    // The create sets the stranger's nonce for the contract to the identity nonce it used
+    setup.stranger.next_contract_nonce.set(identity_nonce + 1);
+
+    // Documents of the notes contract are written through it
+    setup.contract = notes_contract.clone();
+    let (mut note, create_note) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(posts_contract.id(), POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&create_note, &transaction));
+    // The notes contract has no `post` type of its own to find the post in
+    let (_, names_itself) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(notes_contract.id(), POST, post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&names_itself, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_FOUND,
+    );
+
+    // The posts contract's moderator removes the post
+    setup.contract = posts_contract.clone();
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+
+    // The note keeps its reference
+    setup.contract = notes_contract;
+    note.set("body", "an edit".into());
+    let edit = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
+    assert_success(&setup.process(&edit, &transaction));
+}

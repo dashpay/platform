@@ -16,9 +16,10 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound, WhereLiteral,
+    ANY_PROPERTY_NAME, DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
+    DocumentTypeRequirements, IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey,
+    LookupKeyParam, LookupKeySource, PropertyReference, SlotPropertyName, SlotRequirement,
+    SlotRequirementTerm, SlotValue, WhereCondition, WhereContainsBound, WhereLiteral,
     WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
@@ -269,7 +270,73 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
     }
+  | {
+      /**
+       * A document of a document type the referring document names
+       * (protocol version 15): permanent or moderated, found by the value
+       * as its id. Told from the other members of the same `type` by its
+       * `contractIdProperty`: it has no `contractId` and no `documentType`,
+       * since the contract and the type are read from the referring
+       * document when it is written, where consensus checks that both
+       * exist, that the type is of this kind and that it meets
+       * `documentTypeRequirements` (code 40153 when it does not).
+       */
+      type: 'permanentDocument' | 'moderatedDocument';
+      /**
+       * The top-level identifier property of the referring document
+       * holding the id of the contract the referenced document type lives
+       * in.
+       */
+      contractIdProperty: string;
+      /**
+       * The top-level string property of the referring document holding
+       * the name of the referenced document type.
+       */
+      documentTypeProperty: string;
+      /**
+       * What the named document type must look like. Absent when the
+       * declaration asks nothing of it beyond its kind.
+       */
+      documentTypeRequirements?: DocumentTypeRequirements;
+    }
   | DocumentPropertyReferenceExpression;
+
+/**
+ * What the document type a dynamic reference names must look like: named
+ * slots, each describing a top-level property it must have, and which of the
+ * slots must be filled. A slot is filled by one property matching its
+ * description, and slots that are `distinctFrom` each other by different
+ * properties.
+ */
+export type DocumentTypeRequirements = {
+  properties: Record<string, DocumentTypeRequirementSlot>;
+  /**
+   * Which slots must be filled: a slot name, or `anyOf` / `allOf` over slot
+   * names and, one level down, the other combinator over slot names. Absent
+   * when every slot must be filled.
+   */
+  require?: string | DocumentTypeSlotRequirement;
+};
+
+export type DocumentTypeRequirementSlot = {
+  /**
+   * Which property may fill the slot: `'$any'` for any property matching
+   * the rest, a property name, or `{ property }` for the property the
+   * referring document names in that string property of its own.
+   */
+  name: string | { property: string };
+  /** What the property holds; `'array'` comes with `byteArray: true`. */
+  type: 'string' | 'identifier' | 'integer' | 'boolean' | 'array';
+  byteArray?: true;
+  /** The most bytes a value of the property may ever take. */
+  maxBytes?: number;
+  /** The other slots this one is filled by a different property than. */
+  distinctFrom?: Array<string>;
+};
+
+export type DocumentTypeSlotRequirement =
+  | { anyOf: Array<string | { allOf: Array<string> }> }
+  | { allOf: Array<string | { anyOf: Array<string> }> };
 
 /**
  * A reference expression, declared as `refersTo: { anyOf: [...] }` or
@@ -829,6 +896,8 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
+        // Permanent or moderated, as declared
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference.wire_name(),
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
                 "the reference expression declared at '{path}' has no single target kind"
@@ -989,9 +1058,127 @@ fn set_reference_target_fields(
             )?;
             set_key_requirements_field(object, key_requirements, path)?;
         }
+        // The keys the schema declares it with: no contract and no document type, which
+        // the referring document names when it is written
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+            set_field(
+                object,
+                "contractIdProperty",
+                &JsValue::from_str(&reference.contract_id_property),
+                path,
+            )?;
+            set_field(
+                object,
+                "documentTypeProperty",
+                &JsValue::from_str(&reference.document_type_property),
+                path,
+            )?;
+            if let Some(requirements) = &reference.requirements {
+                set_field(
+                    object,
+                    "documentTypeRequirements",
+                    &document_type_requirements_to_js(requirements, path)?.into(),
+                    path,
+                )?;
+            }
+        }
     }
 
     Ok(())
+}
+
+/// `documentTypeRequirements` as the schema declares it: the slots under `properties`, and
+/// `require` when the declaration has one.
+fn document_type_requirements_to_js(
+    requirements: &DocumentTypeRequirements,
+    path: &str,
+) -> WasmDppResult<Object> {
+    let names =
+        |slots: &[String]| -> Array { slots.iter().map(|slot| JsValue::from_str(slot)).collect() };
+    let properties = Object::new();
+    for (slot_name, slot) in &requirements.slots {
+        let fields = Object::new();
+        let name = match &slot.name {
+            SlotPropertyName::Any => JsValue::from_str(ANY_PROPERTY_NAME),
+            SlotPropertyName::Named(name) => JsValue::from_str(name),
+            SlotPropertyName::FromProperty(property) => {
+                let from_property = Object::new();
+                set_field(
+                    &from_property,
+                    "property",
+                    &JsValue::from_str(property),
+                    path,
+                )?;
+                from_property.into()
+            }
+        };
+        set_field(&fields, "name", &name, path)?;
+        let value_type = match slot.value {
+            SlotValue::String => "string",
+            SlotValue::Identifier => "identifier",
+            SlotValue::Integer => "integer",
+            SlotValue::Boolean => "boolean",
+            SlotValue::ByteArray => "array",
+        };
+        set_field(&fields, "type", &JsValue::from_str(value_type), path)?;
+        if slot.value == SlotValue::ByteArray {
+            set_field(&fields, "byteArray", &JsValue::TRUE, path)?;
+        }
+        if let Some(max_bytes) = slot.max_bytes {
+            set_field(&fields, "maxBytes", &JsValue::from(max_bytes), path)?;
+        }
+        if !slot.distinct_from.is_empty() {
+            let others: Vec<String> = slot.distinct_from.iter().cloned().collect();
+            set_field(&fields, "distinctFrom", &names(&others), path)?;
+        }
+        set_schema_field(&properties, slot_name, fields.into(), path)?;
+    }
+    let object = Object::new();
+    set_field(&object, "properties", &properties, path)?;
+
+    if let Some(require) = &requirements.require {
+        let terms_to_js = |terms: &[SlotRequirementTerm], inner: &str| -> WasmDppResult<Array> {
+            let operands = Array::new();
+            for term in terms {
+                match term {
+                    SlotRequirementTerm::Slot(slot) => {
+                        operands.push(&JsValue::from_str(slot));
+                    }
+                    SlotRequirementTerm::Group(slots) => {
+                        let group = Object::new();
+                        set_field(&group, inner, &names(slots), path)?;
+                        operands.push(&group);
+                    }
+                }
+            }
+            Ok(operands)
+        };
+        let require: JsValue = match require {
+            SlotRequirement::Slot(slot) => JsValue::from_str(slot),
+            SlotRequirement::AnyOf(terms) => {
+                let combinator = Object::new();
+                set_field(
+                    &combinator,
+                    "anyOf",
+                    &terms_to_js(terms, "allOf")?.into(),
+                    path,
+                )?;
+                combinator.into()
+            }
+            SlotRequirement::AllOf(terms) => {
+                let combinator = Object::new();
+                set_field(
+                    &combinator,
+                    "allOf",
+                    &terms_to_js(terms, "anyOf")?.into(),
+                    path,
+                )?;
+                combinator.into()
+            }
+        };
+        set_field(&object, "require", &require, path)?;
+    }
+    Ok(object)
 }
 
 /// Collect every reference declaration of one document type: its
