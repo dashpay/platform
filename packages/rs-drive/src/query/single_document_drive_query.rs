@@ -119,7 +119,8 @@ impl SingleDocumentDriveQuery {
                 let contested = self.construct_contested_path_query(true);
                 // A lookup in a document's history has a subquery. From its generation 2 the
                 // merge refuses an overall limit above a subquery, where the generation before
-                // turned it into the cap of the merged branch.
+                // turned it into the cap of the merged branch. Protocol version 15 is the
+                // first to select that generation, so no earlier version enters here.
                 if self.document_type_keeps_history
                     && platform_version
                         .drive
@@ -265,6 +266,29 @@ mod tests {
                     .construct_path_query(protocol_version_14)
                     .expect("expected to build the query at protocol version 14"),
                 "keeps history: {document_type_keeps_history}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_leave_the_maybe_contested_query_of_protocol_version_14_as_it_was() {
+        let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        for block_time_ms in [None, Some(1500)] {
+            let query = maybe_contested(true, block_time_ms);
+
+            assert_eq!(
+                query
+                    .construct_path_query(protocol_version_14)
+                    .expect("expected to build the query"),
+                PathQuery::merge(
+                    vec![
+                        &query.construct_non_contested_path_query(true),
+                        &query.construct_contested_path_query(true),
+                    ],
+                    &protocol_version_14.drive.grove_version,
+                )
+                .expect("expected to merge the two lookups"),
+                "block time: {block_time_ms:?}"
             );
         }
     }
