@@ -140,7 +140,8 @@ extension ManagedPlatformWallet {
     /// applied first, briefly taking the wallet's write lock, as a send would
     /// see it; then it reads live wallet state. Read it again after the
     /// shielded store is configured or the wallet binds its shielded account
-    /// to see the restore.
+    /// to see the restore. Throws `PlatformWalletError.identityNotFound`
+    /// (code 7) for an identity the wallet does not hold.
     public func privateContactReadiness(identityId: Identifier) throws -> PrivateContactReadiness {
         var ffi = PrivateContactReadinessFFI()
         let handle = self.handle
@@ -154,7 +155,9 @@ extension ManagedPlatformWallet {
     /// Why the last restoration of this wallet's private payments failed,
     /// while they are not restored for `identityId` and none succeeded since,
     /// or `nil` when none failed (restored, or only not restored yet). What
-    /// `PrivateContactReadiness.privatePaymentsRestoreFailed` flags.
+    /// `PrivateContactReadiness.privatePaymentsRestoreFailed` flags. Throws
+    /// `PlatformWalletError.identityNotFound` (code 7) for an identity the
+    /// wallet does not hold.
     public func privatePaymentsRestoreFailure(identityId: Identifier) throws -> String? {
         var reason: UnsafeMutablePointer<CChar>?
         let handle = self.handle
@@ -180,7 +183,8 @@ extension ManagedPlatformWallet {
     /// pruned, which the shielded sync judges); an endpoint's refusal of the
     /// payment does not. Not a pure read: a journal record discharged since
     /// is applied first, so a discharge reads as freed with no send or sync
-    /// in between.
+    /// in between. Throws `PlatformWalletError.identityNotFound` (code 7)
+    /// for a sender the wallet does not hold.
     public func privatePairHeld(senderId: Identifier, recipientId: Identifier) throws -> Bool {
         var held = false
         let handle = self.handle

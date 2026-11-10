@@ -124,6 +124,74 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<PersistentPrivateShieldedAddress>()), 0)
     }
 
+    /// A position record marked unresolved survives its wallet's purge and
+    /// is listed for the load to hand back as retained; an unmarked record
+    /// and every address go with the wallet; a cleared record stored later
+    /// for the same wallet and identity replaces it, so the next purge
+    /// removes it.
+    func testShouldKeepAMarkedRecordThroughItsWalletsPurgeUntilAClearedRecordReplacesIt() throws {
+        let (container, handler) = try makeHandler()
+        let unmarked = Data(repeating: 1, count: 32)
+        let fingerprint = Data(repeating: 3, count: 32)
+        try round(
+            handler,
+            positions: [
+                .init(identityId: owner, position: 12, keyFingerprint: fingerprint,
+                      privatePaymentsUnresolved: true),
+                .init(identityId: unmarked, position: 4, keyFingerprint: fingerprint),
+            ],
+            addresses: [.init(ownerId: owner, contactId: contact, address: Data(repeating: 9, count: 43))])
+        XCTAssertEqual(try handler.loadPrivateContactScanStateWalletIds(), [walletId])
+
+        try handler.deleteWalletData(walletId: walletId)
+        let context = ModelContext(container)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<PersistentPrivateShieldedAddress>()), 0)
+        var kept = try handler.loadPrivateContactScanState(walletId: walletId)
+        XCTAssertEqual(kept.positions, [.init(
+            identityId: owner, position: 12, keyFingerprint: fingerprint, privatePaymentsUnresolved: true)],
+            "only the marked record outlives the wallet")
+        XCTAssertTrue(kept.addresses.isEmpty)
+        XCTAssertEqual(try handler.loadPrivateContactScanStateWalletIds(), [walletId],
+                       "the removed wallet is still listed for its kept record")
+
+        // The wallet registered again stores the record cleared.
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        try context.save()
+        try round(handler, positions: [.init(identityId: owner, position: 0, keyFingerprint: fingerprint)])
+        kept = try handler.loadPrivateContactScanState(walletId: walletId)
+        XCTAssertEqual(kept.positions.map(\.privatePaymentsUnresolved), [false])
+        try handler.deleteWalletData(walletId: walletId)
+        XCTAssertEqual(try ModelContext(container).fetchCount(
+            FetchDescriptor<PersistentPrivateContactRequestsPosition>()), 0)
+        XCTAssertTrue(try handler.loadPrivateContactScanStateWalletIds().isEmpty)
+    }
+
+    /// The wallet-list shim hands Rust the listed ids as 32-byte rows and
+    /// its free shim releases them; an empty list crosses as null.
+    func testShouldListTheWalletsWithScanStateThroughTheCallbackShims() throws {
+        let (_, handler) = try makeHandler()
+        let ext = handler.makePersistenceCallbacksExtension()
+        let list = try XCTUnwrap(ext.on_load_private_contact_scan_state_wallets_fn)
+        let free = try XCTUnwrap(ext.on_load_private_contact_scan_state_wallets_free_fn)
+        let context = Unmanaged.passUnretained(handler).toOpaque()
+
+        var ids: UnsafePointer<FFIByteTuple32>?
+        var count: UInt = 7
+        XCTAssertEqual(list(context, &ids, &count), 0)
+        XCTAssertNil(ids)
+        XCTAssertEqual(count, 0)
+
+        try round(handler, positions: [.init(
+            identityId: owner, position: 1, keyFingerprint: Data(repeating: 3, count: 32),
+            privatePaymentsUnresolved: true)])
+        try handler.deleteWalletData(walletId: walletId)
+        XCTAssertEqual(list(context, &ids, &count), 0)
+        XCTAssertEqual(count, 1)
+        var first = try XCTUnwrap(ids).pointee
+        XCTAssertEqual(Swift.withUnsafeBytes(of: &first) { Data($0) }, walletId)
+        free(context, ids, count)
+    }
+
     /// A stored row that cannot cross the ABI fails the load instead of
     /// handing back the rest without it: a valid position beside a 42-byte
     /// address would otherwise resume past the entry that carried it.
@@ -180,6 +248,8 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         let persist = try XCTUnwrap(ext.on_persist_private_contact_scan_state_fn)
         let load = try XCTUnwrap(ext.on_load_private_contact_scan_state_fn)
         let free = try XCTUnwrap(ext.on_load_private_contact_scan_state_free_fn)
+        XCTAssertNotNil(ext.on_load_private_contact_scan_state_wallets_fn)
+        XCTAssertNotNil(ext.on_load_private_contact_scan_state_wallets_free_fn)
         let context = Unmanaged.passUnretained(handler).toOpaque()
 
         var position = PrivateContactRequestsPositionFFI()

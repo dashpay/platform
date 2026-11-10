@@ -3359,6 +3359,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
         extensionCallbacks.on_load_private_contact_scan_state_free_fn =
             loadPrivateContactScanStateFreeCallback
+        extensionCallbacks.on_load_private_contact_scan_state_wallets_fn =
+            loadPrivateContactScanStateWalletsCallback
+        extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
+            loadPrivateContactScanStateWalletsFreeCallback
         return extensionCallbacks
     }
 
@@ -5273,6 +5277,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// The ids of every wallet this handler's network keeps private contact
+    /// request scan state for, a removed wallet whose marked position
+    /// records outlived it included. Rust reads each one its wallet-list
+    /// load does not return and hands its marked records to the wallet as
+    /// retained. Throws when the store cannot be read.
+    func loadPrivateContactScanStateWalletIds() throws -> [Data] {
+        try onQueue {
+            let networkRaw = (self.network ?? .testnet).rawValue
+            let positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                predicate: #Predicate { $0.networkRaw == networkRaw }))
+            var seen = Set<Data>()
+            return positions.compactMap { seen.insert($0.walletId).inserted ? $0.walletId : nil }
+        }
+    }
+
     /// The stored scan state of `walletId`. Throws when the store cannot be
     /// read, so the load fails rather than reading the store from its start.
     func loadPrivateContactScanState(walletId: Data) throws
@@ -6837,7 +6856,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.delete(row)
                 }
                 // The private contact request scan state carries the same
-                // explicit network key, so it is purged by the same rule.
+                // explicit network key, so it is purged by the same rule,
+                // except a position record whose unresolved-payment marker
+                // is set: it stands for a private payment that may still
+                // execute, so it outlives the wallet until a record stored
+                // cleared for the same wallet and identity replaces it, and
+                // the next load hands it back as retained
+                // (`loadPrivateContactScanStateWalletIds`).
                 let positions: FetchDescriptor<PersistentPrivateContactRequestsPosition>
                 let addresses: FetchDescriptor<PersistentPrivateShieldedAddress>
                 if let raw = metadataNetwork?.rawValue {
@@ -6852,7 +6877,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     addresses = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
                 }
                 for row in try backgroundContext.fetch(positions)
-                    where !claimedNetworks.contains(row.networkRaw) {
+                    where !claimedNetworks.contains(row.networkRaw) && !row.privatePaymentsUnresolved {
                     backgroundContext.delete(row)
                 }
                 for row in try backgroundContext.fetch(addresses)
@@ -12271,6 +12296,48 @@ private func loadPrivateContactScanStateFreeCallback(
         buffer.deinitialize(count: Int(addressesCount))
         buffer.deallocate()
     }
+}
+
+/// C shim for `on_load_private_contact_scan_state_wallets_fn`: the ids of
+/// the wallets the handler keeps scan state for, as one array of 32-byte ids
+/// released by the free shim below. A stored id that is not 32 bytes cannot
+/// cross: the load fails, as for an unreadable store.
+private func loadPrivateContactScanStateWalletsCallback(
+    context: UnsafeMutableRawPointer?,
+    outWalletIds: UnsafeMutablePointer<UnsafePointer<FFIByteTuple32>?>?,
+    outWalletIdsCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let outWalletIds, let outWalletIdsCount else { return -1 }
+    outWalletIds.pointee = nil
+    outWalletIdsCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let ids: [Data]
+    do {
+        ids = try handler.loadPrivateContactScanStateWalletIds()
+    } catch { return -1 }
+    guard ids.allSatisfy({ $0.count == 32 }) else { return -1 }
+    guard !ids.isEmpty else { return 0 }
+    let buffer = UnsafeMutablePointer<FFIByteTuple32>.allocate(capacity: ids.count)
+    for (index, id) in ids.enumerated() {
+        var tuple: FFIByteTuple32 = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        Swift.withUnsafeMutableBytes(of: &tuple) { _ = id.copyBytes(to: $0) }
+        (buffer + index).initialize(to: tuple)
+    }
+    outWalletIds.pointee = UnsafePointer(buffer)
+    outWalletIdsCount.pointee = UInt(ids.count)
+    return 0
+}
+
+/// C shim for `on_load_private_contact_scan_state_wallets_free_fn`.
+private func loadPrivateContactScanStateWalletsFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIds: UnsafePointer<FFIByteTuple32>?, walletIdsCount: UInt
+) {
+    guard let walletIds else { return }
+    let buffer = UnsafeMutablePointer(mutating: walletIds)
+    buffer.deinitialize(count: Int(walletIdsCount))
+    buffer.deallocate()
 }
 
 private func loadIdentityBalanceBlockTimeCallback(
