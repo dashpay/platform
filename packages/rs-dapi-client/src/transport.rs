@@ -177,6 +177,12 @@ impl CanRetry for TransportError {
             TransportError::Grpc(status) => status.rate_limit_ban_duration(),
         }
     }
+
+    fn is_node_busy(&self) -> bool {
+        match self {
+            TransportError::Grpc(status) => status.is_node_busy(),
+        }
+    }
 }
 
 /// Serialization of [TransportError].

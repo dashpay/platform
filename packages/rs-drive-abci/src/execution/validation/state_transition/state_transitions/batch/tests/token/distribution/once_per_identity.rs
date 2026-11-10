@@ -14,6 +14,7 @@ use rand::prelude::StdRng;
 /// the total paid out is bounded only by the token's max supply.
 mod once_per_identity_distribution {
     use super::*;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
@@ -756,6 +757,7 @@ mod once_per_identity_distribution {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &block_info(50, 40),
                 &transaction,
                 13,
