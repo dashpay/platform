@@ -6,7 +6,7 @@ use crate::util::common::encode::encode_u64;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_factory::DocumentFactory;
 use dpp::platform_value::platform_value;
-use grovedb::{PathQuery, Query};
+use grovedb::{GroveDb, PathQuery, Query};
 use std::collections::BTreeSet;
 
 fn temporal_fixture(initial: &PlatformVersion, summable: bool) -> (Drive, DataContract, Document) {
@@ -193,9 +193,27 @@ fn should_match_history_pages_at_every_temporal_boundary_before_and_after_migrat
                         &current.drive,
                     )
                     .unwrap();
-                assert!(temporal
-                    .verify_proof_keep_serialized(false, &bare_bound_proof, current)
-                    .is_err());
+                let (_, mut bare_bound_results) = GroveDb::verify_query(
+                    &bare_bound_proof,
+                    &bare_bound_query,
+                    &current.drive.grove_version,
+                )
+                .unwrap();
+                assert_eq!(bare_bound_results.len(), 1);
+                let (_, key, element) = bare_bound_results.pop().unwrap();
+                assert_eq!(key, [encode_u64(3000), encode_u64(3)].concat());
+                let bare_bound_document = Document::from_bytes(
+                    &element.unwrap().into_item_bytes().unwrap(),
+                    contract.document_type_for_name("person").unwrap(),
+                    current,
+                )
+                .unwrap();
+                assert_eq!(bare_bound_document.revision(), Some(3));
+                for is_subset in [false, true] {
+                    assert!(temporal
+                        .verify_proof_keep_serialized(is_subset, &bare_bound_proof, current)
+                        .is_err());
+                }
 
                 let other = person_at_block_time(&contract, [9; 32], 4000);
                 assert_ne!(other.document_id, temporal.document_id);
