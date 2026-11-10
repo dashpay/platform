@@ -146,7 +146,8 @@ unsafe fn local_shielded_balance_snapshot_with_budget(
     });
     let (wallet, coordinator) = unwrap_option_or_return!(lookup);
     // Only the owned Arcs cross this wait. Holding the global registry's read
-    // guard while a scan owns the store lock can block an unrelated writer,
+    // guard while the store lock is held elsewhere (a sync pass's append
+    // slice or commit, a restore, Clear) can block an unrelated writer,
     // which then blocks the stop lookup behind it on the fair registry lock.
     let result = runtime().block_on(async {
         // A missing wallet is an API error, not a legitimate unbound state.
