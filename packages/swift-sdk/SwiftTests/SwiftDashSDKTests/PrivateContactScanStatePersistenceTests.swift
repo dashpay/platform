@@ -166,6 +166,74 @@ final class PrivateContactScanStatePersistenceTests: XCTestCase {
         XCTAssertTrue(try handler.loadPrivateContactScanStateWalletIds().isEmpty)
     }
 
+    /// A handler configured with no network, as `configure(sdkPointer:
+    /// modelContainer:network:)` makes by default: a marked record of a
+    /// mainnet wallet, stored under mainnet, still reads back after the
+    /// wallet's removal, through the wallet list and the per-wallet load and
+    /// through their C shims, rather than reading as absent under a guessed
+    /// testnet scope. A testnet-scoped handler still does not see it.
+    func testShouldHandBackAKeptMainnetRecordToAHandlerWithNoNetwork() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .mainnet))
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+        let fingerprint = Data(repeating: 3, count: 32)
+        let marked = Position(
+            identityId: owner, position: 12, keyFingerprint: fingerprint, privatePaymentsUnresolved: true)
+        try round(handler, positions: [marked])
+        XCTAssertEqual(
+            try ModelContext(container).fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>())
+                .map(\.networkRaw),
+            [Network.mainnet.rawValue],
+            "stored under the wallet's own network")
+
+        try handler.deleteWalletData(walletId: walletId)
+        XCTAssertEqual(try handler.loadPrivateContactScanStateWalletIds(), [walletId])
+        XCTAssertEqual(try handler.loadPrivateContactScanState(walletId: walletId).positions, [marked])
+
+        let ext = handler.makePersistenceCallbacksExtension()
+        let list = try XCTUnwrap(ext.on_load_private_contact_scan_state_wallets_fn)
+        let freeList = try XCTUnwrap(ext.on_load_private_contact_scan_state_wallets_free_fn)
+        let load = try XCTUnwrap(ext.on_load_private_contact_scan_state_fn)
+        let free = try XCTUnwrap(ext.on_load_private_contact_scan_state_free_fn)
+        let shimContext = Unmanaged.passUnretained(handler).toOpaque()
+        var ids: UnsafePointer<FFIByteTuple32>?
+        var idsCount: UInt = 0
+        XCTAssertEqual(list(shimContext, &ids, &idsCount), 0)
+        XCTAssertEqual(idsCount, 1)
+        freeList(shimContext, ids, idsCount)
+        var positions: UnsafePointer<PrivateContactRequestsPositionFFI>?
+        var positionsCount: UInt = 0
+        var addresses: UnsafePointer<PrivateShieldedAddressFFI>?
+        var addressesCount: UInt = 0
+        let rc = walletId.withUnsafeBytes { wallet in
+            load(shimContext, wallet.bindMemory(to: UInt8.self).baseAddress,
+                 &positions, &positionsCount, &addresses, &addressesCount)
+        }
+        XCTAssertEqual(rc, 0)
+        XCTAssertEqual(positionsCount, 1)
+        XCTAssertTrue(try XCTUnwrap(positions).pointee.private_payments_unresolved)
+        free(shimContext, positions, positionsCount, addresses, addressesCount)
+
+        let testnet = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertTrue(try testnet.loadPrivateContactScanStateWalletIds().isEmpty)
+        XCTAssertTrue(try testnet.loadPrivateContactScanState(walletId: walletId).positions.isEmpty)
+    }
+
+    /// A handler with no network and no wallet row to take one from refuses
+    /// to store scan state rather than file it under a guessed network.
+    func testShouldRefuseToStoreScanStateWithNoNetworkToStoreItUnder() throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container)
+        handler.beginChangeset(walletId: walletId)
+        XCTAssertThrowsError(try handler.persistPrivateContactScanState(
+            walletId: walletId,
+            positions: [.init(identityId: owner, position: 1, keyFingerprint: Data(repeating: 3, count: 32))],
+            addresses: [], removedAddresses: [], clearedIdentities: []))
+        _ = handler.endChangeset(walletId: walletId, success: false)
+    }
+
     /// The wallet-list shim hands Rust the listed ids as 32-byte rows and
     /// its free shim releases them; an empty list crosses as null.
     func testShouldListTheWalletsWithScanStateThroughTheCallbackShims() throws {

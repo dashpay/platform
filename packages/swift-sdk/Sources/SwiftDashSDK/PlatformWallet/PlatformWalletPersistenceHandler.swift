@@ -5195,9 +5195,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     }
 
     /// The network the scan state of `walletId` is stored under, as for the
-    /// identity rows it belongs with.
-    private func scanStateNetworkRaw(walletId: Data) -> UInt32 {
-        (self.network ?? walletNetwork(walletId: walletId) ?? .testnet).rawValue
+    /// identity rows it belongs with: this handler's, else the wallet row's.
+    /// Nil when neither is known (a handler configured with no network, and
+    /// the wallet's row already gone). A write then refuses rather than file
+    /// the state under a guessed network, and a read takes the wallet's rows
+    /// under every stored network: a position record kept marked for a
+    /// removed wallet carries the network it was stored under, and guessing
+    /// one would read a kept record as absent.
+    private func scanStateNetworkRaw(walletId: Data) -> UInt32? {
+        (self.network ?? walletNetwork(walletId: walletId))?.rawValue
     }
 
     /// Apply a round's scan state. Identities the round removed lose theirs
@@ -5214,7 +5220,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 throw PlatformWalletError.walletOperation(
                     "Private contact request scan state requires a changeset")
             }
-            let networkRaw = scanStateNetworkRaw(walletId: walletId)
+            guard let networkRaw = scanStateNetworkRaw(walletId: walletId) else {
+                throw PlatformWalletError.walletOperation(
+                    "No network to store the private contact request scan state under")
+            }
             for identityId in clearedIdentities {
                 for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
                     predicate: #Predicate {
@@ -5281,12 +5290,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// request scan state for, a removed wallet whose marked position
     /// records outlived it included. Rust reads each one its wallet-list
     /// load does not return and hands its marked records to the wallet as
-    /// retained. Throws when the store cannot be read.
+    /// retained. A handler configured with no network lists the wallets of
+    /// every stored network rather than guess one: a kept record carries the
+    /// network it was stored under. Throws when the store cannot be read.
     func loadPrivateContactScanStateWalletIds() throws -> [Data] {
         try onQueue {
-            let networkRaw = (self.network ?? .testnet).rawValue
-            let positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
-                predicate: #Predicate { $0.networkRaw == networkRaw }))
+            let positions: [PersistentPrivateContactRequestsPosition]
+            if let networkRaw = self.network?.rawValue {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw }))
+            } else {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>())
+            }
             var seen = Set<Data>()
             return positions.compactMap { seen.insert($0.walletId).inserted ? $0.walletId : nil }
         }
@@ -5297,11 +5312,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func loadPrivateContactScanState(walletId: Data) throws
         -> (positions: [PrivateContactRequestsPositionRow], addresses: [PrivateShieldedAddressRow]) {
         try onQueue {
-            let networkRaw = scanStateNetworkRaw(walletId: walletId)
-            let positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
-                predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
-            let addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
-                predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            let positions: [PersistentPrivateContactRequestsPosition]
+            let addresses: [PersistentPrivateShieldedAddress]
+            if let networkRaw = scanStateNetworkRaw(walletId: walletId) {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+                addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            } else {
+                // No network known: every stored scope, not a guessed one.
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+                addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+            }
             return (
                 positions.map {
                     PrivateContactRequestsPositionRow(
