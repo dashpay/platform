@@ -46,12 +46,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// shielded sync reach a confirmed state and try again. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedNoRecordedAnchor = 19
-    /// A core transaction broadcast (send, DashPay payment, or asset-lock
-    /// funding) failed with an ambiguous outcome — the transaction may
-    /// already be on the network. The wallet keeps the spent inputs' UTXO
-    /// reservation, so an immediate retry fails at input selection instead
-    /// of double-spending; the reservation TTL or a sync reconciles the
-    /// outcome. Do NOT auto-retry.
+    /// A Core transaction or Platform state transition may have executed
+    /// but its outcome could not be confirmed. Reconcile the original operation
+    /// before another submission. Core input protections do not apply to
+    /// Platform state transitions. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
     /// A masternode (evonode) identity credit withdrawal was broadcast and
     /// accepted, but its execution result could not be confirmed — it may
@@ -265,6 +263,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// An asset lock (a drain, or a fixed amount in many small coins) exceeds
     /// the input cap; nothing was broadcast.
     case errorAssetLockTooManyInputs = 60
+    /// A shielded fund-from-asset-lock resume named a different Orchard
+    /// recipient than the one its tracked lock recorded; nothing was paid.
+    case errorAssetLockRecipientMismatch = 61
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -396,6 +397,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSpvProcessRestartRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_TOO_MANY_INPUTS:
             self = .errorAssetLockTooManyInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_MISMATCH:
+            self = .errorAssetLockRecipientMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -581,10 +584,20 @@ public enum PlatformWalletError: LocalizedError {
     /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
     /// An asset lock needs more inputs than one may carry: a drain of every
-    /// eligible input, or a fixed amount held only in many small coins. Nothing
-    /// was broadcast and no partial drain occurred; consolidating the coins lets
-    /// it fit.
+    /// eligible input, or a fixed amount held only in many small coins. The
+    /// build broadcast nothing, released its reservation and drained nothing;
+    /// consolidating the coins lets it fit. Also the outcome of resuming a
+    /// tracked lock over the cap: it is not re-sent (an earlier attempt may
+    /// have reached the network), it stays tracked, and nothing is released.
     case assetLockTooManyInputs(String)
+    /// A shielded fund-from-asset-lock resume (generic outpoint resume or a
+    /// repeated-UUID wallet drain) named a different Orchard recipient than
+    /// the one the tracked lock recorded when it was built. Nothing was
+    /// submitted or paid; resume with the recorded recipient
+    /// (`PersistentAssetLock.shieldedRecipientRaw43` /
+    /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
+    /// recipient was recorded carry none and accept the caller's.
+    case assetLockRecipientMismatch(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -615,11 +628,11 @@ public enum PlatformWalletError: LocalizedError {
     /// retained public Swift/FFI name, this is not a shielded-pool balance
     /// failure.
     case shieldedInsufficientBalance(String)
-    /// A core transaction broadcast was submitted but its outcome is
-    /// unknown — the transaction may already be on the network. The wallet
-    /// keeps the spent inputs reserved so a retry cannot double-spend; the
-    /// reservation TTL or a later sync reconciles the outcome. Do NOT
-    /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
+    /// A Core transaction or Platform state transition may have executed,
+    /// but its outcome is unknown. Sync and reconcile the original operation
+    /// before another submission. Core transactions retain their input
+    /// protections; Platform state transitions have no Core UTXO reservation.
+    /// Do NOT auto-retry. Sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
     /// A masternode (evonode) credit withdrawal was broadcast and accepted
     /// but its result could not be confirmed. It may already have executed
@@ -809,7 +822,7 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
-             .assetLockTooManyInputs(let m),
+             .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -928,6 +941,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
+        case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

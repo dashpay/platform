@@ -90,7 +90,6 @@ fn signed_answer_over(
                 true,
                 None,
                 producer,
-                None,
             )
             .unwrap();
     }

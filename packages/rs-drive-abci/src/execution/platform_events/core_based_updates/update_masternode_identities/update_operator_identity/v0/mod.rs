@@ -7,7 +7,6 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::ProTxHash;
 
-use dpp::dashcore::hashes::Hash;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -582,7 +581,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -663,7 +661,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -723,7 +720,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -804,7 +800,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -886,7 +881,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -947,7 +941,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -1045,7 +1038,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -1284,7 +1276,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -1345,7 +1336,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }

@@ -12,7 +12,6 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
 
@@ -45,7 +44,6 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -64,7 +62,6 @@ impl Drive {
                 storage_flags,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract_id".to_string(),

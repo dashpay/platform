@@ -29,7 +29,7 @@ use std::fmt;
 
 use async_trait::async_trait;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaRecSignature, EcdsaSecretKey, EcdsaSignature};
-use dashcore::hashes::{hash160, sha256d, Hash};
+use dashcore::hashes::{hash160, sha256d};
 use dashcore::{Address as DashAddress, AddressType, Network, ScriptBuf};
 use dpp::address_funds::AddressWitness;
 use dpp::identity::accessors::IdentityGettersV0;

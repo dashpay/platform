@@ -13,7 +13,6 @@ use async_trait::async_trait;
 use dashcore::blockdata::script::Builder;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::ecdsa::EcdsaSecretKey;
-use dashcore::hashes::Hash;
 use dashcore::BlockHash;
 use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]
@@ -206,7 +205,6 @@ pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
 /// crate and of `platform-wallet-storage`.
 pub mod core_fixtures {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address, BlockHash, Network, OutPoint, PubkeyHash, Transaction, TxIn, TxOut, Txid,
     };
@@ -1062,6 +1060,19 @@ pub(crate) async fn platform_wallet_in(
         Arc::new(AtomicBool::new(false)),
         DurableCursors::default(),
     )
+}
+
+/// A valid Orchard payment address, deterministic in `seed_byte`, for tests
+/// that need a recipient without a shielded key set: the external address
+/// at diversifier index 0 of the spending key whose 32 bytes all equal
+/// `seed_byte`. Two different seed bytes give two different addresses.
+#[cfg(all(test, feature = "shielded"))]
+pub fn orchard_address_fixture(seed_byte: u8) -> dpp::address_funds::OrchardAddress {
+    use grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+    let spending_key =
+        SpendingKey::from_bytes([seed_byte; 32]).expect("a constant spending key is on the curve");
+    let full_viewing_key = FullViewingKey::from(&spending_key);
+    dpp::address_funds::OrchardAddress::from(full_viewing_key.address_at(0u32, Scope::External))
 }
 
 /// Thread-scoped `tracing` event capture for tests that assert on log output.

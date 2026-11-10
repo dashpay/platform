@@ -102,8 +102,8 @@ abstract class NativePersistenceBridge {
 
         /**
          * `PersistenceCapabilities::CORE_CHAIN_TRUNCATION` (bit 15,
-         * `0x8000`; bit 14 is reserved for Core history restore). The one Kotlin
-         * home of this bit, like [CAPABILITY_CORE_SWEEP_REMOVAL].
+         * `0x8000`). The one Kotlin home of this bit, like
+         * [CAPABILITY_CORE_SWEEP_REMOVAL].
          */
         const val CAPABILITY_CORE_CHAIN_TRUNCATION: Long = 0x8000
     }

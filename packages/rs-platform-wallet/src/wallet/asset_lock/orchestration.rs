@@ -34,6 +34,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::changeset::ShieldedRecipientRaw;
 use dashcore::OutPoint;
 use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
@@ -512,6 +513,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         asset_lock_signer: &AS,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<FundingResolution, PlatformWalletError>
@@ -529,6 +531,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         account_index,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
                         on_built,
                     )
@@ -567,6 +570,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         minimum_lock_duffs,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
                         &operation,
                         on_built,
@@ -598,6 +602,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         account,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
                         on_built,
                     )
@@ -974,6 +979,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,

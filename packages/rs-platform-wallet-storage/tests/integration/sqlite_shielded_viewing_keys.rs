@@ -95,7 +95,8 @@ fn sqlite_does_not_attest_wallet_drain_without_wallet_restore() {
     // Native asset-lock persistence remains available independently of the
     // unsupported all-wallet shielded recovery contract.
     assert!(capabilities.contains(PersistenceCapabilities::TRACKED_ASSET_LOCKS));
-    assert!(!capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS));
+    assert!(capabilities.contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use crate::error::{with_causes, TrustedContextProviderError};
 use crate::get_quorum_base_url;
+use crate::known_contracts::hold_unless_newer_held;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
 };
@@ -266,13 +267,9 @@ impl TrustedHttpContextProvider {
     }
 
     /// Set known contracts that will be served immediately without fallback
+    /// ([`Self::add_known_contracts`]).
     pub fn with_known_contracts(self, contracts: Vec<DataContract>) -> Self {
-        let mut known = self.known_contracts.lock().unwrap();
-        for contract in contracts {
-            let id = contract.id();
-            known.insert(id, Arc::new(contract));
-        }
-        drop(known);
+        self.add_known_contracts(contracts);
         self
     }
 
@@ -282,8 +279,19 @@ impl TrustedHttpContextProvider {
         self
     }
 
-    /// Add a data contract to the known contracts cache
+    /// Add a data contract to the known contracts cache, unless it holds one of
+    /// a higher version under the same id, which another operation promoted:
+    /// an older contract restored from a saved cache does not replace it.
     pub fn add_known_contract(&self, contract: DataContract) {
+        let mut known = self.known_contracts.lock().unwrap();
+        hold_unless_newer_held(&mut known, Arc::new(contract));
+    }
+
+    /// Put a data contract in the known contracts cache in place of whatever it
+    /// holds under its id, of any version: an explicit replacement by a holder
+    /// that means it, such as one rolling back to a contract it bundles.
+    /// [`Self::add_known_contract`] keeps a newer one instead.
+    pub fn replace_known_contract(&self, contract: DataContract) {
         let id = contract.id();
         let mut known = self.known_contracts.lock().unwrap();
         known.insert(id, Arc::new(contract));
@@ -318,12 +326,12 @@ impl TrustedHttpContextProvider {
         known.remove(id).is_some()
     }
 
-    /// Add multiple data contracts to the known contracts cache
+    /// Add multiple data contracts to the known contracts cache, each as
+    /// [`Self::add_known_contract`] adds one.
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
         let mut known = self.known_contracts.lock().unwrap();
         for contract in contracts {
-            let id = contract.id();
-            known.insert(id, Arc::new(contract));
+            hold_unless_newer_held(&mut known, Arc::new(contract));
         }
     }
 
@@ -1028,10 +1036,11 @@ impl ContextProvider for TrustedHttpContextProvider {
         }
     }
 
+    /// Keeps a held contract of a higher version: a registration that waited
+    /// on a fetch must not replace one another operation promoted meanwhile.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
-        let id = contract.id();
         let mut known = self.known_contracts.lock().unwrap();
-        known.insert(id, contract);
+        hold_unless_newer_held(&mut known, contract);
     }
 
     fn get_token_configuration(
@@ -1060,7 +1069,7 @@ impl ContextProvider for TrustedHttpContextProvider {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
     use data_contracts::SystemDataContract;
@@ -2250,6 +2259,95 @@ mod tests {
                 reserved
             );
         }
+    }
+
+    /// A one-type contract `id` at `version`.
+    pub(crate) fn contract_at_version(id: [u8; 32], version: u32) -> DataContract {
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::version::PlatformVersion;
+
+        DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::from(id).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": version,
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "maxLength": 10, "position": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("the contract parses")
+    }
+
+    /// A registered contract replaces a held one of a lower version, and
+    /// leaves one of a higher version, which another operation promoted while
+    /// the registration waited on its fetch.
+    #[test]
+    fn should_keep_a_newer_contract_over_a_registered_older_one() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap();
+        let version = |version: u32| Arc::new(contract_at_version([0x71; 32], version));
+        let held = |provider: &TrustedHttpContextProvider| {
+            provider
+                .get_known_contract(&Identifier::from([0x71; 32]))
+                .map(|contract| contract.version())
+        };
+        provider.register_data_contract(version(2));
+        provider.register_data_contract(version(3));
+        assert_eq!(held(&provider), Some(3), "a newer one replaces");
+        provider.register_data_contract(version(2));
+        assert_eq!(held(&provider), Some(3), "an older one does not");
+    }
+
+    /// A contract added or hydrated replaces a held one of a lower or equal
+    /// version, and leaves one of a higher version: an older contract restored
+    /// from a saved cache does not undo a promotion.
+    #[test]
+    fn should_keep_a_newer_contract_over_an_older_one_added_or_hydrated() {
+        let id = Identifier::from([0x73; 32]);
+        let held = |provider: &TrustedHttpContextProvider| {
+            provider
+                .get_known_contract(&id)
+                .map(|contract| contract.version())
+        };
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap()
+        .with_known_contracts(vec![
+            contract_at_version([0x73; 32], 3),
+            contract_at_version([0x73; 32], 2),
+        ]);
+        assert_eq!(held(&provider), Some(3), "hydration keeps the newer one");
+        provider.add_known_contract(contract_at_version([0x73; 32], 2));
+        assert_eq!(
+            held(&provider),
+            Some(3),
+            "an older one added does not replace"
+        );
+        provider.add_known_contracts(vec![contract_at_version([0x73; 32], 1)]);
+        assert_eq!(held(&provider), Some(3), "nor one hydrated");
+        provider.add_known_contract(contract_at_version([0x73; 32], 4));
+        assert_eq!(held(&provider), Some(4), "a newer one replaces");
+        provider.replace_known_contract(contract_at_version([0x73; 32], 1));
+        assert_eq!(held(&provider), Some(1), "an explicit replacement replaces");
     }
 
     #[test]

@@ -1661,6 +1661,18 @@ pub struct AssetLockChangeSet {
     pub removed: BTreeSet<OutPoint>,
 }
 
+/// Byte length of a raw Orchard payment address (`OrchardAddress::to_raw_bytes`).
+pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
+
+/// The raw bytes of an Orchard payment address, as `OrchardAddress::to_raw_bytes`
+/// gives them and every FFI surface carries them (`recipient_raw_43`).
+///
+/// The changeset, the tracked locks and the persistence backends are built
+/// without the `shielded` feature, where `dpp::address_funds::OrchardAddress`
+/// does not exist, so they carry the recipient raw. Only shielded code
+/// converts it back into an address, and the resume check compares bytes.
+pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1695,17 +1707,30 @@ pub struct AssetLockEntry {
         serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
     )]
     pub proof: Option<AssetLockProof>,
+    /// The Orchard recipient a shielded funding was built to pay (raw 43-byte
+    /// address); `None` for other funding types and for legacy rows. Like
+    /// `operation_id`, immutable once recorded.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
+        )
+    )]
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association when folding or replaying
-    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
-    /// caller must discard the whole snapshot so its lifecycle cannot be
-    /// attached to a different operation.
+    /// Preserve the immutable operation association and shielded recipient
+    /// when folding or replaying a possibly stale snapshot. Returns false for
+    /// a conflicting UUID or recipient: the caller must discard the whole
+    /// snapshot so its lifecycle cannot be attached to a different operation
+    /// or redirect a pending shielded funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
+        previous_shielded_recipient: Option<ShieldedRecipientRaw>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1716,6 +1741,16 @@ impl AssetLockEntry {
                 return false;
             }
             self.operation_id = Some(previous_id);
+        }
+        if let Some(previous_recipient) = previous_shielded_recipient {
+            if self
+                .shielded_recipient
+                .is_some_and(|incoming| incoming != previous_recipient)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting shielded recipient");
+                return false;
+            }
+            self.shielded_recipient = Some(previous_recipient);
         }
         true
     }
@@ -1738,15 +1773,18 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry
+                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
                     || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
                     // Terminality guards lifecycle state, never the operation
-                    // association carried by a delayed snapshot.
+                    // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
+                    existing.shielded_recipient = entry.shielded_recipient;
                     continue;
                 }
             }
@@ -2680,8 +2718,6 @@ mod serde_compat_tests {
     /// it.
     #[test]
     fn a_populated_sweep_batch_round_trips() {
-        use dashcore::hashes::Hash;
-
         let loser = Txid::from_byte_array([0x11; 32]);
         let winner = Txid::from_byte_array([0x22; 32]);
         let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
@@ -2899,7 +2935,6 @@ mod tests {
     /// Consumed — while Consumed itself must still land over anything.
     #[test]
     fn asset_lock_merge_never_regresses_consumed() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         let outpoint = OutPoint {
@@ -2908,6 +2943,7 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            shielded_recipient: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2975,6 +3011,34 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
+
+        // The recorded shielded recipient survives a later snapshot without
+        // one (reconstruction, a status advance) and vetoes a conflicting one.
+        let recipient = [0x71u8; SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some(recipient);
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].shielded_recipient,
+            Some(recipient)
+        );
+        assert_eq!(
+            recorded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
 
         // Non-terminal transitions stay last-write-wins in both
         // directions (live advances overwrite RecoveredFromChain, and
@@ -3623,6 +3687,7 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            shielded_recipient: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
@@ -3904,7 +3969,6 @@ mod tests {
 #[cfg(test)]
 mod utxo_credit_verdict_merge_tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     fn outpoint(byte: u8) -> OutPoint {
         OutPoint {
@@ -4135,13 +4199,37 @@ mod utxo_credit_verdict_merge_tests {
 #[cfg(test)]
 mod coalesce_account_records_tests {
     use super::*;
-    use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
+    use dashcore::{Address, BlockHash, Network, PubkeyHash, TxOut};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, OutputRole, TransactionDirection,
+    };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 
     fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
-        let mut tx = crate::test_support::core_fixtures::spend_of(&[], vec![]);
+        let addresses = [5, 9].map(|tag| {
+            Address::new(
+                Network::Testnet,
+                dashcore::address::Payload::PubkeyHash(PubkeyHash::from_byte_array([tag; 20])),
+            )
+        });
+        let detail_index = usize::from(net_amount == 900);
+        let address = addresses[detail_index].clone();
+        let mut tx = crate::test_support::core_fixtures::spend_of(
+            &[
+                OutPoint::new(Txid::from_byte_array([5; 32]), 1),
+                OutPoint::new(Txid::from_byte_array([9; 32]), 1),
+            ],
+            addresses
+                .iter()
+                .zip([500, 900])
+                .map(|(address, value)| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+        );
         tx.version = 2;
+        tx.lock_time = 1;
         let mut record = TransactionRecord::new(
             tx,
             key_wallet::account::AccountType::Standard {
@@ -4150,12 +4238,30 @@ mod coalesce_account_records_tests {
             },
             context,
             key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
-            key_wallet::managed_account::transaction_record::TransactionDirection::Incoming,
-            Vec::new(),
-            Vec::new(),
+            if net_amount == 500 {
+                TransactionDirection::Incoming
+            } else {
+                TransactionDirection::Internal
+            },
+            vec![InputDetail {
+                index: detail_index as u32,
+                value: net_amount as u64 + 100,
+                address: address.clone(),
+            }],
+            vec![OutputDetail {
+                index: detail_index as u32,
+                role: if net_amount == 500 {
+                    OutputRole::Received
+                } else {
+                    OutputRole::Change
+                },
+                address: Some(address),
+                value: net_amount as u64,
+            }],
             net_amount,
         );
-        record.txid = Txid::from_byte_array([7; 32]);
+        record.fee = (net_amount == 900).then_some(200);
+        record.label = format!("snapshot {net_amount}");
         record
     }
 
@@ -4179,11 +4285,50 @@ mod coalesce_account_records_tests {
             ("equal rank", mempool(), mempool(), (900, false)),
             ("higher rank", mempool(), in_block(), (900, true)),
         ] {
-            let mut records = vec![record(500, earlier), record(900, later)];
+            let earlier = record(500, earlier);
+            let later = record(900, later);
+            assert_eq!(earlier.transaction, later.transaction, "{case}: same body");
+            assert_eq!(earlier.txid, earlier.transaction.txid());
+            assert_eq!(later.txid, earlier.txid, "{case}: same computed identity");
+            let expected = if kept.0 == 500 {
+                earlier.clone()
+            } else {
+                later.clone()
+            };
+            let mut records = vec![earlier, later];
             coalesce_account_records(&mut records);
             assert_eq!(records.len(), 1, "{case}");
             let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
             assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
+            let actual = &records[0];
+            assert_eq!(
+                actual.transaction, expected.transaction,
+                "{case}: entire body"
+            );
+            assert_eq!(actual.context, expected.context, "{case}");
+            assert_eq!(
+                (actual.fee, &actual.label, actual.direction),
+                (expected.fee, &expected.label, expected.direction),
+                "{case}: metadata"
+            );
+            let inputs = |r: &TransactionRecord| {
+                r.input_details
+                    .iter()
+                    .map(|d| (d.index, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let outputs = |r: &TransactionRecord| {
+                r.output_details
+                    .iter()
+                    .map(|d| (d.index, d.role, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(inputs(actual), inputs(&expected), "{case}: input details");
+            assert_eq!(
+                outputs(actual),
+                outputs(&expected),
+                "{case}: output details"
+            );
         }
     }
 }

@@ -7,20 +7,19 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore::{hashes::Hash, OutPoint, Txid};
+use dashcore::transaction::special_transaction::TransactionPayload;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
-use platform_wallet::changeset::changeset::{ChainTruncation, SweepBatch, UtxoCreditVerdict};
+use platform_wallet::changeset::changeset::ChainTruncation;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
-use crate::sqlite::schema::core_history;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
-use crate::sqlite::schema::{asset_locks, blob, dashpay};
+use crate::sqlite::schema::{blob, core_history};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -101,6 +100,7 @@ pub fn apply(
                 record_blob = excluded.record_blob",
         )?;
         for incoming in &cs.records {
+            ensure_current_transaction_identity(incoming)?;
             let record = core_history::preserve_known_details(tx, wallet_id, incoming)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
@@ -154,26 +154,7 @@ pub fn apply(
                      refresh the record itself to update its confirmation height"
                 );
             }
-            let spent = match cs.utxo_credit_verdicts.get(&utxo.outpoint) {
-                Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => true,
-                Some(UtxoCreditVerdict::Uncredited) => {
-                    let prior_spent: Option<bool> = tx
-                        .prepare_cached(
-                            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                        )?
-                        .query_row(
-                            params![wallet_id.as_slice(), blob::encode_outpoint(&utxo.outpoint)?],
-                            |row| row.get(0),
-                        )
-                        .optional()?;
-                    let Some(prior_spent) = prior_spent else {
-                        continue;
-                    };
-                    prior_spent
-                }
-                None => false,
-            };
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, spent, None)?;
+            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -190,36 +171,20 @@ pub fn apply(
             "SELECT 1 FROM core_utxos \
              WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
         )?;
-        // A reservation created here names the record that made it, so a
-        // conflict removing that record can release the coin. Only the unspent
-        // -> spent transition is attributed: an existing claim, known or not, stands.
-        let mut spenders: HashMap<OutPoint, Txid> = HashMap::new();
-        for record in &cs.records {
-            for input in &record.transaction.input {
-                spenders.entry(input.previous_output).or_insert(record.txid);
-            }
-        }
         let mut mark_spent_stmt = tx.prepare_cached(
-            "UPDATE core_utxos SET spent = 1, \
-                 spent_in_txid = CASE WHEN spent = 0 THEN ?3 ELSE spent_in_txid END \
-             WHERE wallet_id = ?1 AND outpoint = ?2",
+            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
-            let spender = spenders.get(&utxo.outpoint);
             let materialised: bool = materialised_stmt
                 .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
                 .optional()?
                 .unwrap_or(false);
             if materialised {
-                mark_spent_stmt.execute(params![
-                    wallet_id.as_slice(),
-                    &op[..],
-                    spender.map(AsRef::<[u8]>::as_ref)
-                ])?;
+                mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true, spender)?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
             }
         }
     }
@@ -580,19 +545,12 @@ fn surviving_stored_input_claims(
     wallet_id: &WalletId,
     swept_txids: &HashSet<dashcore::Txid>,
 ) -> Result<HashSet<dashcore::OutPoint>, WalletStorageError> {
-    use dashcore::hashes::Hash;
-
-    // Pre-read length gates, as in `load_state`: neither column is
-    // materialized before its stored size is validated.
-    let mut stmt = tx.prepare_cached(
-        "SELECT length(txid), txid, length(record_blob), record_blob \
-         FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL",
-    )?;
+    let mut stmt =
+        tx.prepare_cached("SELECT txid, record_blob FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL")?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut claims: HashSet<dashcore::OutPoint> = HashSet::new();
     while let Some(row) = rows.next()? {
-        blob::check_size(row.get(0)?)?;
-        let txid_bytes: Vec<u8> = row.get(1)?;
+        let txid_bytes: Vec<u8> = row.get(0)?;
         let Ok(txid_array) = <[u8; 32]>::try_from(txid_bytes.as_slice()) else {
             return Err(WalletStorageError::blob_decode(
                 "core_transactions.txid must be exactly 32 bytes",
@@ -602,9 +560,8 @@ fn surviving_stored_input_claims(
         if swept_txids.contains(&key_txid) {
             continue;
         }
-        blob::check_size(row.get(2)?)?;
-        let blob_bytes: Vec<u8> = row.get(3)?;
-        let record = decode_transaction_record(&blob_bytes)?;
+        let blob_bytes: Vec<u8> = row.get(1)?;
+        let record: TransactionRecord = blob::decode(&blob_bytes)?;
         if record.txid != key_txid {
             return Err(WalletStorageError::blob_decode(
                 "core_transactions.txid disagrees with the decoded record's txid",
@@ -623,80 +580,6 @@ fn surviving_stored_input_claims(
         );
     }
     Ok(claims)
-}
-
-/// Apply replay settlement without releasing surviving or unknown durable claims.
-pub fn apply_replay_sweeps(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    mut sweeps: Vec<SweepBatch>,
-) -> Result<(), WalletStorageError> {
-    use dashcore::hashes::Hash;
-
-    let removed: HashSet<_> = sweeps
-        .iter()
-        .flat_map(|sweep| sweep.txids.iter().copied())
-        .collect();
-    let candidates: HashSet<_> = sweeps
-        .iter()
-        .flat_map(|sweep| sweep.released_outpoints.iter().copied())
-        .collect();
-    let mut held = HashMap::new();
-    // The width gate stays its own statement: SQLite evaluates every result
-    // column before returning a row, so it must run before the payload is read.
-    let mut width_stmt = tx.prepare_cached(
-        "SELECT length(spent_in_txid) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
-    )?;
-    let mut claim_stmt = tx.prepare_cached(
-        "SELECT spent_in_txid, winner_mined_height FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-    )?;
-    for outpoint in candidates {
-        let key = blob::encode_outpoint(&outpoint)?;
-        let length: Option<Option<i64>> = width_stmt
-            .query_row(params![wallet_id.as_slice(), &key[..]], |row| row.get(0))
-            .optional()?;
-        let Some(length) = length else { continue };
-        if let Some(length) = length {
-            blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
-        }
-        let (claim, height): (Option<Vec<u8>>, Option<i64>) = claim_stmt
-            .query_row(params![wallet_id.as_slice(), &key[..]], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })?;
-        // A NULL claimant is an unknown durable spend, not evidence that the coin is free.
-        if claim
-            .as_deref()
-            .map(Txid::from_slice)
-            .transpose()?
-            .is_none_or(|claimant| !removed.contains(&claimant))
-        {
-            held.insert(outpoint, (claim, height));
-        }
-    }
-    for sweep in &mut sweeps {
-        sweep
-            .released_outpoints
-            .retain(|outpoint| !held.contains_key(outpoint));
-    }
-    asset_locks::remove_swept(tx, wallet_id, &removed)?;
-    dashpay::settle_swept_payments(tx, wallet_id, &removed)?;
-    apply(
-        tx,
-        wallet_id,
-        &CoreChangeSet {
-            sweeps,
-            ..Default::default()
-        },
-    )?;
-    // The generic sweep attributes held inputs to its winner; retain the original provenance.
-    let mut restore_stmt = tx.prepare_cached(
-        "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3, winner_mined_height = ?4 WHERE wallet_id = ?1 AND outpoint = ?2",
-    )?;
-    for (outpoint, (claim, height)) in held {
-        let key = blob::encode_outpoint(&outpoint)?;
-        restore_stmt.execute(params![wallet_id.as_slice(), &key[..], claim, height])?;
-    }
-    Ok(())
 }
 
 /// Delete a swept transaction's row and outputs, then resolve the coins it
@@ -829,16 +712,13 @@ fn apply_sweep(
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         // `encode_outpoint_txid_occupies_bytes_two_to_thirty_three` pins this prefix.
-        // SQLite plans a DELETE through an expression index only when named
-        // (V020 explains the index); naming it also fails loudly if it goes.
         tx.execute(
-            "DELETE FROM core_utxos INDEXED BY idx_core_utxos_funding \
-             WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
+            "DELETE FROM core_utxos WHERE wallet_id = ?1 AND substr(outpoint, 2, 32) = ?2",
             params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(loser_txid)],
         )?;
         return Ok(());
     };
-    let loser = decode_transaction_record(&loser_blob)?;
+    let loser: TransactionRecord = blob::decode(&loser_blob)?;
     // Fails CLOSED on a key/record disagreement, before anything is deleted
     // or any input is touched. The typed key is what named this row a swept
     // loser — both here and in `surviving_stored_input_claims`, which skips
@@ -875,14 +755,12 @@ fn apply_sweep(
     // query even if nothing had marked it spent yet (upstream sweeps only
     // unconfirmed records, whose spends this schema does not mark).
     // `spent_in_txid` moves with `spent`: a released input clears back to
-    // NULL (nobody's claim), a held one is attributed to its claimant (see
-    // `held_claimant`) so the claim outlives this row's own deletion below.
+    // NULL (nobody's claim), a held one is attributed to `superseded_by` so
+    // the claim outlives this row's own deletion below.
     // A held, never-materialised claim (`is_sweep_placeholder = 1`) is re-stamped
-    // with the NEW winner's mined height when this sweep has one and the
-    // claim now belongs to that winner — its height is what the
-    // collector compares against the finality boundary. A claim left with
-    // a surviving spender is not stamped: the winner's height says nothing
-    // about a coin the winner does not spend. An IS-locked
+    // with the NEW winner's mined height when this sweep has one — the
+    // claim now belongs to that winner, and its height is what the
+    // collector compares against the finality boundary. An IS-locked
     // winner (`?5` NULL) re-points the claim but keeps the existing stamp:
     // the earlier block-context observation stands, exactly as upstream's
     // `observed_spent_outpoints` entry is never retracted by an
@@ -914,9 +792,6 @@ fn apply_sweep(
             (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid, \
              winner_mined_height) \
          VALUES (?1, ?2, 0, X'', 1, 1, ?3, ?4)",
-    )?;
-    let mut spenders_stmt = tx.prepare_cached(
-        "SELECT txid FROM core_transaction_inputs WHERE wallet_id = ?1 AND outpoint = ?2",
     )?;
     for input in &loser.transaction.input {
         let outpoint = input.previous_output;
@@ -953,27 +828,17 @@ fn apply_sweep(
         }
         let key = blob::encode_outpoint(&outpoint)?;
         let freed = released.contains(&outpoint);
-        let claimant = if freed {
+        let spent_in_txid: Option<&[u8]> = if freed {
             None
         } else {
-            Some(held_claimant(
-                &mut spenders_stmt,
-                wallet_id,
-                &key[..],
-                superseded_by,
-                swept_txids,
-            )?)
+            Some(AsRef::<[u8]>::as_ref(superseded_by))
         };
-        let stamp = winner_mined_height
-            .filter(|_| claimant.as_ref() == Some(superseded_by))
-            .map(i64::from);
-        let spent_in_txid = claimant.as_ref().map(AsRef::<[u8]>::as_ref);
         let affected = spend_stmt.execute(params![
             wallet_id.as_slice(),
             &key[..],
             !freed,
             spent_in_txid,
-            stamp
+            winner_mined_height.map(i64::from)
         ])?;
         if affected == 0 && !freed {
             // A held input with no row gets a placeholder in EVERY sweep
@@ -986,8 +851,8 @@ fn apply_sweep(
             tombstone_stmt.execute(params![
                 wallet_id.as_slice(),
                 &key[..],
-                spent_in_txid,
-                stamp
+                AsRef::<[u8]>::as_ref(superseded_by),
+                winner_mined_height.map(i64::from)
             ])?;
         }
     }
@@ -995,36 +860,9 @@ fn apply_sweep(
     Ok(())
 }
 
-/// The claimant of an input a sweep holds back. `winner` when it spends the
-/// coin or no surviving stored transaction does; otherwise that surviving
-/// spender (the smallest txid of several), so removing it can release the coin.
-fn held_claimant(
-    spenders: &mut rusqlite::CachedStatement<'_>,
-    wallet_id: &WalletId,
-    outpoint: &[u8],
-    winner: &dashcore::Txid,
-    swept_txids: &HashSet<dashcore::Txid>,
-) -> Result<dashcore::Txid, WalletStorageError> {
-    use dashcore::hashes::Hash;
-
-    let mut survivor: Option<dashcore::Txid> = None;
-    let mut rows = spenders.query(params![wallet_id.as_slice(), outpoint])?;
-    while let Some(row) = rows.next()? {
-        let bytes: Vec<u8> = row.get(0)?;
-        let spender = dashcore::Txid::from_slice(&bytes)?;
-        if spender == *winner {
-            return Ok(*winner);
-        }
-        if !swept_txids.contains(&spender) {
-            survivor = Some(survivor.map_or(spender, |known| known.min(spender)));
-        }
-    }
-    Ok(survivor.unwrap_or(*winner))
-}
-
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, spent, spent_in_txid) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+        (wallet_id, outpoint, value, script, spent) \
+     VALUES (?1, ?2, ?3, ?4, ?5) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
@@ -1038,8 +876,6 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
             ELSE NULL END";
 
 /// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
-/// `spender` is the claimant of a freshly inserted row only: an existing row
-/// keeps the claim it already has.
 ///
 /// # Errors
 ///
@@ -1052,7 +888,6 @@ fn execute_upsert_utxo(
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
-    spender: Option<&Txid>,
 ) -> Result<(), WalletStorageError> {
     if utxo.txout.script_pubkey.as_bytes().is_empty() {
         return Err(WalletStorageError::EmptyUtxoScript {
@@ -1066,7 +901,6 @@ fn execute_upsert_utxo(
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         spent,
-        spender.map(AsRef::<[u8]>::as_ref),
     ])?;
     Ok(())
 }
@@ -1140,38 +974,6 @@ fn upsert_sync_state(
     Ok(())
 }
 
-/// Durable spend guards include recordless claims and unmaterialized sweep placeholders.
-pub(crate) fn load_spent_claims(
-    conn: &Connection,
-    wallet_id: &WalletId,
-) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
-    // SQLite evaluates every result column when the row is stepped, but a
-    // CASE lazily: a payload past its gate is never loaded, and the length
-    // beside it reports the typed error below.
-    let mut stmt = conn.prepare_cached(
-        "SELECT length(outpoint), CASE WHEN length(outpoint) <= ?2 THEN outpoint END, \
-                length(spent_in_txid), \
-                CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END \
-         FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
-    )?;
-    let limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
-    let mut rows = stmt.query(params![wallet_id.as_slice(), limit])?;
-    let mut outpoints = Vec::new();
-    while let Some(row) = rows.next()? {
-        blob::check_size(row.get(0)?)?;
-        let bytes: Vec<u8> = row.get(1)?;
-        let claimant = if let Some(length) = row.get::<_, Option<i64>>(2)? {
-            blob::check_fixed_width(length, 32, "core_utxos.spent_in_txid")?;
-            let raw: Vec<u8> = row.get(3)?;
-            Some(Txid::from_slice(&raw)?)
-        } else {
-            None
-        };
-        outpoints.push((blob::decode_outpoint(&bytes)?, claimant));
-    }
-    Ok(outpoints)
-}
-
 /// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet
 /// from the `core_*` tables, plus the per-outpoint owning-account side channel.
 /// PUBLIC material only; mints no `Wallet`. `network` (from `wallets`) turns a
@@ -1212,32 +1014,12 @@ pub fn load_state(
     ),
     WalletStorageError,
 > {
-    load_state_with_record_keys(conn, wallet_id, network, ctx, &mut HashMap::new())
-}
-
-/// Retain physical row keys so authorization repair can remove drifted bodies.
-/// Appends blob txid → physical row keys to the `record_keys` output map.
-pub(crate) fn load_state_with_record_keys(
-    conn: &Connection,
-    wallet_id: &WalletId,
-    network: dashcore::Network,
-    ctx: &LoadCtx,
-    record_keys: &mut HashMap<Txid, Vec<Txid>>,
-) -> Result<
-    (
-        CoreChangeSet,
-        std::collections::HashMap<dashcore::OutPoint, OwningAccount>,
-    ),
-    WalletStorageError,
-> {
     let mut cs = CoreChangeSet::default();
     let mut utxo_accounts: HashMap<dashcore::OutPoint, OwningAccount> = HashMap::new();
 
     let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
     let mut blob_backed_transaction_heights = HashSet::new();
     {
-        use dashcore::hashes::Hash;
-
         // Pre-read length gates keep fixed-width txids and record blobs from
         // being materialized before their stored sizes are validated.
         let mut stmt = conn.prepare(
@@ -1256,7 +1038,7 @@ pub(crate) fn load_state_with_record_keys(
             if let Some(record_blob_len) = row.get::<_, Option<i64>>(3)? {
                 blob::check_size(record_blob_len)?;
                 let payload: Vec<u8> = row.get(4)?;
-                let record = decode_transaction_record(&payload)?;
+                let record = blob::decode::<TransactionRecord>(&payload)?;
                 effective_txid = record.txid;
                 effective_height = record.block_info().map(|block_info| block_info.height());
                 if let Err(mismatch) =
@@ -1266,7 +1048,6 @@ pub(crate) fn load_state_with_record_keys(
                     // using it; the typed columns are left exactly as found.
                     ctx.tolerate(LoadSite::CoreTransactionColumnDrift, mismatch)?;
                 }
-                record_keys.entry(record.txid).or_default().push(txid);
                 cs.records.push(record);
                 transaction_heights.insert(effective_txid, effective_height);
                 blob_backed_transaction_heights.insert(effective_txid);
@@ -1301,11 +1082,6 @@ pub(crate) fn load_state_with_record_keys(
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height = transaction_heights.get(&outpoint.txid).copied().flatten();
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
-            // A contact's watch-only output is never ours to spend, whatever
-            // an older build recorded; the fallback would make it spendable.
-            if core_history::contact_only_script(conn, wallet_id, script.as_bytes())? {
-                continue;
-            }
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
@@ -1350,7 +1126,6 @@ pub(crate) fn load_state_with_record_keys(
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
-            use dashcore::hashes::Hash;
             blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "core_instant_locks.txid")?;
             let txid_bytes: Vec<u8> = row.get(1)?;
             blob::check_size(row.get::<_, i64>(2)?)?;
@@ -1597,17 +1372,37 @@ pub fn get_tx_record(
     Ok(Some(record))
 }
 
-/// Reject internally inconsistent bodies before they can drive replay or sweeps.
+/// Decode historical records without changing their stored identifiers or index keys.
 pub(crate) fn decode_transaction_record(
     payload: &[u8],
 ) -> Result<TransactionRecord, WalletStorageError> {
     let record: TransactionRecord = blob::decode(payload)?;
+    if let Err(error) = ensure_current_transaction_identity(&record) {
+        // Before stable AssetUnlock txids, the writer committed the full quorum
+        // information. Only that historical payload shape may use an instance hash.
+        let historical_unlock = (record.transaction.version as i16) >= 3
+            && matches!(
+                &record.transaction.special_transaction_payload,
+                Some(TransactionPayload::AssetUnlockPayloadType(payload)) if payload.base.version >= 2
+            )
+            && record.txid == record.transaction.instance_hash();
+        if !historical_unlock {
+            return Err(error);
+        }
+    }
+    Ok(record)
+}
+
+/// New writes use the current canonical identifier; historical aliases are read-only.
+fn ensure_current_transaction_identity(
+    record: &TransactionRecord,
+) -> Result<(), WalletStorageError> {
     if record.txid != record.transaction.txid() {
         return Err(WalletStorageError::blob_decode(
             "transaction record txid disagrees with its transaction body hash",
         ));
     }
-    Ok(record)
+    Ok(())
 }
 
 /// Diagnose typed txid/height columns that disagree with the authoritative blob.
@@ -1679,16 +1474,181 @@ pub fn list_unspent_utxos(
 mod tests {
     use super::*;
     use crate::sqlite::config::LoadPolicy;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v020, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
-    use rusqlite::types::Value::{Blob, Integer, Null};
+
+    // Encoded by TransactionRecord::new at rust-dashcore d631aaca3632cc713143476e363c9a9aca038d2e,
+    // using grovedb-bincode 2.1.0 serde standard config. Public mempool records, not finality proofs.
+    // Unlock: version 2, index 71, fee 1000, request height 200, quorum hash [0x31;32], sig [0x42;96].
+    // The second record spends its historical outpoint. Never regenerate these with the live writer.
+    fn historical_asset_unlock_rows() -> Vec<(Txid, Vec<u8>, TransactionRecord)> {
+        include_str!("../../../tests/fixtures/v019_asset_unlock_v2.txt")
+            .lines()
+            .map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                let txid = Txid::from_slice(&hex::decode(fields[1]).unwrap()).unwrap();
+                let bytes = hex::decode(fields[2]).unwrap();
+                let record: TransactionRecord = blob::decode(&bytes).unwrap();
+                assert_eq!(record.txid, txid);
+                assert_eq!(blob::encode(&record).unwrap(), bytes);
+                (txid, bytes, record)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn should_migrate_and_read_historical_asset_unlock_without_rekeying() {
+        let wallet = [0x74; 32];
+        let mut conn = wallet_db(&wallet);
+        let rows = historical_asset_unlock_rows();
+        let (legacy, _, withdrawal) = &rows[0];
+        let canonical = withdrawal.transaction.txid();
+        assert_eq!(
+            hex::encode(canonical.as_byte_array()),
+            "8df73be32e0ac0dea8619c57f212076f88e528563d1505e8316a2757abe32333"
+        );
+        assert_ne!(*legacy, canonical);
+        assert_eq!(*legacy, withdrawal.transaction.instance_hash());
+        for (txid, bytes, _) in &rows {
+            conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+                params![wallet.as_slice(), txid.as_byte_array().as_slice(), bytes]).unwrap();
+        }
+        rewind_v021(&conn);
+        migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+        for (txid, bytes, original) in &rows {
+            let loaded = get_tx_record(&conn, &wallet, txid, &LoadCtx::strict())
+                .unwrap()
+                .unwrap();
+            assert_eq!(loaded.txid, *txid);
+            assert_eq!(loaded.transaction, original.transaction);
+            let stored: Vec<u8> = conn
+                .query_row(
+                    "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                    params![wallet.as_slice(), txid.as_byte_array().as_slice()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                &stored, bytes,
+                "unchanged accounting keeps the exact historical bytes"
+            );
+        }
+        assert!(
+            get_tx_record(&conn, &wallet, &canonical, &LoadCtx::strict())
+                .unwrap()
+                .is_none()
+        );
+        let (state, _) = load_state(
+            &conn,
+            &wallet,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(state.records.iter().any(|r| r.txid == *legacy));
+        let indexed: (Vec<u8>, Vec<u8>) = conn
+            .query_row(
+                "SELECT txid, outpoint FROM core_transaction_inputs",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(indexed.0, rows[1].0.as_byte_array());
+        assert_eq!(
+            blob::decode_outpoint(&indexed.1).unwrap(),
+            OutPoint::new(*legacy, 0)
+        );
+    }
+
+    #[test]
+    fn should_reject_tampering_with_historical_asset_unlock_identity() {
+        let original = historical_asset_unlock_rows().remove(0).2;
+        for mutation in [
+            "output",
+            "quorum",
+            "version",
+            "type",
+            "record id",
+            "row key",
+        ] {
+            let wallet = [0x75; 32];
+            let mut conn = wallet_db(&wallet);
+            let mut record = original.clone();
+            let mut key = original.txid;
+            match mutation {
+                "output" => record.transaction.output[0].value += 1,
+                "quorum" => {
+                    let Some(TransactionPayload::AssetUnlockPayloadType(payload)) =
+                        &mut record.transaction.special_transaction_payload
+                    else {
+                        panic!("fixture payload")
+                    };
+                    payload.quorum_sig = [0x43; 96].into();
+                }
+                "version" => {
+                    let Some(TransactionPayload::AssetUnlockPayloadType(payload)) =
+                        &mut record.transaction.special_transaction_payload
+                    else {
+                        panic!("fixture payload")
+                    };
+                    payload.base.version = 1;
+                }
+                "type" => record.transaction.special_transaction_payload = None,
+                "record id" => record.txid = Txid::from_byte_array([0x76; 32]),
+                "row key" => key = Txid::from_byte_array([0x76; 32]),
+                _ => unreachable!(),
+            }
+            conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+                params![wallet.as_slice(), key.as_byte_array().as_slice(), blob::encode(&record).unwrap()]).unwrap();
+            assert!(
+                get_tx_record(&conn, &wallet, &key, &LoadCtx::strict()).is_err(),
+                "{mutation}"
+            );
+            rewind_v021(&conn);
+            assert!(
+                migrations::run_for_open(&mut conn, LoadPolicy::Strict).is_err(),
+                "{mutation}"
+            );
+            let version: i64 = conn
+                .query_row(
+                    "SELECT max(version) FROM refinery_schema_history",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(version, 20, "{mutation}: failed migration is atomic");
+        }
+    }
+
+    #[test]
+    fn should_require_canonical_asset_unlock_identity_for_current_writes() {
+        let wallet = [0x77; 32];
+        let mut conn = wallet_db(&wallet);
+        let historical = historical_asset_unlock_rows().remove(0).2;
+        {
+            let tx = conn.transaction().unwrap();
+            assert!(
+                apply(&tx, &wallet, &round(vec![historical.clone()], vec![])).is_err(),
+                "legacy aliases are accepted only on historical reads"
+            );
+        }
+        let mut canonical = historical;
+        canonical.txid = canonical.transaction.txid();
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet, &round(vec![canonical.clone()], vec![])).unwrap();
+        tx.commit().unwrap();
+        let loaded = get_tx_record(&conn, &wallet, &canonical.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.txid, canonical.txid);
+        assert_eq!(loaded.transaction, canonical.transaction);
+    }
 
     fn transaction_record(context: TransactionContext) -> TransactionRecord {
         TransactionRecord::new(
@@ -1772,15 +1732,202 @@ mod tests {
         .unwrap()
     }
 
-    fn load(conn: &Connection, wallet_id: &[u8; 32]) -> (CoreChangeSet, Vec<OutPoint>) {
-        let (cs, owners) = load_state(
-            conn,
-            wallet_id,
-            dashcore::Network::Testnet,
-            &LoadCtx::strict(),
+    #[test]
+    fn should_repair_accounting_without_changing_spend_claims() {
+        let wallet_id = [0xAC; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let funding = sample_utxo(Txid::from_byte_array([0x32; 32]), 100, true);
+        let context = TransactionContext::InBlock(BlockInfo::new(101, BlockHash::all_zeros(), 123));
+        let spending = spend(&[funding.outpoint], context);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &round(vec![spending.clone()], vec![funding.clone()]),
         )
         .unwrap();
-        (cs, owners.into_keys().collect())
+        tx.execute("UPDATE core_utxos SET spent = 0, spent_in_txid = NULL", [])
+            .unwrap();
+
+        core_history::apply(&tx, &wallet_id, &round(vec![spending.clone()], vec![])).unwrap();
+
+        assert_eq!(
+            stored_record(&tx, &wallet_id, &spending.txid).net_amount,
+            -150_000
+        );
+        let claim: (bool, Option<Vec<u8>>) = tx.query_row(
+            "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![wallet_id.as_slice(), blob::encode_outpoint(&funding.outpoint).unwrap()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(
+            claim,
+            (false, None),
+            "accounting cannot authorize or reserve a spend"
+        );
+    }
+
+    #[test]
+    fn should_backfill_v019_accounting_without_discarding_history_or_spend_state() {
+        for context in [
+            TransactionContext::Mempool,
+            TransactionContext::InBlock(BlockInfo::new(101, BlockHash::all_zeros(), 123)),
+        ] {
+            let wallet_id = [0xAD; 32];
+            let mut conn = wallet_db(&wallet_id);
+            let funding = sample_utxo(Txid::from_byte_array([0x33; 32]), 100, true);
+            let spending = spend(&[funding.outpoint], context);
+            let original = blob::encode(&spending).unwrap();
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &round(vec![spending.clone()], vec![funding.clone()]),
+            )
+            .unwrap();
+            tx.execute(
+                "UPDATE core_transactions SET record_blob = ?1 WHERE txid = ?2",
+                params![original, spending.txid.as_byte_array().as_slice()],
+            )
+            .unwrap();
+            tx.execute(
+                "UPDATE core_utxos SET spent = 1, spent_in_txid = ?1",
+                params![spending.txid.as_byte_array().as_slice()],
+            )
+            .unwrap();
+            tx.execute("INSERT INTO core_sync_state (wallet_id, synced_height, last_processed_height) VALUES (?1, 200, 200)", params![wallet_id.as_slice()]).unwrap();
+            tx.commit().unwrap();
+            let snapshot = |conn: &Connection| {
+                let coin: (i64, Option<Vec<u8>>, i64, Vec<u8>) = conn.query_row(
+                    "SELECT spent, spent_in_txid, value, script FROM core_utxos WHERE wallet_id = ?1",
+                    params![wallet_id.as_slice()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                ).unwrap();
+                let sync: (i64, i64) = conn.query_row(
+                    "SELECT synced_height, last_processed_height FROM core_sync_state WHERE wallet_id = ?1",
+                    params![wallet_id.as_slice()], |row| Ok((row.get(0)?, row.get(1)?)),
+                ).unwrap();
+                (coin, sync)
+            };
+            let before = snapshot(&conn);
+            rewind_v021(&conn);
+
+            migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+
+            let repaired = stored_record(&conn, &wallet_id, &spending.txid);
+            assert_eq!(repaired.net_amount, -150_000);
+            assert_eq!(repaired.input_details.len(), 1);
+            assert_eq!(repaired.context, spending.context);
+            assert_eq!(original_blob(&conn, &wallet_id, &spending.txid), original);
+            assert_eq!(snapshot(&conn), before);
+            let indexed: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM core_transaction_inputs WHERE txid = ?1",
+                    params![spending.txid.as_byte_array().as_slice()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(indexed, 1);
+        }
+    }
+
+    #[test]
+    fn should_skip_failed_accounting_repair_without_partial_index_or_archive() {
+        let wallet_id = [0xAE; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let funding = sample_utxo(Txid::from_byte_array([0x34; 32]), 100, true);
+        let bad = spend(&[funding.outpoint], TransactionContext::Mempool);
+        let mut good = bad.clone();
+        good.transaction.version += 1;
+        good.txid = good.transaction.txid();
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &round(vec![bad.clone(), good.clone()], vec![funding]),
+        )
+        .unwrap();
+        for record in [&bad, &good] {
+            tx.execute(
+                "UPDATE core_transactions SET record_blob = ?1 WHERE txid = ?2",
+                params![
+                    blob::encode(record).unwrap(),
+                    record.txid.as_byte_array().as_slice()
+                ],
+            )
+            .unwrap();
+        }
+        tx.execute(
+            "UPDATE core_transactions SET height = 999 WHERE txid = ?1",
+            params![bad.txid.as_byte_array().as_slice()],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        rewind_v021(&conn);
+
+        migrations::run_for_open(&mut conn, LoadPolicy::Recovery).unwrap();
+
+        let unchanged: Vec<u8> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE txid = ?1",
+                params![bad.txid.as_byte_array().as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unchanged, blob::encode(&bad).unwrap());
+        for table in [
+            "core_transaction_inputs",
+            "core_transaction_record_originals",
+        ] {
+            let count: i64 = conn
+                .query_row(
+                    &format!("SELECT count(*) FROM {table} WHERE txid = ?1"),
+                    params![bad.txid.as_byte_array().as_slice()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "failed repair leaves no partial {table} row");
+        }
+        assert_eq!(
+            stored_record(&conn, &wallet_id, &good.txid).net_amount,
+            -150_000
+        );
+        assert_eq!(
+            original_blob(&conn, &wallet_id, &good.txid),
+            blob::encode(&good).unwrap()
+        );
+    }
+
+    #[test]
+    fn should_repair_indexed_legacy_history_when_spent_funding_arrives_after_migration() {
+        let wallet_id = [0xAF; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let funding = sample_utxo(Txid::from_byte_array([0x35; 32]), 100, true);
+        let spending = spend(&[funding.outpoint], TransactionContext::Mempool);
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &round(vec![spending.clone()], vec![])).unwrap();
+        tx.commit().unwrap();
+        rewind_v021(&conn);
+        migrations::run_for_open(&mut conn, LoadPolicy::Strict).unwrap();
+
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                spent_utxos: vec![funding],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            stored_record(&tx, &wallet_id, &spending.txid).net_amount,
+            -150_000
+        );
+        assert_eq!(
+            original_blob(&tx, &wallet_id, &spending.txid),
+            blob::encode(&spending).unwrap()
+        );
     }
 
     #[test]
@@ -1813,18 +1960,20 @@ mod tests {
             90_000,
             "another wallet's funding must not affect this history"
         );
-        apply(&tx, &wallet_id, &round(vec![], vec![funding.clone()])).unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                spent_utxos: vec![funding.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let repaired = stored_record(&tx, &wallet_id, &spending.txid);
         assert_eq!(repaired.net_amount, -60_000);
         assert_eq!(repaired.direction, TransactionDirection::Internal);
         assert_eq!(repaired.input_details.len(), 1);
         assert_eq!(repaired.block_info().unwrap().height(), 101);
-        assert_eq!(
-            spend_claim(&tx, &wallet_id, &funding.outpoint),
-            (true, Some(AsRef::<[u8]>::as_ref(&spending.txid).to_vec())),
-            "late funding must not resurrect the spent coin, and the repair mark \
-             names its spender so it can be reverted"
-        );
         let original = original_blob(&tx, &wallet_id, &spending.txid);
         assert_eq!(
             blob::decode::<TransactionRecord>(&original)
@@ -1842,234 +1991,6 @@ mod tests {
         let replayed = stored_record(&tx, &wallet_id, &spending.txid);
         assert_eq!(replayed.net_amount, -60_000);
         assert_eq!(replayed.input_details.len(), 1);
-    }
-
-    /// Every row of every table outside Core history, by table.
-    fn non_core_rows(conn: &Connection) -> Vec<(String, Vec<Vec<rusqlite::types::Value>>)> {
-        let tables: Vec<String> = conn
-            .prepare_cached(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
-                 AND name NOT IN ('core_transactions', 'core_utxos', 'core_instant_locks', \
-                     'core_sync_state', 'core_transaction_inputs', \
-                     'core_transaction_record_originals', 'refinery_schema_history') \
-                 ORDER BY name",
-            )
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
-        tables
-            .into_iter()
-            .map(|table| {
-                let mut stmt = conn
-                    .prepare_cached(&format!("SELECT * FROM {table} ORDER BY 1, 2"))
-                    .unwrap();
-                let width = stmt.column_count();
-                let rows = stmt
-                    .query_map([], |row| (0..width).map(|i| row.get(i)).collect())
-                    .unwrap()
-                    .collect::<Result<_, _>>()
-                    .unwrap();
-                (table, rows)
-            })
-            .collect()
-    }
-
-    /// V020 rebuilds mined Core history by rescanning it: whatever an older
-    /// database stored mined (an undecodable record included) goes, each
-    /// wallet's filter checkpoint rewinds to just below its birth (never
-    /// forward), and every other row stays, the chain facts in
-    /// `core_sync_state` included. The unmined history a block rescan cannot
-    /// redeliver stays as evidence for the loader to authenticate.
-    #[test]
-    fn should_keep_only_unmined_core_history_and_rescan_from_birth_when_migrating_to_v020() {
-        let wallet_id = [0xADu8; 32];
-        let mut conn = wallet_db(&wallet_id);
-        conn.execute("UPDATE wallets SET birth_height = 100", [])
-            .unwrap();
-        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
-        let (mined_spent, pending_spent, unspent) = (coin(0x61), coin(0x62), coin(0x65));
-        let mined = TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1));
-        let pending = spend(&[pending_spent.outpoint], TransactionContext::Mempool);
-        let chain_lock = sample_chain_lock(400);
-        let history = CoreChangeSet {
-            last_processed_height: Some(500),
-            synced_height: Some(500),
-            last_applied_chain_lock: Some(chain_lock.clone()),
-            ..round(
-                vec![spend(&[mined_spent.outpoint], mined)],
-                vec![mined_spent, pending_spent.clone(), unspent],
-            )
-        };
-        let lock = dashcore::InstantLock {
-            txid: pending.txid,
-            inputs: vec![pending_spent.outpoint],
-            ..Default::default()
-        };
-        let pending_send = CoreChangeSet {
-            spent_utxos: vec![pending_spent.clone()],
-            instant_locks_for_non_final_records: [(pending.txid, lock)].into(),
-            ..round(vec![pending.clone()], vec![])
-        };
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &history).unwrap();
-        apply(&tx, &wallet_id, &pending_send).unwrap();
-        tx.commit().unwrap();
-        let w = &wallet_id[..];
-        let pending_txid = pending.txid.as_byte_array().to_vec();
-        let funding_txid = pending_spent.outpoint.txid.as_byte_array().to_vec();
-        let hold = |marker: u8| {
-            let outpoint = OutPoint::new(Txid::from_byte_array([marker; 32]), 0);
-            blob::encode_outpoint(&outpoint).unwrap()
-        };
-        let (anonymous_hold, stamped_hold) = (hold(0x63), hold(0x64));
-        for (sql, key) in [
-            (
-                "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
-                 VALUES (?1, ?2, 170, 0, X'ff')",
-                vec![1u8; 32],
-            ),
-            (
-                "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')",
-                vec![1u8; 32],
-            ),
-            // The pending spend's funding as a stored mined record.
-            (
-                "UPDATE core_transactions SET record_blob = X'ff', block_hash = X'00', \
-                 block_time = 1, finalized = 1 WHERE wallet_id = ?1 AND txid = ?2",
-                funding_txid.clone(),
-            ),
-            (
-                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, is_sweep_placeholder, \
-                 spent) VALUES (?1, ?2, 0, X'', 1, 1)",
-                anonymous_hold.clone(),
-            ),
-            (
-                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, is_sweep_placeholder, \
-                 spent, winner_mined_height) VALUES (?1, ?2, 0, X'', 1, 1, 400)",
-                stamped_hold,
-            ),
-        ] {
-            conn.execute(sql, params![w, key]).unwrap();
-        }
-        conn.execute(
-            "INSERT INTO meta_wallet (wallet_id, key, value) VALUES (?1, 'label', X'03')",
-            params![w],
-        )
-        .unwrap();
-        insert_contact_script(
-            &conn,
-            &wallet_id,
-            &dashcore::ScriptBuf::from_bytes(vec![0x51]),
-        );
-        // (wallet, birth, synced before, synced after): born at 0, and still
-        // in its initial sync below birth.
-        let others = [([0xAEu8; 32], 0, 300, 0), ([0xAFu8; 32], 100, 50, 50)];
-        for (other, birth, synced, _) in others {
-            insert_test_wallet(&conn, &other, birth);
-            conn.execute(
-                "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
-                 VALUES (?1, 600, ?2)",
-                params![&other[..], synced],
-            )
-            .unwrap();
-        }
-        let chain_lock_blob: Vec<u8> = conn
-            .query_row(
-                "SELECT last_applied_chain_lock FROM core_sync_state WHERE wallet_id = ?1",
-                params![w],
-                |r| r.get(0),
-            )
-            .unwrap();
-        rewind_v020(&conn);
-        let kept = non_core_rows(&conn);
-
-        migrations::run(&mut conn).expect("no stored history can block V020");
-
-        let rows = |sql: &str| -> Vec<Vec<rusqlite::types::Value>> {
-            let mut stmt = conn.prepare_cached(sql).unwrap();
-            let width = stmt.column_count();
-            stmt.query_map([], |row| (0..width).map(|i| row.get(i)).collect())
-                .unwrap()
-                .collect::<Result<_, _>>()
-                .unwrap()
-        };
-        let pending_spent_outpoint = blob::encode_outpoint(&pending_spent.outpoint).unwrap();
-        assert_eq!(
-            rows(
-                "SELECT txid, height, block_hash, block_time, finalized, record_blob IS NULL \
-                  FROM core_transactions ORDER BY height IS NULL"
-            ),
-            vec![
-                // The funding of a kept coin, reduced to its height for the rescan.
-                vec![
-                    Blob(funding_txid),
-                    Integer(150),
-                    Null,
-                    Null,
-                    Integer(0),
-                    Integer(1)
-                ],
-                vec![
-                    Blob(pending_txid.clone()),
-                    Null,
-                    Null,
-                    Null,
-                    Integer(0),
-                    Integer(0)
-                ],
-            ],
-        );
-        let mut expected_utxos = vec![
-            vec![Blob(anonymous_hold), Integer(1), Null],
-            vec![
-                Blob(pending_spent_outpoint.clone()),
-                Integer(1),
-                Blob(pending_txid.clone()),
-            ],
-        ];
-        expected_utxos.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-        let mut utxos = rows("SELECT outpoint, spent, spent_in_txid FROM core_utxos");
-        utxos.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-        assert_eq!(
-            utxos, expected_utxos,
-            "only claims no mined spend stands behind"
-        );
-        assert_eq!(
-            rows("SELECT txid FROM core_instant_locks"),
-            vec![vec![Blob(pending_txid.clone())]]
-        );
-        assert_eq!(
-            rows("SELECT txid, outpoint FROM core_transaction_inputs"),
-            vec![vec![Blob(pending_txid), Blob(pending_spent_outpoint)]],
-            "the kept record's claimed input is indexed"
-        );
-        assert!(rows("SELECT * FROM core_transaction_record_originals").is_empty());
-        let sync = |id: &[u8; 32]| -> (i64, i64, Option<Vec<u8>>) {
-            conn.query_row(
-                "SELECT synced_height, last_processed_height, last_applied_chain_lock \
-                 FROM core_sync_state WHERE wallet_id = ?1",
-                params![&id[..]],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .unwrap()
-        };
-        assert_eq!(sync(&wallet_id), (99, 500, Some(chain_lock_blob)));
-        for (other, _, _, synced) in others {
-            assert_eq!(sync(&other), (synced, 600, None));
-        }
-        assert_eq!(
-            non_core_rows(&conn),
-            kept,
-            "everything outside Core history stays"
-        );
-        let (cs, utxos) = load(&conn, &wallet_id);
-        let loaded: Vec<_> = cs.records.iter().map(|record| record.txid).collect();
-        assert_eq!(loaded, vec![pending.txid], "only the unmined record loads");
-        assert!(utxos.is_empty(), "no kept row is spendable");
-        assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
-        assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
     }
 
     /// A store at V019 holding one kept pending record whose body no longer
@@ -2090,7 +2011,7 @@ mod tests {
         )
         .unwrap();
         tx.commit().unwrap();
-        rewind_v020(&conn);
+        rewind_v021(&conn);
         conn.execute(
             "UPDATE core_transactions SET record_blob = x'00' WHERE txid = ?1",
             [pending.txid.as_byte_array().to_vec()],
@@ -2108,148 +2029,34 @@ mod tests {
         .unwrap()
     }
 
-    /// Under `Strict`, a kept pending record V020 cannot decode fails the
+    /// Under `Strict`, a kept pending record V021 cannot decode fails the
     /// upgrade instead of being skipped: a skipped body leaves its inputs
     /// unindexed with no signal, so a record-codec regression would only
     /// show up as coins stuck later. The failed upgrade rolls back to V019.
     #[test]
-    fn should_fail_v020_under_strict_on_a_kept_record_it_cannot_decode() {
+    fn should_fail_v021_under_strict_on_a_kept_record_it_cannot_decode() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB8u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Strict)
-            .expect_err("an undecodable kept record must fail V020 under Strict");
+            .expect_err("an undecodable kept record must fail V021 under Strict");
 
         assert_eq!(
             schema_version(&conn),
-            19,
+            20,
             "the failed upgrade must roll back"
         );
     }
 
-    /// Under `Recovery`, V020 skips a kept record it cannot read and the
+    /// Under `Recovery`, V021 skips a kept record it cannot read and the
     /// upgrade completes; that wallet degrades at load instead.
     #[test]
-    fn should_skip_an_undecodable_kept_record_in_v020_under_recovery() {
+    fn should_skip_an_undecodable_kept_record_in_v021_under_recovery() {
         let mut conn = v019_store_with_undecodable_kept_record(&[0xB9u8; 32]);
 
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
-            .expect("Recovery must complete V020 past an undecodable kept record");
+            .expect("Recovery must complete V021 past an undecodable kept record");
 
-        assert_eq!(schema_version(&conn), 20);
-    }
-
-    /// V020 indexes every input of a kept pending record, not only the coin
-    /// the record holds the claim on. A sweep that withholds an input still
-    /// spent by a kept survivor must hand that survivor the claim, so
-    /// removing the survivor can release the coin; a claim handed to the
-    /// winner would outlive the survivor's defeat. No pending record is
-    /// delivered again between the migration and the sweep.
-    #[test]
-    fn should_hand_a_withheld_input_to_its_kept_survivor_after_migrating_to_v020() {
-        let wallet_id = [0xB7u8; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let coin = |marker| sample_utxo(Txid::from_byte_array([marker; 32]), 150, true);
-        let (first, second, shared) = (coin(0x71), coin(0x72), coin(0x73));
-        // The shared coin is claimed by the first record listing it: `loser`.
-        let loser = spend(
-            &[first.outpoint, shared.outpoint],
-            TransactionContext::Mempool,
-        );
-        let survivor = spend(
-            &[second.outpoint, shared.outpoint],
-            TransactionContext::Mempool,
-        );
-        let coins = vec![first.clone(), second.clone(), shared.clone()];
-        let pending = CoreChangeSet {
-            spent_utxos: coins.clone(),
-            ..round(vec![loser.clone(), survivor.clone()], coins)
-        };
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &pending).unwrap();
-        tx.commit().unwrap();
-        let claimant = |txid: &Txid| (true, Some(txid.as_byte_array().to_vec()));
-        assert_eq!(
-            spend_claim(&conn, &wallet_id, &shared.outpoint),
-            claimant(&loser.txid)
-        );
-        rewind_v020(&conn);
-        migrations::run(&mut conn).unwrap();
-
-        let block = BlockInfo::new(160, BlockHash::all_zeros(), 1);
-        let winner = spend(&[first.outpoint], TransactionContext::InBlock(block));
-        let settled = CoreChangeSet {
-            sweeps: vec![SweepBatch {
-                txids: vec![loser.txid],
-                superseded_by: winner.txid,
-                winner_mined_height: Some(160),
-                released_outpoints: vec![],
-            }],
-            ..round(vec![winner], vec![])
-        };
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &settled).unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(
-            spend_claim(&conn, &wallet_id, &shared.outpoint),
-            claimant(&survivor.txid),
-            "the kept survivor, not the winner, holds the withheld input"
-        );
-    }
-
-    /// A txid unique to `(tag, index)`.
-    fn indexed_txid(tag: u8, index: u32) -> Txid {
-        let mut bytes = [tag; 32];
-        bytes[..4].copy_from_slice(&index.to_le_bytes());
-        Txid::from_byte_array(bytes)
-    }
-
-    /// Kept coins are cheap for a peer to add: an unmined receipt paying the
-    /// wallet is enough. Dropping the mined history must not visit every kept
-    /// coin once per dropped record, neither to find a dropped record's
-    /// outputs nor in the cleanup trigger clearing its claims, so quadrupling
-    /// both at once roughly quadruples the migration's work; quadratic work
-    /// would grow sixteenfold. The bound sits between, with headroom both ways.
-    #[test]
-    fn should_migrate_to_v020_in_work_linear_in_kept_coins_and_dropped_history() {
-        let ops = |n: u32| {
-            let wallet_id = [0xB8u8; 32];
-            let mut conn = wallet_db(&wallet_id);
-            for index in 0..n {
-                let (receipt, mined) = (indexed_txid(1, index), indexed_txid(2, index));
-                for (txid, height) in [(receipt, None), (mined, Some(200))] {
-                    conn.execute(
-                        "INSERT INTO core_transactions (wallet_id, txid, height, finalized) \
-                         VALUES (?1, ?2, ?3, 0)",
-                        params![&wallet_id[..], txid.as_byte_array().as_slice(), height],
-                    )
-                    .unwrap();
-                }
-                conn.execute(
-                    "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
-                     VALUES (?1, ?2, 1, X'51', 0)",
-                    params![
-                        &wallet_id[..],
-                        blob::encode_outpoint(&OutPoint::new(receipt, 0)).unwrap()
-                    ],
-                )
-                .unwrap();
-            }
-            rewind_v020(&conn);
-            let ops = migrations::count_vm_ops(&conn);
-            migrations::run(&mut conn).unwrap();
-            let kept: i64 = conn
-                .query_row("SELECT COUNT(*) FROM core_transactions", [], |r| r.get(0))
-                .unwrap();
-            assert_eq!(kept, i64::from(n), "only the unmined receipts stay");
-            ops.load(std::sync::atomic::Ordering::Relaxed)
-        };
-        let (small, large) = (ops(200), ops(800));
-        assert!(
-            large < 8 * small,
-            "V020 work must grow linearly, not with kept coins times dropped records: \
-             {small} VM ops for 200 of each, {large} for 800"
-        );
+        assert_eq!(schema_version(&conn), 21);
     }
 
     #[test]
@@ -2272,78 +2079,6 @@ mod tests {
             apply(&tx, &wallet_id, &round(vec![record], vec![])).is_err(),
             "normal operation treats corrupt stored history as an error"
         );
-    }
-
-    /// The stored spent flag a round's credit verdict leaves behind, by the
-    /// row's state before the round; `None` is no row at all.
-    #[test]
-    fn should_apply_credit_verdicts_to_the_stored_spent_flag() {
-        use UtxoCreditVerdict::{Doomed, ObservedSpent, Uncredited};
-        let wallet_id = [0xAEu8; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let tx = conn.transaction().unwrap();
-        let stored_spent = |outpoint: &OutPoint| -> Option<bool> {
-            tx.query_row(
-                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
-                |row| row.get(0),
-            )
-            .optional()
-            .unwrap()
-        };
-        // (case, row before the round, verdict, stored spent flag after it)
-        let cases = [
-            (
-                "observed spent",
-                "none",
-                ObservedSpent { height: 101 },
-                Some(true),
-            ),
-            ("doomed", "none", Doomed, Some(true)),
-            ("uncredited never materializes", "none", Uncredited, None),
-            (
-                "uncredited cannot invent a spend",
-                "unspent",
-                Uncredited,
-                Some(false),
-            ),
-            (
-                "uncredited cannot clear a spend",
-                "spent",
-                Uncredited,
-                Some(true),
-            ),
-            (
-                "uncredited replay keeps a doomed spend",
-                "doomed",
-                Uncredited,
-                Some(true),
-            ),
-        ];
-        for (marker, (case, prior, verdict, expected)) in (1..).zip(cases) {
-            let utxo = sample_utxo(Txid::from_byte_array([marker; 32]), 100, true);
-            let unspent = round(vec![], vec![utxo.clone()]);
-            let spent = CoreChangeSet {
-                spent_utxos: vec![utxo.clone()],
-                ..Default::default()
-            };
-            let prior_rounds = match prior {
-                "none" => vec![],
-                "unspent" => vec![unspent],
-                "spent" => vec![unspent, spent],
-                _ => vec![CoreChangeSet {
-                    utxo_credit_verdicts: [(utxo.outpoint, Doomed)].into(),
-                    ..unspent
-                }],
-            };
-            for prior_round in &prior_rounds {
-                apply(&tx, &wallet_id, prior_round).unwrap();
-            }
-            let mut verdict_round = round(vec![], vec![utxo.clone()]);
-            verdict_round.utxo_credit_verdicts = [(utxo.outpoint, verdict)].into();
-            apply(&tx, &wallet_id, &verdict_round).unwrap();
-            assert_eq!(stored_spent(&utxo.outpoint), expected, "{case}");
-        }
     }
 
     #[test]
@@ -2380,40 +2115,6 @@ mod tests {
             params![&wallet_id[..], script.as_bytes()],
         )
         .unwrap();
-    }
-
-    /// A contact-only unspent row (a pre-fix build persisted the contact's coins)
-    /// beside one of our own: the row is kept, yet never loads as spendable.
-    #[test]
-    fn should_keep_contact_only_rows_but_never_load_them_as_spendable() {
-        let wallet_id = [0xB1u8; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let contact = sample_utxo(Txid::from_byte_array([0x51; 32]), 100, true);
-        let mut own = sample_utxo(Txid::from_byte_array([0x52; 32]), 100, true);
-        own.address = dashcore::Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x24u8; 20])),
-        );
-        own.txout.script_pubkey = own.address.script_pubkey();
-        insert_contact_script(&conn, &wallet_id, &contact.txout.script_pubkey);
-        let tx = conn.transaction().unwrap();
-        let outpoints = [contact.outpoint, own.outpoint];
-        apply(&tx, &wallet_id, &round(vec![], vec![contact, own])).unwrap();
-        tx.commit().unwrap();
-        for outpoint in &outpoints {
-            assert!(
-                !spend_claim(&conn, &wallet_id, outpoint).0,
-                "stored rows stay unspent, never destroyed"
-            );
-        }
-        let (cs, owners) = load(&conn, &wallet_id);
-        let loaded: Vec<_> = cs.new_utxos.iter().map(|u| u.outpoint).collect();
-        assert_eq!(
-            loaded,
-            vec![outpoints[1]],
-            "a contact's coin is not ours to spend"
-        );
-        assert!(!owners.contains(&outpoints[0]));
     }
 
     #[test]
@@ -3258,156 +2959,6 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_oversize_spent_claim_before_reading_it() {
-        use rusqlite::limits::Limit;
-
-        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
-
-        const WALLET: [u8; 32] = [0x5F; 32];
-        // Over the connection's length cap, so reading the column itself
-        // fails: only a length-only pre-read reports it as oversize.
-        let oversize = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
-        let outpoint =
-            blob::encode_outpoint(&OutPoint::new(Txid::from_byte_array([0x42; 32]), 0)).unwrap();
-        for (stored_outpoint, claimant) in [
-            (&oversize[..], &[0x43u8; 32][..]),
-            (&outpoint[..], &oversize[..]),
-        ] {
-            let conn = wallet_db(&WALLET);
-            conn.execute(
-                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, spent_in_txid) \
-                 VALUES (?1, ?2, 0, X'00', 1, ?3)",
-                params![&WALLET[..], stored_outpoint, claimant],
-            )
-            .unwrap();
-            conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
-                .unwrap();
-
-            let err = load_spent_claims(&conn, &WALLET).unwrap_err();
-
-            assert!(
-                matches!(err, WalletStorageError::BlobTooLarge { .. }),
-                "got {err:?}"
-            );
-        }
-    }
-
-    /// A mempool record spending `coins`, as the bridge stores it beside `spent_utxos`.
-    fn mempool_spend(coins: &[&Utxo]) -> TransactionRecord {
-        let coins: Vec<_> = coins.iter().map(|coin| coin.outpoint).collect();
-        spend(&coins, TransactionContext::Mempool)
-    }
-
-    fn spend_claim(
-        conn: &Connection,
-        wallet_id: &[u8; 32],
-        outpoint: &OutPoint,
-    ) -> (bool, Option<Vec<u8>>) {
-        conn.query_row(
-            "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn should_record_spender_for_new_mempool_reservation() {
-        let wallet_id = [0x61; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let stored = sample_utxo(Txid::from_byte_array([0x62; 32]), 10, true);
-        // No funding row yet: the spend synthesises its own spent row.
-        let unseen = sample_utxo(Txid::from_byte_array([0x63; 32]), 10, true);
-        let spender = mempool_spend(&[&stored, &unseen]);
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &wallet_id, &round(vec![], vec![stored.clone()])).unwrap();
-
-        apply(
-            &tx,
-            &wallet_id,
-            &CoreChangeSet {
-                records: vec![spender.clone()],
-                spent_utxos: vec![stored.clone(), unseen.clone()],
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let claimant = Some(AsRef::<[u8]>::as_ref(&spender.txid).to_vec());
-        for coin in [&stored, &unseen] {
-            assert_eq!(
-                spend_claim(&tx, &wallet_id, &coin.outpoint),
-                (true, claimant.clone()),
-                "a new mempool reservation must name the transaction that made it"
-            );
-        }
-    }
-
-    #[test]
-    fn should_keep_existing_claims_when_mempool_spend_is_redelivered() {
-        let wallet_id = [0x64; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let unknown = sample_utxo(Txid::from_byte_array([0x65; 32]), 10, true);
-        let foreign = sample_utxo(Txid::from_byte_array([0x66; 32]), 10, true);
-        let held = sample_utxo(Txid::from_byte_array([0x67; 32]), 10, true);
-        let other_spender = [0x68u8; 32];
-        let tx = conn.transaction().unwrap();
-        let unspent = round(vec![], vec![unknown.clone(), foreign.clone()]);
-        apply(&tx, &wallet_id, &unspent).unwrap();
-        tx.execute(
-            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1",
-            params![&wallet_id[..]],
-        )
-        .unwrap();
-        tx.execute(
-            "UPDATE core_utxos SET spent_in_txid = ?3 WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![
-                &wallet_id[..],
-                blob::encode_outpoint(&foreign.outpoint).unwrap(),
-                &other_spender[..]
-            ],
-        )
-        .unwrap();
-        // A sweep hold for an input whose funding this store never saw.
-        tx.execute(
-            "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, is_sweep_placeholder, spent, spent_in_txid) \
-             VALUES (?1, ?2, 0, X'', 1, 1, ?3)",
-            params![
-                &wallet_id[..],
-                blob::encode_outpoint(&held.outpoint).unwrap(),
-                &other_spender[..]
-            ],
-        )
-        .unwrap();
-        let spender = mempool_spend(&[&unknown, &foreign, &held]);
-
-        apply(
-            &tx,
-            &wallet_id,
-            &CoreChangeSet {
-                records: vec![spender],
-                spent_utxos: vec![unknown.clone(), foreign.clone(), held.clone()],
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            spend_claim(&tx, &wallet_id, &unknown.outpoint),
-            (true, None),
-            "an unknown durable claim must not be adopted by a later mempool spender"
-        );
-        for coin in [&foreign, &held] {
-            assert_eq!(
-                spend_claim(&tx, &wallet_id, &coin.outpoint),
-                (true, Some(other_spender.to_vec())),
-                "another spender's claim must stand"
-            );
-        }
-    }
-
-    #[test]
     fn chain_lock_height_rejects_trailing_bytes() {
         let bytes = encode_chain_lock(&sample_chain_lock(100_000)).expect("encode");
         assert_eq!(chain_lock_height(&bytes), Some(100_000));
@@ -3417,54 +2968,5 @@ mod tests {
         let mut corrupt = bytes.clone();
         corrupt.extend_from_slice(&[0xFFu8; 4]);
         assert_eq!(chain_lock_height(&corrupt), None);
-    }
-
-    /// The stored-claims scan checks each stored width before it reads the
-    /// column: an oversize key or record is `BlobTooLarge`, whatever it holds.
-    #[test]
-    fn should_reject_oversize_stored_claimant_before_reading_it() {
-        use rusqlite::types::Value;
-
-        let oversize = blob::BLOB_SIZE_LIMIT_BYTES + 1;
-        let key = || Value::Blob(vec![0x11; 32]);
-        let cases = [
-            (
-                "txid",
-                Value::Blob(vec![0x11; oversize]),
-                Value::Blob(vec![0]),
-            ),
-            ("record", key(), Value::Blob(vec![0; oversize])),
-            // A blob reader cannot read text at all, so only a gate that
-            // runs before the read can report this one by its size.
-            (
-                "record stored as text",
-                key(),
-                Value::Text("a".repeat(oversize)),
-            ),
-        ];
-        let mut ungated = Vec::new();
-        for (column, txid, record) in cases {
-            let wallet_id = [0x4Cu8; 32];
-            let mut conn = wallet_db(&wallet_id);
-            conn.execute(
-                "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
-                 VALUES (?1, ?2, 1, ?3)",
-                params![&wallet_id[..], txid, record],
-            )
-            .unwrap();
-            let tx = conn.transaction().unwrap();
-
-            let error = surviving_stored_input_claims(&tx, &wallet_id, &HashSet::new())
-                .expect_err("an oversize stored claimant must fail the scan");
-
-            let gated = matches!(
-                error,
-                WalletStorageError::BlobTooLarge { len_bytes, .. } if len_bytes == oversize
-            );
-            if !gated {
-                ungated.push(format!("{column}: {error:?}"));
-            }
-        }
-        assert_eq!(ungated, Vec::<String>::new());
     }
 }

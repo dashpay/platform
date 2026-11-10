@@ -43,11 +43,13 @@ use dpp::version::TryFromPlatformVersioned;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::platform::transition::put_contract::PutContract;
+use dash_sdk::platform::transition::put_contract::{
+    ensure_private_document_entries_fit, PutContract,
+};
 use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 use super::*;
 
@@ -299,9 +301,11 @@ impl IdentityWallet {
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put data contract to platform: {e}"
-                ))
+                preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put data contract to platform: {e}"
+                    ))
+                })
             })?;
 
         Ok(confirmed)
@@ -502,6 +506,12 @@ impl IdentityWallet {
                         "Failed to build updated contract: {e}\n\nAssembled JSON:\n{serialized}"
                     ))
                 })?;
+
+        // A private document type the update adds, or whose properties it changes, takes entries
+        // that must hold its largest payload, as `PutContract` checks on create; `existing` is the
+        // contract as Platform holds it, so an unchanged type is not checked again.
+        ensure_private_document_entries_fit(&updated_contract, Some(&existing))
+            .map_err(PlatformWalletError::Sdk)?;
 
         // 4. Build + broadcast the update transition. There's no
         //    `UpdateContract` SDK extension mirroring `PutContract`,

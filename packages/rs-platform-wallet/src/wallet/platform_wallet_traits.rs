@@ -441,7 +441,6 @@ impl std::fmt::Debug for PlatformWalletInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{Block, BlockHash, OutPoint, TxIn, TxOut, Witness};
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::BlockInfo;

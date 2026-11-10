@@ -26,9 +26,9 @@ use dashcore::blockdata::transaction::special_transaction::{
 };
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::{InputsHash, SpecialTransactionPayloadHash};
-use dashcore::hashes::Hash;
+use dashcore::hashes::sha256d;
 use dashcore::sml::masternode_list_entry::net_info::{
-    Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
+    Bip155Network, ExtNetInfo, ExtNetInfoError, NetInfoEntry, NetInfoPurpose,
 };
 use dashcore::sml::masternode_list_entry::{
     EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
@@ -397,8 +397,8 @@ const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
 ///   Platform P2P port 26656: Core holds a pre-v3 mainnet evonode to that
 ///   port, while the version-3 address map has no such rule, so another
 ///   port would be accepted and kept. On every network it refuses a port
-///   Core refuses in the address map (see [`require_port_core_accepts`])
-///   and a port two services would share (see [`require_distinct_ports`]);
+///   Core refuses in the address map and a port two services would share
+///   (see [`require_core_accepts_converted_net_info`]);
 /// - any other legacy entry stays at version 2 (BasicBLS), which Core
 ///   accepts for a regular masternode on either side of V24 and for an
 ///   evonode before it.
@@ -478,22 +478,11 @@ pub(crate) fn prepare_update_service_placeholder(
                              {MAINNET_PLATFORM_P2P_PORT}"
                         )));
                     }
-                    let ports = [
-                        (NetInfoPurpose::CoreP2P, service.port()),
-                        (NetInfoPurpose::PlatformP2P, p2p_port),
-                        (NetInfoPurpose::PlatformHttps, *platform_http_port),
-                    ];
-                    for (purpose, port) in ports {
-                        require_port_core_accepts(purpose, port)?;
-                    }
-                    require_distinct_ports(&ports)?;
+                    let net_info = legacy_evonode_net_info(*service, p2p_port, *platform_http_port);
+                    require_core_accepts_converted_net_info(&net_info)?;
                     (
                         ProTxVersion::ExtAddr,
-                        MasternodeNetInfo::Extended(legacy_evonode_net_info(
-                            *service,
-                            p2p_port,
-                            *platform_http_port,
-                        )),
+                        MasternodeNetInfo::Extended(net_info),
                         None,
                     )
                 } else {
@@ -560,77 +549,64 @@ fn require_listed_platform_p2p_port(
     )))
 }
 
-/// Dash Core's `PRIVILEGED_PORTS_THRESHOLD`: `IsBadPort` refuses every port
-/// from 1 to this one, the system ports.
-const CORE_PRIVILEGED_PORTS_THRESHOLD: u16 = 1023;
-
-/// The ports above the system ports that Dash Core's `IsBadPort` refuses,
-/// copied from `src/netbase.cpp` in Dash Core v24.0.0-rc.4.
-const CORE_BAD_PORTS: [u16; 21] = [
-    1719,  // h323gatestat
-    1720,  // h323hostcall
-    1723,  // pptp
-    2049,  // nfs
-    3659,  // apple-sasl / PasswordServer
-    4045,  // lockd
-    5060,  // sip
-    5061,  // sips
-    6000,  // X11
-    6566,  // sane-port
-    6665,  // Alternate IRC
-    6666,  // Alternate IRC
-    6667,  // Standard IRC
-    6668,  // Alternate IRC
-    6669,  // Alternate IRC
-    6697,  // IRC + TLS
-    8332,  // Bitcoin RPC
-    8333,  // Bitcoin P2P
-    10080, // Amanda
-    18332, // Bitcoin testnet RPC
-    18333, // Bitcoin testnet RPC
-];
-
-/// Dash Core v24 checks the port of every IP-address entry of a version-3
-/// address map (`ExtNetInfo::ValidateService`) and refuses the transaction
+/// Dash Core v24 refuses a version-3 address map (`ExtNetInfo::Validate`)
 /// with `bad-protx-netinfo-port` for port 0 and for every port `IsBadPort`
-/// lists, except 443 for Platform HTTPS. Pre-v3 entries were never held to
-/// this rule, so a legacy evonode can carry such a port, and its conversion
+/// lists, except 443 for Platform HTTPS, and with
+/// `bad-protx-dup-netinfo-entry` when it lists one address twice;
+/// rust-dashcore's [`ExtNetInfo::validate_ports_and_duplicates`] applies
+/// those rules. Pre-v3 entries were never held to them, so a legacy evonode
+/// can carry such a port, and its conversion gives all its services the
+/// same IP, so two services on one port repeat an address. The conversion
 /// is refused here before anything is built rather than broadcast to a
 /// network that never confirms it.
-fn require_port_core_accepts(
-    purpose: NetInfoPurpose,
-    port: u16,
+///
+/// The helper's error does not name the entry it refuses. A converted map
+/// holds one entry per purpose, all at the legacy IP, so the entry is found
+/// by its port: the one on the refused port, or the two sharing a port.
+fn require_core_accepts_converted_net_info(
+    net_info: &ExtNetInfo,
 ) -> Result<(), PlatformWalletError> {
-    let is_bad_port =
-        (1..=CORE_PRIVILEGED_PORTS_THRESHOLD).contains(&port) || CORE_BAD_PORTS.contains(&port);
-    let is_allowed_https_port = purpose == NetInfoPurpose::PlatformHttps && port == 443;
-    let refused = port == 0 || (is_bad_port && !is_allowed_https_port);
-    if !refused {
+    let Err(error) = net_info.validate_ports_and_duplicates() else {
         return Ok(());
+    };
+    let ports: Vec<(NetInfoPurpose, u16)> = net_info
+        .purposes
+        .iter()
+        .flat_map(|(purpose, entries)| {
+            entries
+                .iter()
+                .filter_map(|entry| Some((*purpose, entry.port()?)))
+        })
+        .collect();
+    match error {
+        ExtNetInfoError::BadPort(port) => {
+            if let Some((purpose, _)) = ports.iter().find(|(_, listed)| *listed == port) {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "Dash Core v24 refuses {purpose:?} port {port}, which this update would write \
+                     into the evonode's version-3 address map: ports 0 to 1023 (except 443 for \
+                     Platform HTTPS) and some well-known service ports are refused there; move \
+                     the service to another port and register it with Dash Core's `protx \
+                     update_service_evo`"
+                )));
+            }
+        }
+        ExtNetInfoError::Duplicate => {
+            for (index, (purpose, port)) in ports.iter().enumerate() {
+                if let Some((other, _)) = ports[..index].iter().find(|(_, other)| other == port) {
+                    return Err(PlatformWalletError::InvalidParameter(format!(
+                        "{other:?} and {purpose:?} would both use port {port}, and Dash Core v24 \
+                         refuses a version-3 address map that lists the same address twice; give \
+                         each service its own port"
+                    )));
+                }
+            }
+        }
+        _ => {}
     }
     Err(PlatformWalletError::InvalidParameter(format!(
-        "Dash Core v24 refuses {purpose:?} port {port}, which this update would write into the \
-         evonode's version-3 address map: ports 0 to 1023 (except 443 for Platform HTTPS) and \
-         some well-known service ports are refused there; move the service to another port and \
-         register it with Dash Core's `protx update_service_evo`"
+        "Dash Core v24 refuses the version-3 address map this update would write into the \
+         evonode ({error}); register its addresses with Dash Core's `protx update_service_evo`"
     )))
-}
-
-/// Dash Core v24 refuses a version-3 address map that lists one address
-/// twice (`ExtNetInfo::HasAddrPortDuplicates`, `bad-protx-dup-netinfo-entry`).
-/// The conversion of a legacy evonode gives all its services the same IP, so
-/// their ports must differ.
-fn require_distinct_ports(ports: &[(NetInfoPurpose, u16)]) -> Result<(), PlatformWalletError> {
-    for (index, (purpose, port)) in ports.iter().enumerate() {
-        if let Some((other, _)) = ports[..index].iter().find(|(_, other)| other == port) {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "{other:?} and {purpose:?} would both use port {port}, and Dash Core v24 refuses \
-                 a version-3 address map that lists the same address twice; give each service \
-                 its own port"
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// The version-3 address map for a legacy evonode, as Dash Core's `protx
@@ -736,13 +712,14 @@ pub(crate) fn finalize_update_service_payload(
     // Encoding fails when the payload version and the address form
     // disagree. `base_payload_hash` panics on that, and across the FFI a
     // panic aborts the host app, so hash here and return the error.
-    let mut engine = SpecialTransactionPayloadHash::engine();
+    let mut engine = sha256d::Hash::engine();
     finalized
         .base_payload_data_encode(&mut engine)
         .map_err(|e| {
             BuilderError::InvalidData(format!("the ProUpServTx payload cannot be encoded: {e}"))
         })?;
-    let sign_hash = SpecialTransactionPayloadHash::from_engine(engine);
+    let sign_hash =
+        SpecialTransactionPayloadHash::from_raw_hash(sha256d::Hash::from_engine(engine));
 
     let secret = BlsSecretKey::from_be_bytes(operator_secret).ok_or_else(|| {
         BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())

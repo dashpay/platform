@@ -263,6 +263,8 @@ async fn shutdown_signal() -> std::io::Result<()> {
 fn main() -> Result<(), ExitCode> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
+        // Decoding state transitions recurses with the nesting of their values; same as Drive
+        .thread_stack_size(8 * 1024 * 1024)
         .enable_all()
         .build()
         .expect("Failed to create Tokio runtime");

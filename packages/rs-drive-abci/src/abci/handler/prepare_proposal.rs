@@ -10,7 +10,6 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;

@@ -150,6 +150,13 @@ impl PersistenceCapabilities {
     /// empty result. Required before a wallet drain can treat absence as not sent.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
+    /// The Orchard recipient of a shielded asset-lock funding survives
+    /// store/load with its row, so a resume after restart pays the recipient
+    /// the user confirmed. Reported, not required: a backend without it loads
+    /// such rows with no recipient, and a resume then accepts the caller's
+    /// (the pre-recipient behaviour).
+    pub const ASSET_LOCK_SHIELDED_RECIPIENTS: Self = Self(1 << 14);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
@@ -261,6 +268,10 @@ impl PersistenceCapabilities {
                 "asset_lock_operation_ids",
             ),
             (
+                PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS,
+                "asset_lock_shielded_recipients",
+            ),
+            (
                 PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
                 "core_chain_truncation",
             ),
@@ -313,6 +324,10 @@ mod tests {
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
             0x2000
         );
+        assert_eq!(
+            PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits(),
+            0x4000
+        );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits(),
@@ -351,11 +366,6 @@ mod tests {
         // to prevent. Walking the whole width cannot go stale.
         for shift in 0..=PersistenceCapabilities::HIGHEST_DECLARED_BIT {
             let bit = PersistenceCapabilities::from_bits_retain(1u64 << shift);
-            // Reserved for CORE_HISTORY_RESTORE (dashpay/platform#5220).
-            if shift == 14 {
-                assert!(bit.names().is_empty(), "bit 14 is declared; drop this skip");
-                continue;
-            }
             assert_eq!(
                 bit.names().len(),
                 1,

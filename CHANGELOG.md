@@ -22,13 +22,18 @@
 
 ### Changed
 
-- **platform-wallet-storage (breaking, Rust API):** `WalletStorageError` is
-  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
-  arm. New failure modes: `SpendAuthorization` (a stored pending spend needs
-  authorization rules the wallet cannot verify), `TransactionBodyConflict` (a
-  record reuses a stored txid with a different body), `UnknownWalletNetwork`
-  (an unknown `wallets.network` label) and `NetAmountOverflow` (a net amount
-  outside `i64`). See [#5150](https://github.com/dashpay/platform/pull/5150).
+- **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
+  `epochs_per_era` or `previous_fee_versions`:
+  `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.
+  `apply_drive_operations`, `update_contract` and the document, identity and token balance
+  methods that forwarded `previous_fee_versions` no longer take it.
+  `FeeRefunds::from_storage_removal` takes a closure giving the storage rate of a storing
+  epoch instead of the map. `dpp::fee::default_costs::{KnownCostItem, EpochCosts}` are
+  removed; read the rate from `FeeVersion`'s `storage.storage_disk_usage_credit_per_byte`.
+  Platform state still saves `previous_fee_versions` in the same format. From protocol
+  version 15 a refund is priced at the storing epoch's rate, and reading that epoch's record
+  adds to the processing fee (protocol v15 note 27).
+
 - **drive (Rust API):** Drive's cost estimators write their layer descriptions into
   `drive::util::estimated_layers::EstimatedLayers` instead of
   `HashMap<KeyInfoPath, EstimatedLayerInformation>`, in `DriveLowLevelOperationConverter`

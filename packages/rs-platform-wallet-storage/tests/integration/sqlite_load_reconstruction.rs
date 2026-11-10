@@ -1064,7 +1064,6 @@ fn received_then_matching_sent_promotes_to_established() {
 /// asset locks bucketed by (wallet, account, outpoint).
 #[test]
 fn tc_p4_005_load_asset_locks_bucketed() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
@@ -1088,6 +1087,7 @@ fn tc_p4_005_load_asset_locks_bucketed() {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1000,
         status: AssetLockStatus::Built,
         proof: None,
@@ -1340,7 +1340,6 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
 /// typed decode error. An intact wallet still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
-    use dashcore::hashes::Hash;
     use dashcore::{OutPoint, Transaction, Txid};
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
@@ -1394,6 +1393,7 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
             funding_type: AssetLockFundingType::IdentityTopUp,
             identity_index: 0,
             operation_id: None,
+            shielded_recipient: None,
             amount_duffs: 1000,
             status: AssetLockStatus::Built,
             proof: None,
@@ -1490,19 +1490,24 @@ fn tc_p4_012_load_query_count_bounded() {
         // Hold the conn briefly to install the trace, then drop the
         // guard before calling load() (load takes its own lock).
         {
-            let conn = persister.lock_conn_for_test();
+            let mut conn = persister.lock_conn_for_test();
             conn.trace_v2(
                 rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
                 Some(cb),
-            );
+            )
+            .expect("install trace");
         }
         COUNTER.store(0, Ordering::Relaxed);
         persister.load().expect("load");
         let n = COUNTER.load(Ordering::Relaxed);
         // Disable trace so other tests don't accidentally inherit it.
         {
-            let conn = persister.lock_conn_for_test();
-            conn.trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, None);
+            let mut conn = persister.lock_conn_for_test();
+            conn.trace_v2(
+                rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+                None::<fn(rusqlite::trace::TraceEvent<'_>)>,
+            )
+            .expect("remove trace");
         }
         n
     }
@@ -1821,5 +1826,61 @@ fn tc_p4_020_unignore_survives_restart_table_is_authoritative() {
     assert!(
         managed.is_sender_ignored(&sender),
         "an ignore recorded in the table restores even when the blob snapshot predates it"
+    );
+}
+
+#[test]
+fn should_load_wallet_from_one_snapshot_during_an_external_commit() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let wallet_id = wid(0xC4);
+    ensure_wallet_meta(&persister, &wallet_id);
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                account_registrations: vec![AccountRegistrationEntry {
+                    account_type: AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    account_xpub: test_xpub(),
+                }],
+                core: Some(CoreChangeSet {
+                    synced_height: Some(100),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let writer = rusqlite::Connection::open(path).unwrap();
+    let changed = Arc::new(AtomicBool::new(false));
+    let changed_hook = Arc::clone(&changed);
+    persister.lock_conn_for_test().authorizer(Some(move |ctx: AuthContext<'_>| {
+        if matches!(ctx.action, AuthAction::Read { table_name: "core_sync_state", .. })
+            && !changed_hook.swap(true, Ordering::SeqCst)
+        {
+            writer.execute_batch("BEGIN IMMEDIATE; UPDATE wallets SET birth_height = 10; UPDATE core_sync_state SET synced_height = 200; COMMIT;").unwrap();
+        }
+        Authorization::Allow
+    })).unwrap();
+
+    let state = persister.load().unwrap();
+
+    assert!(
+        changed.load(Ordering::SeqCst),
+        "external commit must occur during load"
+    );
+    let metadata = &state.wallets[&wallet_id].wallet_info.metadata;
+    assert_eq!(metadata.birth_height, 0);
+    assert_eq!(
+        metadata.synced_height, 100,
+        "wallet metadata and checkpoint share one snapshot"
     );
 }

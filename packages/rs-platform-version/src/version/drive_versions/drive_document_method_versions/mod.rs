@@ -37,6 +37,11 @@ pub struct DriveDocumentMethodVersions {
     /// `verify_private_document_entries` checks. `Some(0)` from
     /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
     pub prove_private_document_entries: OptionalFeatureVersion,
+    /// `append_private_document_entries_operations`: the operations a
+    /// `PrivateDocumentCreateFromShieldedPool` appends its entries with, each after Drive's
+    /// header (the block's height and time). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+    /// (protocol version 15), `None` before.
+    pub append_private_document_entries_operations: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
@@ -137,6 +142,14 @@ pub struct DriveDocumentQueryMethodVersions {
     /// on such a type (`DocumentQuery::required_protocol_version` in
     /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, which the prover and the
+    /// verifier both do. 0 is what protocol versions 1 to 14 build. 1 (protocol version 15)
+    /// changes two lookups in a document type that keeps history: one at a block time stops
+    /// above the pointer to the latest version, so it answers with the newest version stored
+    /// at or before that time and with nothing before the first, and one of a document that
+    /// may be contested states its cap itself, which GroveDB's merge no longer derives above
+    /// a subquery, and is refused at a block time, as a contest's area keeps no history.
+    pub single_document_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

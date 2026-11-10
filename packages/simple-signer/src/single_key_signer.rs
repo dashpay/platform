@@ -145,7 +145,7 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             }
             KeyType::ECDSA_HASH160 => {
                 // Compare hash160 of public key
-                use dpp::dashcore::hashes::{hash160, Hash};
+                use dpp::dashcore::hashes::hash160;
 
                 let public_key = self.private_key.inner.public_key();
                 let public_key_bytes = public_key.to_compressed();
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_can_sign_with_ecdsa_key_types() -> Result<(), String> {
-        use dpp::dashcore::hashes::{hash160, Hash};
+        use dpp::dashcore::hashes::hash160;
 
         let signer = SingleKeySigner::new_from_slice(&[0x03; 32], Network::Testnet)?;
         let public_key = signer.private_key.inner.public_key().to_compressed();

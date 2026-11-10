@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use dash_sdk::RequestSettings;
-use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, Txid};
 
 /// What a header store answered for one height.

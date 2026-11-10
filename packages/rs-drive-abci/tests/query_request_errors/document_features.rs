@@ -68,7 +68,6 @@ fn tip_jar(fixture: &QueryFixture, version: &PlatformVersion) -> (Arc<DataContra
             true,
             None,
             version,
-            None,
         )
         .expect("store a tip");
     (Arc::new(contract), tip.id().to_buffer())

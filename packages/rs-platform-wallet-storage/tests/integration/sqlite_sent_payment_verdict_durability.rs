@@ -2,7 +2,7 @@
 
 //! A sent-payment verdict must survive a process restart.
 //!
-//! The wallet-event adapter is the live writer of DashPay sent-payment
+//! The wallet-event adapter is the single writer of DashPay sent-payment
 //! verdicts: when a sweep proves a broadcast lost a double-spend, the adapter
 //! flips the payment to `Failed` on the same `store()` round that removes the
 //! loser's record. That round is the ONLY chance — upstream selects losers
@@ -52,7 +52,6 @@ const CONTACT: [u8; 32] = [0xB7; 32];
 /// under. A dummy txid is enough — the verdict path keys on the display
 /// string, and nothing here inspects the transaction itself.
 fn loser_txid() -> dashcore::Txid {
-    use dashcore::hashes::Hash as _;
     dashcore::Txid::from_byte_array([0x5f; 32])
 }
 
@@ -145,10 +144,7 @@ async fn a_swept_sent_payments_failed_verdict_survives_a_reopen() {
         tx.send(WalletEvent::TransactionsSwept {
             wallet_id,
             txids: vec![loser_txid()],
-            superseded_by: {
-                use dashcore::hashes::Hash as _;
-                dashcore::Txid::from_byte_array([0x77; 32])
-            },
+            superseded_by: { dashcore::Txid::from_byte_array([0x77; 32]) },
             winner_mined_height: Some(1_499_050),
             released_outpoints: Vec::new(),
             balance: key_wallet::WalletCoreBalance::default(),

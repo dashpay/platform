@@ -9,8 +9,9 @@ use crate::event_handler::{
 use crate::handle::*;
 use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetTruncationsFn, PersistWalletChangesetUtxoVerdictsFn,
     PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
@@ -290,6 +291,14 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_shielded_recipient: slot!(
+            on_persist_asset_lock_shielded_recipient_fn,
+            PersistAssetLockShieldedRecipientFn
+        ),
+        load_asset_lock_shielded_recipient: slot!(
+            on_load_asset_lock_shielded_recipient_fn,
+            LoadAssetLockShieldedRecipientFn
         ),
         wallet_changeset_truncations: slot!(
             on_persist_wallet_changeset_truncations_fn,

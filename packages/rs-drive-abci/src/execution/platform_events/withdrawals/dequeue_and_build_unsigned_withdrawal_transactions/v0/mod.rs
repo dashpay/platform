@@ -3,7 +3,7 @@ use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_ass
 use dpp::dashcore::Transaction;
 use dpp::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
-    hashes::Hash, QuorumHash,
+    QuorumHash,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -113,7 +113,6 @@ where
             block_info,
             transaction,
             platform_version,
-            None,
         )?;
 
         Ok(UnsignedWithdrawalTxs::from_vec(
@@ -314,7 +313,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to queue the withdrawals");
 
@@ -343,7 +341,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to queue the withdrawals again");
 

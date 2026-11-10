@@ -21,7 +21,6 @@ use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dashcore::address::Payload;
-use dashcore::hashes::Hash;
 use dashcore::{Address, Network, PubkeyHash};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
