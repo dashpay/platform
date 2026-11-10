@@ -232,6 +232,7 @@ fn reconstruct_candidates(
             let (status, proof) = recovered_status(record, out_point);
             Some(TrackedAssetLock {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: record.transaction.clone(),
                 account_index,
@@ -765,6 +766,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: tx.clone(),
                     account_index: 0,
@@ -1001,6 +1003,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: tx.clone(),
                         account_index: 0,

@@ -11,6 +11,8 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
+#[cfg(feature = "dump")]
+use crate::DumpData;
 use crate::{
     transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError,
     ExecutionResponse, ExecutionResult, RequestSettings,
@@ -25,6 +27,8 @@ use std::{
     fmt::{Debug, Display},
     sync::Mutex,
 };
+
+const EXECUTION_ERROR_PREFIX: &[u8] = b"execution-error-v1\0";
 
 /// Mock DAPI client.
 ///
@@ -61,7 +65,17 @@ impl MockDapiClient {
         R: TransportRequest + Mockable,
         R::Response: Mockable,
     {
-        let key = self.expectations.add(request, result)?;
+        // Classify hand-built expectations while typed sources and metadata still exist.
+        let key = if let Err(error) = result {
+            let mut error = error.clone();
+            if let DapiClientError::Transport(transport) = &error.inner {
+                error.possibly_accepted |= request.classify_error(transport).possibly_accepted;
+            }
+            self.expectations
+                .add::<_, MockResult<R>>(request, &Err(error))?
+        } else {
+            self.expectations.add(request, result)?
+        };
 
         tracing::trace!(
             %key,
@@ -112,15 +126,24 @@ impl MockDapiClient {
         T: TransportRequest + Mockable,
         T::Response: Mockable,
     {
-        use crate::DumpData;
-
         let buf = std::fs::read(file)?;
         let data = DumpData::<T>::mock_deserialize(&buf).ok_or({
             std::io::Error::new(std::io::ErrorKind::InvalidData, "unable to parse json")
         })?;
 
         let (request, response) = data.deserialize();
-        self.expect(&request, &response).map_err(|e| {
+        // Versioned recordings already carry the production classification. Reclassifying
+        // after decoding would lose connector sources and consensus-error metadata.
+        let classified = matches!(
+            serde_json::from_slice::<Result<Vec<u8>, Vec<u8>>>(&data.serialized_response),
+            Ok(Err(bytes)) if bytes.starts_with(EXECUTION_ERROR_PREFIX)
+        );
+        let added = if classified {
+            self.expectations.add(&request, &response).map(|_| ())
+        } else {
+            self.expect(&request, &response).map(|_| ())
+        };
+        added.map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!("unable to add expectation: {}", e),
@@ -141,7 +164,7 @@ impl DapiRequestExecutor for MockDapiClient {
         R: Mockable,
         R::Response: Mockable,
     {
-        let (key, response) = self.expectations.get(&request);
+        let (key, response) = self.expectations.get::<R, MockResult<R>>(&request);
         *self
             .request_counts
             .lock()
@@ -166,6 +189,7 @@ impl DapiRequestExecutor for MockDapiClient {
             ));
 
             Err(ExecutionError {
+                possibly_accepted: false,
                 inner: DapiClientError::Mock(error),
                 retries: 0,
                 address: None,
@@ -319,12 +343,23 @@ impl<R: Mockable> Mockable for ExecutionResponse<R> {
 
 impl<E: Mockable> Mockable for ExecutionError<E> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        E::mock_serialize(&self.inner)
+        let mut data = EXECUTION_ERROR_PREFIX.to_vec();
+        data.push(u8::from(self.possibly_accepted));
+        data.extend(E::mock_serialize(&self.inner)?);
+        Some(data)
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        // TODO: We need serialize retries and address too
+        // Old recordings contain only the inner error. Request classification handles those.
+        let (possibly_accepted, data) =
+            if let Some(data) = data.strip_prefix(EXECUTION_ERROR_PREFIX) {
+                let (flag, data) = data.split_first()?;
+                (*flag != 0, data)
+            } else {
+                (false, data)
+            };
         E::mock_deserialize(data).map(|inner| ExecutionError {
+            possibly_accepted,
             inner,
             retries: 0,
             address: None,
@@ -354,5 +389,149 @@ where
             inner,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod submission_history_tests {
+    use super::*;
+
+    use crate::transport::TransportError;
+    use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, GetIdentityRequest};
+    use dapi_grpc::tonic::metadata::MetadataValue;
+    use dapi_grpc::tonic::{ConnectError, Status};
+    use std::io;
+
+    #[tokio::test]
+    async fn should_classify_expectations_before_losing_transport_evidence() {
+        let connector = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        )))));
+        let mut refusal = Status::unavailable("application refusal");
+        refusal.metadata_mut().insert_bin(
+            "dash-serialized-consensus-error-bin",
+            MetadataValue::from_bytes(&[1]),
+        );
+        for (status, prior, expected) in [
+            (connector, false, false),
+            (refusal.clone(), false, false),
+            (refusal, true, true),
+            (Status::unavailable("acknowledgement lost"), false, true),
+        ] {
+            let mut client = MockDapiClient::new();
+            let request = BroadcastStateTransitionRequest::default();
+            client
+                .expect(
+                    &request,
+                    &Err(ExecutionError {
+                        inner: DapiClientError::Transport(TransportError::Grpc(status)),
+                        possibly_accepted: prior,
+                        address: None,
+                        retries: 0,
+                    }),
+                )
+                .unwrap();
+            let result = client.execute(request, RequestSettings::default()).await;
+            assert_eq!(result.unwrap_err().possibly_accepted, expected);
+        }
+        let mut client = MockDapiClient::new();
+        let request = GetIdentityRequest::default();
+        client
+            .expect(
+                &request,
+                &Err(ExecutionError {
+                    inner: DapiClientError::Transport(TransportError::Grpc(Status::unavailable(
+                        "read failed",
+                    ))),
+                    possibly_accepted: false,
+                    address: None,
+                    retries: 0,
+                }),
+            )
+            .unwrap();
+        assert!(
+            !client
+                .execute(request, RequestSettings::default())
+                .await
+                .unwrap_err()
+                .possibly_accepted
+        );
+    }
+
+    #[cfg(feature = "dump")]
+    #[tokio::test]
+    async fn should_preserve_classified_recordings_and_classify_legacy_replay() {
+        for (legacy, recorded_flag, expected) in [
+            (false, false, false),
+            (false, true, true),
+            (true, false, true),
+        ] {
+            let request = BroadcastStateTransitionRequest::default();
+            let error = ExecutionError {
+                inner: DapiClientError::Transport(TransportError::Grpc(Status::from_error(
+                    Box::new(ConnectError(Box::new(io::Error::new(
+                        io::ErrorKind::ConnectionRefused,
+                        "recorded connector failure",
+                    )))),
+                ))),
+                possibly_accepted: recorded_flag,
+                address: None,
+                retries: 0,
+            };
+            let mut dump = DumpData::new(&request, &Err(error.clone()));
+            if legacy {
+                let raw: Result<Vec<u8>, Vec<u8>> = Err(error.inner.mock_serialize().unwrap());
+                dump.serialized_response = serde_json::to_vec(&raw).unwrap();
+            }
+            let path = std::env::temp_dir().join(format!(
+                "dapi-replay-{}-{legacy}-{recorded_flag}.json",
+                std::process::id()
+            ));
+            std::fs::write(&path, dump.mock_serialize().unwrap()).unwrap();
+            let mut client = MockDapiClient::new();
+            let loaded = client.load::<BroadcastStateTransitionRequest, _>(&path);
+            std::fs::remove_file(&path).unwrap();
+            let (_, recorded) = loaded.unwrap();
+            assert_eq!(recorded.unwrap_err().possibly_accepted, recorded_flag);
+            assert_eq!(
+                client
+                    .execute(request, RequestSettings::default())
+                    .await
+                    .unwrap_err()
+                    .possibly_accepted,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn should_preserve_uncertainty_in_recordings_and_read_legacy_errors() {
+        for possibly_accepted in [false, true] {
+            let error = ExecutionError {
+                possibly_accepted,
+                inner: DapiClientError::NoAvailableAddresses,
+                retries: 0,
+                address: None,
+            };
+            let bytes = error.mock_serialize().expect("serialize recording");
+            let restored = ExecutionError::<DapiClientError>::mock_deserialize(&bytes)
+                .expect("read recording");
+            assert_eq!(restored.is_possibly_accepted(), possibly_accepted);
+            assert!(matches!(
+                restored.inner,
+                DapiClientError::NoAvailableAddresses
+            ));
+        }
+        let legacy = DapiClientError::NoAvailableAddresses
+            .mock_serialize()
+            .expect("serialize legacy recording");
+        let restored = ExecutionError::<DapiClientError>::mock_deserialize(&legacy)
+            .expect("read legacy recording");
+        assert!(!restored.is_possibly_accepted());
+        assert!(matches!(
+            restored.inner,
+            DapiClientError::NoAvailableAddresses
+        ));
     }
 }

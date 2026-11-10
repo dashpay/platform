@@ -62,6 +62,7 @@ impl SingleDocumentDriveQuery {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::error::proof::ProofError;
@@ -536,6 +537,64 @@ mod tests {
         }
     }
 
+    /// A proof of more than the document's query, the document together with an identity's
+    /// balance, has the document verified as a subset of it
+    #[test]
+    fn should_find_a_document_that_may_be_contested_in_a_proof_of_more_than_its_query() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = drive_with_contract(DPNS);
+        let document = domain(&contract, 1, "quantum");
+        drive
+            .add_document_for_contract(
+                info(&document, &contract, "domain"),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the document");
+        let query = maybe_contested(&contract, "domain", document.id().to_buffer(), None);
+        let proof = drive
+            .prove_multiple_state_transition_results(
+                &[IdentityDriveQuery {
+                    identity_id: [3; 32],
+                    prove_request_type: IdentityProveRequestType::Balance,
+                }],
+                &[],
+                std::slice::from_ref(&query),
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+                platform_version,
+            )
+            .expect("expected a proof of the balance and the document");
+
+        let (root_hash, found) = query
+            .verify_proof(
+                true,
+                proof.as_slice(),
+                contract
+                    .document_type_for_name("domain")
+                    .expect("expected the domain document type"),
+                platform_version,
+            )
+            .expect("expected the document's part of the proof to verify");
+
+        assert_eq!(found.map(|found| found.id()), Some(document.id()));
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash"),
+            "the proof is of the stored state"
+        );
+    }
+
     #[test]
     fn should_ignore_a_block_time_for_a_document_type_without_history() {
         let platform_version = PlatformVersion::latest();
@@ -668,6 +727,8 @@ mod tests {
         }
     }
 
+    /// A proof holding the document in both places is refused as a whole proof and as a subset,
+    /// which GroveDB verifies through different entry points
     #[test]
     fn should_refuse_a_document_proved_to_be_in_both_places() {
         let platform_version = PlatformVersion::latest();
@@ -696,11 +757,14 @@ mod tests {
             )
             .expect("expected a proof");
 
-        let result = query.verify_proof_keep_serialized(false, proof.as_slice(), platform_version);
+        for is_subset in [false, true] {
+            let result =
+                query.verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version);
 
-        assert!(
-            matches!(result, Err(Error::Proof(ProofError::CorruptedProof(_)))),
-            "{result:?}"
-        );
+            assert!(
+                matches!(result, Err(Error::Proof(ProofError::CorruptedProof(_)))),
+                "is_subset {is_subset}: {result:?}"
+            );
+        }
     }
 }
