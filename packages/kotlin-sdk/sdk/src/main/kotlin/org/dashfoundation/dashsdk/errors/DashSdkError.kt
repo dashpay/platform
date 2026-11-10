@@ -244,6 +244,15 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * Code 61: a shielded fund-from-asset-lock resume named a different Orchard
+         * recipient than the one the tracked lock recorded when it was built. Nothing
+         * was submitted or paid; resume with the recorded recipient. Locks tracked
+         * before the recipient was recorded carry none and accept the caller's.
+         */
+        class AssetLockRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -771,6 +780,7 @@ sealed class DashSdkError(
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
+            61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

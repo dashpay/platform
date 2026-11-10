@@ -54,6 +54,18 @@ use super::{
 ///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
 ///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
 ///   as v0's does.
+/// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
+///   document field change reads the stored document with its stored element's storage flags
+///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
+///   change is written in that identity's name and the document's storage stays with whoever
+///   holds it. v0 writes the change in the name of the document's owner, which from protocol
+///   version 15 would hand a document a gas sponsor paid for over to its owner at the
+///   moderator's cost. Every other moderation action transforms as v0's does. The state
+///   validation, which is the transformation, runs the same generation.
+///
+/// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather
+///   than `None`: the transition, new at protocol version 15, has its entries, value balance,
+///   proof and anchor checked.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -77,6 +89,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
                     .state_transitions
                     .masternode_vote_state_transition
+            },
+            contract_user_moderation_state_transition: DriveAbciStateTransitionValidationVersion {
+                transform_into_action: 1, // a moderator's field change reads who holds the document's storage
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .contract_user_moderation_state_transition
             },
             contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 transform_into_action: 1, // check_tx holds the update to the compiled size cap
@@ -104,6 +122,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .state_transitions
                     .batch_state_transition
             },
+            private_document_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0), // a private document create (new in v15) has a basic structure
+                    ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                },
             ..DRIVE_ABCI_VALIDATION_VERSIONS_V10.state_transitions
         },
         ..DRIVE_ABCI_VALIDATION_VERSIONS_V10

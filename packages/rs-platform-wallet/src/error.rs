@@ -66,6 +66,12 @@ pub enum PlatformWalletError {
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 
+    /// The wallet lacks an account the operation needs, such as BIP-44
+    /// account 0. Distinct from [`Self::WalletNotFound`] because the wallet
+    /// itself is still there.
+    #[error("Account not found: {0}")]
+    AccountNotFound(String),
+
     /// A payment refused before anything reached the network: its wallet
     /// was removed or re-created after the handle it came through was
     /// taken. A prepared payment refused at send was abandoned; a build
@@ -645,6 +651,22 @@ pub enum PlatformWalletError {
     /// lets a new lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
+
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. The
+    /// recorded recipient is the one the user confirmed; the resume pays
+    /// nobody. Resume with the recorded recipient instead. Rows tracked
+    /// before the recipient was recorded carry none and accept the caller's.
+    #[error(
+        "Asset lock {out_point} was built to pay shielded recipient {} and cannot be resumed to {}",
+        hex::encode(recorded),
+        hex::encode(requested)
+    )]
+    AssetLockRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: crate::changeset::ShieldedRecipientRaw,
+        requested: crate::changeset::ShieldedRecipientRaw,
+    },
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),

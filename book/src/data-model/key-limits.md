@@ -358,7 +358,7 @@ sequenceDiagram
 
 ```rust
 let ExecutionEvent::Paid { signing_key_limits: Some(signing_key_limits), .. } = event else {
-    return self.validate_fees_of_event_v0(event, block_info, transaction, platform_version, previous_fee_versions);
+    return self.validate_fees_of_event_v0(event, block_info, transaction, platform_version);
 };
 ```
 
