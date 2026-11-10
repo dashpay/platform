@@ -19,7 +19,7 @@ const query = createSingleDocumentQuery(
   'myDocumentType',  // string - The document type name
   false,             // boolean - Whether the document type keeps history
   documentId,        // Uint8Array(32) - The document ID
-  Date.now()         // number (optional) - Block time in milliseconds
+  Date.now()         // number (optional) - Block time in milliseconds, ignored unless the type keeps history
 );
 
 // For a maybe contested document
@@ -69,6 +69,15 @@ Documents in Drive can have different contested statuses:
 - **NotContested (0)**: The document was not contested by the system
 - **MaybeContested (1)**: We don't know if the document was contested, or we're not sure if the contest is over
 - **Contested (2)**: We know that the document was contested and the contest is not over
+
+A `MaybeContested` query looks in both places at once, so its proof has to cover both: a proof
+made for a `NotContested` or a `Contested` query does not verify against it. Such a proof
+verifies from protocol version 15.
+
+The block time selects a version only for a document type that keeps history. For a type
+without history there is one version, and the block time is ignored in every status. From
+protocol version 15, a `MaybeContested` query for a type that keeps history is refused when it
+has a block time.
 
 ## API Reference
 

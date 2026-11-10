@@ -1713,5 +1713,80 @@
              responseClass:[GetPrivateDocumentEntriesResponse class]];
 }
 
+#pragma mark getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse)
+
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetOwnerTransactionsInBlockWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getOwnerTransactionsInBlock"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetOwnerTransactionsInBlockResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ */
+- (GRPCUnaryProtoCall *)getOwnerTransactionsInBlockWithMessage:(GetOwnerTransactionsInBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getOwnerTransactionsInBlock"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetOwnerTransactionsInBlockResponse class]];
+}
+
+#pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
+
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetBlocksWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getBlocks"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ */
+- (GRPCUnaryProtoCall *)getBlocksWithMessage:(GetBlocksRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getBlocks"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetBlocksResponse class]];
+}
+
 @end
 #endif
