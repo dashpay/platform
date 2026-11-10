@@ -127,6 +127,14 @@ impl AssetLockEntryWire {
     }
 }
 
+/// Detect an observation for migration preservation without accepting its finality.
+pub(crate) fn has_instant_observation(bytes: &[u8]) -> Result<bool, WalletStorageError> {
+    let wire: AssetLockEntryWire = blob::decode(bytes)?;
+    let entry = wire.into_entry()?;
+    Ok(entry.status == AssetLockStatus::InstantSendLocked
+        || matches!(entry.proof, Some(AssetLockProof::Instant(_))))
+}
+
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

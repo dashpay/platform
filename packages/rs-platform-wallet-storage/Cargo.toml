@@ -161,6 +161,8 @@ apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], opti
 windows-native-keyring-store = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
+async-trait = "=0.1.89"
+dash-spv = { workspace = true, features = ["test-utils"] }
 # Safe SQLite fault injection for migration rollback tests.
 rusqlite = { version = "0.41", features = ["functions"] }
 # `test-utils` reaches `provider_key_test_wallet`, shared with

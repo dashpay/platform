@@ -891,8 +891,9 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 let container = try ModelContainer(for: schema, configurations: [
                     ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
                 ])
-                XCTAssertEqual(try container.mainContext.fetchCount(
-                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()), 1)
+                let wallet = try XCTUnwrap(container.mainContext.fetch(
+                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()).first)
+                XCTAssertEqual(wallet.name, "historical audit wallet")
             }
             XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["2.0.0"])
             let container = try open(url, hooks: .init(visit: { _, _ in

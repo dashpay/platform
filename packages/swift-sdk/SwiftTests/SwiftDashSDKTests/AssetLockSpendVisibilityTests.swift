@@ -12,13 +12,9 @@ import DashSDKFFI
 // funding TXOs it consumed stay `isSpent == false` forever. Every
 // relaunch then hands those consumed outputs back to Rust as spendable.
 //
-// Two repairs cover it — the callback-time reconcile in
-// `persistAssetLocks`, and the load-time guard in `loadWalletList` for
-// wallets whose lock reached the terminal `Consumed` status before that
-// reconcile existed and so has no future callback to fire. Both depend
-// on a SwiftData read, and both must fail CLOSED: the whole point is to
-// withhold outputs that are gone, so an unreadable table may never be
-// read as "nothing to withhold."
+// Callback-time reconciliation and scoped Rust replay both preserve spent
+// inputs. The raw load only marshals rows; owner decisions reach Swift as
+// exact claim effects inside the replay transaction.
 //
 // Both directions are pinned here. The readable behaviour goes through a
 // live store; the fail-closed behaviour goes through the handler's
@@ -216,47 +212,57 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
         return try XCTUnwrap(try context.fetch(descriptor).first).isSpent
     }
 
-    // MARK: Load-time guard
+    // MARK: Raw snapshot and owner-directed repair
 
-    /// `Consumed` is terminal — the lock never upserts again — so the
-    /// callback-time reconcile has no future event to repair this with,
-    /// and every relaunch would re-inflate the balance with an output
-    /// that is provably gone. The load guard must both exclude it from
-    /// the restore and heal the row in place.
-    func testLoadExcludesAndHealsATxoConsumedByAFinalizedAssetLock() throws {
-        let outpoint = try seedFundingTxoSpentByAMempoolAssetLock(into: container)
-
-        // Without a finalized lock row this IS the phantom UTXO.
-        XCTAssertEqual(try restoredUtxoCount(), 1)
-        XCTAssertFalse(try txoIsSpent(outpoint: outpoint))
-
-        try insertConsumedAssetLock(into: container, vout: 0)
-
-        XCTAssertEqual(
-            try restoredUtxoCount(), 0,
-            "the finalized lock's funding output must not rehydrate as spendable"
-        )
-        XCTAssertTrue(
-            try txoIsSpent(outpoint: outpoint),
-            "and the stale flag must be healed in place"
-        )
+    /// The Rust owner tests choose this hold from the terminal lifecycle;
+    /// this host test checks its exact transactional application.
+    private func applyOwnerHold(outpoint: Data) throws {
+        var claim = ReplayClaimEffectFFI()
+        withUnsafeMutableBytes(of: &claim.txid) { $0.copyBytes(from: outpoint.prefix(32)) }
+        claim.vout = outpoint.suffix(4).enumerated().reduce(UInt32(0)) {
+            $0 | (UInt32($1.element) << (8 * $1.offset))
+        }
+        claim.action = 2
+        claim.has_claimant = true
+        withUnsafeMutableBytes(of: &claim.claimant) { $0.copyBytes(from: lockTxid) }
+        XCTAssertEqual(handler.replayWallet(walletId: walletId) {
+            do {
+                try withUnsafePointer(to: &claim) { pointer in
+                    var effects = HistoryReplayEffectsFFI()
+                    effects.claims = pointer
+                    effects.claims_count = 1
+                    try handler.applyReplayEffects(walletId: walletId, effects: effects)
+                }
+                return 0
+            } catch {
+                XCTFail("Unexpected owner-effect failure: \(error)")
+                return 1
+            }
+        }, 0)
     }
 
-    /// DIP-0027 lets one funding transaction carry several credit
-    /// outputs, and Rust persists each tracked lock under its own
-    /// credit-output index, so a valid lock row can be keyed `<txid>:1`
-    /// with no `<txid>:0` row anywhere. Finality belongs to the
-    /// transaction, so the guard keys on the funding txid alone.
-    func testLoadExcludesATxoConsumedByALockPersistedAtANonZeroVout() throws {
+    // TODO(macOS-validation): run raw snapshot and scoped hold tests on an Apple SDK runner.
+    func testRawLoadDefersConsumedAssetLockRepairToScopedOwnerEffects() throws {
         let outpoint = try seedFundingTxoSpentByAMempoolAssetLock(into: container)
         XCTAssertEqual(try restoredUtxoCount(), 1)
+        XCTAssertFalse(try txoIsSpent(outpoint: outpoint))
+        try insertConsumedAssetLock(into: container, vout: 0)
 
+        XCTAssertEqual(try restoredUtxoCount(), 1, "raw load must preserve the authoritative snapshot")
+        XCTAssertFalse(try txoIsSpent(outpoint: outpoint), "reading must not commit a repair")
+        try applyOwnerHold(outpoint: outpoint)
+        XCTAssertEqual(try restoredUtxoCount(), 0, "scoped owner repair must exclude the consumed coin")
+        XCTAssertTrue(try txoIsSpent(outpoint: outpoint), "the hold must survive the next raw snapshot")
+    }
+
+    /// A tracked credit-output index does not change the funding inputs held by Rust.
+    func testScopedOwnerHoldExcludesInputOfLockAtANonZeroCreditVout() throws {
+        let outpoint = try seedFundingTxoSpentByAMempoolAssetLock(into: container)
         try insertConsumedAssetLock(into: container, vout: 1)
-
-        XCTAssertEqual(
-            try restoredUtxoCount(), 0,
-            "finality belongs to the funding transaction, not to credit output 0"
-        )
+        XCTAssertEqual(try restoredUtxoCount(), 1)
+        XCTAssertFalse(try txoIsSpent(outpoint: outpoint))
+        try applyOwnerHold(outpoint: outpoint)
+        XCTAssertEqual(try restoredUtxoCount(), 0)
         XCTAssertTrue(try txoIsSpent(outpoint: outpoint))
     }
 
@@ -368,8 +374,8 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
 
         XCTAssertEqual(
             injector.observedReads,
-            ["PersistentWallet", "PersistentTxo", "PersistentAssetLock"],
-            "the wallet and unspent-TXO reads must have been served — only the lock read failed"
+            ["PersistentWallet", "PersistentTxo", "PersistentTransaction", "PersistentAssetLock"],
+            "wallet, unspent-TXO and history reads must succeed before the injected lock read failure"
         )
         XCTAssertTrue(
             errored,

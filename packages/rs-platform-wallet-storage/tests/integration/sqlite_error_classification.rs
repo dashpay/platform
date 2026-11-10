@@ -449,6 +449,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::CoreTransactionEntryMismatch { .. } => {
                 (false, "core_transaction_entry_mismatch")
             }
+            WalletStorageError::HistoryAliasContextConflict { .. } => {
+                (false, "history_alias_context_conflict")
+            }
             WalletStorageError::TransactionBodyConflict { .. } => {
                 (false, "transaction_body_conflict")
             }
@@ -511,6 +514,7 @@ fn tc_p2_005_is_transient_table() {
                 (false, "empty_pool_address_script")
             }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
+            WalletStorageError::SpendAuthorization(_) => (false, "spend_authorization"),
         }
     }
 

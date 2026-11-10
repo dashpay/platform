@@ -2,7 +2,7 @@
 //! when an upstream `WalletEvent` carries a fresh balance snapshot.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
@@ -22,7 +22,7 @@ use crate::wallet::PlatformWallet;
 /// `WalletBalance` atomics so SwiftUI subscribers see the new totals.
 ///
 /// Registered in `PlatformWalletManager`'s handler list. The handler
-/// holds an `Arc` clone of the manager's `wallets` map (a *separate*
+/// holds a `Weak` reference to the manager's `wallets` map (a *separate*
 /// structure from the heavily-contended `wallet_manager` SPV write
 /// lock). SPV holds the wallet-manager write lock for the entire
 /// duration of block processing — looking the balance up through *that*
@@ -41,12 +41,16 @@ use crate::wallet::PlatformWallet;
 /// exactly that snapshot when it raced a lifecycle write, leaving
 /// removed funds on display indefinitely.
 pub struct BalanceUpdateHandler {
-    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Weak<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl BalanceUpdateHandler {
+    /// Observe the manager-owned map without extending its lifetime.
     pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self { wallets }
+        Self {
+            // Wallet broadcasters reach this handler through the SPV runtime.
+            wallets: Arc::downgrade(&wallets),
+        }
     }
 }
 
@@ -94,7 +98,10 @@ impl EventHandler for BalanceUpdateHandler {
         // wallet immediately after publishing — `register_wallet` and
         // `load_from_persistor` alike — so the window costs a snapshot, not
         // the balance.
-        let wallets = self.wallets.load();
+        let Some(wallets) = self.wallets.upgrade() else {
+            return;
+        };
+        let wallets = wallets.load();
         if let Some(pw) = wallets.get(wallet_id) {
             pw.balance().set(
                 balance.confirmed(),

@@ -7,9 +7,13 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
+use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
+};
+use platform_wallet::manager::history_replay::{
+    replay_wallet_history_blocking, HistoryReplay, HistoryReplayError, HistoryReplayLoad,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -23,9 +27,9 @@ use crate::sqlite::rehydrate::{
     apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
-use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
+use crate::sqlite::{history_replay, schema};
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -1313,6 +1317,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
         // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
+        // TODO(operation-tombstones): replay cleanup can erase operation UUIDs;
+        // ASSET_LOCK_OPERATION_IDS requires durable evidence distinguishing that from never sent.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1320,11 +1326,12 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            // `load` replays every stored record itself, inside its transaction.
+            .union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1518,98 +1525,57 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load_with_replay(&ReplayEvidence::default())
+            .map(|loaded| loaded.state)
+    }
+
+    fn replay_lock_candidates(&self) -> Result<Vec<dashcore::InstantLock>, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
-        // Cleared up front so a failed load never leaves the previous load's
-        // snapshot behind, masquerading as this one's verdict.
-        self.replace_load_degradation(LoadDegradation::default());
-        let mut state = ClientStartState::default();
+        let mut candidates = Vec::new();
+        for wallet_id in schema::wallets::list_ids(&conn).map_err(PersistenceError::from)? {
+            let state = load_wallet_snapshot(&conn, wallet_id, &ctx)?;
+            candidates.extend(
+                platform_wallet::changeset::recorded_history::replay_lock_candidates(&state),
+            );
+        }
+        Ok(candidates)
+    }
 
-        #[cfg(feature = "shielded")]
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        if schema::wallets::fetch(&conn, &wallet_id)
+            .map_err(PersistenceError::from)?
+            .is_none()
         {
-            state.shielded.viewing_keys = schema::shielded_viewing_keys::load_all(&conn, &ctx)
-                .map_err(PersistenceError::from)?;
+            return Ok(HistoryReplayLoad::default());
         }
+        let addresses = schema::platform_addrs::load_state(&conn, &wallet_id)
+            .map_err(PersistenceError::from)?;
+        let (wallet, outcome) =
+            load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence)?;
+        let mut loaded = HistoryReplayLoad::default();
+        loaded.state.wallets.insert(wallet_id, wallet);
+        loaded.state.platform_addresses.insert(wallet_id, addresses);
+        loaded.outcomes.insert(wallet_id, outcome);
+        self.replace_load_degradation(ctx.degradation());
+        Ok(loaded)
+    }
 
-        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
-        let mut addresses_loaded: usize = 0;
-        // Wallets whose platform-address rows could not be read. They are
-        // already counted here, so the loop below skips them rather than
-        // rebuilding a wallet whose platform balance would be understated.
-        let mut unreadable: std::collections::BTreeSet<WalletId> =
-            std::collections::BTreeSet::new();
-        for (wallet_id, entry) in addrs_all {
-            let (addrs, count) = match entry {
-                Ok(entry) => entry,
-                Err(original) => {
-                    degrade_whole_wallet(&ctx, wallet_id, &original)
-                        .map_err(|_| PersistenceError::from(original))?;
-                    unreadable.insert(wallet_id);
-                    continue;
-                }
-            };
-            // Skip a wallet with no platform state at all (no addresses,
-            // no registrations, all sync watermarks zero).
-            if count > 0
-                || !addrs.per_account.is_empty()
-                || addrs.sync_height > 0
-                || addrs.sync_timestamp > 0
-                || addrs.last_known_recent_block > 0
-            {
-                addresses_loaded += count;
-                state.platform_addresses.insert(wallet_id, addrs);
-            }
-        }
+    fn load_with_replay(
+        &self,
+        evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        self.load_client_snapshot(Some(evidence))
+    }
 
-        // Per-wallet keyless rehydration payload; the manager rebuilds each
-        // wallet watch-only and derives signing keys later on demand.
-        let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
-        let wallets_seen = wallet_ids.len();
-        for wallet_id in wallet_ids {
-            if unreadable.contains(&wallet_id) {
-                continue;
-            }
-            match load_one_wallet(&conn, wallet_id, &ctx) {
-                Ok(wallet_state) => {
-                    state.wallets.insert(wallet_id, wallet_state);
-                }
-                // The isolation boundary. One wallet's failure is recorded
-                // against that wallet and the walk continues; under Strict
-                // `tolerate_at` returns, and the ORIGINAL error propagates
-                // rather than the boundary's own wrapper, so a caller
-                // matching on a specific cause still sees it.
-                Err(original) => {
-                    let cause = wallet_storage_kind(&original);
-                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
-                        .map_err(|_| original)?;
-                }
-            }
-        }
-        let wallets_rehydrated = state.wallets.len();
-        #[cfg(feature = "shielded")]
-        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
-        #[cfg(not(feature = "shielded"))]
-        let shielded_viewing_keys_loaded = 0usize;
-
-        ctx.add_unimplemented_rows(
-            count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
-        );
-        let degradation = ctx.degradation();
-        tracing::info!(
-            wallets_seen,
-            addresses_loaded,
-            wallets_rehydrated,
-            shielded_viewing_keys_loaded,
-            wallets_pending_rehydration = 0usize,
-            degraded = degradation.degraded,
-            degraded_total = degradation.total,
-            degraded_by_site = ?degradation.by_site,
-            unimplemented = ?LOAD_UNIMPLEMENTED,
-            unimplemented_rows = degradation.unimplemented_rows,
-            "load() summary"
-        );
-        self.replace_load_degradation(degradation);
-        Ok(state)
+    fn load_read_snapshot(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load_client_snapshot(None).map(|loaded| loaded.state)
     }
 
     fn get_core_tx_record(
@@ -1620,13 +1586,17 @@ impl PlatformWalletPersistence for SqlitePersister {
         Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
         PersistenceError,
     > {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         // Tally deliberately dropped — see `last_load_degradation`. The
         // policy still decides whether drift is fatal, and `tolerate` still
         // logs it.
         let ctx = LoadCtx::new(self.config.load_policy);
-        schema::core_state::get_tx_record(&conn, &wallet_id, txid, &ctx)
-            .map_err(PersistenceError::from)
+        // Alias evidence and its active canonical record must belong to one
+        // SQLite snapshot, including when another connection writes the file.
+        let tx = conn.transaction().map_err(WalletStorageError::from)?;
+        let record = schema::core_history_aliases::get_record(&tx, &wallet_id, txid, &ctx)?;
+        tx.commit().map_err(WalletStorageError::from)?;
+        Ok(record)
     }
 
     /// Served from the `dpns_name_states` table this persister already
@@ -1682,19 +1652,205 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 ///
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
+impl SqlitePersister {
+    fn load_client_snapshot(
+        &self,
+        evidence: Option<&ReplayEvidence>,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let conn = self.conn().map_err(PersistenceError::from)?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        // Cleared up front so a failed load never leaves the previous load's
+        // snapshot behind, masquerading as this one's verdict.
+        self.replace_load_degradation(LoadDegradation::default());
+        let mut state = ClientStartState::default();
+        let mut outcomes = BTreeMap::new();
+
+        #[cfg(feature = "shielded")]
+        {
+            state.shielded.viewing_keys = schema::shielded_viewing_keys::load_all(&conn, &ctx)
+                .map_err(PersistenceError::from)?;
+        }
+
+        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        let mut addresses_loaded: usize = 0;
+        // Wallets whose platform-address rows could not be read. They are
+        // already counted here, so the loop below skips them rather than
+        // rebuilding a wallet whose platform balance would be understated.
+        let mut unreadable: std::collections::BTreeSet<WalletId> =
+            std::collections::BTreeSet::new();
+        for (wallet_id, entry) in addrs_all {
+            let (addrs, count) = match entry {
+                Ok(entry) => entry,
+                Err(original) => {
+                    degrade_whole_wallet(&ctx, wallet_id, &original)
+                        .map_err(|_| PersistenceError::from(original))?;
+                    unreadable.insert(wallet_id);
+                    continue;
+                }
+            };
+            // Skip a wallet with no platform state at all (no addresses,
+            // no registrations, all sync watermarks zero).
+            if count > 0
+                || !addrs.per_account.is_empty()
+                || addrs.sync_height > 0
+                || addrs.sync_timestamp > 0
+                || addrs.last_known_recent_block > 0
+            {
+                addresses_loaded += count;
+                state.platform_addresses.insert(wallet_id, addrs);
+            }
+        }
+
+        // Per-wallet keyless rehydration payload; the manager rebuilds each
+        // wallet watch-only and derives signing keys later on demand.
+        let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
+        let wallets_seen = wallet_ids.len();
+        for wallet_id in wallet_ids {
+            if unreadable.contains(&wallet_id) {
+                continue;
+            }
+            let restored = match evidence {
+                Some(evidence) => {
+                    load_one_wallet(&conn, wallet_id, &ctx, self.config.load_policy, evidence)
+                }
+                None => {
+                    let tx = rusqlite::Transaction::new_unchecked(
+                        &conn,
+                        rusqlite::TransactionBehavior::Deferred,
+                    )
+                    .map_err(WalletStorageError::from)
+                    .map_err(PersistenceError::from)?;
+                    let result = load_wallet_snapshot(&tx, wallet_id, &ctx);
+                    tx.rollback()
+                        .map_err(WalletStorageError::from)
+                        .map_err(PersistenceError::from)?;
+                    result.map(|state| (state, HistoryReplay::default()))
+                }
+            };
+            match restored {
+                Ok((wallet_state, outcome)) => {
+                    state.wallets.insert(wallet_id, wallet_state);
+                    outcomes.insert(wallet_id, outcome);
+                }
+                // The isolation boundary. One wallet's failure is recorded
+                // against that wallet and the walk continues; under Strict
+                // `tolerate_at` returns, and the ORIGINAL error propagates
+                // rather than the boundary's own wrapper, so a caller
+                // matching on a specific cause still sees it.
+                Err(original) => {
+                    if matches!(&original, PersistenceError::Backend { source, .. }
+                        if matches!(source.downcast_ref::<HistoryReplayError>(), Some(HistoryReplayError::MissingFinalityEvidence { .. })))
+                    {
+                        return Err(original);
+                    }
+                    let cause = wallet_storage_kind(&original);
+                    record_wallet_degradation(&ctx, wallet_id, cause, &original)
+                        .map_err(|_| original)?;
+                }
+            }
+        }
+        let wallets_rehydrated = state.wallets.len();
+        #[cfg(feature = "shielded")]
+        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
+        #[cfg(not(feature = "shielded"))]
+        let shielded_viewing_keys_loaded = 0usize;
+
+        ctx.add_unimplemented_rows(
+            count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
+        );
+        let degradation = ctx.degradation();
+        tracing::info!(
+            wallets_seen,
+            addresses_loaded,
+            wallets_rehydrated,
+            shielded_viewing_keys_loaded,
+            wallets_pending_rehydration = 0usize,
+            degraded = degradation.degraded,
+            degraded_total = degradation.total,
+            degraded_by_site = ?degradation.by_site,
+            unimplemented = ?LOAD_UNIMPLEMENTED,
+            unimplemented_rows = degradation.unimplemented_rows,
+            "load() summary"
+        );
+        self.replace_load_degradation(degradation);
+        Ok(HistoryReplayLoad { state, outcomes })
+    }
+}
+
+fn replay_failure(error: HistoryReplayError) -> PersistenceError {
+    match error {
+        HistoryReplayError::SpendAuthorization(error) => {
+            WalletStorageError::SpendAuthorization(error).into()
+        }
+        error => PersistenceError::backend(error),
+    }
+}
+
 fn load_one_wallet(
     conn: &Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
-) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
-    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+    policy: LoadPolicy,
+    evidence: &ReplayEvidence,
+) -> Result<
+    (
+        platform_wallet::changeset::ClientWalletStartState,
+        HistoryReplay,
+    ),
+    PersistenceError,
+> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(WalletStorageError::from)
         .map_err(PersistenceError::from)?;
-    let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
-    tx.commit()
-        .map_err(WalletStorageError::from)
-        .map_err(PersistenceError::from)?;
-    Ok(state)
+    let mut state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    let mut outcome =
+        replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
+    let records = state.recorded_history.transactions.clone();
+    let mut claims =
+        history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
+    let effects = outcome
+        .storage_effects(&records, &claims)
+        .map_err(replay_failure)?;
+    if !effects.removed_records.is_empty()
+        || !effects.removed_evidence.is_empty()
+        || !effects.claims.is_empty()
+    {
+        let operations = effects.operation_effects(&state);
+        history_replay::apply_effects(&tx, &wallet_id, &effects).map_err(PersistenceError::from)?;
+        schema::asset_locks::apply(&tx, &wallet_id, &operations.asset_locks)
+            .map_err(PersistenceError::from)?;
+        schema::dashpay::apply(&tx, &wallet_id, None, Some(&operations.payments))
+            .map_err(PersistenceError::from)?;
+        state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+        let remaining =
+            replay_wallet_history_blocking(&mut state, evidence).map_err(replay_failure)?;
+        state.unconfirmed_outgoing_txs = outcome.resendable(state.unconfirmed_outgoing_txs);
+        if !remaining.sweeps.is_empty()
+            || !remaining.authorization.rejected.is_empty()
+            || !remaining.withheld_asset_lock_inputs.is_empty()
+        {
+            return Err(PersistenceError::backend(
+                HistoryReplayError::UnsettledAfterReplay,
+            ));
+        }
+        claims =
+            history_replay::load_spent_claims(&tx, &wallet_id).map_err(PersistenceError::from)?;
+    }
+    state.wallet_info.restore_spent_outpoints(
+        &claims
+            .iter()
+            .map(|claim| (claim.outpoint, claim.claimant))
+            .collect::<Vec<_>>(),
+    );
+    outcome.read_only = policy == LoadPolicy::Recovery;
+    if outcome.read_only {
+        tx.rollback()
+    } else {
+        tx.commit()
+    }
+    .map_err(WalletStorageError::from)
+    .map_err(PersistenceError::from)?;
+    Ok((state, outcome))
 }
 
 fn load_wallet_snapshot(
@@ -1720,9 +1876,26 @@ fn load_wallet_snapshot(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
-        schema::core_state::load_state(conn, &wallet_id, network, ctx)
-            .map_err(PersistenceError::from)?;
+    let schema::core_state::CoreStateSnapshot {
+        changes: mut core_state,
+        utxo_accounts,
+        record_keys,
+    } = schema::core_state::load_snapshot(conn, &wallet_id, network, ctx)
+        .map_err(PersistenceError::from)?;
+    // Replay effects address physical rows; history projection may deduplicate aliases.
+    let recorded_transactions = core_state
+        .records
+        .iter()
+        .cloned()
+        .zip(record_keys)
+        .map(|(record, key)| {
+            let mut stored = platform_wallet::changeset::StoredTransaction::from(record);
+            stored.txid = key;
+            stored
+        })
+        .collect();
+    schema::core_history_aliases::project_records(conn, &wallet_id, &mut core_state.records, ctx)
+        .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load
@@ -1867,6 +2040,18 @@ fn load_wallet_snapshot(
                 ))
             })?;
     }
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        for record in core_state
+            .records
+            .iter()
+            .filter(|record| record.account_type == owner)
+        {
+            account
+                .transactions_mut()
+                .insert(record.txid, record.clone());
+        }
+    }
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -1877,6 +2062,13 @@ fn load_wallet_snapshot(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
+        recorded_history: platform_wallet::changeset::RecordedHistory {
+            required_instant_locks: Default::default(),
+            owned_prevouts: history_replay::load_prevouts(conn, &wallet_id)
+                .map_err(PersistenceError::from)?,
+            transactions: recorded_transactions,
+            instant_locks: core_state.instant_locks_for_non_final_records,
+        },
         // Not persisted by this backend yet: the backfill record rides the
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).

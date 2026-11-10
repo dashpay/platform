@@ -21,6 +21,7 @@ pub mod persistence_capabilities;
 pub mod platform_address_sync_start_state;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 pub mod provider_key_account;
+pub mod recorded_history;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
 #[cfg(feature = "shielded")]
@@ -34,20 +35,21 @@ mod wallet_accounting;
 
 pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
-    upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
-    AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,
-    DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, HighestUsedIndexes,
-    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
-    IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
-    KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
-    PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
-    SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet, WalletMetadataEntry,
-    SHIELDED_RECIPIENT_SIZE,
+    most_advanced_transaction_context, upsert_pending_contact_crypto, AccountAddressPoolEntry,
+    AccountRegistrationEntry, AssetLockChangeSet, AssetLockEntry, ContactChangeSet,
+    ContactRequestEntry, CoreChangeSet, DpnsNameSaleStatus, DpnsNameStateChangeSet,
+    DpnsNameStateEntry, HighestUsedIndexes, IdentityChangeSet, IdentityEntry,
+    IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet, InvitationChangeSet,
+    InvitationEntry, InvitationStatus, KeyDerivationBreadcrumb, KeyWithBreadcrumb,
+    PendingContactCrypto, PendingContactCryptoKey, PendingContactCryptoKind,
+    PendingContactCryptoOp, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
+    PlatformWalletChangeSet, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    ProviderPlatformNodePubKey, ReceivedContactRequestKey, SentContactRequestKey,
+    ShieldedRecipientRaw, TokenBalanceChangeSet, WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
+pub use core_bridge::swept_payment_status;
 pub use core_bridge::{
     spawn_wallet_event_adapter, spawn_wallet_event_adapter_with_durable_cursors, DurableCursor,
     DurableCursorState, DurableCursors, RetiredBarrier,
@@ -60,6 +62,7 @@ pub use identity_scan_state::IdentityScanStateEntry;
 pub use merge::Merge;
 pub use persistence_capabilities::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
+pub use recorded_history::{RecordedHistory, StoredTransaction};
 #[cfg(feature = "shielded")]
 pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(not(feature = "shielded"))]
@@ -70,4 +73,7 @@ pub use traits::{
     persists_outbound_account_markers, ListedCoreTxid, PersistenceError, PersistenceErrorKind,
     PlatformWalletPersistence,
 };
-pub use wallet_accounting::{is_owned, wallet_accounting, wallet_direction};
+pub use wallet_accounting::{
+    funding_txids, history_accounting, is_owned, record_accounting, wallet_accounting,
+    wallet_direction, HistoryAccounting, WalletAccounting,
+};

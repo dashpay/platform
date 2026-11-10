@@ -9,6 +9,13 @@
 //! `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver codes, which reuse the
 //! same integers on a different callback family.
 
+mod replay;
+use replay::ReplayCallbacks;
+pub use replay::{
+    ApplyReplayEffectsFn, FreeReplayClaimsFn, HistoryReplayEffectsFFI, LoadReplayClaimsFn,
+    ReplayClaimEffectFFI, ReplayClaimRestoreFFI, ReplayOperationFn, ReplayWalletFn,
+};
+
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
@@ -30,11 +37,13 @@ use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
+use platform_wallet::changeset::record_accounting;
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
+    ProviderKeyExtendedPubKey, RecordedHistory, StoredTransaction, WalletAccounting,
+    PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
 use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
@@ -58,8 +67,9 @@ use crate::contact_persistence::{
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
     build_dashpay_backfill_covered_for_callback, build_sweep_batches_for_callback,
-    build_utxo_credit_verdicts_for_callback, free_wallet_changeset_ffi,
-    DashPayBackfillCoveredContactFFI, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
+    build_utxo_credit_verdicts_for_callback, free_wallet_changeset_ffi, CoreHistoryTransactionFFI,
+    DashPayBackfillCoveredContactFFI, SweepBatchFFI, TransactionAccountingFFI,
+    UtxoCreditVerdictFFI, WalletChangeSetFFI,
 };
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
@@ -76,8 +86,9 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    ProviderSpecialTxRestoreEntryFFI, RecordedTransactionRestoreFFI, StandardAccountTypeTagFFI,
+    UnconfirmedOutgoingTxRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI,
+    WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -98,6 +109,8 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+/// The mempool discriminant, used to distinguish unconfirmed rows from unknown values.
+pub(crate) const TX_CONTEXT_RAW_MEMPOOL: u32 = 0;
 /// The InstantSend discriminant of the same encoding.
 pub(crate) const TX_CONTEXT_RAW_INSTANT_SEND: u32 = 1;
 
@@ -168,6 +181,30 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 =
 /// persist/load callbacks. Reported, never required: a host without the slots
 /// loads such rows with no recipient and a resume accepts the caller's.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: u64 = 1 << 14;
+/// Load hands back the stored transaction history through
+/// `WalletRestoreEntryFFI::recorded_transactions`. Honoured only with the
+/// wallet-list load callback pair wired.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_HISTORY_RESTORE: u64 = 1 << 16;
+
+/// Persist consensus InstantLock bytes inside the existing changeset transaction.
+pub type PersistCoreInstantLockFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    txid: *const u8,
+    bytes: *const u8,
+    len: usize,
+) -> i32;
+/// Read an optional raw lock; null/zero means absent, never verified.
+pub type LoadCoreInstantLockFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    txid: *const u8,
+    out_bytes: *mut *const u8,
+    out_len: *mut usize,
+) -> i32;
+/// Free the exact allocation returned by the raw-lock loader, including error paths.
+pub type FreeCoreInstantLockFn =
+    unsafe extern "C" fn(context: *mut c_void, bytes: *const u8, len: usize);
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -351,6 +388,54 @@ pub type LoadAssetLockShieldedRecipientFn = unsafe extern "C" fn(
     out_found: *mut bool,
     out_recipient_raw_43: *mut u8,
 ) -> i32;
+
+/// Carries one wallet's accounting rows (see [`TransactionAccountingFFI`]).
+/// The host upserts each keyed by `(txid, wallet_id)`. Always fired inside a
+/// begin/end round: right after `on_persist_wallet_changeset_fn`, so the
+/// transaction rows the accounting belongs to already exist, when the round
+/// has a record with accounting evidence; and in the load-time backfill's
+/// own round, before [`PersistCoreHistoryAccountedFn`]. A non-zero return
+/// fails the round like any other per-kind callback.
+pub type PersistTransactionAccountingFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    rows: *const TransactionAccountingFFI,
+    rows_count: usize,
+) -> i32;
+
+/// The load-time accounting backfill's read. Sets `*out_backfilled = true`
+/// (and returns no rows) once [`PersistCoreHistoryAccountedFn`] has been
+/// stored for this wallet. Otherwise returns the wallet's stored
+/// transactions that have no accounting row for it; any subset is safe,
+/// since Rust fetches the funding transactions it needs itself
+/// (`on_get_core_tx_record_fn`, where a hit in any context is used and a
+/// non-zero return fails the backfill) and a transaction left out only
+/// stays without a row. A null array with a non-zero count is an error. The
+/// host keeps the array valid until [`FreeCoreHistoryForAccountingFn`].
+pub type LoadCoreHistoryForAccountingFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_backfilled: *mut bool,
+    out_rows: *mut *const CoreHistoryTransactionFFI,
+    out_count: *mut usize,
+) -> i32;
+
+/// Release an array returned by [`LoadCoreHistoryForAccountingFn`].
+pub type FreeCoreHistoryForAccountingFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    rows: *const CoreHistoryTransactionFFI,
+    count: usize,
+);
+
+/// Record that this wallet's history backfill is complete, so the next
+/// [`LoadCoreHistoryForAccountingFn`] reports it backfilled. Fired in the
+/// backfill's round after its rows, and committed with them, only when every
+/// transaction got its row. A round that had to leave a transaction
+/// unaccounted (a wallet-signed input whose funding transaction is not
+/// available yet) commits its rows without it, so the next load reads the
+/// rest again.
+pub type PersistCoreHistoryAccountedFn =
+    unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32;
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -541,6 +626,94 @@ pub struct PersistenceCallbacksExtension {
             out_recipient_raw_43: *mut u8,
         ) -> i32,
     >,
+    /// Per-wallet transaction accounting (see
+    /// [`PersistTransactionAccountingFn`]). Additive like the slots above: a
+    /// host without it keeps reading `TransactionRecordFFI`'s own values.
+    pub on_persist_transaction_accounting_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            rows: *const TransactionAccountingFFI,
+            rows_count: usize,
+        ) -> i32,
+    >,
+    /// Stored history for the load-time accounting backfill (see
+    /// [`LoadCoreHistoryForAccountingFn`]). Read only together with the free
+    /// slot below, the persist slot above and the completion slot.
+    pub on_load_core_history_for_accounting_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_backfilled: *mut bool,
+            out_rows: *mut *const CoreHistoryTransactionFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub on_load_core_history_for_accounting_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            rows: *const CoreHistoryTransactionFFI,
+            count: usize,
+        ),
+    >,
+    /// Backfill completion marker (see [`PersistCoreHistoryAccountedFn`]).
+    /// The backfill runs only when all four accounting slots and the
+    /// changeset begin/end pair are present.
+    pub on_persist_core_history_accounted_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8) -> i32>,
+    /// Raw InstantLock sidecar; the legacy transaction row stride remains unchanged.
+    pub on_persist_core_instant_lock_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            bytes: *const u8,
+            len: usize,
+        ) -> i32,
+    >,
+    /// Returns consensus bytes, which Rust must verify against the SPV quorum.
+    pub on_load_core_instant_lock_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            out_bytes: *mut *const u8,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub on_load_core_instant_lock_free_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, bytes: *const u8, len: usize)>,
+    /// Synchronous exactly-once scope; rollback if the operation or commit fails.
+    pub on_replay_wallet_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            operation: unsafe extern "C" fn(operation_context: *mut c_void) -> i32,
+            operation_context: *mut c_void,
+        ) -> i32,
+    >,
+    pub on_load_replay_claims_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_rows: *mut *const ReplayClaimRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub on_load_replay_claims_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            rows: *const ReplayClaimRestoreFFI,
+            count: usize,
+        ),
+    >,
+    pub on_apply_replay_effects_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            effects: *const HistoryReplayEffectsFFI,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -563,6 +736,17 @@ impl Default for PersistenceCallbacksExtension {
             on_load_asset_lock_operation_id_fn: None,
             on_persist_asset_lock_shielded_recipient_fn: None,
             on_load_asset_lock_shielded_recipient_fn: None,
+            on_persist_transaction_accounting_fn: None,
+            on_load_core_history_for_accounting_fn: None,
+            on_load_core_history_for_accounting_free_fn: None,
+            on_persist_core_history_accounted_fn: None,
+            on_persist_core_instant_lock_fn: None,
+            on_load_core_instant_lock_fn: None,
+            on_load_core_instant_lock_free_fn: None,
+            on_replay_wallet_fn: None,
+            on_load_replay_claims_fn: None,
+            on_load_replay_claims_free_fn: None,
+            on_apply_replay_effects_fn: None,
         }
     }
 }
@@ -586,6 +770,17 @@ pub struct PersistenceExtensionCallbacks {
     pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
     pub persist_asset_lock_shielded_recipient: Option<PersistAssetLockShieldedRecipientFn>,
     pub load_asset_lock_shielded_recipient: Option<LoadAssetLockShieldedRecipientFn>,
+    pub persist_transaction_accounting: Option<PersistTransactionAccountingFn>,
+    pub load_core_history_for_accounting: Option<LoadCoreHistoryForAccountingFn>,
+    pub load_core_history_for_accounting_free: Option<FreeCoreHistoryForAccountingFn>,
+    pub persist_core_history_accounted: Option<PersistCoreHistoryAccountedFn>,
+    pub persist_core_instant_lock: Option<PersistCoreInstantLockFn>,
+    pub load_core_instant_lock: Option<LoadCoreInstantLockFn>,
+    pub free_core_instant_lock: Option<FreeCoreInstantLockFn>,
+    pub replay_wallet: Option<ReplayWalletFn>,
+    pub load_replay_claims: Option<LoadReplayClaimsFn>,
+    pub free_replay_claims: Option<FreeReplayClaimsFn>,
+    pub apply_replay_effects: Option<ApplyReplayEffectsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1527,6 +1722,18 @@ pub struct FFIPersister {
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
     persist_identity_balance_block_time_callback: Option<PersistIdentityBalanceBlockTimeFn>,
     load_identity_balance_block_time_callback: Option<LoadIdentityBalanceBlockTimeFn>,
+    /// Per-wallet accounting rows, fired after each round's changeset and by
+    /// the load-time backfill. `None` keeps a host on `TransactionRecordFFI`'s
+    /// values, as before the slot existed.
+    persist_transaction_accounting_callback: Option<PersistTransactionAccountingFn>,
+    /// The load-time backfill's read, free and completion slots; the
+    /// backfill runs only when all of them and the persist slot are wired.
+    load_core_history_for_accounting_callback: Option<LoadCoreHistoryForAccountingFn>,
+    load_core_history_for_accounting_free_callback: Option<FreeCoreHistoryForAccountingFn>,
+    persist_core_history_accounted_callback: Option<PersistCoreHistoryAccountedFn>,
+    persist_core_instant_lock_callback: Option<PersistCoreInstantLockFn>,
+    load_core_instant_lock_callback: Option<LoadCoreInstantLockFn>,
+    free_core_instant_lock_callback: Option<FreeCoreInstantLockFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -1545,6 +1752,7 @@ pub struct FFIPersister {
     /// each round atomic with respect to every other round and the complete
     /// restore read (including additive sidecars).
     round_lock: Mutex<RoundGuardState>,
+    replay_callbacks: ReplayCallbacks,
 }
 
 /// Releases the host callback context when the persister's last owner
@@ -1652,9 +1860,662 @@ impl FFIPersister {
             persist_identity_balance_block_time_callback: extensions
                 .persist_identity_balance_block_time,
             load_identity_balance_block_time_callback: extensions.load_identity_balance_block_time,
+            persist_transaction_accounting_callback: extensions.persist_transaction_accounting,
+            load_core_history_for_accounting_callback: extensions.load_core_history_for_accounting,
+            load_core_history_for_accounting_free_callback: extensions
+                .load_core_history_for_accounting_free,
+            persist_core_history_accounted_callback: extensions.persist_core_history_accounted,
+            persist_core_instant_lock_callback: extensions.persist_core_instant_lock,
+            load_core_instant_lock_callback: extensions.load_core_instant_lock,
+            free_core_instant_lock_callback: extensions.free_core_instant_lock,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
+            replay_callbacks: ReplayCallbacks {
+                transaction: extensions.replay_wallet,
+                load_claims: extensions.load_replay_claims,
+                free_claims: extensions.free_replay_claims,
+                apply: extensions.apply_replay_effects,
+            },
         }
+    }
+
+    /// Read under the caller's round guard; atomic replay must not acquire it recursively.
+    fn load_snapshot_unlocked(
+        &self,
+        wallet_id: Option<WalletId>,
+    ) -> Result<ClientStartState, PersistenceError> {
+        // If Swift hasn't wired up `on_load_wallet_list_fn` there's
+        // nothing to restore — treat as a fresh client.
+        let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
+            return Ok(ClientStartState::default());
+        };
+
+        // Swift allocates the entries array (and every nested byte
+        // buffer); we read it under a `Guard` that calls the matching
+        // free callback on drop, so failures inside the loop don't
+        // leak.
+        let mut entries_ptr: *const WalletRestoreEntryFFI = std::ptr::null();
+        let mut count: usize = 0;
+        let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_wallet_list_fn returned error code {}", rc),
+            ));
+        }
+        let _guard = LoadGuard {
+            context: self.callbacks.context,
+            free_fn: self.callbacks.on_load_wallet_list_free_fn,
+            entries: entries_ptr,
+            count,
+        };
+
+        let mut out = ClientStartState::default();
+        if entries_ptr.is_null() && count != 0 {
+            return Err(PersistenceError::backend(
+                "wallet restore: missing row buffer",
+            ));
+        }
+        if count == 0 {
+            return Ok(out);
+        }
+
+        // SAFETY: Swift guarantees `entries_ptr` points to `count`
+        // contiguous `WalletRestoreEntryFFI` values for the lifetime
+        // of the callback window. `_guard` ensures the free callback
+        // fires before we leave this function.
+        let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
+        for entry in entries {
+            if wallet_id.is_some_and(|wallet_id| entry.wallet_id != wallet_id) {
+                continue;
+            }
+            if out.wallets.contains_key(&entry.wallet_id) {
+                return Err(PersistenceError::backend(
+                    "wallet restore: duplicate wallet ID",
+                ));
+            }
+            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            self.load_core_instant_locks(&entry.wallet_id, &mut wallet_state.recorded_history)?;
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_id
+            {
+                load_asset_lock_operation_ids(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_shielded_recipient
+            {
+                load_asset_lock_shielded_recipients(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self.load_identity_balance_block_time_callback {
+                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
+                    for managed in identities.values_mut() {
+                        let mut found = false;
+                        let mut stamp = crate::types::BlockTime {
+                            height: 0,
+                            core_height: 0,
+                            timestamp: 0,
+                        };
+                        let rc = unsafe {
+                            cb(
+                                self.callbacks.context,
+                                entry.wallet_id.as_ptr(),
+                                managed.id().as_bytes().as_ptr(),
+                                &mut found,
+                                &mut stamp,
+                            )
+                        };
+                        if rc != 0 {
+                            return Err(persist_callback_error(
+                                rc,
+                                "Loading identity balance block time failed".to_string(),
+                            ));
+                        }
+                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
+                    }
+                }
+            }
+            out.wallets.insert(entry.wallet_id, wallet_state);
+            if let Some(platform_address_state) = platform_address_state {
+                out.platform_addresses
+                    .insert(entry.wallet_id, platform_address_state);
+            }
+        }
+
+        // Restore shielded sub-wallet state if the host has wired
+        // up the optional callbacks. Notes and per-subwallet sync
+        // states travel separately so the host can populate them
+        // from independent SwiftData fetch descriptors. Both arms
+        // walk the same `(wallet_id, account_index)` key space and
+        // funnel into a single `SubwalletId` map on
+        // `ClientStartState.shielded`.
+        #[cfg(feature = "shielded")]
+        {
+            use crate::shielded_persistence::*;
+            use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+            use platform_wallet::wallet::shielded::{
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
+            };
+
+            let mut shielded_state = ShieldedSyncStartState::default();
+
+            // Fail fast on a half-wired callback pair: a loader without
+            // its matching free callback leaks the host-allocated buffer
+            // on every successful load (the guard's `Drop` is a no-op
+            // when `free_fn` is `None`).
+            if self.callbacks.on_load_shielded_notes_fn.is_some()
+                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
+                     provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_sync_states_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
+                     must be provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_outgoing_notes_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together",
+                ));
+            }
+
+            // 1) notes
+            if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
+                let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
+                let mut notes_count: usize = 0;
+                let rc =
+                    unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_notes_fn returned error code {}", rc),
+                    ));
+                }
+                struct NotesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for NotesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _notes_guard = NotesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_notes_free_fn,
+                    entries: notes_ptr,
+                    count: notes_count,
+                };
+                if !notes_ptr.is_null() && notes_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
+                    for ffi in slice {
+                        if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
+                            continue;
+                        }
+                        let note_data = unsafe {
+                            std::slice::from_raw_parts(ffi.note_data_ptr, ffi.note_data_len)
+                                .to_vec()
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.notes.push(ShieldedNote {
+                            position: ffi.position,
+                            cmx: ffi.cmx,
+                            nullifier: ffi.nullifier,
+                            block_height: ffi.block_height,
+                            is_spent: ffi.is_spent != 0,
+                            value: ffi.value,
+                            note_data,
+                        });
+                    }
+                }
+            }
+
+            // 2) outgoing (sent) notes recovered via OVK
+            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
+                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
+                let mut out_count: usize = 0;
+                let rc =
+                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_outgoing_notes_fn returned error code {}",
+                            rc
+                        ),
+                    ));
+                }
+                struct OutgoingGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedOutgoingNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedOutgoingNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for OutgoingGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _outgoing_guard = OutgoingGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
+                    entries: out_ptr,
+                    count: out_count,
+                };
+                if !out_ptr.is_null() && out_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
+                    for ffi in slice {
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            Vec::new()
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            }
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.outgoing_notes.push(ShieldedOutgoingNote {
+                            cmx: ffi.cmx,
+                            recipient: ffi.recipient.to_vec(),
+                            value: ffi.value,
+                            memo,
+                            block_height: ffi.block_height,
+                        });
+                    }
+                }
+            }
+
+            // 3) per-subwallet sync states
+            if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
+                let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
+                let mut states_count: usize = 0;
+                let rc = unsafe {
+                    load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
+                };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
+                    ));
+                }
+                struct StatesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedSubwalletSyncStateFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedSubwalletSyncStateFFI,
+                    count: usize,
+                }
+                impl Drop for StatesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _states_guard = StatesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_sync_states_free_fn,
+                    entries: states_ptr,
+                    count: states_count,
+                };
+                if !states_ptr.is_null() && states_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
+                    }
+                }
+            }
+
+            // 4) derived activity entries
+            if self.callbacks.on_load_shielded_activity_fn.is_some()
+                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
+                     provided together",
+                ));
+            }
+            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
+                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
+                let mut act_count: usize = 0;
+                let rc =
+                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_activity_fn returned error code {}", rc),
+                    ));
+                }
+                struct ActivityGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedActivityRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedActivityRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ActivityGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _activity_guard = ActivityGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
+                    entries: act_ptr,
+                    count: act_count,
+                };
+                if !act_ptr.is_null() && act_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
+                    for ffi in slice {
+                        let kind = match ffi.kind_tag {
+                            0 => ShieldedActivityKind::Shield,
+                            1 => ShieldedActivityKind::ShieldFromAssetLock,
+                            2 => ShieldedActivityKind::Received,
+                            3 => ShieldedActivityKind::Sent,
+                            4 => ShieldedActivityKind::Unshield,
+                            5 => ShieldedActivityKind::Withdrawal,
+                            6 => ShieldedActivityKind::IdentityCreate {
+                                identity_id: ffi.identity_id,
+                            },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
+                                identity_id: ffi.identity_id,
+                            },
+                            // 7 and any unknown tag fall back to the
+                            // residual — a forward-compat tag we don't yet
+                            // model still loads as an opaque spend rather
+                            // than getting dropped.
+                            _ => ShieldedActivityKind::ShieldedSpend,
+                        };
+                        let direction = match ffi.direction {
+                            0 => ShieldedDirection::In,
+                            1 => ShieldedDirection::Out,
+                            2 => ShieldedDirection::SelfTransfer,
+                            other => {
+                                // Unlike kind_tag (whose residual
+                                // `ShieldedSpend` variant is a designed
+                                // forward-compat catch-all), direction has
+                                // no "unknown" bucket — make a corrupted /
+                                // future byte loud instead of silently
+                                // reading as a real classification.
+                                tracing::warn!(
+                                    direction = other,
+                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
+                                );
+                                ShieldedDirection::SelfTransfer
+                            }
+                        };
+                        let status = activity_status_from_tag(ffi.status);
+                        let counterparty = if ffi.counterparty_ptr.is_null()
+                            || ffi.counterparty_len == 0
+                        {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
+                                    .to_vec()
+                            })
+                        };
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            })
+                        };
+                        let note_cmxs =
+                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
+                        let spent_nullifiers = unsafe {
+                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
+                        };
+
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.activity.push(ShieldedActivityEntry {
+                            id: ffi.entry_id,
+                            kind,
+                            direction,
+                            amount: ffi.amount,
+                            fee: if ffi.has_fee != 0 {
+                                Some(ffi.fee)
+                            } else {
+                                None
+                            },
+                            counterparty,
+                            memo,
+                            block_height: if ffi.has_block_height != 0 {
+                                Some(ffi.block_height)
+                            } else {
+                                None
+                            },
+                            status,
+                            created_at_ms: ffi.created_at_ms,
+                            min_note_position: if ffi.has_min_note_position != 0 {
+                                Some(ffi.min_note_position)
+                            } else {
+                                None
+                            },
+                            note_cmxs,
+                            spent_nullifiers,
+                        });
+                    }
+                }
+            }
+
+            // 5) persisted Orchard viewing keys (raw 96-byte FVK
+            //    encodings), consumed by
+            //    `PlatformWallet::bind_shielded_from_persisted` so a
+            //    launch-time rebind needs no mnemonic resolve.
+            if self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_viewing_keys_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_viewing_keys_fn and \
+                     on_load_shielded_viewing_keys_free_fn must be provided together",
+                ));
+            }
+            if let Some(load_viewing_keys) = self.callbacks.on_load_shielded_viewing_keys_fn {
+                let mut vk_ptr: *const ShieldedViewingKeyRestoreFFI = std::ptr::null();
+                let mut vk_count: usize = 0;
+                let rc = unsafe {
+                    load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
+                };
+                if rc != 0 {
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_viewing_keys_fn returned error code {}",
+                            rc
+                        ),
+                    ));
+                }
+                struct ViewingKeysGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedViewingKeyRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedViewingKeyRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ViewingKeysGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _viewing_keys_guard = ViewingKeysGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_viewing_keys_free_fn,
+                    entries: vk_ptr,
+                    count: vk_count,
+                };
+                if !vk_ptr.is_null() && vk_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(vk_ptr, vk_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        shielded_state
+                            .viewing_keys
+                            .insert(id, ffi.fvk_bytes.to_vec());
+                    }
+                }
+            }
+
+            out.shielded = shielded_state;
+        }
+
+        Ok(out)
+    }
+
+    fn load_core_instant_locks(
+        &self,
+        wallet_id: &WalletId,
+        history: &mut RecordedHistory,
+    ) -> Result<(), PersistenceError> {
+        let (load, free) = match (
+            self.load_core_instant_lock_callback,
+            self.free_core_instant_lock_callback,
+        ) {
+            (None, None) => return Ok(()),
+            (Some(load), Some(free)) => (load, free),
+            _ => {
+                return Err(PersistenceError::backend(
+                    "raw InstantLock load/free callbacks must be provided together",
+                ))
+            }
+        };
+        struct Guard {
+            context: *mut c_void,
+            bytes: *const u8,
+            len: usize,
+            free: FreeCoreInstantLockFn,
+        }
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                if !self.bytes.is_null() {
+                    unsafe { (self.free)(self.context, self.bytes, self.len) };
+                }
+            }
+        }
+        for record in &history.transactions {
+            let mut bytes = std::ptr::null();
+            let mut len = 0;
+            let rc = unsafe {
+                load(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    AsRef::<[u8]>::as_ref(&record.txid).as_ptr(),
+                    &mut bytes,
+                    &mut len,
+                )
+            };
+            let _guard = Guard {
+                context: self.callbacks.context,
+                bytes,
+                len,
+                free,
+            };
+            if rc != 0 {
+                return Err(persist_callback_error(
+                    rc,
+                    "raw InstantLock load failed".to_owned(),
+                ));
+            }
+            if bytes.is_null() && len == 0 {
+                continue;
+            }
+            if bytes.is_null() || len == 0 || len > dashcore::consensus::encode::MAX_VEC_SIZE {
+                return Err(PersistenceError::backend(
+                    "raw InstantLock loader returned an invalid or oversized buffer",
+                ));
+            }
+            let raw = unsafe { slice::from_raw_parts(bytes, len) };
+            let lock = dashcore::consensus::deserialize(raw).map_err(PersistenceError::backend)?;
+            history.instant_locks.insert(record.txid, lock);
+        }
+        Ok(())
     }
 
     /// Narrow a round's failure kind to what the caller may safely act on:
@@ -1697,26 +2558,18 @@ impl FFIPersister {
             capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
         }
         if wallet_restore {
-            capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+            // History rides the same wallet-list load; a host that wires it
+            // must still declare the bit to attest it fills the rows.
+            capabilities = capabilities.union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
+            if self.replay_callbacks.complete() {
+                capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+            }
         }
         if self.callbacks.on_persist_asset_locks_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         }
-        if wallet_restore
-            && self.callbacks.on_persist_asset_locks_fn.is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .persist_asset_lock_operation_id
-                .is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .load_asset_lock_operation_id
-                .is_some()
-        {
-            // The declaration additionally attests UUID preservation, consumed
-            // tombstones and fail-closed loads. Legacy hosts do not set this bit.
-            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS);
-        }
+        // Replay cleanup has no durable operation tombstones yet; UUID callbacks
+        // alone cannot attest ASSET_LOCK_OPERATION_IDS after conflicting history is removed.
         if wallet_restore
             && self.callbacks.on_persist_asset_locks_fn.is_some()
             && self
@@ -1814,6 +2667,119 @@ impl FFIPersister {
     }
 }
 
+/// What `on_get_core_tx_record_fn` answered for one txid.
+enum CoreTxRead {
+    /// The callback is unset, or the host does not store the txid.
+    Missing,
+    /// The callback returned this non-zero code.
+    Failed(i32),
+    /// The host reported a hit but handed over no decodable body.
+    Unreadable(&'static str),
+    /// A hit: the host's raw context fields and the decoded body.
+    Found {
+        context_kind: u8,
+        block_height: u32,
+        block_hash: [u8; 32],
+        block_timestamp: u32,
+        transaction: dashcore::Transaction,
+    },
+}
+
+impl FFIPersister {
+    /// Call `on_get_core_tx_record_fn` for `txid` and decode its answer,
+    /// handing the tx-bytes buffer back to the host on every path. Each
+    /// caller applies its own policy to the outcome.
+    fn read_core_tx(&self, wallet_id: WalletId, txid: &dashcore::Txid) -> CoreTxRead {
+        use dashcore::consensus::Decodable;
+
+        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
+            return CoreTxRead::Missing;
+        };
+
+        let txid_bytes: [u8; 32] = *txid.as_byte_array();
+        let mut context_kind: u8 = 0;
+        let mut block_height: u32 = 0;
+        let mut block_hash: [u8; 32] = [0u8; 32];
+        let mut block_timestamp: u32 = 0;
+        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
+        let mut tx_bytes_len: usize = 0;
+        let mut found: bool = false;
+
+        // SAFETY: All output pointers reference Rust-owned stack
+        // locals that outlive the callback invocation. `wallet_id`
+        // and `txid` are fixed-size byte arrays.
+        let rc = unsafe {
+            get_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                &mut context_kind,
+                &mut block_height,
+                block_hash.as_mut_ptr(),
+                &mut block_timestamp,
+                &mut tx_bytes_ptr,
+                &mut tx_bytes_len,
+                &mut found,
+            )
+        };
+
+        // RAII guard so the tx-bytes free callback fires on every
+        // exit path past this point, handing the buffer back to the host.
+        struct TxBytesGuard {
+            ptr: *const u8,
+            len: usize,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    tx_bytes: *const u8,
+                    tx_bytes_len: usize,
+                ),
+            >,
+            ctx: *mut c_void,
+        }
+        impl Drop for TxBytesGuard {
+            fn drop(&mut self) {
+                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
+                    // SAFETY: ptr+len match the values the lookup
+                    // callback wrote; the host owns the allocation
+                    // until this free fires.
+                    unsafe { free(self.ctx, self.ptr, self.len) };
+                }
+            }
+        }
+        let _bytes_guard = TxBytesGuard {
+            ptr: tx_bytes_ptr,
+            len: tx_bytes_len,
+            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
+            ctx: self.callbacks.context,
+        };
+
+        if rc != 0 {
+            return CoreTxRead::Failed(rc);
+        }
+        if !found {
+            return CoreTxRead::Missing;
+        }
+        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
+            return CoreTxRead::Unreadable("handed over no transaction bytes");
+        }
+        // SAFETY: the host guarantees `tx_bytes_ptr` points to
+        // `tx_bytes_len` valid bytes until the free callback —
+        // `_bytes_guard` keeps that window open until this returns.
+        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
+        match dashcore::Transaction::consensus_decode(&mut &tx_slice[..]) {
+            Ok(transaction) => CoreTxRead::Found {
+                context_kind,
+                block_height,
+                block_hash,
+                block_timestamp,
+                transaction,
+            },
+            Err(_) => CoreTxRead::Unreadable("its transaction bytes do not decode"),
+        }
+    }
+}
+
 impl PlatformWalletPersistence for FFIPersister {
     /// A host attests `ATOMIC_CHANGESETS` for a round it commits or rolls back
     /// whole; nothing of a rolled-back round survives on this side either, so
@@ -1899,6 +2865,151 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok(())
     }
 
+    fn load_core_history_for_accounting(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Option<Vec<dashcore::Transaction>>, PersistenceError> {
+        // A backfill that could not be stored or completed, or not as one
+        // round, is not worth reading.
+        let (Some(load), Some(free), Some(_), Some(_), Some(_), Some(_)) = (
+            self.load_core_history_for_accounting_callback,
+            self.load_core_history_for_accounting_free_callback,
+            self.persist_transaction_accounting_callback,
+            self.persist_core_history_accounted_callback,
+            self.callbacks.on_changeset_begin_fn,
+            self.callbacks.on_changeset_end_fn,
+        ) else {
+            return Ok(None);
+        };
+        let mut backfilled = false;
+        let mut rows_ptr: *const CoreHistoryTransactionFFI = std::ptr::null();
+        let mut count: usize = 0;
+        let rc = unsafe {
+            load(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                &mut backfilled,
+                &mut rows_ptr,
+                &mut count,
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_core_history_for_accounting_fn returned error code {rc}"),
+            ));
+        }
+        if rows_ptr.is_null() && count > 0 {
+            unsafe { free(self.callbacks.context, rows_ptr, count) };
+            return Err(PersistenceError::backend(format!(
+                "on_load_core_history_for_accounting_fn reported {count} transactions \
+                 but handed over no array"
+            )));
+        }
+        let mut out = Vec::with_capacity(count);
+        if !rows_ptr.is_null() && count > 0 {
+            let rows = unsafe { slice::from_raw_parts(rows_ptr, count) };
+            for row in rows {
+                let bytes = unsafe { slice_from_raw(row.tx_bytes, row.tx_bytes_len) };
+                match dashcore::consensus::encode::deserialize::<dashcore::Transaction>(bytes) {
+                    Ok(transaction) => out.push(transaction),
+                    // One undecodable row only goes without accounting.
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        "load: skipping an undecodable stored transaction in the accounting backfill"
+                    ),
+                }
+            }
+        }
+        unsafe { free(self.callbacks.context, rows_ptr, count) };
+        Ok((!backfilled).then_some(out))
+    }
+
+    /// The backfill's rows and, when `complete`, its completion marker, as
+    /// one round under `round_lock`: they commit together or not at all, and
+    /// never land in another wallet's open round.
+    fn store_history_accounting(
+        &self,
+        wallet_id: WalletId,
+        rows: &[WalletAccounting],
+        complete: bool,
+    ) -> Result<(), PersistenceError> {
+        let (Some(persist_rows), Some(accounted)) = (
+            self.persist_transaction_accounting_callback,
+            self.persist_core_history_accounted_callback,
+        ) else {
+            return Ok(());
+        };
+        // Rows and marker must commit as one unit; without the round pair
+        // nothing would make them, so nothing is written.
+        let (Some(begin), Some(end)) = (
+            self.callbacks.on_changeset_begin_fn,
+            self.callbacks.on_changeset_end_fn,
+        ) else {
+            return Err(PersistenceError::backend(
+                "the accounting backfill needs the changeset begin/end pair to commit \
+                 atomically; nothing was written",
+            ));
+        };
+        let mut round = self.round_lock.lock();
+        round.begin_round()?;
+        let result = unsafe { begin(self.callbacks.context, wallet_id.as_ptr()) };
+        if result != 0 {
+            let _ = round.end_round();
+            return Err(persist_callback_error(
+                result,
+                format!(
+                    "changeset-begin callback returned error code {result}; \
+                     accounting backfill aborted before any write"
+                ),
+            ));
+        }
+        let mut outcome = RoundOutcome::default();
+        if !rows.is_empty() {
+            let rows: Vec<TransactionAccountingFFI> =
+                rows.iter().map(TransactionAccountingFFI::from).collect();
+            let result = unsafe {
+                persist_rows(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    rows.as_ptr(),
+                    rows.len(),
+                )
+            };
+            if result != 0 {
+                outcome.record(result);
+            }
+        }
+        if complete && outcome.is_success() {
+            let result = unsafe { accounted(self.callbacks.context, wallet_id.as_ptr()) };
+            if result != 0 {
+                outcome.record(result);
+            }
+        }
+        let result = unsafe {
+            end(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                outcome.is_success(),
+            )
+        };
+        if result != 0 {
+            if outcome.is_success() {
+                outcome.record(result);
+            } else {
+                outcome.record_fatal();
+            }
+        }
+        round.end_round()?;
+        match outcome.failure_kind() {
+            Some(kind) => Err(PersistenceError::backend_with_kind(
+                self.reportable_round_kind(kind),
+                "the accounting backfill round failed and was rolled back",
+            )),
+            None => Ok(()),
+        }
+    }
+
     fn load_tracked_masternodes(
         &self,
         network: dashcore::Network,
@@ -1935,6 +3046,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 rc,
                 format!("on_load_tracked_masternodes_fn returned error code {rc}"),
             ));
+        }
+        if rows_ptr.is_null() && count > 0 {
+            unsafe { free(self.callbacks.context, rows_ptr, count) };
+            return Err(PersistenceError::backend(format!(
+                "on_load_core_history_for_accounting_fn reported {count} transactions \
+                 but handed over no array"
+            )));
         }
         let mut out = Vec::with_capacity(count);
         if !rows_ptr.is_null() && count > 0 {
@@ -2340,6 +3458,63 @@ impl PlatformWalletPersistence for FFIPersister {
                     outcome.record(result);
                 } else if core_cs.synced_height.is_some() {
                     cursor_delivered = true;
+                }
+            }
+
+            // Per-wallet accounting rides its own size-negotiated slot: the
+            // frozen `TransactionRecordFFI` stride cannot say "this record
+            // carries no accounting", and this row can, by being absent.
+            // Fired after the changeset callback so the host already holds
+            // the transaction rows these belong to.
+            if let Some(cb) = self.persist_transaction_accounting_callback {
+                let rows: Vec<TransactionAccountingFFI> = core_cs
+                    .records
+                    .iter()
+                    .filter_map(record_accounting)
+                    .map(|row| TransactionAccountingFFI::from(&row))
+                    .collect();
+                if !rows.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            rows.as_ptr(),
+                            rows.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Transaction accounting persistence callback returned error code {}",
+                            result
+                        );
+                        outcome.record(result);
+                    }
+                }
+            }
+
+            if let Some(callback) = self.persist_core_instant_lock_callback {
+                let mut locks = core_cs.instant_locks_for_non_final_records.clone();
+                for record in &core_cs.records {
+                    if let key_wallet::transaction_checking::TransactionContext::InstantSend(lock) =
+                        &record.context
+                    {
+                        locks.entry(record.txid).or_insert_with(|| lock.clone());
+                    }
+                }
+                for (txid, lock) in locks {
+                    let bytes = dashcore::consensus::serialize(&lock);
+                    let rc = unsafe {
+                        callback(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            AsRef::<[u8]>::as_ref(&txid).as_ptr(),
+                            bytes.as_ptr(),
+                            bytes.len(),
+                        )
+                    };
+                    if rc != 0 {
+                        outcome.record(rc);
+                    }
                 }
             }
 
@@ -3516,575 +4691,43 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        // Host loaders may read the same context that store() stages into.
-        // Keep base rows and every sidecar in one committed snapshot: a load
-        // between per-kind callbacks and end must never expose a Consumed row
-        // whose commit can still fail. Callbacks must not re-enter this API.
         let round = self.round_lock.lock();
         if round.in_round {
             return Err(PersistenceError::backend(
                 "FFIPersister: cannot restore from an unclosed changeset round",
             ));
         }
-        // If Swift hasn't wired up `on_load_wallet_list_fn` there's
-        // nothing to restore — treat as a fresh client.
-        let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
-            return Ok(ClientStartState::default());
-        };
+        self.load_snapshot_unlocked(None)
+    }
 
-        // Swift allocates the entries array (and every nested byte
-        // buffer); we read it under a `Guard` that calls the matching
-        // free callback on drop, so failures inside the loop don't
-        // leak.
-        let mut entries_ptr: *const WalletRestoreEntryFFI = std::ptr::null();
-        let mut count: usize = 0;
-        let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
-        if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                format!("on_load_wallet_list_fn returned error code {}", rc),
-            ));
-        }
-        let _guard = LoadGuard {
-            context: self.callbacks.context,
-            free_fn: self.callbacks.on_load_wallet_list_free_fn,
-            entries: entries_ptr,
-            count,
-        };
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        evidence: &platform_wallet::changeset::recorded_history::ReplayEvidence,
+    ) -> Result<platform_wallet::manager::history_replay::HistoryReplayLoad, PersistenceError> {
+        self.load_wallet_replay_scope(wallet_id, evidence)
+    }
 
-        let mut out = ClientStartState::default();
-        if entries_ptr.is_null() && count != 0 {
-            return Err(PersistenceError::backend(
-                "wallet restore: missing row buffer",
-            ));
-        }
-        if count == 0 {
-            return Ok(out);
-        }
-
-        // SAFETY: Swift guarantees `entries_ptr` points to `count`
-        // contiguous `WalletRestoreEntryFFI` values for the lifetime
-        // of the callback window. `_guard` ensures the free callback
-        // fires before we leave this function.
-        let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
-        for entry in entries {
-            if out.wallets.contains_key(&entry.wallet_id) {
-                return Err(PersistenceError::backend(
-                    "wallet restore: duplicate wallet ID",
-                ));
-            }
-            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
-            if let Some(cb) = self
-                .tracked_masternodes_callbacks
-                .load_asset_lock_operation_id
-            {
-                load_asset_lock_operation_ids(
-                    cb,
-                    self.callbacks.context,
-                    &entry.wallet_id,
-                    &mut wallet_state.unused_asset_locks,
-                )?;
-            }
-            if let Some(cb) = self
-                .tracked_masternodes_callbacks
-                .load_asset_lock_shielded_recipient
-            {
-                load_asset_lock_shielded_recipients(
-                    cb,
-                    self.callbacks.context,
-                    &entry.wallet_id,
-                    &mut wallet_state.unused_asset_locks,
-                )?;
-            }
-            if let Some(cb) = self.load_identity_balance_block_time_callback {
-                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
-                    for managed in identities.values_mut() {
-                        let mut found = false;
-                        let mut stamp = crate::types::BlockTime {
-                            height: 0,
-                            core_height: 0,
-                            timestamp: 0,
-                        };
-                        let rc = unsafe {
-                            cb(
-                                self.callbacks.context,
-                                entry.wallet_id.as_ptr(),
-                                managed.id().as_bytes().as_ptr(),
-                                &mut found,
-                                &mut stamp,
-                            )
-                        };
-                        if rc != 0 {
-                            return Err(persist_callback_error(
-                                rc,
-                                "Loading identity balance block time failed".to_string(),
-                            ));
-                        }
-                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
-                    }
-                }
-            }
-            out.wallets.insert(entry.wallet_id, wallet_state);
-            if let Some(platform_address_state) = platform_address_state {
-                out.platform_addresses
-                    .insert(entry.wallet_id, platform_address_state);
-            }
-        }
-
-        // Restore shielded sub-wallet state if the host has wired
-        // up the optional callbacks. Notes and per-subwallet sync
-        // states travel separately so the host can populate them
-        // from independent SwiftData fetch descriptors. Both arms
-        // walk the same `(wallet_id, account_index)` key space and
-        // funnel into a single `SubwalletId` map on
-        // `ClientStartState.shielded`.
+    fn load_with_replay(
+        &self,
+        evidence: &platform_wallet::changeset::recorded_history::ReplayEvidence,
+    ) -> Result<platform_wallet::manager::history_replay::HistoryReplayLoad, PersistenceError> {
+        let snapshot = self.load_read_snapshot()?;
+        let mut loaded = platform_wallet::manager::history_replay::HistoryReplayLoad::default();
         #[cfg(feature = "shielded")]
         {
-            use crate::shielded_persistence::*;
-            use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-            use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
-                ShieldedOutgoingNote, SubwalletId,
-            };
-
-            let mut shielded_state = ShieldedSyncStartState::default();
-
-            // Fail fast on a half-wired callback pair: a loader without
-            // its matching free callback leaks the host-allocated buffer
-            // on every successful load (the guard's `Drop` is a no-op
-            // when `free_fn` is `None`).
-            if self.callbacks.on_load_shielded_notes_fn.is_some()
-                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
-                     provided together",
-                ));
-            }
-            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_sync_states_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
-                     must be provided together",
-                ));
-            }
-            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_outgoing_notes_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_outgoing_notes_fn and \
-                     on_load_shielded_outgoing_notes_free_fn must be provided together",
-                ));
-            }
-
-            // 1) notes
-            if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
-                let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
-                let mut notes_count: usize = 0;
-                let rc =
-                    unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_notes_fn returned error code {}", rc),
-                    ));
-                }
-                struct NotesGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedNoteRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedNoteRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for NotesGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _notes_guard = NotesGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_notes_free_fn,
-                    entries: notes_ptr,
-                    count: notes_count,
-                };
-                if !notes_ptr.is_null() && notes_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
-                    for ffi in slice {
-                        if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
-                            continue;
-                        }
-                        let note_data = unsafe {
-                            std::slice::from_raw_parts(ffi.note_data_ptr, ffi.note_data_len)
-                                .to_vec()
-                        };
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.notes.push(ShieldedNote {
-                            position: ffi.position,
-                            cmx: ffi.cmx,
-                            nullifier: ffi.nullifier,
-                            block_height: ffi.block_height,
-                            is_spent: ffi.is_spent != 0,
-                            value: ffi.value,
-                            note_data,
-                        });
-                    }
-                }
-            }
-
-            // 2) outgoing (sent) notes recovered via OVK
-            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
-                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
-                let mut out_count: usize = 0;
-                let rc =
-                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!(
-                            "on_load_shielded_outgoing_notes_fn returned error code {}",
-                            rc
-                        ),
-                    ));
-                }
-                struct OutgoingGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedOutgoingNoteRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedOutgoingNoteRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for OutgoingGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _outgoing_guard = OutgoingGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
-                    entries: out_ptr,
-                    count: out_count,
-                };
-                if !out_ptr.is_null() && out_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
-                    for ffi in slice {
-                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
-                            Vec::new()
-                        } else {
-                            unsafe {
-                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
-                            }
-                        };
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.outgoing_notes.push(ShieldedOutgoingNote {
-                            cmx: ffi.cmx,
-                            recipient: ffi.recipient.to_vec(),
-                            value: ffi.value,
-                            memo,
-                            block_height: ffi.block_height,
-                        });
-                    }
-                }
-            }
-
-            // 3) per-subwallet sync states
-            if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
-                let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
-                let mut states_count: usize = 0;
-                let rc = unsafe {
-                    load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
-                };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
-                    ));
-                }
-                struct StatesGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedSubwalletSyncStateFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedSubwalletSyncStateFFI,
-                    count: usize,
-                }
-                impl Drop for StatesGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _states_guard = StatesGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_sync_states_free_fn,
-                    entries: states_ptr,
-                    count: states_count,
-                };
-                if !states_ptr.is_null() && states_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
-                    for ffi in slice {
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.last_synced_index = ffi.last_synced_index;
-                        entry.has_sync_state = true;
-                    }
-                }
-            }
-
-            // 4) derived activity entries
-            if self.callbacks.on_load_shielded_activity_fn.is_some()
-                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
-                     provided together",
-                ));
-            }
-            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
-                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
-                let mut act_count: usize = 0;
-                let rc =
-                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!("on_load_shielded_activity_fn returned error code {}", rc),
-                    ));
-                }
-                struct ActivityGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedActivityRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedActivityRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for ActivityGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _activity_guard = ActivityGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
-                    entries: act_ptr,
-                    count: act_count,
-                };
-                if !act_ptr.is_null() && act_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
-                    for ffi in slice {
-                        let kind = match ffi.kind_tag {
-                            0 => ShieldedActivityKind::Shield,
-                            1 => ShieldedActivityKind::ShieldFromAssetLock,
-                            2 => ShieldedActivityKind::Received,
-                            3 => ShieldedActivityKind::Sent,
-                            4 => ShieldedActivityKind::Unshield,
-                            5 => ShieldedActivityKind::Withdrawal,
-                            6 => ShieldedActivityKind::IdentityCreate {
-                                identity_id: ffi.identity_id,
-                            },
-                            8 => ShieldedActivityKind::ShieldFromIdentity {
-                                identity_id: ffi.identity_id,
-                            },
-                            9 => ShieldedActivityKind::IdentityTopUp {
-                                identity_id: ffi.identity_id,
-                            },
-                            // 7 and any unknown tag fall back to the
-                            // residual — a forward-compat tag we don't yet
-                            // model still loads as an opaque spend rather
-                            // than getting dropped.
-                            _ => ShieldedActivityKind::ShieldedSpend,
-                        };
-                        let direction = match ffi.direction {
-                            0 => ShieldedDirection::In,
-                            1 => ShieldedDirection::Out,
-                            2 => ShieldedDirection::SelfTransfer,
-                            other => {
-                                // Unlike kind_tag (whose residual
-                                // `ShieldedSpend` variant is a designed
-                                // forward-compat catch-all), direction has
-                                // no "unknown" bucket — make a corrupted /
-                                // future byte loud instead of silently
-                                // reading as a real classification.
-                                tracing::warn!(
-                                    direction = other,
-                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
-                                );
-                                ShieldedDirection::SelfTransfer
-                            }
-                        };
-                        let status = activity_status_from_tag(ffi.status);
-                        let counterparty = if ffi.counterparty_ptr.is_null()
-                            || ffi.counterparty_len == 0
-                        {
-                            None
-                        } else {
-                            Some(unsafe {
-                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
-                                    .to_vec()
-                            })
-                        };
-                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
-                            None
-                        } else {
-                            Some(unsafe {
-                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
-                            })
-                        };
-                        let note_cmxs =
-                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
-                        let spent_nullifiers = unsafe {
-                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
-                        };
-
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        let entry = shielded_state
-                            .per_subwallet
-                            .entry(id)
-                            .or_insert_with(ShieldedSubwalletStartState::default);
-                        entry.activity.push(ShieldedActivityEntry {
-                            id: ffi.entry_id,
-                            kind,
-                            direction,
-                            amount: ffi.amount,
-                            fee: if ffi.has_fee != 0 {
-                                Some(ffi.fee)
-                            } else {
-                                None
-                            },
-                            counterparty,
-                            memo,
-                            block_height: if ffi.has_block_height != 0 {
-                                Some(ffi.block_height)
-                            } else {
-                                None
-                            },
-                            status,
-                            created_at_ms: ffi.created_at_ms,
-                            min_note_position: if ffi.has_min_note_position != 0 {
-                                Some(ffi.min_note_position)
-                            } else {
-                                None
-                            },
-                            note_cmxs,
-                            spent_nullifiers,
-                        });
-                    }
-                }
-            }
-
-            // 5) persisted Orchard viewing keys (raw 96-byte FVK
-            //    encodings), consumed by
-            //    `PlatformWallet::bind_shielded_from_persisted` so a
-            //    launch-time rebind needs no mnemonic resolve.
-            if self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
-                != self
-                    .callbacks
-                    .on_load_shielded_viewing_keys_free_fn
-                    .is_some()
-            {
-                return Err(PersistenceError::backend(
-                    "on_load_shielded_viewing_keys_fn and \
-                     on_load_shielded_viewing_keys_free_fn must be provided together",
-                ));
-            }
-            if let Some(load_viewing_keys) = self.callbacks.on_load_shielded_viewing_keys_fn {
-                let mut vk_ptr: *const ShieldedViewingKeyRestoreFFI = std::ptr::null();
-                let mut vk_count: usize = 0;
-                let rc = unsafe {
-                    load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
-                };
-                if rc != 0 {
-                    return Err(persist_callback_error(
-                        rc,
-                        format!(
-                            "on_load_shielded_viewing_keys_fn returned error code {}",
-                            rc
-                        ),
-                    ));
-                }
-                struct ViewingKeysGuard {
-                    context: *mut c_void,
-                    free_fn: Option<
-                        unsafe extern "C" fn(
-                            context: *mut c_void,
-                            entries: *const ShieldedViewingKeyRestoreFFI,
-                            count: usize,
-                        ),
-                    >,
-                    entries: *const ShieldedViewingKeyRestoreFFI,
-                    count: usize,
-                }
-                impl Drop for ViewingKeysGuard {
-                    fn drop(&mut self) {
-                        if let Some(free_fn) = self.free_fn {
-                            unsafe { free_fn(self.context, self.entries, self.count) };
-                        }
-                    }
-                }
-                let _viewing_keys_guard = ViewingKeysGuard {
-                    context: self.callbacks.context,
-                    free_fn: self.callbacks.on_load_shielded_viewing_keys_free_fn,
-                    entries: vk_ptr,
-                    count: vk_count,
-                };
-                if !vk_ptr.is_null() && vk_count > 0 {
-                    let slice = unsafe { slice::from_raw_parts(vk_ptr, vk_count) };
-                    for ffi in slice {
-                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
-                        shielded_state
-                            .viewing_keys
-                            .insert(id, ffi.fvk_bytes.to_vec());
-                    }
-                }
-            }
-
-            out.shielded = shielded_state;
+            loaded.state.shielded = snapshot.shielded;
         }
-
-        Ok(out)
+        for wallet_id in snapshot.wallets.keys() {
+            let one = self.load_wallet_replay_scope(*wallet_id, evidence)?;
+            loaded.state.wallets.extend(one.state.wallets);
+            loaded
+                .state
+                .platform_addresses
+                .extend(one.state.platform_addresses);
+            loaded.outcomes.extend(one.outcomes);
+        }
+        Ok(loaded)
     }
 
     /// Look up a transaction record by `txid` via the
@@ -4125,98 +4768,55 @@ impl PlatformWalletPersistence for FFIPersister {
         Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
         PersistenceError,
     > {
-        use dashcore::consensus::Decodable;
         use key_wallet::account::{AccountType, StandardAccountType};
         use key_wallet::managed_account::transaction_record::{
             TransactionDirection, TransactionRecord,
         };
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 
-        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
-            return Ok(None);
-        };
-
-        let txid_bytes: [u8; 32] = *txid.as_byte_array();
-        let mut context_kind: u8 = 0;
-        let mut block_height: u32 = 0;
-        let mut block_hash: [u8; 32] = [0u8; 32];
-        let mut block_timestamp: u32 = 0;
-        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
-        let mut tx_bytes_len: usize = 0;
-        let mut found: bool = false;
-
-        // SAFETY: All output pointers reference Rust-owned stack
-        // locals that outlive the callback invocation. `wallet_id`
-        // and `txid` are fixed-size byte arrays.
-        let rc = unsafe {
-            get_cb(
-                self.callbacks.context,
-                wallet_id.as_ptr(),
-                txid_bytes.as_ptr(),
-                &mut context_kind,
-                &mut block_height,
-                block_hash.as_mut_ptr(),
-                &mut block_timestamp,
-                &mut tx_bytes_ptr,
-                &mut tx_bytes_len,
-                &mut found,
-            )
-        };
-
-        // RAII guard so the tx-bytes free callback fires on every
-        // exit path past this point — early returns for unknown
-        // context kinds, decode failures, and the IS-skip case all
-        // correctly hand the buffer back to Swift.
-        struct TxBytesGuard<'a> {
-            ptr: *const u8,
-            len: usize,
-            free_fn: Option<
-                unsafe extern "C" fn(
-                    context: *mut c_void,
-                    tx_bytes: *const u8,
-                    tx_bytes_len: usize,
-                ),
-            >,
-            ctx: *mut c_void,
-            _marker: std::marker::PhantomData<&'a ()>,
-        }
-        impl<'a> Drop for TxBytesGuard<'a> {
-            fn drop(&mut self) {
-                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
-                    // SAFETY: ptr+len match the values the lookup
-                    // callback wrote; Swift owns the allocation
-                    // until this free fires.
-                    unsafe { free(self.ctx, self.ptr, self.len) };
+        let (context_kind, block_height, block_hash, block_timestamp, transaction) =
+            match self.read_core_tx(wallet_id, txid) {
+                CoreTxRead::Missing => return Ok(None),
+                CoreTxRead::Failed(rc) => {
+                    // TODO(tx-record-read-sentinels): `on_get_core_tx_record_fn`
+                    // collapses every non-zero return, sentinels included, into a
+                    // miss, so the transient-vs-permanent read distinction is
+                    // unreachable from FFI hosts. Deferred deliberately: converting it
+                    // to `persist_callback_error` and letting
+                    // `get_core_tx_record_or_transient_miss` do the collapsing is a
+                    // behaviour change for every host on the current contract.
+                    // `get_core_transaction` already reports it.
+                    tracing::debug!(
+                        txid = %txid,
+                        rc,
+                        "on_get_core_tx_record_fn returned a non-zero result; \
+                         treating as miss"
+                    );
+                    return Ok(None);
                 }
-            }
-        }
-        let _bytes_guard = TxBytesGuard {
-            ptr: tx_bytes_ptr,
-            len: tx_bytes_len,
-            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
-            ctx: self.callbacks.context,
-            _marker: std::marker::PhantomData,
-        };
-
-        if rc != 0 {
-            // TODO(tx-record-read-sentinels): `on_get_core_tx_record_fn`
-            // collapses every non-zero return, sentinels included, into a
-            // miss, so the transient-vs-permanent read distinction is
-            // unreachable from FFI hosts. Deferred deliberately: converting it
-            // to `persist_callback_error` and letting
-            // `get_core_tx_record_or_transient_miss` do the collapsing is a
-            // behaviour change for every host on the current contract.
-            tracing::debug!(
-                txid = %txid,
-                rc,
-                "on_get_core_tx_record_fn returned a non-zero result; \
-                 treating as miss"
-            );
-            return Ok(None);
-        }
-        if !found {
-            return Ok(None);
-        }
+                CoreTxRead::Unreadable(reason) => {
+                    tracing::debug!(
+                        txid = %txid,
+                        reason,
+                        "on_get_core_tx_record_fn reported a hit it could not hand \
+                         over; treating as miss"
+                    );
+                    return Ok(None);
+                }
+                CoreTxRead::Found {
+                    context_kind,
+                    block_height,
+                    block_hash,
+                    block_timestamp,
+                    transaction,
+                } => (
+                    context_kind,
+                    block_height,
+                    block_hash,
+                    block_timestamp,
+                    transaction,
+                ),
+            };
 
         let context = match context_kind {
             0 => TransactionContext::Mempool,
@@ -4252,34 +4852,6 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         };
 
-        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
-            tracing::debug!(
-                txid = %txid,
-                "on_get_core_tx_record_fn reported a hit but no tx \
-                 bytes; treating as miss"
-            );
-            return Ok(None);
-        }
-        // SAFETY: Swift guarantees `tx_bytes_ptr` points to
-        // `tx_bytes_len` valid bytes for the duration of the
-        // callback window — `_bytes_guard` keeps that window open
-        // until this function returns.
-        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
-        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
-            &mut &tx_slice[..],
-        ) {
-            Ok(tx) => tx,
-            Err(err) => {
-                tracing::debug!(
-                    txid = %txid,
-                    error = %err,
-                    "on_get_core_tx_record_fn returned undecodable \
-                     tx bytes; treating as miss"
-                );
-                return Ok(None);
-            }
-        };
-
         Ok(Some(TransactionRecord {
             transaction,
             txid: *txid,
@@ -4296,6 +4868,30 @@ impl PlatformWalletPersistence for FFIPersister {
             fee: None,
             label: String::new(),
         }))
+    }
+
+    /// The body behind `on_get_core_tx_record_fn`, read strictly for the
+    /// accounting backfill: a hit in any context (InstantSend included) is
+    /// returned, and a host failure or a hit with no decodable body is an
+    /// error, so the backfill fails its round instead of reading a wallet
+    /// input as foreign. [`Self::get_core_tx_record`]'s miss policy is
+    /// unchanged.
+    fn get_core_transaction(
+        &self,
+        wallet_id: WalletId,
+        txid: &dashcore::Txid,
+    ) -> Result<Option<dashcore::Transaction>, PersistenceError> {
+        match self.read_core_tx(wallet_id, txid) {
+            CoreTxRead::Missing => Ok(None),
+            CoreTxRead::Failed(rc) => Err(persist_callback_error(
+                rc,
+                format!("on_get_core_tx_record_fn returned error code {rc} for {txid}"),
+            )),
+            CoreTxRead::Unreadable(reason) => Err(PersistenceError::backend(format!(
+                "on_get_core_tx_record_fn reported {txid} but {reason}"
+            ))),
+            CoreTxRead::Found { transaction, .. } => Ok(Some(transaction)),
+        }
     }
 
     fn list_wallet_core_txids(
@@ -5484,7 +6080,7 @@ impl Drop for LoadGuard {
 fn decode_unconfirmed_outgoing(
     entry: &WalletRestoreEntryFFI,
 ) -> Vec<dashcore::blockdata::transaction::Transaction> {
-    use dashcore::consensus::Decodable;
+    use dashcore::consensus::deserialize;
     let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry.unconfirmed_outgoing_tx_records.is_null()
         || entry.unconfirmed_outgoing_tx_records_count == 0
     {
@@ -5507,7 +6103,7 @@ fn decode_unconfirmed_outgoing(
             continue;
         }
         let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
-        match dashcore::blockdata::transaction::Transaction::consensus_decode(&mut &bytes[..]) {
+        match deserialize::<dashcore::Transaction>(bytes) {
             // The bytes must be the row they were selected from. The
             // replay runs through the ordinary state-update path, so a
             // stale or partially-written `transactionData` would apply a
@@ -5573,6 +6169,121 @@ fn order_unconfirmed_outgoing(
         passed_over = 0;
     }
     ordered
+}
+
+/// Decode the stored transaction history the host handed back for replay.
+///
+/// Fail-closed per record, never for the load: a record that does not decode,
+/// does not hash to its row's txid, or carries an unknown context is dropped
+/// with a counted warning. The replay applies each transaction through the
+/// ordinary state-update path, so bytes that do not belong to their row would
+/// move accounting for unrelated inputs and outputs.
+///
+/// InstantSend observations nominate required evidence. Their provisional
+/// mempool context is never replayed without the owner's verified lock gate.
+fn decode_recorded_transactions(entry: &WalletRestoreEntryFFI) -> RecordedHistory {
+    use dashcore::consensus::deserialize;
+    use key_wallet::managed_account::transaction_record::TransactionDirection;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    let recs: &[RecordedTransactionRestoreFFI] =
+        if entry.recorded_transactions.is_null() || entry.recorded_transactions_count == 0 {
+            &[]
+        } else {
+            unsafe {
+                slice::from_raw_parts(
+                    entry.recorded_transactions,
+                    entry.recorded_transactions_count,
+                )
+            }
+        };
+    let mut transactions = Vec::with_capacity(recs.len());
+    let mut required_instant_locks = std::collections::BTreeSet::new();
+    let mut dropped_decode = 0usize;
+    let mut dropped_identity = 0usize;
+    let mut dropped_context = 0usize;
+    for rec in recs {
+        let bytes = unsafe { slice_from_raw(rec.tx_bytes, rec.tx_bytes_len) };
+        if bytes.is_empty() {
+            dropped_decode += 1;
+            continue;
+        }
+        let transaction = match deserialize::<dashcore::Transaction>(bytes) {
+            Ok(tx) if *tx.txid().as_byte_array() == rec.txid => tx,
+            Ok(_) => {
+                dropped_identity += 1;
+                continue;
+            }
+            Err(_) => {
+                dropped_decode += 1;
+                continue;
+            }
+        };
+        let context = match rec.context {
+            TX_CONTEXT_RAW_MEMPOOL => TransactionContext::Mempool,
+            TX_CONTEXT_RAW_INSTANT_SEND => {
+                required_instant_locks.insert(transaction.txid());
+                TransactionContext::Mempool
+            }
+            ctx @ (TX_CONTEXT_RAW_IN_BLOCK | TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK) => {
+                let mut info = BlockInfo::new(
+                    rec.block_height,
+                    dashcore::BlockHash::from_byte_array(rec.block_hash),
+                    rec.block_timestamp,
+                );
+                if rec.has_block_position {
+                    info = info.with_position(rec.block_position);
+                }
+                if ctx == TX_CONTEXT_RAW_IN_BLOCK {
+                    TransactionContext::InBlock(info)
+                } else {
+                    TransactionContext::InChainLockedBlock(info)
+                }
+            }
+            _ => {
+                dropped_context += 1;
+                continue;
+            }
+        };
+        let stored_direction = match rec.direction {
+            0 => Some(TransactionDirection::Incoming),
+            1 => Some(TransactionDirection::Outgoing),
+            2 => Some(TransactionDirection::Internal),
+            3 => Some(TransactionDirection::CoinJoin),
+            _ => None,
+        };
+        transactions.push(StoredTransaction {
+            txid: transaction.txid(),
+            transaction,
+            context,
+            stored_net_amount: Some(rec.net_amount),
+            stored_direction,
+            // TODO(ffi-recorded-input-details): `RecordedTransactionRestoreFFI`
+            // carries no per-input ownership, so on the FFI/SwiftData path a
+            // spend whose funding survives only as a height row replays with no
+            // owned input. The replay still keeps a redelivered funding from
+            // re-crediting the coin of a chain-locked spend, but cannot
+            // attribute it: the sent amount is missing, and a spend paying
+            // nothing to the wallet gets no record. Needs the host to supply
+            // per-input ownership across the ABI.
+            owned_inputs: Vec::new(),
+        });
+    }
+    if dropped_decode > 0 || dropped_identity > 0 || dropped_context > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_decode,
+            dropped_identity,
+            dropped_context,
+            "load: recorded transaction history rows were dropped"
+        );
+    }
+    RecordedHistory {
+        required_instant_locks,
+        owned_prevouts: Default::default(),
+        transactions,
+        instant_locks: BTreeMap::new(),
+    }
 }
 
 /// Map a provider-account rebuild failure to a load error naming the
@@ -6292,6 +7003,9 @@ fn build_wallet_start_state(
     // it.
     let unconfirmed_outgoing_txs = decode_unconfirmed_outgoing(entry);
 
+    // Decode only, like the sends above: the shared load replays the history
+    // (`platform_wallet::manager::history_replay`) at the async boundary.
+    let recorded_history = decode_recorded_transactions(entry);
     let dashpay_backfill = decode_dashpay_backfill(entry);
 
     let wallet_state = ClientWalletStartState {
@@ -6300,6 +7014,7 @@ fn build_wallet_start_state(
         identity_manager,
         unused_asset_locks,
         unconfirmed_outgoing_txs,
+        recorded_history,
         dashpay_backfill,
     };
 
@@ -9921,6 +10636,501 @@ mod tests {
         drop(persister);
     }
 
+    /// Per-wallet accounting crosses right after the round's changeset, one
+    /// row per record that carries details. A detail-less record (an asset
+    /// lock's funding record rebuilt at load and re-emitted when a chain
+    /// lock promotes it) crosses as NO row, so the host keeps what it stored
+    /// instead of overwriting it with the placeholder 0. A host without the
+    /// slot still succeeds.
+    #[test]
+    fn store_delivers_transaction_accounting_after_the_changeset_skipping_detailless_records() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::TransactionType;
+        use platform_wallet::changeset::CoreChangeSet;
+        use platform_wallet::test_support::core_fixtures::{
+            block, foreign_address, outside, pay, spend_of,
+        };
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_accounting_rows(
+            ctx: *mut c_void,
+            wallet_id: *const u8,
+            rows: *const TransactionAccountingFFI,
+            rows_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let wallet = *wallet_id;
+            let mut events = sink.events.lock().unwrap();
+            for row in slice::from_raw_parts(rows, rows_count) {
+                events.push(format!(
+                    "accounting wallet={wallet:02x} txid={} net={} direction={} has_fee={}",
+                    hex::encode(row.txid),
+                    row.net_amount,
+                    row.direction,
+                    row.has_fee
+                ));
+            }
+            0
+        }
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let received_tx = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
+        let received = TransactionRecord::new(
+            received_tx.clone(),
+            bip44,
+            block(10),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Received,
+                address: Some(foreign_address(2)),
+                value: 5_000,
+            }],
+            5_000,
+        );
+        let restored_lock = TransactionRecord::new(
+            spend_of(&[outside(3)], vec![pay(9_000, &foreign_address(4))]),
+            bip44,
+            block(11),
+            TransactionType::AssetLock,
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        let round = || PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                records: vec![received.clone(), restored_lock.clone()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_transaction_accounting: Some(record_accounting_rows),
+                ..Default::default()
+            },
+        );
+        persister
+            .store([0xAA; 32], round())
+            .expect("accounting round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                format!(
+                    "accounting wallet=aa txid={} net=5000 direction=0 has_fee=false",
+                    hex::encode(received_tx.txid().as_byte_array())
+                ),
+            ],
+        );
+        drop(persister);
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([0xAA; 32], round())
+            .expect("slotless-host round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+    }
+
+    /// The load-time backfill reads the host's unaccounted transactions
+    /// through the load/free pair (an undecodable body is skipped, not
+    /// fatal) until the host reports the wallet backfilled. It then writes
+    /// the rows and the completion marker as ONE round: begin, rows, marker,
+    /// end. A failing row write rolls the round back with no marker, so the
+    /// backfill runs again. Without every slot nothing is read.
+    #[test]
+    fn should_backfill_accounting_through_the_extension_in_one_round() {
+        use key_wallet::managed_account::transaction_record::TransactionDirection;
+        use platform_wallet::test_support::core_fixtures::{
+            foreign_address, outside, pay, spend_of,
+        };
+
+        struct Host {
+            backfilled: bool,
+            rows: Vec<CoreHistoryTransactionFFI>,
+            /// Reported instead of `rows.len()`, with a null array when
+            /// `rows` is empty.
+            claimed_count: Option<usize>,
+            fail_rows: bool,
+            loads: std::sync::Mutex<usize>,
+            frees: std::sync::Mutex<usize>,
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe fn host<'a>(ctx: *mut c_void) -> &'a Host {
+            &*(ctx as *const Host)
+        }
+        unsafe extern "C" fn load(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            out_backfilled: *mut bool,
+            out_rows: *mut *const CoreHistoryTransactionFFI,
+            out_count: *mut usize,
+        ) -> i32 {
+            let host = host(ctx);
+            *host.loads.lock().unwrap() += 1;
+            *out_backfilled = host.backfilled;
+            if !host.backfilled {
+                *out_rows = if host.rows.is_empty() {
+                    std::ptr::null()
+                } else {
+                    host.rows.as_ptr()
+                };
+                *out_count = host.claimed_count.unwrap_or(host.rows.len());
+            }
+            0
+        }
+        unsafe extern "C" fn free(
+            ctx: *mut c_void,
+            _rows: *const CoreHistoryTransactionFFI,
+            _count: usize,
+        ) {
+            *host(ctx).frees.lock().unwrap() += 1;
+        }
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            rows: *const TransactionAccountingFFI,
+            rows_count: usize,
+        ) -> i32 {
+            let host = host(ctx);
+            for row in slice::from_raw_parts(rows, rows_count) {
+                host.events.lock().unwrap().push(format!(
+                    "row net={} direction={} fee={}",
+                    row.net_amount, row.direction, row.fee
+                ));
+            }
+            i32::from(host.fail_rows)
+        }
+        unsafe extern "C" fn accounted(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            host(ctx).events.lock().unwrap().push("accounted".into());
+            0
+        }
+        unsafe extern "C" fn begin(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            host(ctx).events.lock().unwrap().push("begin".into());
+            0
+        }
+        unsafe extern "C" fn end(ctx: *mut c_void, _wallet_id: *const u8, success: bool) -> i32 {
+            host(ctx)
+                .events
+                .lock()
+                .unwrap()
+                .push(format!("end success={success}"));
+            0
+        }
+
+        let first = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
+        let second = spend_of(&[outside(3)], vec![pay(7_000, &foreign_address(4))]);
+        let bodies = [
+            dashcore::consensus::encode::serialize(&first),
+            vec![0xFF],
+            dashcore::consensus::encode::serialize(&second),
+        ];
+        let make_host = |backfilled: bool, fail_rows: bool| Host {
+            backfilled,
+            rows: bodies
+                .iter()
+                .map(|body| CoreHistoryTransactionFFI {
+                    tx_bytes: body.as_ptr(),
+                    tx_bytes_len: body.len(),
+                })
+                .collect(),
+            claimed_count: None,
+            fail_rows,
+            loads: std::sync::Mutex::new(0),
+            frees: std::sync::Mutex::new(0),
+            events: std::sync::Mutex::new(Vec::new()),
+        };
+        let extensions = PersistenceExtensionCallbacks {
+            persist_transaction_accounting: Some(persist),
+            load_core_history_for_accounting: Some(load),
+            load_core_history_for_accounting_free: Some(free),
+            persist_core_history_accounted: Some(accounted),
+            ..Default::default()
+        };
+        let persister_for = |host: &Host, extensions: PersistenceExtensionCallbacks| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: host as *const Host as *mut c_void,
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                extensions,
+            )
+        };
+        let row = WalletAccounting {
+            txid: first.txid(),
+            net_amount: -5_000,
+            direction: TransactionDirection::Outgoing,
+            fee: Some(250),
+        };
+
+        // Not yet backfilled: the decodable bodies come back, the loan is returned.
+        let host = make_host(false, false);
+        let persister = persister_for(&host, extensions);
+        let unaccounted = persister
+            .load_core_history_for_accounting([1; 32])
+            .expect("history read must succeed")
+            .expect("not backfilled yet");
+        assert_eq!(
+            unaccounted.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+            vec![first.txid(), second.txid()]
+        );
+        assert_eq!(*host.frees.lock().unwrap(), 1);
+
+        // Rows and marker commit in one round.
+        persister
+            .store_history_accounting([1; 32], &[row], true)
+            .expect("backfill round must succeed");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "accounted",
+                "end success=true"
+            ]
+        );
+        drop(persister);
+
+        // Nothing to write still records completion.
+        let host = make_host(false, false);
+        persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[], true)
+            .expect("empty backfill round must succeed");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec!["begin", "accounted", "end success=true"]
+        );
+
+        // An incomplete backfill writes its rows but no marker, so it stays
+        // open for the next load.
+        let host = make_host(false, false);
+        persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[row], false)
+            .expect("incomplete backfill round must succeed");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "end success=true"
+            ]
+        );
+
+        // A failing row write rolls back, with no marker.
+        let host = make_host(false, true);
+        assert!(persister_for(&host, extensions)
+            .store_history_accounting([1; 32], &[row], true)
+            .is_err());
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            vec![
+                "begin",
+                "row net=-5000 direction=1 fee=250",
+                "end success=false"
+            ]
+        );
+
+        // Backfilled: nothing to do.
+        let host = make_host(true, false);
+        assert_eq!(
+            persister_for(&host, extensions)
+                .load_core_history_for_accounting([1; 32])
+                .expect("history read must succeed"),
+            None
+        );
+
+        // Without the completion slot the host is never read.
+        let host = make_host(false, false);
+        let without_marker = PersistenceExtensionCallbacks {
+            persist_core_history_accounted: None,
+            ..extensions
+        };
+        assert_eq!(
+            persister_for(&host, without_marker)
+                .load_core_history_for_accounting([1; 32])
+                .expect("a host that cannot complete a backfill is not read"),
+            None
+        );
+        assert_eq!(*host.loads.lock().unwrap(), 0);
+
+        // A count with no array is a broken answer, not an empty history:
+        // reading it as empty would let the round record completion.
+        let mut host = make_host(false, false);
+        host.rows.clear();
+        host.claimed_count = Some(3);
+        assert!(persister_for(&host, extensions)
+            .load_core_history_for_accounting([1; 32])
+            .is_err());
+        assert_eq!(*host.frees.lock().unwrap(), 1, "the loan is still returned");
+
+        // Without the begin/end pair the rows and the marker could not commit
+        // as one unit: the host is never read, and a store writes nothing.
+        let host = make_host(false, false);
+        let unbracketed = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: &host as *const Host as *mut c_void,
+                on_changeset_begin_fn: Some(begin),
+                ..PersistenceCallbacks::default()
+            },
+            PersistenceCapabilities::NONE,
+            extensions,
+        );
+        assert_eq!(
+            unbracketed
+                .load_core_history_for_accounting([1; 32])
+                .expect("a host without the round pair is not read"),
+            None
+        );
+        assert_eq!(*host.loads.lock().unwrap(), 0);
+        assert!(unbracketed
+            .store_history_accounting([1; 32], &[row], true)
+            .is_err());
+        assert!(host.events.lock().unwrap().is_empty());
+    }
+
+    /// The accounting backfill's funding read uses a stored body in any
+    /// context, InstantSend included, and reports a host failure or an
+    /// unusable body as an error rather than a miss. `get_core_tx_record`
+    /// keeps its policy: all three read as a miss there.
+    #[test]
+    fn should_read_a_funding_body_strictly_for_the_accounting_backfill() {
+        use platform_wallet::test_support::core_fixtures::{
+            foreign_address, outside, pay, spend_of,
+        };
+
+        struct Host {
+            rc: i32,
+            found: bool,
+            context_kind: u8,
+            body: Vec<u8>,
+            frees: std::sync::Mutex<usize>,
+        }
+        unsafe extern "C" fn get(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _txid: *const u8,
+            out_context_kind: *mut u8,
+            _out_block_height: *mut u32,
+            _out_block_hash: *mut u8,
+            _out_block_timestamp: *mut u32,
+            out_tx_bytes: *mut *const u8,
+            out_tx_bytes_len: *mut usize,
+            out_found: *mut bool,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            *out_context_kind = host.context_kind;
+            *out_found = host.found;
+            if !host.body.is_empty() {
+                *out_tx_bytes = host.body.as_ptr();
+                *out_tx_bytes_len = host.body.len();
+            }
+            host.rc
+        }
+        unsafe extern "C" fn free(ctx: *mut c_void, _bytes: *const u8, _len: usize) {
+            *(&*(ctx as *const Host)).frees.lock().unwrap() += 1;
+        }
+
+        let funding = spend_of(&[outside(1)], vec![pay(5_000, &foreign_address(2))]);
+        let body = dashcore::consensus::encode::serialize(&funding);
+        let read = |rc: i32, found: bool, context_kind: u8, body: Vec<u8>| {
+            let host = Host {
+                rc,
+                found,
+                context_kind,
+                body,
+                frees: std::sync::Mutex::new(0),
+            };
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: &host as *const Host as *mut c_void,
+                    on_get_core_tx_record_fn: Some(get),
+                    on_get_core_tx_record_free_fn: Some(free),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks::default(),
+            );
+            let strict = persister.get_core_transaction([1; 32], &funding.txid());
+            let record = persister
+                .get_core_tx_record([1; 32], &funding.txid())
+                .expect("the record read keeps reading failures as a miss")
+                .map(|record| record.transaction);
+            let frees = *host.frees.lock().unwrap();
+            drop(persister);
+            (strict, record, frees)
+        };
+
+        // An InstantSend hit: the body is real, only the IS lock is missing.
+        let (strict, record, frees) = read(0, true, 1, body.clone());
+        assert_eq!(strict.expect("an IS hit is a hit"), Some(funding.clone()));
+        assert_eq!(record, None, "the proof-facing read still skips IS");
+        assert_eq!(frees, 2, "each read hands the buffer back");
+
+        let (strict, record, _) = read(0, true, TX_CONTEXT_RAW_IN_BLOCK as u8, body.clone());
+        assert_eq!(strict.unwrap(), Some(funding.clone()));
+        assert_eq!(record, Some(funding.clone()));
+
+        let (strict, record, _) = read(0, false, 0, Vec::new());
+        assert_eq!(strict.unwrap(), None, "not stored is the only miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(7, false, 0, Vec::new());
+        assert!(strict.is_err(), "a failing host is not a miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(0, true, 0, vec![0xFF]);
+        assert!(strict.is_err(), "an undecodable stored body is not a miss");
+        assert_eq!(record, None);
+
+        let (strict, record, _) = read(0, true, 0, Vec::new());
+        assert!(strict.is_err(), "a hit without a body is not a miss");
+        assert_eq!(record, None);
+    }
+
     #[test]
     fn should_roundtrip_drain_operation_ids_including_consumed_tombstones() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -10192,7 +11402,7 @@ mod tests {
     }
 
     #[test]
-    fn should_require_explicit_operation_id_persistence_attestation() {
+    fn should_withhold_operation_id_capability_until_replay_preserves_tombstones() {
         unsafe extern "C" fn persist(
             _: *mut c_void,
             _: *const u8,
@@ -10234,7 +11444,7 @@ mod tests {
                 .persistence_capabilities()
                 .contains(required)
         );
-        assert!(persister(callbacks(), required, extensions)
+        assert!(!persister(callbacks(), required, extensions)
             .persistence_capabilities()
             .contains(required));
         assert!(!declared_persister(callbacks(), required)
@@ -10295,6 +11505,41 @@ mod tests {
         );
     }
 
+    fn complete_replay_extensions() -> PersistenceExtensionCallbacks {
+        unsafe extern "C" fn scope(
+            _: *mut c_void,
+            _: *const u8,
+            _: ReplayOperationFn,
+            _: *mut c_void,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const ReplayClaimRestoreFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
+        unsafe extern "C" fn apply(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const HistoryReplayEffectsFFI,
+        ) -> i32 {
+            0
+        }
+        PersistenceExtensionCallbacks {
+            wallet_changeset_sweeps: Some(noop_wallet_changeset_sweeps),
+            replay_wallet: Some(scope),
+            load_replay_claims: Some(load),
+            free_replay_claims: Some(free),
+            apply_replay_effects: Some(apply),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -10309,9 +11554,16 @@ mod tests {
         }
 
         let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
-        assert!(declared_persister(complete_callbacks(), required)
-            .persistence_capabilities()
-            .contains(required));
+        let persister = |callbacks, extensions| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks, required, extensions,
+            )
+        };
+        assert!(
+            persister(complete_callbacks(), complete_replay_extensions())
+                .persistence_capabilities()
+                .contains(required)
+        );
 
         let mut missing_begin = complete_callbacks();
         missing_begin.on_changeset_begin_fn = None;
@@ -10331,7 +11583,19 @@ mod tests {
             missing_load,
             missing_load_free,
         ] {
-            assert!(!declared_persister(callbacks, required)
+            assert!(!persister(callbacks, complete_replay_extensions())
+                .persistence_capabilities()
+                .contains(required));
+        }
+        for missing in 0..4 {
+            let mut extensions = complete_replay_extensions();
+            match missing {
+                0 => extensions.replay_wallet = None,
+                1 => extensions.load_replay_claims = None,
+                2 => extensions.free_replay_claims = None,
+                _ => extensions.apply_replay_effects = None,
+            }
+            assert!(!persister(complete_callbacks(), extensions)
                 .persistence_capabilities()
                 .contains(required));
         }
@@ -10349,6 +11613,7 @@ mod tests {
             .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::WALLET_RESTORE)
+            .union(PersistenceCapabilities::CORE_HISTORY_RESTORE)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         cb.on_changeset_begin_fn = Some(noop_begin);
@@ -10363,11 +11628,10 @@ mod tests {
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
         // "Fully wired" includes the extension's sweeps slot — the legacy
         // vtable alone can no longer attest CORE_SWEEP_REMOVAL.
-        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extensions(
             cb,
             expected,
-            None,
-            Some(noop_wallet_changeset_sweeps),
+            complete_replay_extensions(),
         )
         .persistence_capabilities();
 
@@ -10583,6 +11847,91 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_shielded_recipient_fn
             ) + std::mem::size_of::<Option<LoadAssetLockShieldedRecipientFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_transaction_accounting_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_transaction_accounting_fn
+            ) + std::mem::size_of::<Option<PersistTransactionAccountingFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_history_for_accounting_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_history_for_accounting_fn
+            ) + std::mem::size_of::<Option<LoadCoreHistoryForAccountingFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_history_for_accounting_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_history_for_accounting_free_fn
+            ) + std::mem::size_of::<Option<FreeCoreHistoryForAccountingFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_history_accounted_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_history_accounted_fn
+            ) + std::mem::size_of::<Option<PersistCoreHistoryAccountedFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_instant_lock_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_core_instant_lock_fn
+            ) + std::mem::size_of::<Option<PersistCoreInstantLockFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_core_instant_lock_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_core_instant_lock_fn)
+                + std::mem::size_of::<Option<LoadCoreInstantLockFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_instant_lock_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_core_instant_lock_free_fn
+            ) + std::mem::size_of::<Option<FreeCoreInstantLockFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn)
+                + std::mem::size_of::<Option<ReplayWalletFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn)
+                + std::mem::size_of::<Option<LoadReplayClaimsFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn)
+                + std::mem::size_of::<Option<FreeReplayClaimsFn>>(),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn)
+        );
+        assert_eq!(
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn)
+                + std::mem::size_of::<Option<ApplyReplayEffectsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -10640,6 +11989,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS,
             PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_HISTORY_RESTORE,
+            PersistenceCapabilities::CORE_HISTORY_RESTORE.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS,
@@ -11202,6 +12555,26 @@ mod tests {
         assert_eq!(detail.index, change.vout);
         assert_eq!(detail.role, OutputRole::Change);
         assert_eq!(detail.value, ASSET_LOCK_CHANGE);
+    }
+
+    #[test]
+    fn should_keep_stored_accounting_when_a_restored_lock_gains_finality() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let (mut ctx, lock, change) =
+            reloaded_after_unlocked_asset_lock(&rt, ChangeTo::FundingAccount);
+        assert!(ctx
+            .managed_wallet
+            .mark_instant_send_utxos(&lock.txid(), &InstantLock::default()));
+
+        let records = wallet_slices(&ctx.managed_wallet, &lock.txid());
+        assert!(!records.is_empty());
+        assert!(
+            records
+                .iter()
+                .all(|record| record_accounting(record).is_none()),
+            "held change without spent-input ownership must not overwrite stored accounting"
+        );
+        assert!(stored_coin_flags(records).contains(&(change, 0, false, true)));
     }
 
     /// A change coin the account no longer holds gets no detail: a store
@@ -13397,6 +14770,501 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+
+    /// Owned bytes plus the FFI row that borrows them; the row is valid only
+    /// while `bytes` lives.
+    struct RecordedRow {
+        bytes: Vec<u8>,
+        context: u32,
+        height: u32,
+        position: Option<u32>,
+        txid: [u8; 32],
+    }
+
+    impl RecordedRow {
+        fn new(tx: &Transaction, context: u32, height: u32, position: Option<u32>) -> Self {
+            Self {
+                bytes: serialize(tx),
+                context,
+                height,
+                position,
+                txid: *tx.txid().as_byte_array(),
+            }
+        }
+
+        fn ffi(&mut self) -> RecordedTransactionRestoreFFI {
+            RecordedTransactionRestoreFFI {
+                txid: self.txid,
+                tx_bytes: self.bytes.as_mut_ptr(),
+                tx_bytes_len: self.bytes.len(),
+                context: self.context,
+                block_height: self.height,
+                block_hash: [self.height as u8; 32],
+                block_timestamp: self.height,
+                block_position: self.position.unwrap_or(0),
+                has_block_position: self.position.is_some(),
+                net_amount: -7,
+                direction: 1,
+            }
+        }
+    }
+
+    /// A seeded wallet's BIP44 account spec (with its encoded xpub) and first
+    /// receive address.
+    fn bip44_wallet_fixture() -> (Wallet, Vec<u8>, dashcore::Address) {
+        let wallet = Wallet::from_seed_bytes(
+            [0x51; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let xpub = wallet
+            .get_bip44_account(0)
+            .expect("a Default-created wallet has BIP44 account 0")
+            .account_xpub;
+        let xpub_bytes =
+            bincode::encode_to_vec(xpub, config::standard()).expect("encode account xpub");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("bip44 account")
+            .next_receive_address(Some(&xpub), true)
+            .expect("receive address");
+        (wallet, xpub_bytes, address)
+    }
+
+    fn pay(previous_output: dashcore::OutPoint, outputs: Vec<TxOut>) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                ..Default::default()
+            }],
+            output: outputs,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// The FFI restore path end to end: the host hands back only the unspent
+    /// change coin plus the stored history (funding and a confirmed spend),
+    /// `build_wallet_start_state` decodes it, the shared load replay runs, and
+    /// the funding transaction is redelivered (rescan). The confirmed-spent
+    /// output must not come back. Without history — the pre-change host
+    /// shape — the same redelivery resurrects it.
+    #[test]
+    fn should_not_resurrect_confirmed_spent_output_after_ffi_restore() {
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use platform_wallet::manager::history_replay::replay_recorded_history;
+
+        let (wallet, xpub_bytes, address) = bip44_wallet_fixture();
+        let bip44 = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let spec = build_account_spec_ffi(&bip44, &xpub_bytes);
+        let funding = pay(
+            dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x61; 32]), 0),
+            [100_000, 20_000]
+                .map(|value| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .to_vec(),
+        );
+        let spent = dashcore::OutPoint::new(funding.txid(), 0);
+        let spending = pay(
+            spent,
+            vec![TxOut {
+                value: 99_000,
+                script_pubkey: ScriptBuf::new(),
+            }],
+        );
+        let script = address.script_pubkey().to_bytes();
+        let change = UtxoRestoreEntryFFI {
+            type_tag: AccountTypeTagFFI::Standard as u8,
+            standard_tag: StandardAccountTypeTagFFI::Bip44 as u8,
+            account_index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0; 32],
+            friend_identity_id: [0; 32],
+            prev_txid: *funding.txid().as_byte_array(),
+            vout: 1,
+            value_duffs: 20_000,
+            script_pubkey: script.as_ptr(),
+            script_pubkey_len: script.len(),
+            height: 100,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+            parent_context: TX_CONTEXT_RAW_IN_BLOCK,
+            parent_block_height: 100,
+        };
+        // Stored out of chain order on purpose: the replay orders them.
+        let mut rows = [
+            RecordedRow::new(&spending, TX_CONTEXT_RAW_IN_BLOCK, 101, Some(0)),
+            RecordedRow::new(&funding, TX_CONTEXT_RAW_IN_BLOCK, 100, Some(0)),
+        ];
+        let history: Vec<_> = rows.iter_mut().map(RecordedRow::ffi).collect();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        let mut raw_bytes = [serialize(&funding), serialize(&spending)];
+        let unresolved: Vec<_> = raw_bytes
+            .iter_mut()
+            .enumerate()
+            .map(|(i, bytes)| UnresolvedAssetLockTxRecordFFI {
+                account_index: 0,
+                tx_bytes: bytes.as_mut_ptr(),
+                tx_bytes_len: bytes.len(),
+                context_raw: TX_CONTEXT_RAW_IN_BLOCK,
+                block_height: 100 + i as u32,
+                block_hash: [100 + i as u8; 32],
+                block_timestamp: 100 + i as u64,
+                first_seen: 100 + i as u64,
+            })
+            .collect();
+        let redeliver = |recorded: &[RecordedTransactionRestoreFFI], overlap: bool| {
+            let entry = WalletRestoreEntryFFI {
+                wallet_id: wallet.wallet_id,
+                accounts: &spec,
+                accounts_count: 1,
+                utxos: &change,
+                utxos_count: 1,
+                unresolved_asset_lock_tx_records: unresolved.as_ptr(),
+                unresolved_asset_lock_tx_records_count: if overlap { unresolved.len() } else { 0 },
+                recorded_transactions: recorded.as_ptr(),
+                recorded_transactions_count: recorded.len(),
+                ..Default::default()
+            };
+            let (state, _) = build_wallet_start_state(&entry).expect("wallet must restore");
+            let (mut wallet, mut info) = (state.wallet, state.wallet_info);
+            runtime.block_on(async {
+                replay_recorded_history(&mut info, &mut wallet, state.recorded_history)
+                    .await
+                    .unwrap();
+                info.check_core_transaction(
+                    &funding,
+                    TransactionContext::InBlock(BlockInfo::new(
+                        100,
+                        dashcore::BlockHash::from_byte_array([100; 32]),
+                        100,
+                    )),
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await;
+            });
+            info
+        };
+
+        for overlap in [false, true] {
+            let guarded = redeliver(&history, overlap);
+            assert!(
+                guarded
+                    .accounts
+                    .all_funding_accounts()
+                    .into_iter()
+                    .all(|account| !account.utxos.contains_key(&spent)),
+                "a redelivered funding must not re-credit a confirmed-spent output"
+            );
+            assert_eq!(guarded.balance.total(), 20_000);
+        }
+        let unguarded = redeliver(&[], false);
+        assert!(
+            unguarded
+                .accounts
+                .all_funding_accounts()
+                .into_iter()
+                .any(|account| account.utxos.contains_key(&spent)),
+            "control: without history the redelivery resurrects the output"
+        );
+    }
+
+    /// Each stored row decodes into its own context, block position and
+    /// stored accounting; rows that do not hash to their txid or carry an
+    /// unknown context drop out instead of failing the load.
+    #[test]
+    fn should_decode_recorded_transactions_and_drop_bad_rows() {
+        use key_wallet::managed_account::transaction_record::TransactionDirection;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        let tx = |marker: u8| {
+            pay(
+                dashcore::OutPoint::new(dashcore::Txid::from_byte_array([marker; 32]), 0),
+                vec![TxOut {
+                    value: u64::from(marker),
+                    script_pubkey: ScriptBuf::new(),
+                }],
+            )
+        };
+        let mut rows = [
+            RecordedRow::new(&tx(1), TX_CONTEXT_RAW_MEMPOOL, 0, None),
+            RecordedRow::new(&tx(2), TX_CONTEXT_RAW_INSTANT_SEND, 0, None),
+            RecordedRow::new(&tx(3), TX_CONTEXT_RAW_IN_BLOCK, 50, Some(4)),
+            RecordedRow::new(&tx(4), TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK, 60, None),
+            RecordedRow::new(&tx(5), 9, 0, None),
+            RecordedRow::new(&tx(6), TX_CONTEXT_RAW_MEMPOOL, 0, None),
+        ];
+        // Row 6 claims another row's txid: its bytes do not belong to it.
+        rows[5].txid = rows[0].txid;
+        let mut ffi: Vec<_> = rows.iter_mut().map(RecordedRow::ffi).collect();
+        ffi[3].direction = 42;
+        let entry = WalletRestoreEntryFFI {
+            recorded_transactions: ffi.as_ptr(),
+            recorded_transactions_count: ffi.len(),
+            ..Default::default()
+        };
+
+        let history = decode_recorded_transactions(&entry);
+
+        let txids: Vec<_> = history.transactions.iter().map(|t| t.txid).collect();
+        assert_eq!(
+            txids,
+            vec![tx(1).txid(), tx(2).txid(), tx(3).txid(), tx(4).txid()]
+        );
+        let contexts: Vec<_> = history.transactions.iter().map(|t| &t.context).collect();
+        assert!(matches!(contexts[0], TransactionContext::Mempool));
+        assert!(
+            matches!(contexts[1], TransactionContext::Mempool),
+            "the provisional context cannot grant finality without the required proof"
+        );
+        assert!(matches!(
+            contexts[2],
+            TransactionContext::InBlock(info) if info.height() == 50 && info.position() == Some(4)
+        ));
+        assert!(matches!(
+            contexts[3],
+            TransactionContext::InChainLockedBlock(info) if info.height() == 60 && info.position().is_none()
+        ));
+        assert_eq!(history.transactions[0].stored_net_amount, Some(-7));
+        assert_eq!(
+            history.transactions[0].stored_direction,
+            Some(TransactionDirection::Outgoing)
+        );
+        assert_eq!(history.transactions[3].stored_direction, None);
+        assert!(history.instant_locks.is_empty());
+        assert_eq!(history.required_instant_locks, [tx(2).txid()].into());
+    }
+
+    #[test]
+    fn should_round_trip_raw_instant_lock_sidecars_and_free_failed_reads() {
+        use platform_wallet::changeset::CoreChangeSet;
+        #[derive(Default)]
+        struct Host {
+            bytes: Vec<u8>,
+            frees: usize,
+            fail_load: bool,
+        }
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            bytes: *const u8,
+            len: usize,
+        ) -> i32 {
+            let host = &mut *ctx.cast::<Host>();
+            host.bytes = slice::from_raw_parts(bytes, len).to_vec();
+            0
+        }
+        unsafe extern "C" fn load(
+            ctx: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            bytes: *mut *const u8,
+            len: *mut usize,
+        ) -> i32 {
+            let host = &mut *ctx.cast::<Host>();
+            let copy = host.bytes.clone().into_boxed_slice();
+            *len = copy.len();
+            *bytes = Box::into_raw(copy).cast::<u8>();
+            if host.fail_load {
+                1
+            } else {
+                0
+            }
+        }
+        unsafe extern "C" fn free(ctx: *mut c_void, bytes: *const u8, len: usize) {
+            let host = &mut *ctx.cast::<Host>();
+            host.frees += 1;
+            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                bytes.cast_mut(),
+                len,
+            )));
+        }
+        let ctx = TestWalletContext::new_random();
+        let transaction = pay(
+            dashcore::OutPoint::null(),
+            vec![TxOut {
+                value: 1_000,
+                script_pubkey: ctx.receive_address.script_pubkey(),
+            }],
+        );
+        let txid = transaction.txid();
+        // Transport bytes are deliberately unverified; loading them cannot mint evidence.
+        let lock = dashcore::InstantLock {
+            txid,
+            ..Default::default()
+        };
+        let mut host = Host::default();
+        let mut persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&mut host as *mut Host).cast(),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_core_instant_lock: Some(persist),
+                load_core_instant_lock: Some(load),
+                free_core_instant_lock: Some(free),
+                ..Default::default()
+            },
+        );
+        persister
+            .store(
+                ctx.wallet.wallet_id,
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        instant_locks_for_non_final_records: [(txid, lock.clone())].into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(host.bytes, dashcore::consensus::serialize(&lock));
+        let mut row = RecordedRow::new(&transaction, TX_CONTEXT_RAW_INSTANT_SEND, 0, None);
+        let ffi = row.ffi();
+        let entry = WalletRestoreEntryFFI {
+            recorded_transactions: &ffi,
+            recorded_transactions_count: 1,
+            ..Default::default()
+        };
+        let mut history = decode_recorded_transactions(&entry);
+        persister
+            .load_core_instant_locks(&ctx.wallet.wallet_id, &mut history)
+            .unwrap();
+        assert_eq!(history.instant_locks[&txid], lock);
+        assert_eq!(host.frees, 1);
+        host.fail_load = true;
+        assert!(persister
+            .load_core_instant_locks(&ctx.wallet.wallet_id, &mut history)
+            .is_err());
+        assert_eq!(
+            host.frees, 2,
+            "a callback error must still release its allocation"
+        );
+        host.fail_load = false;
+        host.bytes = vec![1, 2, 3];
+        assert!(persister
+            .load_core_instant_locks(&ctx.wallet.wallet_id, &mut history)
+            .is_err());
+        assert_eq!(
+            host.frees, 3,
+            "decode failure must still release the host buffer"
+        );
+        persister.free_core_instant_lock_callback = None;
+        assert!(persister
+            .load_core_instant_locks(&ctx.wallet.wallet_id, &mut history)
+            .is_err());
+        assert_eq!(
+            host.frees, 3,
+            "an incomplete callback pair must fail before allocation"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_fail_restore_instead_of_downgrading_a_stored_instant_send_observation() {
+        use platform_wallet::manager::history_replay::{
+            replay_recorded_history, HistoryReplayError,
+        };
+        let ctx = TestWalletContext::new_random();
+        let transaction = pay(
+            dashcore::OutPoint::null(),
+            vec![TxOut {
+                value: 1_000,
+                script_pubkey: ctx.receive_address.script_pubkey(),
+            }],
+        );
+        let mut row = RecordedRow::new(&transaction, TX_CONTEXT_RAW_INSTANT_SEND, 0, None);
+        let ffi = row.ffi();
+        let entry = WalletRestoreEntryFFI {
+            recorded_transactions: &ffi,
+            recorded_transactions_count: 1,
+            ..Default::default()
+        };
+        let history = decode_recorded_transactions(&entry);
+        let mut wallet = ctx.wallet;
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        assert!(
+            matches!(replay_recorded_history(&mut info, &mut wallet, history).await,
+            Err(HistoryReplayError::MissingFinalityEvidence { txids }) if txids.contains(&transaction.txid()))
+        );
+    }
+
+    #[test]
+    fn should_reject_non_exact_transaction_bytes_on_restore() {
+        let tx = synthetic_minimal_tx();
+        let exact = serialize(&tx);
+        for bytes in [
+            [exact.clone(), vec![0]].concat(),
+            [exact.clone(), exact.clone()].concat(),
+            exact[..exact.len() - 1].to_vec(),
+        ] {
+            let mut row = RecordedRow::new(&tx, TX_CONTEXT_RAW_MEMPOOL, 0, None);
+            row.bytes = bytes.clone();
+            let recorded = row.ffi();
+            let outgoing = UnconfirmedOutgoingTxRecordFFI {
+                txid: *tx.txid().as_byte_array(),
+                tx_bytes: bytes.as_ptr().cast_mut(),
+                tx_bytes_len: bytes.len(),
+                first_seen: 0,
+            };
+            let entry = WalletRestoreEntryFFI {
+                recorded_transactions: &recorded,
+                recorded_transactions_count: 1,
+                unconfirmed_outgoing_tx_records: &outgoing,
+                unconfirmed_outgoing_tx_records_count: 1,
+                ..Default::default()
+            };
+            assert!(decode_recorded_transactions(&entry).is_empty());
+            assert!(decode_unconfirmed_outgoing(&entry).is_empty());
+        }
+    }
+
+    #[test]
+    fn should_decode_no_history_from_a_null_array() {
+        let entry = WalletRestoreEntryFFI::default();
+        assert!(decode_recorded_transactions(&entry).is_empty());
+    }
+
+    /// History restore rides the wallet-list load: a host declaring the bit
+    /// attests it only with the load callback pair wired.
+    #[test]
+    fn core_history_restore_requires_the_wallet_list_load_callbacks() {
+        let declared = PersistenceCapabilities::CORE_HISTORY_RESTORE;
+        assert!(
+            !declared_persister(PersistenceCallbacks::default(), declared)
+                .persistence_capabilities()
+                .contains(declared)
+        );
+        let cb = PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        assert!(declared_persister(cb, declared)
+            .persistence_capabilities()
+            .contains(declared));
     }
 
     /// A cold restore must hand every persisted owned DPNS label to the

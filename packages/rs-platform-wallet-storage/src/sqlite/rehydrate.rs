@@ -300,12 +300,6 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
 
-    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
-
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
     // the writer keyed the pool row on). Two miss cases share the first-account
@@ -403,14 +397,6 @@ pub fn apply_persisted_core_state(
                 )?;
             }
         }
-    }
-
-    // Replay persisted InstantSend locks AFTER the UTXO restore: this marks the
-    // UTXOs it finds, so running it earlier would record the txid and mark
-    // nothing. Without it, instant-locked funds come back as merely confirmed
-    // and stay that way until the next sync re-learns the lock.
-    for (txid, lock) in &core.instant_locks_for_non_final_records {
-        wallet_info.mark_instant_send_utxos(txid, lock);
     }
 
     // Recompute per-account + wallet balance from the restored set.
@@ -3045,15 +3031,10 @@ mod tests {
         );
     }
 
-    /// A restored UTXO whose transaction carried an InstantSend lock must come
-    /// back instant-locked, not wait for the next sync to re-learn it. The
-    /// persisted `core_instant_locks` rows arrive in
-    /// `CoreChangeSet::instant_locks_for_non_final_records`, and replaying them
-    /// has to happen AFTER the UTXO restore — `mark_instant_send_utxos` marks
-    /// the UTXOs it can find, so calling it first would insert the txid and
-    /// mark nothing.
+    /// Raw restoration preserves the coin but cannot authenticate saved lock bytes.
+    /// Verified positive upgrades are exercised through the shared replay owner.
     #[test]
-    fn rehydration_restores_instant_send_locks_onto_restored_utxos() {
+    fn should_not_restore_instant_send_finality_from_unverified_lock_rows() {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::ephemerealdata::instant_lock::InstantLock;
         use dashcore::{OutPoint, Txid};
@@ -3100,8 +3081,7 @@ mod tests {
 
         let txid = Txid::from([0x5Au8; 32]);
         let outpoint = OutPoint { txid, vout: 0 };
-        // `is_instantlocked: false` is the persisted shape: the flag is not a
-        // stored column, it is re-derived from the `core_instant_locks` row.
+        // The persisted coin starts without authenticated InstantSend evidence.
         let utxo = Utxo {
             outpoint,
             txout: TxOut {
@@ -3147,8 +3127,8 @@ mod tests {
         .unwrap();
 
         assert!(
-            wallet_info.instant_send_locks().contains(&txid),
-            "the persisted InstantSend lock must be replayed onto the wallet"
+            !wallet_info.instant_send_locks().contains(&txid),
+            "raw persisted bytes cannot establish InstantSend finality"
         );
         let restored = wallet_info
             .accounts
@@ -3157,8 +3137,8 @@ mod tests {
             .and_then(|a| a.utxos.get(&outpoint))
             .expect("the restored UTXO must be present on the BIP44 account");
         assert!(
-            restored.is_instantlocked,
-            "the restored UTXO must carry instant-locked status, not wait for the next sync"
+            !restored.is_instantlocked,
+            "the shared replay needs matching verified evidence before upgrading the coin"
         );
     }
 }

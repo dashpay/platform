@@ -372,6 +372,7 @@ struct SwiftExampleAppApp: App {
         let decision = CoreSpvAutoStart.decision(
             alreadyLatched: didAutoStartCoreSpv,
             hasWallets: !manager.wallets.isEmpty,
+            hasPersistedWallets: !(manager.persistence?.restorableWalletIds().isEmpty ?? true),
             spvRunning: manager.spvIsRunning
         )
         if decision.shouldLatch { didAutoStartCoreSpv = true }
@@ -441,18 +442,19 @@ struct SwiftExampleAppApp: App {
                 await PlatformWalletManager.warmUpShieldedProver()
             }
 
-            platformState.initializeSDK(modelContext: modelContainer.mainContext)
-
-            // Give the Platform SDK a moment to finish its internal init.
-            try? await Task.sleep(for: .milliseconds(500))
+            // An explicit restore retry keeps the same manager and its running SPV client.
+            if platformState.sdk == nil {
+                platformState.initializeSDK(modelContext: modelContainer.mainContext)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
 
             if let sdk = platformState.sdk {
                 // Activate the per-network manager for the launch
                 // network. The store creates + configures the
                 // manager and runs `loadFromPersistor` against it
                 // (filtered to the launch network's wallets via
-                // the network-aware persistence handler), so no
-                // separate restore pass is needed here.
+                // the network-aware persistence handler). History requiring
+                // SPV evidence gets an explicit retry after startup below.
                 try walletManagerStore.activate(
                     network: platformState.currentNetwork,
                     sdk: sdk
@@ -496,6 +498,12 @@ struct SwiftExampleAppApp: App {
             // bumps last wins and the other bails (never a double-start).
             isInitialized = true
             await autoStartCoreSpvIfNeeded()
+            if platformState.sdk != nil {
+                // Starting SPV opens its cache but does not guarantee quorum readiness.
+                // A load error leaves SPV running and the existing Retry action can try again.
+                _ = try await walletManager.loadFromPersistor()
+                rebindWalletScopedServices()
+            }
             SDKLogger.event(
                 "app_initialization_completed",
                 category: .lifecycle,
@@ -505,6 +513,7 @@ struct SwiftExampleAppApp: App {
                 ]
             )
         } catch {
+            isInitialized = false
             bootstrapError = error
             SDKLogger.event(
                 "app_initialization_failed",

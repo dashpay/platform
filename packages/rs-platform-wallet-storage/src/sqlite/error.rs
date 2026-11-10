@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
@@ -34,6 +35,9 @@ pub enum AutoBackupOperation {
 /// Errors produced by the wallet-storage SQLite backend.
 #[derive(Debug, thiserror::Error)]
 pub enum WalletStorageError {
+    /// Persisted authorization uses rules this wallet cannot verify.
+    #[error("cannot verify pending spend authorization")]
+    SpendAuthorization(#[from] SpendAuthorizationError),
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -418,6 +422,16 @@ pub enum WalletStorageError {
         blob_height: Option<u32>,
     },
 
+    /// Aliases of one canonical transaction disagree about their confirmed block.
+    #[error(
+        "history aliases for {txid} in wallet {} have conflicting contexts",
+        hex::encode(wallet_id)
+    )]
+    HistoryAliasContextConflict {
+        wallet_id: [u8; 32],
+        txid: dashcore::Txid,
+    },
+
     /// An incoming transaction record reuses a stored txid with a body whose
     /// txid-committed content differs (witness-only differences are not a
     /// conflict); neither copy is trusted to replace the other.
@@ -786,6 +800,7 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::AssetLockStatusMismatch { .. }
             | Self::CoreTransactionEntryMismatch { .. }
+            | Self::HistoryAliasContextConflict { .. }
             | Self::TransactionBodyConflict { .. }
             | Self::UnknownWalletNetwork { .. }
             | Self::NetAmountOverflow { .. }
@@ -802,7 +817,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => false,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => false,
         }
     }
 
@@ -836,9 +852,9 @@ impl WalletStorageError {
             Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
             // History invariants checked in Rust on the write path: the incoming
             // record contradicts stored history, so the data is wrong, not the engine.
-            Self::TransactionBodyConflict { .. } | Self::NetAmountOverflow { .. } => {
-                PersistenceErrorKind::Constraint
-            }
+            Self::HistoryAliasContextConflict { .. }
+            | Self::TransactionBodyConflict { .. }
+            | Self::NetAmountOverflow { .. } => PersistenceErrorKind::Constraint,
             // Refinery surfaces FK / constraint problems through rusqlite;
             // if that path leaks through here the typed variant lives in
             // `Self::Migration`, which we leave as `Fatal` since a
@@ -912,7 +928,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -980,6 +997,7 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::AssetLockStatusMismatch { .. } => "asset_lock_status_mismatch",
             Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
+            Self::HistoryAliasContextConflict { .. } => "history_alias_context_conflict",
             Self::TransactionBodyConflict { .. } => "transaction_body_conflict",
             Self::UnknownWalletNetwork { .. } => "unknown_wallet_network",
             Self::NetAmountOverflow { .. } => "net_amount_overflow",
@@ -1003,6 +1021,7 @@ impl WalletStorageError {
             Self::EmptyUtxoScript { .. } => "empty_utxo_script",
             Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
+            Self::SpendAuthorization(_) => "spend_authorization",
         }
     }
 }

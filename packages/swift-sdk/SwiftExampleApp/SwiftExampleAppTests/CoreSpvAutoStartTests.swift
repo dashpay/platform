@@ -54,6 +54,27 @@ final class CoreSpvAutoStartTests: XCTestCase {
         XCTAssertFalse(decision.shouldStart)
     }
 
+    // TODO(macOS-validation): Run startup gate tests with the SwiftExampleApp target.
+    func testShouldStartForPersistedWalletsWhenHistoryLoadHasFailed() {
+        let decision = CoreSpvAutoStart.decision(
+            alreadyLatched: false,
+            hasWallets: false,
+            hasPersistedWallets: true,
+            spvRunning: false
+        )
+        XCTAssertEqual(decision, .startAndLatch)
+    }
+
+    func testShouldKeepRunningSpvForAnExplicitHistoryLoadRetry() {
+        let decision = CoreSpvAutoStart.decision(
+            alreadyLatched: false,
+            hasWallets: false,
+            hasPersistedWallets: true,
+            spvRunning: true
+        )
+        XCTAssertEqual(decision, .latchOnly)
+    }
+
     // MARK: - Already-running gate latches without starting
 
     func testAlreadyRunningLatchesButDoesNotStart() {

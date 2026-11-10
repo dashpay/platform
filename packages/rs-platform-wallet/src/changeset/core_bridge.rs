@@ -71,6 +71,7 @@ use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::asset_lock::sync::reconstruction;
 use crate::wallet::identity::network::sent_payment_status_for_record;
 use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+use crate::wallet::identity::PaymentEntry;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Maximum number of `WalletEvent`s folded into a single
@@ -1742,17 +1743,11 @@ async fn build_core_changeset(
             ..
         } => {
             let mut cs = CoreChangeSet::default();
-            // Inserted records bring fresh UTXOs and may consume previous ones.
-            for r in inserted {
+            // Corrections can discover owned inputs or outputs after first observation.
+            for r in inserted.iter().chain(updated.iter()) {
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
             }
-            // Updated records (re-confirmation, IS-lock applied to a known
-            // mempool tx, etc.) don't usually change UTXO topology — the
-            // record's content does change though, so re-emit it.
-            // Matured coinbase records likewise: no UTXO topology change,
-            // just a status update for the persister.
-            //
             // Contact watch-only records are filtered out of all three
             // lists: re-emitting one on confirmation would re-clobber the
             // funding account's row with an incoming/positive
@@ -2172,6 +2167,11 @@ fn verdict_for(
         return None;
     }
     next_sent_payment_status(entry.status, evidence)
+}
+
+/// Shared payment verdict when replay retires a conflicting transaction.
+pub fn swept_payment_status(entry: &PaymentEntry) -> Option<PaymentStatus> {
+    verdict_for(entry, SentPaymentEvidence::Swept)
 }
 
 /// Rebuild the "addresses marked used" delta plus the post-batch
@@ -4058,6 +4058,16 @@ mod contact_watch_only_projection_tests {
 
         assert_eq!(cs.records.len(), 1);
         assert_eq!(cs.records[0].direction, TransactionDirection::Outgoing);
+        assert_eq!(
+            cs.spent_utxos.len(),
+            1,
+            "updated records project recognized inputs"
+        );
+        assert_eq!(
+            cs.new_utxos.len(),
+            1,
+            "updated records project owned change"
+        );
     }
 
     #[tokio::test]

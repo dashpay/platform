@@ -8,14 +8,17 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn,
-    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
-    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    ApplyReplayEffectsFn, FFIPersister, FreeCoreHistoryForAccountingFn, FreeCoreInstantLockFn,
+    FreeReplayClaimsFn, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadAssetLockShieldedRecipientFn, LoadCoreHistoryForAccountingFn, LoadCoreInstantLockFn,
+    LoadIdentityBalanceBlockTimeFn, LoadReplayClaimsFn, LoadTrackedMasternodesFn,
+    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn,
+    PersistCoreHistoryAccountedFn, PersistCoreInstantLockFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn, PersistTransactionAccountingFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
     PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    ReplayWalletFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -299,6 +302,29 @@ unsafe fn persistence_extension_callbacks(
             on_load_asset_lock_shielded_recipient_fn,
             LoadAssetLockShieldedRecipientFn
         ),
+        persist_transaction_accounting: slot!(
+            on_persist_transaction_accounting_fn,
+            PersistTransactionAccountingFn
+        ),
+        load_core_history_for_accounting: slot!(
+            on_load_core_history_for_accounting_fn,
+            LoadCoreHistoryForAccountingFn
+        ),
+        load_core_history_for_accounting_free: slot!(
+            on_load_core_history_for_accounting_free_fn,
+            FreeCoreHistoryForAccountingFn
+        ),
+        persist_core_history_accounted: slot!(
+            on_persist_core_history_accounted_fn,
+            PersistCoreHistoryAccountedFn
+        ),
+        persist_core_instant_lock: slot!(on_persist_core_instant_lock_fn, PersistCoreInstantLockFn),
+        load_core_instant_lock: slot!(on_load_core_instant_lock_fn, LoadCoreInstantLockFn),
+        free_core_instant_lock: slot!(on_load_core_instant_lock_free_fn, FreeCoreInstantLockFn),
+        replay_wallet: slot!(on_replay_wallet_fn, ReplayWalletFn),
+        load_replay_claims: slot!(on_load_replay_claims_fn, LoadReplayClaimsFn),
+        free_replay_claims: slot!(on_load_replay_claims_free_fn, FreeReplayClaimsFn),
+        apply_replay_effects: slot!(on_apply_replay_effects_fn, ApplyReplayEffectsFn),
     }
 }
 
@@ -679,6 +705,10 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 /// produce wallet handles — the caller should follow up with
 /// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
 /// about.
+///
+/// History requiring InstantLock evidence needs a started SPV client. Missing
+/// evidence returns a load error with transaction IDs; keep SPV running and
+/// retry explicitly after synchronization. Startup alone does not prove readiness.
 ///
 /// On error the handle stays valid and the manager is unchanged: fix the
 /// store and call again, or destroy the manager and reconstruct it. Reopening
@@ -1382,6 +1412,55 @@ mod tests {
     }
 
     #[test]
+    fn should_size_gate_raw_instant_lock_callbacks_after_accounting() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut *const u8,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const u8, _: usize) {}
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_core_instant_lock_fn: Some(persist),
+            on_load_core_instant_lock_fn: Some(load),
+            on_load_core_instant_lock_free_fn: Some(free),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_some());
+        assert!(parsed.load_core_instant_lock.is_some());
+        assert!(parsed.free_core_instant_lock.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_core_instant_lock_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_none());
+        assert!(parsed.load_core_instant_lock.is_none());
+        assert!(parsed.free_core_instant_lock.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_instant_lock_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_core_instant_lock.is_some());
+        assert!(parsed.load_core_instant_lock.is_some());
+        assert!(parsed.free_core_instant_lock.is_none());
+    }
+
+    #[test]
     fn should_size_gate_asset_lock_operation_id_slots_independently() {
         unsafe extern "C" fn persist(
             _: *mut c_void,
@@ -1422,6 +1501,137 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_asset_lock_operation_id.is_none());
         assert!(parsed.load_asset_lock_operation_id.is_none());
+    }
+
+    /// Each transaction-accounting slot is read only when the host's
+    /// `struct_size` covers it, so a host built before any of them simply
+    /// never has them read.
+    #[test]
+    fn should_size_gate_transaction_accounting_slots_independently() {
+        use crate::core_wallet_types::{CoreHistoryTransactionFFI, TransactionAccountingFFI};
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const TransactionAccountingFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut *const CoreHistoryTransactionFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const CoreHistoryTransactionFFI, _: usize) {}
+        unsafe extern "C" fn accounted(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_transaction_accounting_fn: Some(persist),
+            on_load_core_history_for_accounting_fn: Some(load),
+            on_load_core_history_for_accounting_free_fn: Some(free),
+            on_persist_core_history_accounted_fn: Some(accounted),
+            ..Default::default()
+        };
+        let present = |ext: &PersistenceCallbacksExtension| {
+            let parsed = unsafe { persistence_extension_callbacks(ext) };
+            [
+                parsed.persist_transaction_accounting.is_some(),
+                parsed.load_core_history_for_accounting.is_some(),
+                parsed.load_core_history_for_accounting_free.is_some(),
+                parsed.persist_core_history_accounted.is_some(),
+            ]
+        };
+        assert_eq!(present(&ext), [true; 4]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_core_history_accounted_fn
+        );
+        assert_eq!(present(&ext), [true, true, true, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_history_for_accounting_free_fn
+        );
+        assert_eq!(present(&ext), [true, true, false, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_core_history_for_accounting_fn
+        );
+        assert_eq!(present(&ext), [true, false, false, false]);
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_transaction_accounting_fn
+        );
+        assert_eq!(present(&ext), [false; 4]);
+    }
+
+    #[test]
+    fn should_size_gate_every_atomic_replay_callback_without_reading_a_partial_slot() {
+        unsafe extern "C" fn scope(
+            _: *mut c_void,
+            _: *const u8,
+            _: ReplayOperationFn,
+            _: *mut c_void,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const ReplayClaimRestoreFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, _: *const ReplayClaimRestoreFFI, _: usize) {}
+        unsafe extern "C" fn apply(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const HistoryReplayEffectsFFI,
+        ) -> i32 {
+            0
+        }
+        use crate::persistence::{
+            HistoryReplayEffectsFFI, ReplayClaimRestoreFFI, ReplayOperationFn,
+        };
+        let mut ext = PersistenceCallbacksExtension {
+            on_replay_wallet_fn: Some(scope),
+            on_load_replay_claims_fn: Some(load),
+            on_load_replay_claims_free_fn: Some(free),
+            on_apply_replay_effects_fn: Some(apply),
+            ..Default::default()
+        };
+        let present = |ext: &PersistenceCallbacksExtension| {
+            let parsed = unsafe { persistence_extension_callbacks(ext) };
+            [
+                parsed.replay_wallet.is_some(),
+                parsed.load_replay_claims.is_some(),
+                parsed.free_replay_claims.is_some(),
+                parsed.apply_replay_effects.is_some(),
+            ]
+        };
+        assert_eq!(present(&ext), [true; 4]);
+        for (index, offset) in [
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_replay_wallet_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_load_replay_claims_free_fn),
+            std::mem::offset_of!(PersistenceCallbacksExtension, on_apply_replay_effects_fn),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for length in [
+                offset,
+                offset + std::mem::size_of::<Option<ReplayWalletFn>>() - 1,
+            ] {
+                ext.struct_size = length;
+                assert_eq!(present(&ext), std::array::from_fn(|slot| slot < index));
+            }
+        }
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height
