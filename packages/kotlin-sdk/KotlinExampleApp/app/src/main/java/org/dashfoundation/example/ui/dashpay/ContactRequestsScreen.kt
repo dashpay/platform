@@ -38,7 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -106,7 +107,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     // The automatic refreshes made since the wallet's private payments were
-    // last read restored (`PrivatePaymentsRecovery.rechecks`).
+    // last read restored (`PrivatePaymentsRecovery.recheckDelayMs`).
     var readinessRechecks by remember { mutableStateOf(0) }
     // What the last private-store refresh has to tell the user, if anything.
     var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
@@ -184,11 +185,11 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
         walletPending = walletPending
             .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
             .recorded(read, contactIds.map { it.toHex() })
-        // While the payments stay unrestored, refresh again after a pause: a
-        // restoration the wallet deferred behind a busy store completes later
-        // and changes no key of this effect.
-        if (PrivatePaymentsRecovery.rechecks(walletPending.readiness, readinessRechecks)) {
-            delay(PrivatePaymentsRecovery.RECHECK_INTERVAL_MS)
+        // While the payments stay unrestored, refresh again after a pause, for
+        // as long as the screen is shown: a restoration the wallet deferred
+        // behind a busy store completes later and changes no key of this
+        // effect.
+        if (PrivatePaymentsRecovery.waitForRecheck(walletPending.readiness, readinessRechecks)) {
             readinessRechecks++
             pendingReadVersion++
         } else if (walletPending.readiness?.privatePaymentsRestored == true) {
@@ -199,6 +200,14 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     // read the readiness again then.
     LaunchedEffect(container.shieldedService) {
         container.shieldedService.isBound.collect { pendingReadVersion++ }
+    }
+    // A deferred restoration runs once the shielded scan holding the store
+    // ends: refresh then too, ahead of the timer.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.state
+            .map { it.isSyncing }
+            .distinctUntilChanged()
+            .collect { syncing -> if (!syncing) pendingReadVersion++ }
     }
     LaunchedEffect(manager) {
         manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }

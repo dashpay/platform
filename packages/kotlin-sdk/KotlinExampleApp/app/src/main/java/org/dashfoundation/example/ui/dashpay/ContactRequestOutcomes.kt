@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.dashpay
 
+import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.tokens.Dashpay
 
@@ -246,18 +247,37 @@ data class PrivateRepliesPendingSnapshot(
  * it whenever the payments are not restored, or the store did not open, and
  * only then reads the readiness it shows: the readiness is read after the
  * attempt, never cached from before it. While the payments stay unrestored (a
- * deferred restoration completes later, changing nothing a screen observes),
- * the screen refreshes again on a bounded timer, so the gate lifts without a
- * bind, a restart or a submitted request. The screens change no hold
- * themselves.
+ * deferred restoration completes later, changing nothing a screen observes but
+ * the end of the shielded scan that held the store), the screen keeps
+ * refreshing on a timer for as long as it is shown, and again when a shielded
+ * sync pass ends, so the gate lifts without a bind, a restart or a submitted
+ * request. The screens change no hold themselves.
  * ← Swift `PrivatePaymentsRecovery` (`ContactRequestOutcomes.swift`).
  */
 object PrivatePaymentsRecovery {
-    /** How many times a screen refreshes again on its own while the payments stay unrestored. */
-    const val RECHECK_LIMIT = 20
+    /*
+     * The cadence of the automatic refreshes while the payments stay
+     * unrestored: every FAST_RECHECK_INTERVAL_MS for the first FAST_RECHECKS
+     * of them (a minute), then every SLOW_RECHECK_INTERVAL_MS, for as long as
+     * the screen is shown. It never stops on a count: a shielded scan can hold
+     * the store for minutes, and the wallet runs a restoration it deferred
+     * only once the scan frees it. Each refresh is local and cheap, reads of
+     * in-memory wallet state and a repeat `configureShielded` that checks
+     * which wallets are still held and queues at most one deferred
+     * restoration per wallet, with no network call, so an open-ended poll at
+     * this cadence costs little. It stops when the readiness reads restored
+     * or the screen leaves the composition; a screen for another identity
+     * starts its own.
+     */
 
-    /** How long a screen waits before it refreshes again. */
-    const val RECHECK_INTERVAL_MS = 3_000L
+    /** The automatic refreshes made at the fast cadence. */
+    const val FAST_RECHECKS = 20
+
+    /** The pause between automatic refreshes for the first minute. */
+    const val FAST_RECHECK_INTERVAL_MS = 3_000L
+
+    /** The pause between automatic refreshes after the first minute. */
+    const val SLOW_RECHECK_INTERVAL_MS = 15_000L
 
     /**
      * Whether a refresh asks the wallet to retry before it reads the
@@ -268,13 +288,31 @@ object PrivatePaymentsRecovery {
         storeFailure != null || readiness?.privatePaymentsRestored == false
 
     /**
-     * Whether a screen refreshes again on its own after [attempt] automatic
-     * refreshes: the payments are still not restored and the limit is not
-     * reached. A failed read (null) is left to the next refresh the screen
-     * makes anyway.
+     * The pause before the next automatic refresh after [attempt] of them, or
+     * null when there is none: the readiness reads restored, or no read
+     * succeeded yet (left to the refresh the screen makes anyway).
      */
-    fun rechecks(after: Dashpay.PrivateContactReadiness?, attempt: Int): Boolean =
-        after?.privatePaymentsRestored == false && attempt < RECHECK_LIMIT
+    fun recheckDelayMs(after: Dashpay.PrivateContactReadiness?, attempt: Int): Long? = when {
+        after?.privatePaymentsRestored != false -> null
+        attempt < FAST_RECHECKS -> FAST_RECHECK_INTERVAL_MS
+        else -> SLOW_RECHECK_INTERVAL_MS
+    }
+
+    /**
+     * Wait for the next automatic refresh and say whether to make it: false at
+     * once when none is due ([recheckDelayMs]), true after the pause. The
+     * screens pass `delay`; a screen leaving the composition cancels the wait,
+     * and the cancellation ends its effect.
+     */
+    suspend fun waitForRecheck(
+        after: Dashpay.PrivateContactReadiness?,
+        attempt: Int,
+        sleep: suspend (Long) -> Unit = { delay(it) },
+    ): Boolean {
+        val pause = recheckDelayMs(after, attempt) ?: return false
+        sleep(pause)
+        return true
+    }
 
     /** A refresh's readiness read, null when it failed, and why the store did not open, or null. */
     data class Refreshed(val read: PrivateContactReadinessRead?, val storeFailure: String?)

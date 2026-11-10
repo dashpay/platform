@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -117,7 +119,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var isSyncingPrivate by remember { mutableStateOf(false) }
     var pendingReadVersion by remember { mutableStateOf(0) }
     // The automatic refreshes made since the wallet's private payments were
-    // last read restored (`PrivatePaymentsRecovery.rechecks`).
+    // last read restored (`PrivatePaymentsRecovery.recheckDelayMs`).
     var readinessRechecks by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
@@ -211,12 +213,12 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
         recipientPending = recipientPending
             .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
             .recorded(pendingRead, contactIds.map { it.toHex() })
-        // While the payments stay unrestored, refresh again after a pause: a
-        // restoration the wallet deferred behind a busy store completes later
-        // and changes no key of this effect (Add Contact observes neither a
-        // bind nor a DashPay sync for it).
-        if (PrivatePaymentsRecovery.rechecks(recipientPending.readiness, readinessRechecks)) {
-            delay(PrivatePaymentsRecovery.RECHECK_INTERVAL_MS)
+        // While the payments stay unrestored, refresh again after a pause, for
+        // as long as the screen is shown: a restoration the wallet deferred
+        // behind a busy store completes later and changes no key of this
+        // effect (Add Contact observes neither a bind nor a DashPay sync for
+        // it).
+        if (PrivatePaymentsRecovery.waitForRecheck(recipientPending.readiness, readinessRechecks)) {
             readinessRechecks++
             pendingReadVersion++
         } else if (recipientPending.readiness?.privatePaymentsRestored == true) {
@@ -227,6 +229,14 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     // read the readiness again then.
     LaunchedEffect(container.shieldedService) {
         container.shieldedService.isBound.collect { pendingReadVersion++ }
+    }
+    // A deferred restoration runs once the shielded scan holding the store
+    // ends: refresh then too, ahead of the timer.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.state
+            .map { it.isSyncing }
+            .distinctUntilChanged()
+            .collect { syncing -> if (!syncing) pendingReadVersion++ }
     }
     LaunchedEffect(recipientHex) {
         val recipient = resolvedRecipient

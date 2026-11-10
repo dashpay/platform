@@ -1,11 +1,13 @@
 package org.dashfoundation.example.ui.dashpay
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.example.ui.wallet.shieldedOperationMayHaveGoneThrough
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -228,7 +230,7 @@ class ContactRequestOutcomesTest {
         assertNull(refreshed.storeFailure)
         assertFalse(snapshot.allowsSubmission("01"))
         assertEquals("the journal could not be read", snapshot.restoreFailure)
-        assertTrue(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 0))
+        assertNotNull(PrivatePaymentsRecovery.recheckDelayMs(snapshot.readiness, 0))
 
         // The failure was transient: the next refresh asks first, the retry
         // restores, and the readiness shown is the one read after it.
@@ -242,7 +244,7 @@ class ContactRequestOutcomesTest {
         assertFalse(snapshot.isRestoringPrivatePayments)
         assertNull(snapshot.restoreFailure)
         assertTrue("the gate lifts on the refresh alone", snapshot.allowsSubmission("01"))
-        assertFalse(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 1))
+        assertNull(PrivatePaymentsRecovery.recheckDelayMs(snapshot.readiness, 1))
     }
 
     /**
@@ -320,33 +322,60 @@ class ContactRequestOutcomesTest {
     }
 
     /**
-     * A restoration the wallet deferred behind a busy store completes later,
-     * changing no key of the screen's effect: the screen refreshes again on
-     * its own, bounded, while the payments stay unrestored, and the refresh
-     * after the deferred restoration lifts the gate.
+     * A restoration the wallet deferred behind a scan that holds the store for
+     * minutes: the screen keeps refreshing past the first minute (every 3 s
+     * for 20 refreshes, then every 15 s, with no last one), and the refresh
+     * after the deferred restoration completes re-enables submission and
+     * schedules no more.
      */
     @Test
-    fun shouldRefreshAgainWhileARestorationIsDeferred() = runTest {
+    fun shouldKeepRefreshingWhileARestorationStaysDeferred() = runTest {
         var deferredDone = false
         val read: suspend () -> PrivateContactReadinessRead? = {
             PrivateContactReadinessRead(readiness(restored = deferredDone, storeRead = true), null)
         }
         var snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
-        var refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) { null }
-        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
-        assertFalse(snapshot.allowsSubmission("01"))
-        assertTrue(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 0))
-        assertFalse(
-            "bounded",
-            PrivatePaymentsRecovery.rechecks(snapshot.readiness, PrivatePaymentsRecovery.RECHECK_LIMIT),
-        )
-        assertFalse(PrivatePaymentsRecovery.rechecks(null, 0))
-
-        deferredDone = true
-        refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) { null }
-        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        val pauses = mutableListOf<Long>()
+        var refreshes = 0
+        // Well past the first minute: 200 automatic refreshes, about 46 minutes.
+        for (attempt in 0 until 200) {
+            val refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) { null }
+            snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+            refreshes++
+            if (attempt == 150) deferredDone = true
+            if (!PrivatePaymentsRecovery.waitForRecheck(snapshot.readiness, attempt) { pauses += it }) break
+        }
+        assertEquals("it kept refreshing until the restoration completed", 152, refreshes)
         assertTrue(snapshot.allowsSubmission("01"))
-        assertFalse(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 1))
+        assertEquals("no pause once the payments read restored", 151, pauses.size)
+        assertEquals(List(20) { PrivatePaymentsRecovery.FAST_RECHECK_INTERVAL_MS }, pauses.take(20))
+        assertEquals(setOf(PrivatePaymentsRecovery.SLOW_RECHECK_INTERVAL_MS), pauses.drop(20).toSet())
+    }
+
+    /**
+     * The timer stops when the payments read restored, before any read
+     * succeeded, and when the screen leaves the composition (its wait is
+     * cancelled), however many refreshes came before.
+     */
+    @Test
+    fun shouldStopRefreshingWhenRestoredOrWhenTheScreenGoesAway() = runTest {
+        var slept = false
+        assertFalse(PrivatePaymentsRecovery.waitForRecheck(readiness(restored = true, storeRead = true), 0) { slept = true })
+        assertFalse("nothing is due once restored", slept)
+        assertFalse(PrivatePaymentsRecovery.waitForRecheck(null, 0) { slept = true })
+        assertFalse(slept)
+        var refreshedAfter = false
+        try {
+            if (PrivatePaymentsRecovery.waitForRecheck(readiness(restored = false, storeRead = true), 500) {
+                    throw CancellationException("the screen left the composition")
+                }
+            ) {
+                refreshedAfter = true
+            }
+        } catch (e: CancellationException) {
+            // The screen's effect ends with its cancelled wait.
+        }
+        assertFalse("a screen that went away refreshes no more", refreshedAfter)
     }
 
     private fun readiness(
