@@ -105,6 +105,45 @@ impl PersistenceCapabilities {
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
+    /// A stored `CoreChangeSet` whose `truncations` are non-empty is durably
+    /// applied, before the rest of the same changeset and atomically with
+    /// it: each removed transaction and every output it created are gone,
+    /// each kept transaction is stored as unconfirmed with its outputs
+    /// InstantSend-locked, each restored outpoint is unspent, and stored
+    /// `synced_height` / `last_processed_height` above the fork height are
+    /// lowered to it. On the FFI surface truncations travel through their
+    /// own size-negotiated extension callback, like sweeps.
+    ///
+    /// # Unlike `CORE_SWEEP_REMOVAL`, absence does not fault the wallet
+    ///
+    /// A persister without this bit is simply not handed the truncation; the
+    /// rest of the round, its watermark included, is stored as usual. The
+    /// sweep gate freezes the watermark because that makes the next launch
+    /// re-scan and re-emit the sweep. Nothing re-emits a truncation: the
+    /// fork is detected once, against headers that are already replaced, so
+    /// a frozen watermark would cost the host its durable progress and
+    /// recover nothing. Such a store keeps the replaced branch until the
+    /// host rescans.
+    ///
+    /// # A truncation is owed until it is applied
+    ///
+    /// For the same reason a truncation a `store` rejected is offered again
+    /// ahead of the wallet's next round, and so is never skipped: while it
+    /// cannot be applied, every later round of that wallet fails with it.
+    /// That includes a rejection whose outcome the backend could not vouch
+    /// for. Over a round that landed in part, the truncation takes away only
+    /// what that round stored above the fork, which the rejection already
+    /// counts as unstored, and the next start scans it back in from the
+    /// height the truncation lowered.
+    ///
+    /// A backend whose
+    /// [`store_transient_is_reissuable`](super::PlatformWalletPersistence::store_transient_is_reissuable)
+    /// is `false` is not offered a truncation again after a transient
+    /// failure, since it may hold the round for its own retry. Attesting
+    /// this bit therefore obliges such a backend to keep that truncation
+    /// until it has applied it, including when it discards the rest of what
+    /// it held.
+    pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 15);
 
     /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
     /// Missing or malformed persistence data fails load rather than becoming an
@@ -124,7 +163,7 @@ impl PersistenceCapabilities {
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 14;
+    const HIGHEST_DECLARED_BIT: u32 = 15;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -232,6 +271,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS,
                 "asset_lock_shielded_recipients",
             ),
+            (
+                PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+                "core_chain_truncation",
+            ),
         ];
 
         KNOWN
@@ -249,7 +292,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS.bits()
+    PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -286,6 +329,10 @@ mod tests {
             0x4000
         );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
+        assert_eq!(
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION.bits(),
+            0x8000
+        );
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281

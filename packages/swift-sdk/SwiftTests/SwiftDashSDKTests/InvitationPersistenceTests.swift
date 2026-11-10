@@ -71,6 +71,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // Shielded recipients: the handler wires both recipient slots and
             // lands the bytes on `PersistentAssetLock.shieldedRecipientRaw43`.
             | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
+            // Chain truncations: the handler wires
+            // `on_persist_wallet_changeset_truncations_fn` and cuts the
+            // mirror back in the round that carries them.
+            | PlatformWalletPersistenceCapabilities.coreChainTruncation
 
         XCTAssertEqual(
             capabilities.version,
