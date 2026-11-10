@@ -757,6 +757,46 @@ mod before_protocol_version_15 {
         );
     }
 
+    /// The prover and the verifier generations protocol version 14 selects prove and verify
+    /// updates that embed their contract. They refuse a delta, which embeds none.
+    #[test]
+    fn should_refuse_to_prove_or_verify_a_delta() {
+        let platform_version_14 =
+            PlatformVersion::get(14).expect("expected protocol version 14 to exist");
+        let platform = platform_at_14();
+        let contract = get_data_contract_fixture(None, 0, 14).data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version_14,
+            )
+            .expect("expected to store the contract");
+        let transition: StateTransition = delta(&contract, &extended(&contract)).into();
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&transition, None, platform_version_14)
+            .expect("expected the prover to run");
+        assert_matches!(proof.errors.as_slice(), [ProofError::InvalidTransition(_)]);
+
+        let known_contract = Arc::new(contract);
+        assert_matches!(
+            Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &[],
+                &|_| Ok(Some(known_contract.clone())),
+                platform_version_14,
+            ),
+            Err(DriveError::Proof(ProofError::InvalidTransition(_)))
+        );
+    }
+
     #[test]
     fn should_refuse_a_delta_in_every_validation_with_a_consensus_error() {
         let platform_version_14 =
