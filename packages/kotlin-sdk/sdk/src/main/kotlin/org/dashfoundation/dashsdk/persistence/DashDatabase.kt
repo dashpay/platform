@@ -18,6 +18,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
+import org.dashfoundation.dashsdk.persistence.dao.PrivateContactScanStateDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
 import org.dashfoundation.dashsdk.persistence.dao.StorageCountsDao
@@ -45,6 +46,8 @@ import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateContactRequestsPositionEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateShieldedAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PropertyEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
@@ -179,9 +182,17 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * treated the account as rotated, tore it down and rebuilt it — and that
  * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
  * native rebuilds once, stamps it, and never again.
+ *
+ * Version 16 (private contact request scan state): adds the
+ * `private_contact_requests_positions` and `private_shielded_addresses`
+ * tables, the scan state native writes through
+ * `onPersistPrivateContactScanState` and reads back through
+ * `onLoadPrivateContactScanState`, so a relaunch resumes the private contact
+ * request sync where it stopped. Empty after the migration: the first sync
+ * reads the store from its start, as every sync did before.
  */
 @Database(
-    version = 15,
+    version = 16,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -218,6 +229,8 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         ShieldedSyncStateEntity::class,
         ShieldedViewingKeyEntity::class,
         WalletManagerMetadataEntity::class,
+        PrivateContactRequestsPositionEntity::class,
+        PrivateShieldedAddressEntity::class,
     ],
 )
 @TypeConverters(Converters::class)
@@ -241,6 +254,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun shieldedDao(): ShieldedDao
     abstract fun walletManagerMetadataDao(): WalletManagerMetadataDao
     abstract fun storageCountsDao(): StorageCountsDao
+    abstract fun privateContactScanStateDao(): PrivateContactScanStateDao
 
     companion object {
         const val DATABASE_NAME: String = "dash-sdk.db"
@@ -717,6 +731,28 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v15 -> v16: the two private contact request scan state tables, see
+         * the version-16 class doc above. Created empty.
+         */
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `private_contact_requests_positions` (" +
+                        "`walletId` BLOB NOT NULL, `identityId` BLOB NOT NULL, " +
+                        "`position` INTEGER NOT NULL, `keyFingerprint` BLOB NOT NULL, " +
+                        "`privatePaymentsUnresolved` INTEGER NOT NULL DEFAULT 0, " +
+                        "PRIMARY KEY(`walletId`, `identityId`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `private_shielded_addresses` (" +
+                        "`walletId` BLOB NOT NULL, `ownerId` BLOB NOT NULL, " +
+                        "`contactId` BLOB NOT NULL, `address` BLOB NOT NULL, " +
+                        "PRIMARY KEY(`walletId`, `ownerId`, `contactId`))",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -746,6 +782,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                 .build()
 

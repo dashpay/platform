@@ -4,6 +4,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.DashSDKException
+import org.dashfoundation.dashsdk.ffi.DashpayNative
+import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
@@ -11,6 +13,7 @@ import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -87,6 +90,62 @@ class FfiSmokeTest {
     }
 
     /**
+     * DashPay private contact requests (protocol version 15): the
+     * `DashpayNative` symbols bind with the descriptors Kotlin declares, and
+     * bad input surfaces as a mapped [DashSDKException] rather than a crash.
+     * A null resolver is refused before any wallet lookup, and a shielded
+     * address that is not 43 bytes never reaches the FFI (which reads
+     * exactly 43). The explicit private send and private-reply accept are
+     * exported only by a shielded build, so they are probed only there; the
+     * sync, the reads and the in-kind accept are exported by every build.
+     * The flows themselves need a protocol version 15 network with shielded
+     * funds; their Rust side is covered by the platform-wallet and
+     * platform-wallet-ffi tests.
+     */
+    @Test
+    fun privateContactRequestSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.syncPrivateContactRequests(0L, 0L, 1)
+        }
+        if (Sdk.hasShielded()) {
+            assertThrows(DashSDKException::class.java) {
+                DashpayNative.sendPrivateContactRequest(
+                    0L, ByteArray(32), 0L, 0, ByteArray(32), ByteArray(32),
+                    null, null, null, 0L,
+                )
+            }
+            assertThrows(DashSDKException::class.java) {
+                DashpayNative.acceptPrivateContactRequest(
+                    0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+                )
+            }
+        }
+        // An unknown wallet handle is NotFound.
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.privateContactReadiness(0L, ByteArray(32))
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.acceptContactRequestReplyingInKind(
+                0L, ByteArray(32), 0L, 0, 0L, ByteArray(42), 0L,
+            )
+        }
+        // The private contact read is benign on a miss (null, as Swift's
+        // nil); the pair-hold, public-unconfirmed and restore-failure reads
+        // report an unknown wallet handle.
+        assertNull(DashpayNative.managedIdentityPrivateContact(0L, ByteArray(32)))
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.privatePairHeld(0L, ByteArray(32), ByteArray(32))
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.publicContactRequestUnconfirmed(0L, ByteArray(32), ByteArray(32))
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.privatePaymentsRestoreFailure(0L, ByteArray(32))
+        }
+    }
+
+    /**
      * The #4069 watermark-freeze fault latch surfaced by PR #4314: the
      * `syncFaultDetected` JNI symbol binds, and an invalid manager handle
      * surfaces as the mapped [DashSDKException] rather than a crash. The
@@ -99,6 +158,63 @@ class FfiSmokeTest {
         NativeLoader.ensureLoaded()
         assertThrows(DashSDKException::class.java) {
             WalletManagerNative.syncFaultDetected(0L)
+        }
+    }
+
+    /**
+     * The private contact request scan state needs every override it
+     * depends on, and atomic changesets: JNI wires its slots only for a
+     * bridge that overrides the contact upsert native calls, the
+     * scan-state store, the scan-state load and the scan-state wallet list
+     * (a read position vouches for the requests an inherited no-op contact
+     * writer never stored, and a record kept marked after its wallet's
+     * removal reaches the wallet only through that list), and
+     * the wallet keeps the state only with `ATOMIC_CHANGESETS` too (an
+     * un-ignore stores the sender's removal and the position rewind in one
+     * changeset). JNI always wires the changeset begin and end callbacks,
+     * so the atomic half is the bridge's declaration. A bridge declaring
+     * both but leaving any override inherited, or declaring the scan state
+     * without atomic rounds, has neither; one implementing all four and
+     * declaring both, and the Room handler, keep both.
+     */
+    @Test
+    fun privateContactScanStateCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bits = NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
+            ATOMIC_CHANGESETS
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bits == bits
+
+        assertTrue("every override", effective(ScanStateBridge.Full()))
+        assertFalse("no contact upsert", effective(ScanStateBridge.WithoutContactUpsert()))
+        assertFalse("no scan-state store", effective(ScanStateBridge.WithoutScanStateStore()))
+        assertFalse("no scan-state load", effective(ScanStateBridge.WithoutScanStateLoad()))
+        assertFalse(
+            "no scan-state wallet list",
+            effective(ScanStateBridge.WithoutScanStateWalletList()),
+        )
+        assertFalse(
+            "every override, not declared",
+            effective(object : ScanStateBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = 0L
+            }),
+        )
+        assertFalse(
+            "every override, no atomic changesets",
+            effective(object : ScanStateBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long =
+                    NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertTrue(
+                "the Room handler",
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
         }
     }
 
@@ -127,3 +243,177 @@ class FfiSmokeTest {
         }
     }
 }
+
+/**
+ * Bridges declaring the private contact request scan state with some of the
+ * overrides it depends on, for
+ * [FfiSmokeTest.privateContactScanStateCapabilityNeedsEveryOverride]. Each
+ * concrete class declares exactly the overrides its name says.
+ */
+private abstract class ScanStateBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or ATOMIC_CHANGESETS
+
+    open class Full : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+    }
+
+    class WithoutContactUpsert : ScanStateBridge() {
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+    }
+
+    class WithoutScanStateStore : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+    }
+
+    class WithoutScanStateLoad : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+    }
+
+    class WithoutScanStateWalletList : ScanStateBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistContactUpsert(
+            walletId: ByteArray,
+            ownerId: ByteArray,
+            contactId: ByteArray,
+            isOutgoing: Boolean,
+            senderKeyIndex: Int,
+            recipientKeyIndex: Int,
+            accountReference: Int,
+            encryptedPublicKey: ByteArray,
+            encryptedAccountLabel: ByteArray?,
+            autoAcceptProof: ByteArray?,
+            coreHeightCreatedAt: Int,
+            createdAt: Long,
+            paymentChannelBroken: Boolean,
+            alias: String?,
+            note: String?,
+            isHidden: Boolean,
+            contactAccountLabel: String?,
+            acceptedAccounts: IntArray,
+            hasExternalAccountReference: Boolean,
+            externalAccountReference: Int,
+        ): Int = 0
+
+        override fun onPersistPrivateContactScanState(
+            walletId: ByteArray,
+            positions: ByteArray,
+            addresses: ByteArray,
+            removedAddresses: ByteArray,
+            clearedIdentities: ByteArray,
+        ): Int = 0
+
+        override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+            arrayOf(ByteArray(0), ByteArray(0))
+    }
+}
+
+/** `PersistenceCapabilities::ATOMIC_CHANGESETS` (bit 0). */
+private const val ATOMIC_CHANGESETS: Long = 1L

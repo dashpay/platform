@@ -40,10 +40,10 @@ pub use changeset::{
     IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry, InvitationStatus,
     KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey,
     PendingContactCryptoKind, PendingContactCryptoOp, PlatformAddressBalanceEntry,
-    PlatformAddressChangeSet, PlatformWalletChangeSet, ProviderKeyAccountEntry,
-    ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey, ReceivedContactRequestKey,
-    SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet, WalletMetadataEntry,
-    SHIELDED_RECIPIENT_SIZE,
+    PlatformAddressChangeSet, PlatformWalletChangeSet, PrivateContactRequestsPosition,
+    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey, ProviderPlatformNodePubKey,
+    ReceivedContactRequestKey, SentContactRequestKey, ShieldedRecipientRaw, TokenBalanceChangeSet,
+    WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;

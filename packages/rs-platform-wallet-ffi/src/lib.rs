@@ -71,6 +71,7 @@ pub mod platform_address_sync;
 pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
+pub mod private_contact_request;
 pub mod provider_key_at_index;
 mod runtime;
 pub mod secp256k1_primitives;
@@ -156,6 +157,7 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+pub use private_contact_request::*;
 pub use provider_key_at_index::*;
 pub use secp256k1_primitives::*;
 #[cfg(feature = "shielded")]

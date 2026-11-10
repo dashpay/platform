@@ -14,8 +14,10 @@
 //! decode and validate. `crate::platform::dashpay` does both for DashPay's private contact
 //! requests.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::error::StaleNodeError;
 use crate::platform::private_document_entries::{
@@ -436,8 +438,27 @@ pub struct PrivateDocumentPage {
     pub entries: PrivateDocumentEntries,
 }
 
+/// The heights of the proofs of the reads a page of
+/// [`Sdk::private_document_pages_with_heights`] holds: one read, or a read and those completing
+/// it from where an older snapshot of the store ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrivateDocumentPageHeights {
+    /// The lowest: every read the page holds was proved at or above it, so the store held at
+    /// least the page's entries by then, and an entry absent from it was not appended by then.
+    pub min: u64,
+    /// The highest: no read the page holds was proved above it, so every entry it holds was
+    /// appended at or below it.
+    pub max: u64,
+}
+
 type PageFuture = Pin<Box<dyn Future<Output = Result<PrivateDocumentEntries, Error>> + Send>>;
 type PageStream = Pin<Box<dyn Stream<Item = Result<PrivateDocumentPage, Error>> + Send>>;
+/// A page read with the height of the proof it was read with.
+type HeightedPageFuture =
+    Pin<Box<dyn Future<Output = Result<(PrivateDocumentEntries, u64), Error>> + Send>>;
+type HeightedPageStream = Pin<
+    Box<dyn Stream<Item = Result<(PrivateDocumentPage, PrivateDocumentPageHeights), Error>> + Send>,
+>;
 
 /// Where a walk over a store's pages is.
 enum PageWalk {
@@ -571,6 +592,64 @@ where
             }
         },
     )
+}
+
+/// [`private_document_page_walk`] over `fetch`, which reads a page with the height of its
+/// proof, each page yielded with the lowest and highest heights of the reads it holds: the read
+/// from its start, and those completing it from where an older snapshot ended
+/// ([`whole_chunk_pages`]). A start fetched again keeps the height of its last read, the one
+/// the walk kept.
+fn private_document_page_walk_with_heights<F>(
+    fetch: F,
+    start_position: u64,
+    max_concurrent: usize,
+) -> impl Stream<Item = Result<(PrivateDocumentPage, PrivateDocumentPageHeights), Error>> + Send
+where
+    F: Fn(u64) -> HeightedPageFuture + Clone + Send + Sync + 'static,
+{
+    // The height of the last read from each start, until the page holding
+    // that start is yielded. Pages hold disjoint ranges of positions, and
+    // every read a page holds starts inside its range.
+    let heights: Arc<Mutex<BTreeMap<u64, u64>>> = Arc::default();
+    let read_heights = Arc::clone(&heights);
+    let fetch = move |start: u64| -> PageFuture {
+        let fetch = fetch.clone();
+        let heights = Arc::clone(&read_heights);
+        Box::pin(async move {
+            let (entries, height) = fetch(start).await?;
+            heights
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(start, height);
+            Ok(entries)
+        })
+    };
+    private_document_page_walk(fetch, start_position, max_concurrent).map(move |page| {
+        let page = page?;
+        let start = page.start_position;
+        let end = start
+            .saturating_add(page.entries.entries.len() as u64)
+            .max(start.saturating_add(1));
+        let mut heights = heights.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut read = heights.split_off(&start);
+        let mut later = read.split_off(&end);
+        heights.append(&mut later);
+        drop(heights);
+        let heights = read
+            .contains_key(&start)
+            .then(|| {
+                let min = read.values().min().copied()?;
+                let max = read.values().max().copied()?;
+                Some(PrivateDocumentPageHeights { min, max })
+            })
+            .flatten()
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "no proved height for the private document page from position {start}"
+                ))
+            })?;
+        Ok((page, heights))
+    })
 }
 
 /// How many more times a page whose snapshot of the store ends at or before its start is
@@ -745,6 +824,67 @@ impl Sdk {
                         })
                     };
                     Box::pin(private_document_page_walk(
+                        fetch,
+                        start_position,
+                        max_concurrent,
+                    ))
+                }
+            }
+        })
+    }
+
+    /// [`Self::private_document_pages`], with the heights each page's proofs were made at, from
+    /// the response metadata verified with them ([`PrivateDocumentPageHeights`]). A page
+    /// completed from more than one read, the first from a node behind, carries the lowest and
+    /// the highest of their heights: the lowest for a caller that must show every page, and the
+    /// store's end the first page reports, at or above a height; the highest for one that must
+    /// know a height no entry of the page was appended above. The pages and the walk are those
+    /// of [`Self::private_document_pages`].
+    pub fn private_document_pages_with_heights(
+        &self,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        start_position: u64,
+        max_concurrent: usize,
+    ) -> impl Stream<Item = Result<(PrivateDocumentPage, PrivateDocumentPageHeights), Error>> + Send
+    {
+        let sdk = self.clone();
+        let document_type_name = document_type_name.to_string();
+        let resolve = {
+            let sdk = sdk.clone();
+            let document_type_name = document_type_name.clone();
+            async move {
+                sdk.fetch_private_document_contract(data_contract_id, &document_type_name)
+                    .await
+            }
+        };
+        stream::once(resolve).flat_map(move |resolved| -> HeightedPageStream {
+            match resolved {
+                Err(error) => Box::pin(stream::once(async move { Err(error) })),
+                Ok(_) => {
+                    let sdk = sdk.clone();
+                    let document_type_name = document_type_name.clone();
+                    let fetch = move |start: u64| -> HeightedPageFuture {
+                        let sdk = sdk.clone();
+                        let query = PrivateDocumentEntriesQuery::new(
+                            data_contract_id,
+                            document_type_name.clone(),
+                            start,
+                        );
+                        Box::pin(async move {
+                            let (entries, metadata) =
+                                PrivateDocumentEntries::fetch_with_metadata(&sdk, query, None)
+                                    .await?;
+                            let entries = entries.ok_or_else(|| {
+                                Error::Generic(format!(
+                                    "no page of the private document type of contract \
+                                     {data_contract_id} from position {start}"
+                                ))
+                            })?;
+                            Ok((entries, metadata.height))
+                        })
+                    };
+                    Box::pin(private_document_page_walk_with_heights(
                         fetch,
                         start_position,
                         max_concurrent,
@@ -1438,6 +1578,79 @@ mod tests {
         assert_eq!(positions, (0..30).collect::<Vec<_>>());
     }
 
+    /// A page completed from where an older snapshot ended carries the lower height of its two
+    /// reads as its lowest and the higher as its highest; every other page, the height of its
+    /// own as both.
+    #[tokio::test]
+    async fn should_yield_a_completed_page_with_the_lowest_and_highest_heights_of_its_reads() {
+        let fetch = |start: u64| -> HeightedPageFuture {
+            Box::pin(async move {
+                // The node answering the page from 12 is behind, at height 7: its store held
+                // 14 entries. The rest of that chunk, and every other page, come at height 9.
+                if start == 12 {
+                    return Ok((drive_page(4, 14, start), 7));
+                }
+                Ok((drive_page(4, 30, start), 9))
+            })
+        };
+        let pages: Vec<(PrivateDocumentPage, PrivateDocumentPageHeights)> =
+            private_document_page_walk_with_heights(
+                fetch,
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        let mut positions = Vec::new();
+        for (page, heights) in &pages {
+            let expected = if page.start_position == 12 {
+                PrivateDocumentPageHeights { min: 7, max: 9 }
+            } else {
+                PrivateDocumentPageHeights { min: 9, max: 9 }
+            };
+            assert_eq!(*heights, expected, "page from {}", page.start_position);
+            positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+        }
+        assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// A page fetched again, its first read from a node behind that held no entry from its
+    /// start, carries the height of the read the walk kept.
+    #[tokio::test]
+    async fn should_yield_a_page_fetched_again_at_the_height_of_its_kept_read() {
+        let behind_once = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let fetch = move |start: u64| -> HeightedPageFuture {
+            let behind_once = std::sync::Arc::clone(&behind_once);
+            Box::pin(async move {
+                if start == 8 && behind_once.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    return Ok((drive_page(4, 8, start), 5));
+                }
+                Ok((drive_page(4, 30, start), 9))
+            })
+        };
+        let pages: Vec<(PrivateDocumentPage, PrivateDocumentPageHeights)> =
+            private_document_page_walk_with_heights(
+                fetch,
+                0,
+                MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+            )
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        assert!(
+            pages
+                .iter()
+                .all(|(_, heights)| *heights == PrivateDocumentPageHeights { min: 9, max: 9 }),
+            "{:?}",
+            pages
+                .iter()
+                .map(|(page, heights)| (page.start_position, *heights))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(pages.len(), 8);
+    }
+
     /// A fetch of Drive's pages of a store of 30 entries in chunks of 4 where the fetch from
     /// `behind` is answered, its first `times` times, by a node whose store held `behind`
     /// entries: no entry from there.
@@ -1685,6 +1898,111 @@ mod tests {
                 .flat_map(|page| page.entries.entries.iter().map(|entry| entry.position))
                 .collect::<Vec<_>>(),
             (2..14).collect::<Vec<_>>()
+        );
+    }
+
+    /// Through the SDK, a page completed from where a node behind ended its snapshot carries the
+    /// height of that read as its lowest and the completing read's as its highest.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_stream_a_completed_page_with_the_heights_of_both_its_reads() {
+        use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
+        use crate::SdkBuilder;
+        use dpp::version::PlatformVersion;
+
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(HeldContractProvider::new(
+                Some(contract_with_the_private_type()),
+                false,
+            ))
+            .build()
+            .expect("expected a mock sdk");
+        let contract_id = Identifier::from(CONTRACT_ID);
+        // The node answering the page from 12 is a block behind, at height 8, within the SDK's
+        // tolerance: its store held 14 entries. The rest of that chunk, and every other page,
+        // come at height 9.
+        let query = |start| PrivateDocumentEntriesQuery::new(contract_id, TYPE_NAME, start);
+        for start in [0, 4, 8, 12, 14, 16, 20, 24, 28] {
+            let total = if start == 12 { 14 } else { 30 };
+            sdk.mock()
+                .expect_fetch(query(start), Some(drive_page(4, total, start)))
+                .await
+                .expect("expected to register the page");
+        }
+        sdk.mock()
+            .set_response_height(9)
+            .set_response_height_for::<PrivateDocumentEntries, _>(query(12), 8);
+        let pages: Vec<(PrivateDocumentPage, PrivateDocumentPageHeights)> = sdk
+            .private_document_pages_with_heights(contract_id, TYPE_NAME, 0, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        let mut positions = Vec::new();
+        for (page, heights) in &pages {
+            let expected = if page.start_position == 12 {
+                PrivateDocumentPageHeights { min: 8, max: 9 }
+            } else {
+                PrivateDocumentPageHeights { min: 9, max: 9 }
+            };
+            assert_eq!(*heights, expected, "page from {}", page.start_position);
+            positions.extend(page.entries.entries.iter().map(|entry| entry.position));
+        }
+        assert_eq!(positions, (0..30).collect::<Vec<_>>());
+    }
+
+    /// The pages read with their proved heights are those of the plain stream, in its order,
+    /// each with the height of the response its proof came with.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_stream_each_page_with_its_proved_height() {
+        use crate::platform::private_document_entries::held_contract_provider::HeldContractProvider;
+        use crate::SdkBuilder;
+        use dpp::version::PlatformVersion;
+
+        let mut sdk: Sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(HeldContractProvider::new(
+                Some(contract_with_the_private_type()),
+                false,
+            ))
+            .build()
+            .expect("expected a mock sdk");
+        let contract_id = Identifier::from(CONTRACT_ID);
+        for start in [2, 4, 8, 12] {
+            sdk.mock()
+                .expect_fetch(
+                    PrivateDocumentEntriesQuery::new(contract_id, TYPE_NAME, start),
+                    Some(drive_page(4, 14, start)),
+                )
+                .await
+                .expect("expected to register the page");
+        }
+        let plain: Vec<PrivateDocumentPage> = sdk
+            .private_document_pages(contract_id, TYPE_NAME, 2, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        let with_heights: Vec<(PrivateDocumentPage, PrivateDocumentPageHeights)> = sdk
+            .private_document_pages_with_heights(contract_id, TYPE_NAME, 2, 3)
+            .map(|page| page.expect("every page reads"))
+            .collect()
+            .await;
+        assert_eq!(
+            with_heights
+                .iter()
+                .map(|(page, _)| page.clone())
+                .collect::<Vec<_>>(),
+            plain
+        );
+        // The mock answers every page with the same response metadata.
+        let heights: Vec<PrivateDocumentPageHeights> =
+            with_heights.iter().map(|(_, heights)| *heights).collect();
+        assert_eq!(heights.len(), 4);
+        assert!(heights.iter().all(|heights| heights.min == heights.max));
+        assert!(
+            heights.windows(2).all(|pair| pair[0] == pair[1]),
+            "{heights:?}"
         );
     }
 

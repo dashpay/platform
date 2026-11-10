@@ -1,15 +1,21 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::{PlatformVersion, ProtocolVersion};
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C> {
-    /// Clears stale contract fees and runs protocol activation events before migrating history.
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
+    /// Clears stale contract fees and runs activation, including operator-payout reconciliation,
+    /// before migrating history in the same transaction.
     pub(super) fn perform_events_on_first_block_of_protocol_change_v3(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -17,6 +23,7 @@ impl<C> Platform<C> {
     ) -> Result<(), Error> {
         self.perform_events_on_first_block_of_protocol_change_v2(
             platform_state,
+            block_platform_state,
             block_info,
             transaction,
             previous_protocol_version,
@@ -101,6 +108,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let state = platform.state.load();
         let dpns = load_system_data_contract(SystemDataContract::DPNS, old).unwrap();
@@ -165,6 +173,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &state,
+                    &mut PlatformState::clone(&state),
                     &BlockInfo::default_with_time(3000),
                     &transaction,
                     14,
@@ -285,6 +294,7 @@ mod tests {
         platform
             .perform_events_on_first_block_of_protocol_change_v3(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &BlockInfo::default(),
                 &transaction,
                 14,
@@ -298,6 +308,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let fresh = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
@@ -311,6 +322,7 @@ mod tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
                 &BlockInfo::default_with_time(3000),
                 &transaction,
                 14,

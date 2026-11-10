@@ -690,13 +690,63 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v15 -> v16 creates the two private contact request scan state tables
+     * empty (the first sync reads the store from its start) and leaves the
+     * existing rows alone; rows written afterwards keep every column,
+     * a full-width position included.
+     */
+    @Test
+    fun migrate15To16AddsPrivateContactScanStateTables() {
+        helper.createDatabase(dbName, 15).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 2309809, 0, 0, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 16, true, DashDatabase.MIGRATION_15_16)
+
+        db.query("SELECT COUNT(*) FROM private_contact_requests_positions").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+        db.query("SELECT syncedHeight FROM wallets WHERE walletId = x'01'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(2_309_809, c.getInt(0))
+        }
+        db.execSQL(
+            "INSERT INTO private_contact_requests_positions (walletId, identityId, position, " +
+                "keyFingerprint) VALUES (x'01', x'0A', -1, x'03')",
+        )
+        db.execSQL(
+            "INSERT INTO private_shielded_addresses (walletId, ownerId, contactId, address) " +
+                "VALUES (x'01', x'0A', x'0B', x'09')",
+        )
+        db.query(
+            "SELECT position, keyFingerprint, privatePaymentsUnresolved FROM private_contact_requests_positions",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("the u64 bit pattern survives", -1L, c.getLong(0))
+            assertTrue(byteArrayOf(3).contentEquals(c.getBlob(1)))
+            assertEquals("the unresolved marker defaults to clear", 0, c.getInt(2))
+        }
+        db.query("SELECT address FROM private_shielded_addresses WHERE contactId = x'0B'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -709,16 +759,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v15 schema. */
+    /** The full chain from v1 must also land on a valid v16 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            15,
+            16,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -734,6 +785,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_12_13,
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
         ).close()
     }
 }

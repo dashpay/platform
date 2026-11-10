@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
@@ -53,6 +54,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(14)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
     let mut contract = json_document_to_contract(
@@ -135,6 +137,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &upgraded_state,
+            &mut PlatformState::clone(&upgraded_state),
             &BlockInfo::default(),
             &migration,
             14,
@@ -286,6 +289,7 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
     let platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(13)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let contract = DataContractFactory::new(registered_version.protocol_version)
         .unwrap()
@@ -380,6 +384,7 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &upgraded_state,
+            &mut PlatformState::clone(&upgraded_state),
             &BlockInfo::default_with_time(3000),
             &transaction,
             13,
@@ -502,6 +507,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(initial_version.protocol_version)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
     let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
@@ -704,6 +710,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &upgraded,
+                    &mut PlatformState::clone(&upgraded),
                     &BlockInfo::default(),
                     &transaction,
                     14,

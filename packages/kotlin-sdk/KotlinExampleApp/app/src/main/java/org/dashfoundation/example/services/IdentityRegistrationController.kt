@@ -65,10 +65,10 @@ class IdentityRegistrationController(
         data class Failed(val message: String) : Phase
 
         /**
-         * Broadcast-succeeded-but-confirmation-failed terminal state
-         * (shielded only). The identity at [identityId] MAY already be live;
-         * the slot must stay held so a re-submission can't burn funds against
-         * the registered-key-hash check.
+         * Unconfirmed terminal state (shielded only): the transition may have
+         * reached a node and its result is not proved. The identity at
+         * [identityId] MAY already be live; the slot must stay held so a
+         * re-submission can't burn funds against the registered-key-hash check.
          */
         data class Unconfirmed(val identityId: ByteArray, val message: String) : Phase {
             override fun equals(other: Any?): Boolean =
@@ -90,12 +90,13 @@ class IdentityRegistrationController(
 
     /**
      * Which stage a shielded [Phase.Failed] failed at, so the progress
-     * screen can attribute the red marker. Only [BroadcastRejected] is
-     * attributable with confidence; every other failure leaves this null and
-     * the progress screen falls back to its elapsed-time heuristic.
+     * screen can attribute the red marker. Only [BroadcastNotSent] (the
+     * transition was refused before anything was sent) is attributable with
+     * confidence; every other failure leaves this null and the progress
+     * screen falls back to its elapsed-time heuristic.
      * ← Swift `FailureStage`.
      */
-    enum class FailureStage { BroadcastRejected }
+    enum class FailureStage { BroadcastNotSent }
 
     private val _phase = MutableStateFlow<Phase>(Phase.Idle)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
@@ -136,7 +137,7 @@ class IdentityRegistrationController(
     fun submit(
         body: suspend () -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
-        isBroadcastRejected: (Throwable) -> Boolean = { false },
+        isBroadcastNotSent: (Throwable) -> Boolean = { false },
     ) {
         when (_phase.value) {
             is Phase.Idle, is Phase.PreparingKeys, is Phase.Failed -> Unit
@@ -157,7 +158,7 @@ class IdentityRegistrationController(
                     terminalAt = now()
                     _phase.value = Phase.Unconfirmed(unconfirmedId, e.message ?: "Confirmation pending")
                 } else {
-                    _failureStage.value = if (isBroadcastRejected(e)) FailureStage.BroadcastRejected else null
+                    _failureStage.value = if (isBroadcastNotSent(e)) FailureStage.BroadcastNotSent else null
                     terminalAt = now()
                     _phase.value = Phase.Failed(e.message ?: "Registration failed")
                 }

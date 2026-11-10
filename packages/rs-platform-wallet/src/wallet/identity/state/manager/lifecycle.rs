@@ -96,6 +96,11 @@ impl IdentityManager {
         // iterate values know which wallet + slot they came from
         // without re-threading the keys.
         managed_identity.wallet_id = Some(wallet_id);
+        // Held before anything can send or accept for it, when a persister
+        // kept its record marked.
+        if self.retained_private_payment_markers.remove(&identity_id) {
+            managed_identity.hold_for_retained_private_payment_marker();
+        }
 
         self.wallet_identities
             .entry(wallet_id)
@@ -112,6 +117,29 @@ impl IdentityManager {
         );
 
         Ok(())
+    }
+
+    /// Hold every identity in `owners`, whose private contact request scan
+    /// state record a persister kept marked
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), as a
+    /// load holds one loaded with its record marked
+    /// (`DashPayState::private_payments_unrestored`): one this manager holds
+    /// now at once, every other when it is added. Its private payment may
+    /// still execute, while the identity, added afresh, holds no reservation
+    /// or record of it. Only a restoration from the shielded store's journal
+    /// releases the hold.
+    pub(crate) fn retain_private_payment_markers(
+        &mut self,
+        owners: impl IntoIterator<Item = Identifier>,
+    ) {
+        for owner in owners {
+            match self.managed_identity_mut(&owner) {
+                Some(managed) => managed.hold_for_retained_private_payment_marker(),
+                None => {
+                    self.retained_private_payment_markers.insert(owner);
+                }
+            }
+        }
     }
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
@@ -180,11 +208,45 @@ impl IdentityManager {
     /// Removal is terminal in storage as well as in memory: the persister
     /// deletes the identity and every row it owns, so re-adding the same
     /// id later starts from a blank identity.
+    ///
+    /// Refused, with nothing removed, while the identity's private contact
+    /// request channel is held: a contact request in flight, private or
+    /// public, or a private payment that may still execute, whether its own
+    /// state or the wallet's journal holds it
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]; a public one
+    /// whose outcome is unconfirmed is
+    /// [`PlatformWalletError::PublicContactRequestUnconfirmed`]), or one from an
+    /// earlier process not restored yet
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]). Removed
+    /// and loaded again, the identity would start with none of those holds,
+    /// and its persisted marker with it, so a public request could publish a
+    /// pair a private payment still keeps off chain.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,
         persister: &WalletPersister,
     ) -> Result<Identity, PlatformWalletError> {
+        if let Some(managed) = self.managed_identity(identity_id) {
+            let dashpay = managed.dashpay();
+            if let Some(recipient) = dashpay
+                .unconfirmed_public_request_recipients()
+                .first()
+                .copied()
+            {
+                return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
+                    recipient,
+                ));
+            }
+            if let Some(recipient) = dashpay
+                .contact_request_in_flight()
+                .or_else(|| persister.private_sender_journaled(identity_id))
+            {
+                return Err(PlatformWalletError::PrivateContactRequestPending(recipient));
+            }
+            if dashpay.private_payments_unrestored() {
+                return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+            }
+        }
         // Drop the side-index entry first; its value tells us which
         // bucket the identity lives in so we can avoid a second scan.
         let location = self

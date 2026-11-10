@@ -22,11 +22,15 @@ pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
     unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
         0
     }
-    let persister = FFIPersister::new(PersistenceCallbacks {
+    mock_manager_with(FFIPersister::new(PersistenceCallbacks {
         on_changeset_begin_fn: Some(begin),
         on_changeset_end_fn: Some(end),
         ..Default::default()
-    });
+    }))
+}
+
+/// [`mock_manager`] over `persister`.
+pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManager<FFIPersister> {
     let events = FFIEventHandler::new(
         EventHandlerCallbacks {
             context: std::ptr::null_mut(),
