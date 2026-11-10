@@ -25,7 +25,7 @@ use futures::{Stream, StreamExt};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use super::{sync_notes_from_stream, MultiSyncNotesResult};
+use super::{sync_notes_from_stream, MultiSyncNotesResult, StoreEpoch};
 use crate::wallet::shielded::activity::{
     ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
 };
@@ -241,6 +241,7 @@ async fn scan(store: &Store, stream: impl Stream<Item = BatchItem>) -> MultiSync
         std::time::Duration::from_secs(5),
         sync_notes_from_stream(
             store,
+            &StoreEpoch::default().watch(),
             &[subwallet()],
             None,
             &CancellationToken::new(),
@@ -805,7 +806,14 @@ async fn should_fail_the_spend_on_the_pass_after_a_cancelled_one() {
     );
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        sync_notes_from_stream(&store, &[subwallet()], None, &cancel, move |_, _| cut_short),
+        sync_notes_from_stream(
+            &store,
+            &StoreEpoch::default().watch(),
+            &[subwallet()],
+            None,
+            &cancel,
+            move |_, _| cut_short,
+        ),
     )
     .await
     .expect("the pass returns")

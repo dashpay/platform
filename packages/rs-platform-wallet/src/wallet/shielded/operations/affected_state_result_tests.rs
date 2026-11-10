@@ -12,7 +12,7 @@
 use super::*;
 use crate::wallet::shielded::activity::ShieldedActivityEntry;
 use crate::wallet::shielded::store::InMemoryShieldedStore;
-use crate::wallet::shielded::sync::sync_notes_from_stream;
+use crate::wallet::shielded::sync::{sync_notes_from_stream, StoreEpoch};
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::private_document_create_from_shielded_pool_transition::methods::PrivateDocumentCreateFromShieldedPoolTransitionMethodsV0;
@@ -146,6 +146,7 @@ async fn scan_a_competing_spend(
     };
     sync_notes_from_stream(
         store,
+        &StoreEpoch::default().watch(),
         subwallets,
         None,
         &CancellationToken::new(),
