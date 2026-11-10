@@ -54,6 +54,7 @@ impl From<AsyncError> for crate::Error {
 /// async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error> {
 /// // do something
 ///     Err(ExecutionError {
+///         possibly_accepted: false,
 ///         inner: Error::StaleNode(StaleNodeError::Height{
 ///             expected_height: 10,
 ///             received_height: 3,
@@ -128,6 +129,7 @@ where
 {
     let max_retries = settings.retries.unwrap_or_default();
     let mut total_retries: usize = 0;
+    let mut possibly_accepted = false;
     let mut current_settings = settings;
 
     // Store the last meaningful error (not "no available addresses")
@@ -141,7 +143,11 @@ where
     let mut every_attempt_spared = true;
 
     loop {
-        let result = future_factory_fn(current_settings).await;
+        let mut result = future_factory_fn(current_settings).await;
+        if let Err(error) = &mut result {
+            possibly_accepted |= error.possibly_accepted;
+            error.possibly_accepted = possibly_accepted;
+        }
 
         // Ban or unban the address based on the result. A retryable failure that does not
         // show the node at fault moves the request off the node without banning it, as
@@ -182,6 +188,7 @@ where
                             Error::NoAvailableAddressesToRetry(Box::new(prev_error.inner))
                         };
                         return Err(rs_dapi_client::ExecutionError {
+                            possibly_accepted,
                             inner,
                             retries: total_retries,
                             address: prev_error.address,
@@ -303,6 +310,7 @@ mod test {
         counter.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
+            possibly_accepted: false,
             inner: Error::StaleNode(StaleNodeError::Height {
                 expected_height: 100,
                 received_height: 50,
@@ -359,6 +367,7 @@ mod test {
             async move {
                 if count == 0 {
                     Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::StaleNode(StaleNodeError::Height {
                             expected_height: 100,
                             received_height: 50,
@@ -369,6 +378,7 @@ mod test {
                     })
                 } else {
                     Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -421,6 +431,7 @@ mod test {
             async move {
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(if count == 0 {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::StaleNode(StaleNodeError::ProtocolVersion {
                             expected_protocol_version: 14,
                             received_protocol_version: 13,
@@ -430,6 +441,7 @@ mod test {
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -461,6 +473,7 @@ mod test {
             let count = call_count.fetch_add(1, Ordering::Relaxed);
             async move {
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
                     inner: if count == 0 {
                         Error::StaleNode(StaleNodeError::Height {
                             expected_height: 100,
@@ -522,6 +535,7 @@ mod test {
                         .expect("address")
                 });
                 Err::<rs_dapi_client::ExecutionResponse<()>, _>(ExecutionError {
+                    possibly_accepted: false,
                     inner,
                     retries: 0,
                     address,
@@ -582,6 +596,7 @@ mod test {
 
     fn quorum_source_unavailable(address: &rs_dapi_client::Address) -> ExecutionError<Error> {
         ExecutionError {
+            possibly_accepted: false,
             inner: Error::ContextProviderError(
                 dash_context_provider::ContextProviderError::QuorumSourceUnavailable(
                     "quorum service unreachable".to_string(),
@@ -722,6 +737,7 @@ mod test {
 
         let closure = move |_settings: RequestSettings| async move {
             Err(ExecutionError {
+                possibly_accepted: false,
                 inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
                 retries: 0,
                 address: None,
@@ -739,5 +755,57 @@ mod test {
             "should return 'no available addresses' when there's no previous meaningful error, got: {:?}",
             error.inner
         );
+    }
+}
+
+#[cfg(test)]
+mod submission_history_tests {
+    use super::*;
+    use rs_dapi_client::ExecutionError;
+    use std::future::ready;
+
+    #[tokio::test]
+    async fn should_accumulate_delivery_across_outer_retries_and_final_reconstruction() {
+        for exhaust_addresses in [false, true] {
+            let addresses: AddressList = "http://127.0.0.1:3011,http://127.0.0.1:3012"
+                .parse()
+                .unwrap();
+            let mut calls = 0;
+            let result: ExecutionResult<(), Error> = retry(
+                &addresses,
+                RequestSettings {
+                    retries: Some(2),
+                    ..Default::default()
+                },
+                |_| {
+                    calls += 1;
+                    ready(Err(ExecutionError {
+                        possibly_accepted: calls == 1,
+                        inner: if calls == 1 {
+                            Error::TimeoutReached(Duration::from_millis(1), "lost response".into())
+                        } else if exhaust_addresses {
+                            Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                        } else {
+                            Error::AlreadyExists("state transition already in chain".into())
+                        },
+                        address: addresses.get_live_addresses().first().cloned(),
+                        retries: 0,
+                    }))
+                },
+            )
+            .await;
+            let error = result.unwrap_err();
+            assert!(error.is_possibly_accepted());
+            assert_eq!(calls, 2);
+            assert!(
+                !error.inner.is_state_transition_result_unconfirmed(),
+                "retry loop must retain unwrapped cause"
+            );
+            assert!(error.inner.to_string().contains(if exhaust_addresses {
+                "lost response"
+            } else {
+                "already in chain"
+            }));
+        }
     }
 }

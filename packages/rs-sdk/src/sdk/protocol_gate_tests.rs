@@ -323,6 +323,7 @@ where
             retries: 0,
         }),
         Err(status) => Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(status)),
             address: Some(node()),
             retries: 0,
