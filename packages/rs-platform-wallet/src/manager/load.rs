@@ -699,7 +699,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // otherwise `configure_shielded` does.
         #[cfg(feature = "shielded")]
         if let Some(coordinator) = self.shielded_coordinator().await {
-            self.restore_held_private_contact_payments(&coordinator)
+            self.restore_private_contact_payment_holds(&coordinator)
                 .await;
         }
 

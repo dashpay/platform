@@ -9139,6 +9139,134 @@ mod tests {
         assert!(held.is_empty(), "absent");
     }
 
+    /// A wallet removed while a private payment of its identity may still
+    /// execute keeps that payment in the shielded store's journal, which
+    /// outlives the removal, and a wallet re-created under its id holds the
+    /// payment's pair from it. With the store configured, the journal is read
+    /// as the wallet registers: once its identity is loaded, its public
+    /// request is refused as pending. With none configured yet, the wallet is
+    /// held until one is: refused as not restored, then held as pending once
+    /// `configure_shielded` reads the journal. Configuring the store also
+    /// reads it for a wallet registered before, which no load held.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_hold_the_journaled_pairs_of_a_wallet_re_created_under_its_id() {
+        use crate::wallet::shielded::PrivatePaymentRecord;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let alice_seed = seed(ALICE_PHRASE);
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        for configured_first in [true, false] {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let path = dir.path().join("tree.sqlite");
+            let manager = PlatformWalletManager::new(
+                Arc::new(
+                    dashpay_sdk(&[&alice, &bob], vec![], PlatformVersion::latest(), None).await,
+                ),
+                Arc::new(NoPersistence),
+                Arc::new(NoopEventHandler),
+            );
+            let create = || {
+                manager.create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &alice_seed,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+            };
+            let first = create().await.expect("the wallet");
+            let wallet_id = first.wallet_id();
+            // A private payment from Alice to Bob that may still execute.
+            FileBackedShieldedStore::open_path(&path, 100)
+                .expect("the store")
+                .journal_private_payments(
+                    wallet_id,
+                    &[PrivatePaymentRecord {
+                        account_index: 0,
+                        activity_id: [0x71; 32],
+                        anchor: [0x7C; 32],
+                        anchor_height: Some(1),
+                        commitment: [0x72; 32],
+                        payment: PrivateContactPayment {
+                            sender: alice.id().to_buffer(),
+                            recipient: bob.id().to_buffer(),
+                            account_reference: 1,
+                        },
+                        nullifiers: vec![[0x12; 32]],
+                    }],
+                )
+                .expect("journaled");
+            if configured_first {
+                manager
+                    .configure_shielded(&path)
+                    .await
+                    .expect("the shielded store is configured");
+                assert!(
+                    first
+                        .persister()
+                        .private_pair_journaled(&alice.id(), &bob.id()),
+                    "configuring reads the journal of a wallet no load held"
+                );
+            }
+
+            manager.remove_wallet(&wallet_id).await.expect("removed");
+            let recreated = create().await.expect("re-created under its id");
+            assert_eq!(recreated.wallet_id(), wallet_id);
+            {
+                let iw = recreated.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .add_identity(alice.clone(), 0, wallet_id, &iw.persister)
+                    .expect("Alice, loaded again");
+            }
+            let view = recreated.identity().dashpay();
+            let public = || {
+                view.send_contact_request_with_external_signer(
+                    &alice_id,
+                    &bob_id,
+                    None,
+                    AutoAcceptProofSource::None,
+                    &alice_signer,
+                    &alice_crypto,
+                )
+            };
+            if !configured_first {
+                let held = public().await;
+                assert!(
+                    matches!(
+                        held,
+                        Err(PlatformWalletError::PrivateContactPaymentsNotRestored)
+                    ),
+                    "{held:?}"
+                );
+                manager
+                    .configure_shielded(&path)
+                    .await
+                    .expect("the shielded store is configured");
+            }
+            assert!(
+                recreated
+                    .persister()
+                    .private_pair_journaled(&alice.id(), &bob.id()),
+                "held from the journal, configured first: {configured_first}"
+            );
+            let pending = public().await;
+            assert!(
+                matches!(
+                    pending,
+                    Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                        if recipient == bob.id()
+                ),
+                "configured first: {configured_first}: {pending:?}"
+            );
+        }
+    }
+
     /// A private payment that never executes is proven expired once its
     /// anchor is pruned and its entry is absent from the store: the
     /// coordinator discharges its journal record, the pair is freed, a retry

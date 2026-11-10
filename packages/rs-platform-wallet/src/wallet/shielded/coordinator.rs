@@ -486,6 +486,18 @@ impl NetworkShieldedCoordinator {
         &self.db_path
     }
 
+    /// Whether the store's private payment journal keeps a record of
+    /// `wallet_id`'s, or does not read: a wallet re-created under an id keeps
+    /// the unresolved private payments of the one removed under it, which only
+    /// the journal shows (`PlatformWalletManager::restore_private_contact_payment_holds`).
+    pub(crate) async fn journals_private_payments_of(&self, wallet_id: WalletId) -> bool {
+        self.store
+            .read()
+            .await
+            .private_payment_journal(wallet_id)
+            .map_or(true, |records| !records.is_empty())
+    }
+
     /// Reference to the shared store. The full sync / spend
     /// surfaces land on the coordinator itself; this accessor
     /// exists for tests and for migration scaffolding in Phase 1.

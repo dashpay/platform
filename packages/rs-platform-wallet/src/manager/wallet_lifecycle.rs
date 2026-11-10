@@ -203,6 +203,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // so the replacement inherits them rather than starting clean. A first
         // registration finds no entry and gets an empty map.
         let registration_wallet_id = wallet.compute_wallet_id();
+        // Whether a generation of this manager held the id before: the fence
+        // map keeps an entry for every id it registered, removed or not.
+        #[cfg(feature = "shielded")]
+        let recreated = self
+            .in_broadcast_fences
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(&registration_wallet_id);
         let generation = Arc::new(WalletGeneration::with_fences(
             self.in_broadcast_fences_for(&registration_wallet_id),
         ));
@@ -721,6 +729,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         let platform_wallet = Arc::new(platform_wallet);
+
+        // Before the wallet is published: the shielded store's private payment
+        // journal outlives a wallet's removal, so a wallet re-created under the
+        // id of one removed while its private payments were unresolved holds
+        // their pairs only once the journal is read. With a store configured,
+        // it is read now: restored, the pairs are held through the wallet's
+        // journal mirror whether or not their sender identities are loaded
+        // yet; a store busy or a read that fails holds the wallet's public
+        // contact requests until a restoration succeeds. Without one, a wallet
+        // re-created under an id this manager held is held until
+        // `configure_shielded` or a bind reads the journal. A first
+        // registration is not held, so a wallet with no journal is never held
+        // for want of a store: payments an earlier process left under its id
+        // are held once `configure_shielded` reads the journal, which it does
+        // for every wallet whose id has records.
+        #[cfg(feature = "shielded")]
+        match self.shielded_coordinator().await {
+            Some(coordinator) => {
+                platform_wallet
+                    .restore_private_payments_or_defer(&coordinator)
+                    .await;
+            }
+            None if recreated => platform_wallet
+                .persister()
+                .hold_until_private_payments_restored(),
+            None => {}
+        }
 
         // Register the PlatformWallet handle. `rcu` publishes a new map
         // snapshot; the closure can rerun under a concurrent-writer
