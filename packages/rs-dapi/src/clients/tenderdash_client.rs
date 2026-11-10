@@ -217,6 +217,20 @@ fn take_batch_result<T: serde::de::DeserializeOwned>(
         .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))
 }
 
+/// Read the answers of a whole batch out of its body, one entry for each height asked.
+fn read_block_batch(body: &str, ids: Vec<BlockBatchIds>) -> DAPIResult<Vec<BlockBatchEntry>> {
+    let mut responses = parse_batch_response(body)?;
+
+    Ok(ids
+        .into_iter()
+        .map(|ids| BlockBatchEntry {
+            block: take_batch_result(&mut responses, &ids.block),
+            results: take_batch_result(&mut responses, &ids.results),
+            commit: ids.commit.map(|id| take_batch_result(&mut responses, &id)),
+        })
+        .collect())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultStatus {
     #[serde(default)]
@@ -872,16 +886,10 @@ impl TenderdashClient {
         let body = self
             .post_for_body(&self.block_query_client, &requests)
             .await?;
-        let mut responses = parse_batch_response(&body)?;
 
-        Ok(ids
-            .into_iter()
-            .map(|ids| BlockBatchEntry {
-                block: take_batch_result(&mut responses, &ids.block),
-                results: take_batch_result(&mut responses, &ids.results),
-                commit: ids.commit.map(|id| take_batch_result(&mut responses, &id)),
-            })
-            .collect())
+        // A batch can carry ten full blocks. Reading that much JSON on an async thread would
+        // hold up the other requests it serves, so it runs on the blocking pool.
+        tokio::task::spawn_blocking(move || read_block_batch(&body, ids)).await?
     }
 
     /// Get the header of the block at a height and the quorum's signature of it
@@ -1014,6 +1022,35 @@ mod tests {
         assert!(failed.unwrap_err().is_missing_tenderdash_height());
         let answered: ResultBlockResults = take_batch_result(&mut responses, "b").unwrap();
         assert!(answered.txs_results.is_empty());
+    }
+
+    #[test]
+    fn should_read_a_batch_into_one_entry_for_each_height() {
+        let (_, ids) = block_batch_requests(7..=8, true);
+        let body = json!([
+            answer(
+                ids[1].commit.as_deref().unwrap(),
+                json!({ "signed_header": { "header": { "height": "8" } } })
+            ),
+            failure(&ids[1].results, "could not find results for height #8"),
+            answer(&ids[1].block, json!({ "block_id": { "hash": "08" } })),
+            answer(&ids[0].results, json!({ "txs_results": [{ "code": 5 }] })),
+            answer(&ids[0].block, json!({ "block_id": { "hash": "07" } })),
+        ])
+        .to_string();
+
+        let mut entries = read_block_batch(&body, ids).unwrap().into_iter();
+
+        let first = entries.next().unwrap();
+        assert_eq!(first.block.unwrap().block_id.hash, "07");
+        assert_eq!(first.results.unwrap().txs_results[0].code, 5);
+        assert!(matches!(first.commit, Some(Err(DapiError::Client(_)))));
+        let second = entries.next().unwrap();
+        assert_eq!(second.block.unwrap().block_id.hash, "08");
+        assert!(second.results.unwrap_err().is_missing_tenderdash_height());
+        let commit = second.commit.unwrap().unwrap();
+        assert_eq!(commit.signed_header.header.height, 8);
+        assert!(entries.next().is_none());
     }
 
     #[test]

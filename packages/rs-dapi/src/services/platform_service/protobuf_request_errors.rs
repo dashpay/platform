@@ -1,5 +1,6 @@
 //! Test the public request decoder and real Drive forwarding without background connections.
 
+use super::block_proof::tenderdash_commit_json;
 use super::{
     MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
     MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget,
@@ -7,9 +8,15 @@ use super::{
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
 use crate::clients::drive_client::{DriveChannel, DriveClient};
+use crate::clients::tenderdash_client::BlockTxResult;
 use crate::config::Config;
 use crate::services::streaming_service::SubscriberManager;
 use crate::sync::Workers;
+use axum::extract::State;
+use axum::routing::post;
+use axum::{Json, Router};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use bytes::{BufMut, Bytes};
 use dapi_grpc::Message;
 use dapi_grpc::mock::Mockable;
@@ -37,6 +44,8 @@ use rs_dapi_client::{
     AddressList, CanRetry, ConnectionPool, DapiClient, DapiClientError, DapiRequestExecutor,
     RequestSettings, Uri,
 };
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -103,6 +112,136 @@ impl PlatformServiceImpl {
             .service(Endpoint::from_static("http://drive.invalid").connect_lazy());
         Self::with_test_drive(DriveClient::from_test_channel(channel))
     }
+
+    /// A service whose Tenderdash requests go to `url`, with no Drive behind it.
+    fn with_test_tenderdash(url: &str) -> Self {
+        let mut service = Self::without_backends();
+        service.tenderdash_client = Arc::new(TenderdashClient::with_test_base_url(url.to_owned()));
+        service
+    }
+}
+
+/// The validator quorum type [`AnsweringTenderdash`] reports.
+pub(super) const QUORUM_TYPE: u32 = 6;
+
+/// A Tenderdash stand-in that holds one block and answers for it as Tenderdash's RPC does:
+/// the block, its results, and a commit whose header commits to both.
+pub(super) struct AnsweringTenderdash {
+    url: String,
+    server: JoinHandle<()>,
+}
+
+impl Drop for AnsweringTenderdash {
+    fn drop(&mut self) {
+        self.server.abort();
+    }
+}
+
+/// What [`AnsweringTenderdash`] answers each call with.
+struct BlockAnswers {
+    height: u64,
+    block: Value,
+    block_results: Value,
+    commit: Value,
+}
+
+impl AnsweringTenderdash {
+    /// Hold a block at `height` with these transactions, base64 encoded as in a block.
+    /// The result of each transaction has its position in the block as the gas it used.
+    pub(super) async fn start(height: u64, txs: Vec<String>) -> Self {
+        let hashes = txs
+            .iter()
+            .map(|tx| {
+                let transaction = STANDARD.decode(tx).expect("base64 transaction");
+                Sha256::digest(transaction).to_vec()
+            })
+            .collect::<Vec<_>>();
+        let results = (0..txs.len())
+            .map(|index| BlockTxResult {
+                gas_used: index as i64,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+        let commit = tenderdash_commit_json(height, &hashes, &results);
+        let signed_header = &commit["signed_header"];
+        let answers = Arc::new(BlockAnswers {
+            height,
+            block: json!({
+                "block_id": signed_header["commit"]["block_id"],
+                "block": { "header": signed_header["header"], "data": { "txs": txs } },
+            }),
+            block_results: json!({
+                "height": height.to_string(),
+                "txs_results": results
+                    .iter()
+                    .map(|result| json!({ "code": result.code, "gas_used": result.gas_used.to_string() }))
+                    .collect::<Vec<_>>(),
+            }),
+            commit,
+        });
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("answering Tenderdash listener");
+        let address = listener.local_addr().expect("answering Tenderdash address");
+        let router = Router::new()
+            .route("/", post(answer_json_rpc))
+            .with_state(answers);
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("answering Tenderdash serves");
+        });
+        Self {
+            url: format!("http://{address}"),
+            server,
+        }
+    }
+
+    /// A service whose Tenderdash requests come here.
+    pub(super) fn service(&self) -> PlatformServiceImpl {
+        PlatformServiceImpl::with_test_tenderdash(&self.url)
+    }
+}
+
+impl BlockAnswers {
+    /// Answer one JSON-RPC call. Any height but the block's own is past the tip.
+    fn answer(&self, call: &Value) -> Value {
+        let held = call["params"]["height"].as_u64() == Some(self.height);
+        let result = match call["method"].as_str() {
+            Some("validators") => Some(json!({ "quorum_type": QUORUM_TYPE })),
+            Some("block") if held => Some(self.block.clone()),
+            Some("block_results") if held => Some(self.block_results.clone()),
+            Some("commit") if held => Some(self.commit.clone()),
+            _ => None,
+        };
+        match result {
+            Some(result) => json!({ "jsonrpc": "2.0", "id": call["id"], "result": result }),
+            None => json!({
+                "jsonrpc": "2.0",
+                "id": call["id"],
+                "error": {
+                    "code": -32603,
+                    "message": "Internal error",
+                    "data": format!(
+                        "height must be less than or equal to the head block height {}",
+                        self.height
+                    ),
+                },
+            }),
+        }
+    }
+}
+
+/// Answer a single call or a batch of them, as Tenderdash's JSON-RPC endpoint does.
+async fn answer_json_rpc(
+    State(answers): State<Arc<BlockAnswers>>,
+    Json(request): Json<Value>,
+) -> Json<Value> {
+    Json(match request {
+        Value::Array(calls) => calls.iter().map(|call| answers.answer(call)).collect(),
+        call => answers.answer(&call),
+    })
 }
 
 /// A Tenderdash stand-in that takes requests and leaves them unanswered.
@@ -136,10 +275,7 @@ impl StalledTenderdash {
 
     /// A service whose Tenderdash requests come here.
     pub(super) fn service(&self) -> PlatformServiceImpl {
-        let mut service = PlatformServiceImpl::without_backends();
-        service.tenderdash_client =
-            Arc::new(TenderdashClient::with_test_base_url(self.url.clone()));
-        service
+        PlatformServiceImpl::with_test_tenderdash(&self.url)
     }
 
     /// The requests taken so far, none of them answered.

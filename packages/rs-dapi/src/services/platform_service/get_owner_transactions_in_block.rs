@@ -277,7 +277,9 @@ mod tests {
     use super::*;
     use crate::clients::tenderdash_client::{ResultBlock, ResultBlockResults};
     use crate::services::platform_service::MAX_CONCURRENT_GET_OWNER_TRANSACTIONS;
-    use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
+    use crate::services::platform_service::protobuf_request_errors::{
+        AnsweringTenderdash, QUORUM_TYPE, StalledTenderdash,
+    };
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::get_owner_transactions_in_block_request::GetOwnerTransactionsInBlockRequestV0;
@@ -345,6 +347,113 @@ mod tests {
                 },
             )),
         }
+    }
+
+    fn proved_request(height: u64, owner_id: Vec<u8>) -> GetOwnerTransactionsInBlockRequest {
+        GetOwnerTransactionsInBlockRequest {
+            version: Some(get_owner_transactions_in_block_request::Version::V0(
+                GetOwnerTransactionsInBlockRequestV0 {
+                    height,
+                    owner_id,
+                    prove: true,
+                },
+            )),
+        }
+    }
+
+    fn cached_response(
+        service: &PlatformServiceImpl,
+        request: &GetOwnerTransactionsInBlockRequest,
+    ) -> Option<GetOwnerTransactionsInBlockResponse> {
+        service
+            .platform_cache
+            .get(&make_cache_key("get_owner_transactions_in_block", request))
+    }
+
+    #[tokio::test]
+    async fn should_prove_the_owners_transactions_of_a_block_tenderdash_serves() {
+        let txs = vec![
+            transfer(ALICE, BOB, 1),
+            transfer(BOB, ALICE, 2),
+            transfer(ALICE, BOB, 3),
+        ];
+        let tenderdash = AnsweringTenderdash::start(7, txs.clone()).await;
+        let service = tenderdash.service();
+        let request = proved_request(7, ALICE.to_vec());
+
+        let response = service
+            .get_owner_transactions_in_block_impl(Request::new(request.clone()))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let Some(get_owner_transactions_in_block_response::Version::V0(v0)) = &response.version
+        else {
+            unreachable!();
+        };
+        let proof = v0.proof.as_ref().unwrap();
+        assert_eq!(proof.quorum_type, QUORUM_TYPE);
+        assert_eq!(proof.header.as_ref().unwrap().height, 7);
+        let served = v0
+            .transactions
+            .iter()
+            .map(|transaction| {
+                (
+                    STANDARD.encode(&transaction.state_transition),
+                    transaction.gas_used,
+                    transaction.proof.as_ref().unwrap().index,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(served, [(txs[0].clone(), 0, 0), (txs[2].clone(), 2, 2)]);
+        assert_eq!(cached_response(&service, &request), Some(response));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_and_not_cache_a_proved_answer_too_large_to_send() {
+        // The block is well within the limit. What passes it is the two Merkle paths that
+        // come with each of the owner's transactions.
+        let txs = (0..6000)
+            .map(|amount| transfer(ALICE, BOB, amount))
+            .collect::<Vec<_>>();
+        assert!(txs.iter().map(String::len).sum::<usize>() < MAX_RESPONSE_BYTES / 4);
+        let tenderdash = AnsweringTenderdash::start(7, txs).await;
+        let service = tenderdash.service();
+        let request = proved_request(7, ALICE.to_vec());
+
+        let error = service
+            .get_owner_transactions_in_block_impl(Request::new(request.clone()))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DapiError::FailedPrecondition(_)));
+        assert_eq!(cached_response(&service, &request), None);
+        assert_eq!(
+            service.get_owner_transactions_permits.available_permits(),
+            MAX_CONCURRENT_GET_OWNER_TRANSACTIONS
+        );
+    }
+
+    #[tokio::test]
+    async fn should_serve_without_a_proof_the_block_whose_proved_answer_is_too_large() {
+        let txs = (0..6000)
+            .map(|amount| transfer(ALICE, BOB, amount))
+            .collect::<Vec<_>>();
+        let tenderdash = AnsweringTenderdash::start(7, txs).await;
+        let service = tenderdash.service();
+
+        let response = service
+            .get_owner_transactions_in_block_impl(Request::new(request(7, ALICE.to_vec())))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let Some(get_owner_transactions_in_block_response::Version::V0(v0)) = response.version
+        else {
+            unreachable!();
+        };
+        assert_eq!(v0.transactions.len(), 6000);
+        assert!(v0.proof.is_none());
     }
 
     #[tokio::test]

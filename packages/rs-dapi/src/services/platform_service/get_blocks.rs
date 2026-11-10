@@ -18,7 +18,7 @@ use super::block_proof::{build_block_proof, check_block_contents, check_block_fi
 use super::error_mapping::base64_decode;
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{
-    Block as TenderdashBlock, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock,
+    Block as TenderdashBlock, BlockBatchEntry, BlockTxResult, MAX_TENDERDASH_HEIGHT, ResultBlock,
     ResultBlockResults, ResultCommit, TenderdashClient,
 };
 use crate::error::{DAPIResult, DapiError};
@@ -87,10 +87,23 @@ async fn fetch_blocks(
     } else {
         None
     };
-    let mut entries = tenderdash_client
+    let entries = tenderdash_client
         .block_batch(heights.clone(), prove)
-        .await?
-        .into_iter();
+        .await?;
+
+    // Decoding and hashing every transaction of ten full blocks would hold up the other
+    // requests an async thread serves, so it runs on the blocking pool.
+    tokio::task::spawn_blocking(move || read_blocks(heights, entries, quorum_type)).await?
+}
+
+/// Turn a batch's entries, one for each height in order, into the blocks of the response.
+/// `quorum_type` is `Some` only when asked to prove.
+fn read_blocks(
+    heights: RangeInclusive<u64>,
+    entries: Vec<BlockBatchEntry>,
+    quorum_type: Option<u32>,
+) -> DAPIResult<Vec<Block>> {
+    let mut entries = entries.into_iter();
 
     collect_blocks(heights, |height| {
         let entry = entries
@@ -287,7 +300,11 @@ mod tests {
     use crate::clients::tenderdash_client::BlockHeader;
     use crate::services::platform_service::MAX_CONCURRENT_GET_BLOCKS;
     use crate::services::platform_service::block_proof::tenderdash_commit;
-    use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
+    use crate::services::platform_service::protobuf_request_errors::{
+        AnsweringTenderdash, QUORUM_TYPE, StalledTenderdash,
+    };
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
     use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
     use dapi_grpc::tonic::Code;
@@ -326,6 +343,39 @@ mod tests {
 
     fn heights(blocks: &[Block]) -> Vec<u64> {
         blocks.iter().map(|block| block.height).collect()
+    }
+
+    #[tokio::test]
+    async fn should_prove_the_blocks_tenderdash_serves_up_to_its_tip() {
+        let transaction = vec![1, 2, 3];
+        let tenderdash = AnsweringTenderdash::start(7, vec![STANDARD.encode(&transaction)]).await;
+        let service = tenderdash.service();
+        let mut proved = request(7, 2);
+        let Some(get_blocks_request::Version::V0(v0)) = &mut proved.version else {
+            unreachable!();
+        };
+        v0.prove = true;
+
+        let response = service
+            .get_blocks_impl(Request::new(proved))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let Some(get_blocks_response::Version::V0(v0)) = &response.version else {
+            unreachable!();
+        };
+        assert_eq!(heights(&v0.blocks), [7]);
+        let block = &v0.blocks[0];
+        assert_eq!(block.transactions.len(), 1);
+        assert_eq!(block.transactions[0].state_transition, transaction);
+        let proof = block.proof.as_ref().unwrap();
+        assert_eq!(proof.quorum_type, QUORUM_TYPE);
+        assert_eq!(proof.block_id.as_ref().unwrap().hash, block.hash);
+        let cached: Option<GetBlocksResponse> = service
+            .platform_cache
+            .get(&make_cache_key("get_blocks", &proved));
+        assert_eq!(cached, Some(response));
     }
 
     #[tokio::test]

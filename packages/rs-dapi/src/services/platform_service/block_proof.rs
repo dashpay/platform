@@ -429,7 +429,7 @@ pub(super) fn build_block_proof(
     })
 }
 
-/// A `commit` result in the shape Tenderdash's RPC serves: a header that commits to these
+/// A `commit` result as Tenderdash's RPC serves it: a header that commits to these
 /// transaction hashes and results, and the block id Tenderdash would sign for it.
 #[cfg(test)]
 pub(super) fn tenderdash_commit(
@@ -437,8 +437,18 @@ pub(super) fn tenderdash_commit(
     transaction_hashes: &[Vec<u8>],
     results: &[BlockTxResult],
 ) -> ResultCommit {
+    serde_json::from_value(tenderdash_commit_json(height, transaction_hashes, results)).unwrap()
+}
+
+/// The JSON of [`tenderdash_commit`], for a test that serves it as Tenderdash would.
+#[cfg(test)]
+pub(super) fn tenderdash_commit_json(
+    height: u64,
+    transaction_hashes: &[Vec<u8>],
+    results: &[BlockTxResult],
+) -> serde_json::Value {
     let results_root = merkle_root(&encode_results(results).unwrap());
-    let mut commit: ResultCommit = serde_json::from_value(serde_json::json!({
+    let mut commit = serde_json::json!({
         "signed_header": {
             "header": {
                 "version": { "block": "14", "app": "11" },
@@ -473,13 +483,13 @@ pub(super) fn tenderdash_commit(
             },
         },
         "canonical": true,
-    }))
-    .unwrap();
+    });
 
-    let header = convert_header(commit.signed_header.header.clone()).unwrap();
-    let block_id = &mut commit.signed_header.commit.block_id;
-    block_id.hash = hex::encode_upper(header_hash(&header));
-    block_id.state_id = hex::encode_upper(state_id_hash(&header).unwrap());
+    let unsigned: ResultCommit = serde_json::from_value(commit.clone()).unwrap();
+    let header = convert_header(unsigned.signed_header.header).unwrap();
+    let block_id = &mut commit["signed_header"]["commit"]["block_id"];
+    block_id["hash"] = hex::encode_upper(header_hash(&header)).into();
+    block_id["state_id"] = hex::encode_upper(state_id_hash(&header).unwrap()).into();
     commit
 }
 
