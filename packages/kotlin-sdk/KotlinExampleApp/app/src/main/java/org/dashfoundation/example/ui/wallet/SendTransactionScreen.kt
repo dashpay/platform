@@ -730,10 +730,11 @@ fun SendTransactionScreen(
                             }
                         }
                     } catch (e: DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed) {
-                        // Broadcast accepted but its execution result couldn't
-                        // be confirmed — the spend may already be on chain and
-                        // the notes stay reserved Rust-side, so this must NOT
-                        // read as a retryable failure (← SendViewModel.swift:790).
+                        // It may have reached a node and its result is not
+                        // proved (a node's refusal or verdict included), so it
+                        // may already be on chain and a retry signs a second
+                        // transition: this must NOT read as a retryable
+                        // failure (← SendViewModel.swift:790).
                         successMessage = "Transaction may have gone through — waiting for " +
                             "the next shielded sync to confirm. Do not retry."
                     } catch (t: Throwable) {

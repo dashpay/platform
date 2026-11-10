@@ -77,7 +77,8 @@ pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
 pub use wallet::identity::network::{
     derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
     ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
-    FetchedIdentityPublicKeys, PreparedDashPayPayment, SeedBindingVerification, IDENTITY_GAP_LIMIT,
+    FetchedIdentityPublicKeys, PaymentStarted, PreparedDashPayPayment, PrivateContactReadiness,
+    PrivateContactSyncReport, PrivateDocumentKeyPaths, SeedBindingVerification, IDENTITY_GAP_LIMIT,
     MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
@@ -85,8 +86,8 @@ pub use wallet::identity::{
     derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
     unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
     DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo, EstablishedContact, IdentityLocation,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
-    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateContact, PrivateKeyData,
+    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,
@@ -97,7 +98,7 @@ pub use wallet::mnemonic::{
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
-pub use wallet::platform_wallet::ShieldedShieldPreflight;
+pub use wallet::platform_wallet::{PrivateReplyPayment, ShieldedShieldPreflight};
 pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
 #[cfg(feature = "shielded")]
 pub use wallet::shielded::operations::shield_fee_reserve_credits;

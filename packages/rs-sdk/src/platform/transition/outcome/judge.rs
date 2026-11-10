@@ -12,7 +12,8 @@
 //!
 //! So a free input read at height `h` proves the transition had not executed by `h`, and a
 //! consumed one read at `h` proves it cannot execute after `h`. No read says which transition
-//! took a consumed input, so none proves this one executed.
+//! took a consumed input, so none proves this one executed; a read of what it would have
+//! written, at or above that `h`, does.
 
 /// One proven read of one input: whether it is consumed, and the height the proof was signed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +28,10 @@ pub(super) struct InputRead {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Consumption {
     /// Every input is consumed.
-    All,
+    All {
+        /// The lowest height among the reads: the transition cannot execute after it.
+        consumed_by: u64,
+    },
     /// An input was consumed while another was still free, as of a read at or after the read
     /// that showed it consumed. The transition consumes all of its inputs at once, so it did not
     /// execute, and the consumed input keeps it from ever executing.
@@ -35,7 +39,11 @@ pub(super) enum Consumption {
     /// Some inputs are consumed and others free, but every free one was read at a lower height
     /// than every consumed one. The transition may have executed between the reads; it cannot
     /// execute any more.
-    Unordered,
+    Unordered {
+        /// The lowest height among the reads that showed an input consumed: the transition
+        /// cannot execute after it.
+        consumed_by: u64,
+    },
     /// No input is consumed: the transition had not executed by `free_at`, the highest read.
     None {
         /// The highest height among the reads.
@@ -57,9 +65,9 @@ pub(super) fn consumption(reads: &[InputRead]) -> Consumption {
         .map(|read| read.height)
         .max();
     match (lowest_consumed, highest_free) {
-        (Some(_), None) => Consumption::All,
+        (Some(consumed_by), None) => Consumption::All { consumed_by },
         (Some(consumed), Some(free)) if consumed <= free => Consumption::Partial,
-        (Some(_), Some(_)) => Consumption::Unordered,
+        (Some(consumed_by), Some(_)) => Consumption::Unordered { consumed_by },
         (None, free) => Consumption::None {
             free_at: free.unwrap_or_default(),
         },
@@ -71,7 +79,11 @@ pub(super) fn consumption(reads: &[InputRead]) -> Consumption {
 pub(super) enum InputsVerdict {
     /// Every input is consumed, or the inputs are consumed in an order the reads cannot place:
     /// it can no longer execute, and the reads do not show whether it did.
-    ConsumedUnattributed,
+    ConsumedUnattributed {
+        /// The lowest height of a read that showed an input consumed: the transition cannot
+        /// execute after it.
+        consumed_by: u64,
+    },
     /// An input another transition took: it never executed and never will.
     InputUsed,
     /// A shielded spend's anchor, proven recorded by an earlier height, is gone from its pool,
@@ -110,9 +122,10 @@ pub(super) fn judge_shielded(
     match consumption(nullifiers) {
         // Every note it spends is spent, but other transitions can spend the same notes, all
         // together or each on its own, so the reads do not say this one executed.
-        Consumption::All => InputsVerdict::ConsumedUnattributed,
+        Consumption::All { consumed_by } | Consumption::Unordered { consumed_by } => {
+            InputsVerdict::ConsumedUnattributed { consumed_by }
+        }
         Consumption::Partial => InputsVerdict::InputUsed,
-        Consumption::Unordered => InputsVerdict::ConsumedUnattributed,
         Consumption::None { free_at } => {
             // A missing anchor proves pruned only from a read at or above a height by which the
             // anchor was recorded: a node below that height may simply not have recorded it yet,
@@ -146,7 +159,9 @@ pub(super) fn judge_shielded(
 /// whether this transition took it. `reads` must not be empty.
 pub(super) fn judge_nonces(reads: &[InputRead]) -> InputsVerdict {
     match consumption(reads) {
-        Consumption::All | Consumption::Unordered => InputsVerdict::ConsumedUnattributed,
+        Consumption::All { consumed_by } | Consumption::Unordered { consumed_by } => {
+            InputsVerdict::ConsumedUnattributed { consumed_by }
+        }
         Consumption::Partial => InputsVerdict::InputUsed,
         Consumption::None { free_at } => InputsVerdict::NotYet {
             checked_at: free_at,
@@ -227,7 +242,10 @@ mod tests {
 
     #[test]
     fn should_report_all_consumed_when_every_read_shows_its_input_taken() {
-        assert_eq!(consumption(&[consumed(10), consumed(12)]), Consumption::All);
+        assert_eq!(
+            consumption(&[consumed(10), consumed(12)]),
+            Consumption::All { consumed_by: 10 }
+        );
     }
 
     #[test]
@@ -255,7 +273,7 @@ mod tests {
         // Free at 10, consumed at 11: this transition may have taken both at 11.
         assert_eq!(
             consumption(&[free(10), consumed(11)]),
-            Consumption::Unordered
+            Consumption::Unordered { consumed_by: 11 }
         );
     }
 
@@ -264,7 +282,7 @@ mod tests {
         // Other transitions may have spent the same notes, together or one by one.
         assert_eq!(
             judge_shielded(&[consumed(20), consumed(20)], &[pruned(30)], Some(10)),
-            InputsVerdict::ConsumedUnattributed
+            InputsVerdict::ConsumedUnattributed { consumed_by: 20 }
         );
     }
 
@@ -284,7 +302,7 @@ mod tests {
                 &[recorded(19), recorded(19)],
                 None
             ),
-            InputsVerdict::ConsumedUnattributed
+            InputsVerdict::ConsumedUnattributed { consumed_by: 21 }
         );
     }
 
@@ -350,7 +368,7 @@ mod tests {
         // A paid failure consumes the nonce too, and so does any other transition signed with it.
         assert_eq!(
             judge_nonces(&[consumed(5)]),
-            InputsVerdict::ConsumedUnattributed
+            InputsVerdict::ConsumedUnattributed { consumed_by: 5 }
         );
     }
 
