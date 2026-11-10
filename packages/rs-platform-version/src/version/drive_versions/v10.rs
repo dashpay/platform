@@ -7,6 +7,7 @@ use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
+    DriveIdentityUpdateMethodVersions,
 };
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
@@ -85,6 +86,15 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
+/// * **Masternode keys that repeat a hash**: `identity.update.add_new_keys_to_masternode_identity`
+///   is 1 rather than 0: a key added to a masternode identity whose public key hash the identity
+///   already holds a non-unique key hash reference for, or that an earlier key of the same batch
+///   has, gets no second reference instead of failing with `IdentityKeyAlreadyExists`. Core
+///   accepts any 20 bytes as an operator payout or platform node id, so an operator identity can
+///   need two keys of different kinds with one hash. The keys Platform adds to owner and voter
+///   identities go through the same method. `apply_drive_operations` 2 also creates a hash's
+///   tree under the non-unique key hashes tree once where several identity operations of one
+///   batch each queue it, as masternodes whose operators share a payout address do.
 /// * **Refunds at the storing epoch's rate** (protocol v15 note 27): `fees.calculate_fee` 1
 ///   prices the bytes a refund returns at the storage rate of the protocol version that ran the
 ///   epoch that stored them, which that epoch's tree records.
@@ -127,6 +137,10 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
                 for_balances: 1,       // changed in v10: keeps a deeper root description
                 for_token_balances: 1, // changed in v10: keeps a deeper root and Tokens layer description
                 ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
+            },
+            update: DriveIdentityUpdateMethodVersions {
+                add_new_keys_to_masternode_identity: 1, // changed in v10: a masternode key whose hash the identity already holds a reference for is added without a second one
+                ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.update
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },

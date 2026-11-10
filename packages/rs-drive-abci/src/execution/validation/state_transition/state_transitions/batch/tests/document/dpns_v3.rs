@@ -18,6 +18,7 @@ mod dpns_v3_tests {
     use crate::execution::validation::state_transition::tests::{
         create_dpns_name_contest_give_key_info, perform_votes_multi,
     };
+    use crate::platform_types::platform_state::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::dpns::dpns_preorder_properties;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
@@ -98,6 +99,7 @@ mod dpns_v3_tests {
             let mut platform = TestPlatformBuilder::new()
                 .with_initial_protocol_version(protocol_version)
                 .build_with_mock_rpc()
+                .with_no_core_masternodes()
                 .set_genesis_state();
 
             let mut writer = |seed| {
@@ -413,6 +415,7 @@ mod dpns_v3_tests {
             self.platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform_state,
+                    &mut PlatformState::clone(&platform_state),
                     &block(height),
                     &transaction,
                     previous,
@@ -1249,6 +1252,7 @@ mod dpns_v3_tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         assert_eq!(
             preorder_type_layout(&fixture.platform, fixture.platform_version),
@@ -1310,6 +1314,7 @@ mod dpns_v3_tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         assert_eq!(
             preorder_type_layout(&fixture.platform, fixture.platform_version),
@@ -1409,6 +1414,7 @@ mod dpns_v3_tests {
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let platform_state = platform.state.load();
 

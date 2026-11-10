@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -70,9 +71,19 @@ where
                 drive_operations,
                 platform_version,
             ),
+            1 => self.update_operator_identity_v1(
+                masternode_pro_tx_hash,
+                pub_key_operator_change,
+                operator_payout_address_change,
+                platform_node_id_change,
+                platform_state,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_operator_identity".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
