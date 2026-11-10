@@ -6,7 +6,7 @@ use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_request::GetAssetLockO
 use dapi_grpc::platform::v0::{
     get_asset_lock_outpoint_info_request, GetAssetLockOutpointInfoRequest,
 };
-use dpp::dashcore::{hashes::Hash, OutPoint};
+use dpp::dashcore::OutPoint;
 
 /// Query for the state of one asset-lock outpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
