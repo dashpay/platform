@@ -17,8 +17,8 @@ use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
     DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
     DriveMethodVersions, DrivePlatformSystemMethodVersions,
-    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
-    DriveVersion,
+    DrivePrefundedSpecializedMethodVersions, DriveProveMethodVersions,
+    DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 use grovedb_version::version::v5::GROVE_V5;
 
@@ -115,6 +115,13 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   `verify_proof_keep_serialized` 1 verifies its proof outside a contest. A document with
 ///   history that may be contested is refused at a block time.
 ///
+/// * **Delta contract updates** (protocol v15 note 33): `prove.prove_state_transition` is 2,
+///   which proves a delta contract update, a transition that embeds no contract, by reading
+///   from the stored contract whether the contract keeps history, and every other transition
+///   as generation 1 does, in the same layout. `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets
+///   `state_transition.verify_state_transition_was_executed_with_proof` to 2, which verifies
+///   that proof against the contract the delta was built on.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -150,8 +157,12 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
             ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
         },
+        prove: DriveProveMethodVersions {
+            prove_state_transition: 2, // changed in v10: a delta contract update is proved from the stored contract (note 33)
+            ..DRIVE_VERSION_V9.methods.prove
+        },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified; a delta contract update's execution proof is verified
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {

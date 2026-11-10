@@ -1,8 +1,11 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
-use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
+use dpp::data_contract::associated_token::token_configuration::{
+    validate_token_configurations, TokenConfiguration,
+};
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -14,7 +17,7 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use dpp::version::feature_initial_protocol_versions::{
@@ -27,6 +30,18 @@ use dpp::version::feature_initial_protocol_versions::{
     TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION, TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+/// The token configurations a contract update carries: the contract's, when the update embeds
+/// its contract, and the ones a delta adds, as a delta carries only what it changes.
+fn tokens_carried_by_update(
+    update: &DataContractUpdateTransition,
+) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
+    match update {
+        DataContractUpdateTransition::V0(update) => update.data_contract.tokens(),
+        DataContractUpdateTransition::V1(delta) => &delta.new_tokens,
+    }
+}
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionIsAllowedValidationV0 {
@@ -81,9 +96,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                 .tokens()
                 .values()
                 .any(|configuration| configuration.needs_activation_check())),
-            StateTransition::DataContractUpdate(st) => Ok(st
-                .data_contract()
-                .tokens()
+            StateTransition::DataContractUpdate(st) => Ok(tokens_carried_by_update(st)
                 .values()
                 .any(|configuration| configuration.needs_activation_check())),
             StateTransition::IdentityCreate(_)
@@ -99,18 +112,15 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
-        let contract = match self {
-            StateTransition::DataContractCreate(st) => Some(st.data_contract()),
-            StateTransition::DataContractUpdate(st) => Some(st.data_contract()),
+        let tokens = match self {
+            StateTransition::DataContractCreate(st) => Some(st.data_contract().tokens()),
+            StateTransition::DataContractUpdate(st) => Some(tokens_carried_by_update(st)),
             _ => None,
         };
-        if let Some(contract) = contract {
+        if let Some(tokens) = tokens {
             // The pre-activation gate: a token configuration format the protocol version does
             // not admit is refused unpaid, whatever the frozen basic structure generations do.
-            return Ok(validate_token_configurations(
-                contract.tokens(),
-                platform_version,
-            ));
+            return Ok(validate_token_configurations(tokens, platform_version));
         }
         match self {
             StateTransition::Batch(st) => {

@@ -11,6 +11,7 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v2;
 
 impl Drive {
     /// Verifies a state transition against a provided proof, returning the
@@ -118,8 +119,8 @@ impl Drive {
             // producer's `prove_state_transition` generation, so either one verifies a
             // proof from any producer whose prover generation this build knows; an
             // unknown prover generation is refused. Protocol versions 1 to 13 select
-            // verifier and prover generation 0, and protocol versions from 14 select 1
-            // for both, so a proof checked at the version that made it runs the same body
+            // verifier and prover generation 0, and protocol version 14 selects 1 for
+            // both, so a proof checked at the version that made it runs the same body
             // with the layout that version's verifier generation named.
             0 | 1 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
@@ -129,17 +130,29 @@ impl Drive {
                 Self::proof_carries_owner_balance(query_platform_version)?,
                 platform_version,
             ),
+            // Generation 2, from protocol version 15, also verifies a delta contract
+            // update, against the contract the delta was built on. Every other transition
+            // runs the same body.
+            2 => Drive::verify_state_transition_was_executed_with_proof_v2(
+                state_transition,
+                block_info,
+                proof,
+                known_contracts_provider_fn,
+                Self::proof_carries_owner_balance(query_platform_version)?,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
     }
 
     /// Whether a producer at `query_platform_version` proves an owned, fee-paying
-    /// transition together with its owner's credit balance: generation 1 of
-    /// `prove_state_transition` does, generation 0 does not.
+    /// transition together with its owner's credit balance: generations 1 and 2 of
+    /// `prove_state_transition` do, generation 0 does not. Generation 2 proves in the
+    /// layout of generation 1.
     fn proof_carries_owner_balance(
         query_platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
@@ -150,10 +163,10 @@ impl Drive {
             .prove_state_transition
         {
             0 => Ok(false),
-            1 => Ok(true),
+            1 | 2 => Ok(true),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_state_transition".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

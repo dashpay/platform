@@ -127,6 +127,8 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
+            Self::DataContractUpdateOverlappingEntriesError(_) => 10283,
+            Self::DataContractMaxSizeExceededError(_) => 10284,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -345,6 +347,8 @@ impl ErrorWithCode for StateError {
             Self::IdentityMemberOfGroupNotFoundError(_) => 40007,
             Self::DataContractNotFoundError(_) => 40008,
             Self::InvalidTokenPositionStateError(_) => 40009,
+            Self::DataContractUpdateEntryAlreadyExistsError(_) => 40010,
+            Self::DataContractUpdateEntryNotFoundError(_) => 40011,
 
             // Document Errors: 40100-40199
             Self::DocumentAlreadyPresentError { .. } => 40100,

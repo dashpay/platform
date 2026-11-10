@@ -73,6 +73,9 @@ use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, Disabli
 use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError, InvalidTokenDistributionEpochIntervalTooShortError, InvalidTokenOncePerIdentityDistributionAmountError};
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
+use dpp::consensus::state::data_contract::data_contract_update_entry_already_exists_error::DataContractUpdateEntryAlreadyExistsError;
+use dpp::consensus::state::data_contract::data_contract_update_entry_not_found_error::DataContractUpdateEntryNotFoundError;
+use dpp::consensus::basic::data_contract::{DataContractMaxSizeExceededError, DataContractUpdateOverlappingEntriesError};
 use dpp::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -835,6 +838,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::PrivateDocumentEntrySizeMismatchError(e) => {
             generic_consensus_error!(PrivateDocumentEntrySizeMismatchError, e).into()
         }
+        StateError::DataContractUpdateEntryAlreadyExistsError(e) => {
+            generic_consensus_error!(DataContractUpdateEntryAlreadyExistsError, e).into()
+        }
+        StateError::DataContractUpdateEntryNotFoundError(e) => {
+            generic_consensus_error!(DataContractUpdateEntryNotFoundError, e).into()
+        }
     }
 }
 
@@ -1471,6 +1480,12 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DuplicatePrivateDocumentEntryError(e) => {
             generic_consensus_error!(DuplicatePrivateDocumentEntryError, e).into()
+        }
+        BasicError::DataContractUpdateOverlappingEntriesError(e) => {
+            generic_consensus_error!(DataContractUpdateOverlappingEntriesError, e).into()
+        }
+        BasicError::DataContractMaxSizeExceededError(e) => {
+            generic_consensus_error!(DataContractMaxSizeExceededError, e).into()
         }
     }
 }

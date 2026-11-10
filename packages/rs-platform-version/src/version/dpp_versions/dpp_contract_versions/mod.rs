@@ -47,6 +47,9 @@ pub struct DataContractMethodVersions {
     pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
+    /// Merges a delta-based (V1) update transition onto the stored contract.
+    /// `None` before protocol version 15, where no delta transition is admitted.
+    pub apply_update: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

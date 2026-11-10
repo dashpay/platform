@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::contract_moderation::DocumentActionFeesWithoutModerationError;
 use dpp::dashcore::Network;
@@ -36,9 +37,18 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
             return Ok(v1_result);
         }
 
-        if let Some(moderation) = self.data_contract().config().moderation() {
+        // Edited in place: the accessor returns no contract for a delta contract update, which
+        // the dispatcher refuses before this generation, so an update that embeds its contract
+        // is judged as it was
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a delta contract update reached a generation that validates updates embedding their contract",
+            )));
+        };
+
+        if let Some(moderation) = data_contract.config().moderation() {
             let result = moderation.validate(
-                self.data_contract().document_schemas(),
+                data_contract.document_schemas(),
                 network_type,
                 platform_version,
             )?;
@@ -49,10 +59,10 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
 
         // Document action fees: a document type may only charge for the moderators when the
         // contract declares moderation, since the moderation team is who that pot is for.
-        if self.data_contract().config().moderation().is_none() {
+        if data_contract.config().moderation().is_none() {
             if let Some(document_type_name) =
                 DocumentActionFees::first_document_type_charging_moderators(
-                    self.data_contract().document_schemas(),
+                    data_contract.document_schemas(),
                 )
             {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -66,7 +76,7 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV2 for DataContrac
         // pool must leave its freeze, unfreeze and destroy-frozen-funds rules unassigned,
         // since notes in a pool have no owner to freeze.
         Ok(validate_token_configurations(
-            self.data_contract().tokens(),
+            data_contract.tokens(),
             platform_version,
         ))
     }

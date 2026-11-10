@@ -11,12 +11,28 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::state_transitions::data_contract_update::delta::{
+    as_delta_result, merge_delta_onto_stored_contract, MergedDelta,
+};
 use crate::execution::validation::state_transition::state_transitions::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform::PlatformRef;
+use crate::rpc::core::CoreRPCLike;
+use drive::grovedb::TransactionArg;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionTransformIntoActionV1
 {
-    fn transform_into_action_v1(
+    fn transform_into_action_v1<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    fn transform_full_contract_update_into_action_v1(
         &self,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
@@ -26,15 +42,68 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 }
 
 impl DataContractUpdateStateTransitionTransformIntoActionV1 for DataContractUpdateTransition {
-    /// v0, then, in check_tx and recheck, the compiled size cap.
+    /// [`Self::transform_full_contract_update_into_action_v1`] for an update that embeds its
+    /// contract. A delta, which carries only what it changes, is merged onto the stored
+    /// contract first, and the update embedding the merged contract is transformed in its
+    /// place; the action pays the registration cost of what the delta registers.
     ///
-    /// A block holds an update to the cap in state validation, which check_tx and recheck do not
+    /// Unlike an update that embeds its contract, a delta reads state here, in check_tx too:
+    /// one whose contract is not in state, because it does not exist or is created earlier in
+    /// the same block, is refused, and so is one that does not merge or whose merged contract
+    /// breaks a structure rule. A block refuses the same in state validation.
+    fn transform_into_action_v1<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let DataContractUpdateTransition::V1(delta) = self else {
+            return self.transform_full_contract_update_into_action_v1(
+                block_info,
+                validation_mode,
+                execution_context,
+                platform_version,
+            );
+        };
+
+        match merge_delta_onto_stored_contract(
+            self,
+            delta,
+            platform,
+            block_info,
+            validation_mode,
+            execution_context,
+            tx,
+            platform_version,
+        )? {
+            MergedDelta::Refused(result) => Ok(result),
+            MergedDelta::Merged {
+                full_contract_update,
+                registration_cost,
+            } => Ok(as_delta_result(
+                full_contract_update.transform_full_contract_update_into_action_v1(
+                    block_info,
+                    validation_mode,
+                    execution_context,
+                    platform_version,
+                )?,
+                registration_cost,
+            )),
+        }
+    }
+
+    /// v0, then, in check_tx and recheck, the size caps.
+    ///
+    /// A block holds an update to the caps in state validation, which check_tx and recheck do not
     /// run, once the stored contract's creation fields, which the transition does not carry, are
     /// restored, and with the time fields of the block that includes it. check_tx sees neither:
     /// the contract may be created earlier in the same block, and the block is not yet known. So
     /// it measures the updated contract with all six time fields at their widest encodings,
     /// which no block can exceed, and charges that compile.
-    fn transform_into_action_v1(
+    fn transform_full_contract_update_into_action_v1(
         &self,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
@@ -130,7 +199,7 @@ mod tests {
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .expect("failed to create execution context");
         transition
-            .transform_into_action_v1(
+            .transform_full_contract_update_into_action_v1(
                 &BlockInfo::default(),
                 validation_mode,
                 &mut execution_context,

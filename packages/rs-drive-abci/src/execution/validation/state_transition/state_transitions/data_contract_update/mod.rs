@@ -1,6 +1,7 @@
 mod basic_structure;
 #[cfg(test)]
 mod contract_structure_error_tests;
+mod delta;
 mod identity_contract_nonce;
 mod state;
 mod transform_into_action;
@@ -8,8 +9,11 @@ mod transform_into_action;
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
 use basic_structure::v2::DataContractUpdateStateTransitionBasicStructureValidationV2;
+use basic_structure::v3::DataContractUpdateStateTransitionBasicStructureValidationV3;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::UnsupportedVersionError;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::Network;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -36,25 +40,55 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
+/// The refusal of a delta contract update that reaches a generation which validates the
+/// contract an update embeds.
+///
+/// A delta (version 1 of the transition) embeds no contract. It is not active before protocol
+/// version 15, where decoding refuses it, and from 15 the tables select generations that admit
+/// it. So these generations never see one; were one to get there, the dispatchers refuse it
+/// before the generation runs, as an unsupported version: a consensus error, so that it can
+/// never stop block execution, and the shipped generations stay as they were.
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) fn unsupported_delta_error(
+    transition: &DataContractUpdateTransition,
+    platform_version: &PlatformVersion,
+) -> ConsensusError {
+    let bounds = &platform_version
+        .dpp
+        .state_transition_serialization_versions
+        .contract_update_state_transition;
+    UnsupportedVersionError::new(
+        transition.feature_version(),
+        bounds.min_version,
+        bounds.max_version,
+    )
+    .into()
+}
+
 impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition {
     fn validate_basic_structure(
         &self,
         network_type: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version
+        let version = platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_update_state_transition
-            .basic_structure
-        {
+            .basic_structure;
+        if matches!(self, DataContractUpdateTransition::V1(_)) && matches!(version, Some(0..=2)) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                unsupported_delta_error(self, platform_version),
+            ));
+        }
+        match version {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
             Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
+            Some(3) => self.validate_basic_structure_v3(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
@@ -75,17 +109,22 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
         >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        match platform_version
+        let version = platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .contract_update_state_transition
-            .transform_into_action
-        {
+            .transform_into_action;
+        if matches!(self, DataContractUpdateTransition::V1(_)) && version == 0 {
+            return Ok(ConsensusValidationResult::new_with_error(
+                unsupported_delta_error(self, platform_version),
+            ));
+        }
+        match version {
             0 => self.transform_into_action_v0(
                 block_info,
                 validation_mode,
@@ -93,9 +132,11 @@ impl StateTransitionActionTransformer for DataContractUpdateTransition {
                 platform_version,
             ),
             1 => self.transform_into_action_v1(
+                platform,
                 block_info,
                 validation_mode,
                 execution_context,
+                tx,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
@@ -261,6 +302,8 @@ mod tests {
             platform: platform.set_initial_state_structure(),
         }
     }
+
+    mod delta;
 
     mod validate_state {
         use super::*;

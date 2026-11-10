@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -36,9 +37,10 @@ impl Drive {
         match platform_version.drive.methods.prove.prove_state_transition {
             0 => self.prove_state_transition_v0(state_transition, transaction, platform_version),
             1 => self.prove_state_transition_v1(state_transition, transaction, platform_version),
+            2 => self.prove_state_transition_v2(state_transition, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_state_transition".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

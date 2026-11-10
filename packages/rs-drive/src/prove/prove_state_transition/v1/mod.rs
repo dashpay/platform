@@ -17,6 +17,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
-        self.prove_state_transition_internal(state_transition, transaction, true, platform_version)
+        self.prove_state_transition_internal(
+            state_transition,
+            transaction,
+            true,
+            None,
+            platform_version,
+        )
     }
 }

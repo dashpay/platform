@@ -78,18 +78,27 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
-        self.prove_state_transition_internal(state_transition, transaction, false, platform_version)
+        self.prove_state_transition_internal(
+            state_transition,
+            transaction,
+            false,
+            None,
+            platform_version,
+        )
     }
 
     /// The proof of a state transition's execution, shared by every version of
     /// `prove_state_transition`. With `carries_owner_balance` (from version 1) the
     /// proof of an owned, fee-paying transition also carries the owner's credit
-    /// balance.
+    /// balance. `delta_contract_keeps_history` (from version 2) says whether the
+    /// contract a delta contract update names keeps history, which the transition,
+    /// embedding no contract, cannot say.
     pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
         &self,
         state_transition: &StateTransition,
         transaction: TransactionArg,
         carries_owner_balance: bool,
+        delta_contract_keeps_history: Option<bool>,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
@@ -101,7 +110,23 @@ impl Drive {
                 }
             }
             StateTransition::DataContractUpdate(st) => {
-                if st.data_contract().config().keeps_history() {
+                // Edited in place: an update that embeds its contract, the only form active
+                // through protocol version 14, is proved as it was. A delta, which embeds
+                // none, is proved from what version 2 read of the stored contract and refused
+                // by versions 0 and 1, which read nothing
+                let keeps_history = match (st.data_contract(), delta_contract_keeps_history) {
+                    (Some(data_contract), _) => data_contract.config().keeps_history(),
+                    (None, Some(keeps_history)) => keeps_history,
+                    (None, None) => {
+                        return Ok(ProofCreationResult::new_with_error(
+                            ProofError::InvalidTransition(
+                                "a delta data contract update is proved from prove_state_transition 2"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                };
+                if keeps_history {
                     contract_ids_to_historical_path_query(&st.modified_data_ids())
                 } else {
                     contract_ids_to_non_historical_path_query(&st.modified_data_ids())

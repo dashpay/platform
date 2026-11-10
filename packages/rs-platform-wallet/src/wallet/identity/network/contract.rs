@@ -28,6 +28,7 @@
 
 use super::signing_key::AvailableSigningKey;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -35,18 +36,17 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, PartialIdentity, Purpose, SecurityLevel};
-use dpp::platform_value::BinaryData;
+use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
-use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::version::TryFromPlatformVersioned;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::{
     ensure_private_document_entries_fit, PutContract,
 };
-use dash_sdk::platform::transition::waitable::Waitable;
+use dash_sdk::platform::transition::waitable::wait_for_data_contract_update;
 use dash_sdk::platform::Fetch;
 
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -317,14 +317,15 @@ impl IdentityWallet {
     /// Mirrors `create_data_contract_with_signer` but targets an
     /// already-registered contract. Unlike create, the caller-supplied
     /// JSON sections are *merged onto the fetched on-chain contract*
-    /// rather than used to build the payload from scratch. A
-    /// `DataContractUpdateTransition` broadcasts a complete contract
-    /// definition (not a diff), so anything the caller omits would
-    /// otherwise be reset to serde defaults — wiping live keywords /
-    /// description / config and, worse, dropping document-type / token /
-    /// group entries (which DPP rejects as illegal removals). Seeding
-    /// from `existing` keeps every untouched section intact. The
-    /// function:
+    /// rather than used to build the payload from scratch: anything the
+    /// caller omits would otherwise be reset to serde defaults, wiping
+    /// live keywords / description / config and, worse, dropping
+    /// document-type / token / group entries (which DPP rejects as
+    /// illegal removals). Seeding from `existing` keeps every untouched
+    /// section intact. The transition itself is built from the pair
+    /// (`existing`, merged contract), so on protocol versions that
+    /// default to delta-based updates only the changed sections go on
+    /// the wire. The function:
     ///   1. Looks up `owner_identity_id` in the in-memory wallet
     ///      manager and picks the CRITICAL + AUTHENTICATION + ECDSA
     ///      key (same triple a contract-create signature requires).
@@ -349,8 +350,9 @@ impl IdentityWallet {
     ///      `DataContractInSerializationFormat` enum entry point and
     ///      validated through `try_from_platform_versioned`.
     ///   4. Fetches + bumps the identity-contract nonce, builds a
-    ///      `DataContractUpdateTransition`, signs it via the external
-    ///      signer, broadcasts, and waits for the confirmed contract.
+    ///      `DataContractUpdateTransition` from the (existing, updated)
+    ///      pair, signs it via the external signer, broadcasts, and waits
+    ///      for the confirmed contract.
     ///
     /// # JSON shapes
     ///
@@ -449,63 +451,20 @@ impl IdentityWallet {
             )
         })?;
 
-        // 3. Build the updated serialization-format payload by merging
-        //    the caller's sections onto the fetched contract. `existing`
-        //    is already a valid V1 on-chain contract, so serializing it
-        //    to the canonical `DataContractInSerializationFormat` JSON
-        //    gives us a base that carries every live field (config keeps
-        //    its on-chain version, document/token/group sets are
-        //    complete). We then overlay only what the caller supplied.
+        // 3. Build the contract the update asks for: the fetched one
+        //    with the caller's sections merged in.
         let platform_version = self.sdk.version();
-        let base_format = DataContractInSerializationFormat::try_from_platform_versioned(
+        let updated_contract = assemble_updated_contract(
             &existing,
-            platform_version,
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to convert existing contract to serialization format: {e}"
-            ))
-        })?;
-        let base_value = serde_json::to_value(&base_format).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to serialize existing contract format: {e}"
-            ))
-        })?;
-
-        let merged_value = merge_contract_update_payload(
-            base_value,
             new_version,
-            parse_required_json("documents_schema_json", documents_schema_json)?,
-            parse_optional_json("tokens_schema_json", tokens_schema_json)?,
-            parse_optional_json("groups_schema_json", groups_schema_json)?,
-            parse_optional_json("keywords_json", keywords_json)?,
-            description.filter(|s| !s.is_empty()),
-            parse_optional_json("config_json", config_json)?,
+            documents_schema_json,
+            tokens_schema_json,
+            groups_schema_json,
+            keywords_json,
+            description,
+            config_json,
+            platform_version,
         )?;
-
-        // Round-trip through a string instead of `from_value` — see
-        // `create_data_contract_with_signer` for why the tagged-enum
-        // dispatch needs `to_string` + `from_str`.
-        let serialized = serde_json::to_string_pretty(&merged_value).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to serialize updated contract format: {e}"
-            ))
-        })?;
-        let format: DataContractInSerializationFormat =
-            serde_json::from_str(&serialized).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to assemble updated contract format: {e}\n\nAssembled JSON:\n{serialized}"
-                ))
-            })?;
-
-        let mut errors = vec![];
-        let updated_contract =
-            DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version)
-                .map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to build updated contract: {e}\n\nAssembled JSON:\n{serialized}"
-                    ))
-                })?;
 
         // A private document type the update adds, or whose properties it changes, takes entries
         // that must hold its largest payload, as `PutContract` checks on create; `existing` is the
@@ -537,8 +496,9 @@ impl IdentityWallet {
             not_found_public_keys: Default::default(),
         };
 
-        let transition = DataContractUpdateTransition::new_from_data_contract(
-            updated_contract,
+        let transition = DataContractUpdateTransition::new_from_contract_update(
+            &existing,
+            &updated_contract,
             &partial_identity,
             key_id,
             new_identity_contract_nonce,
@@ -559,12 +519,158 @@ impl IdentityWallet {
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
-        let confirmed = DataContract::wait_for_response(&self.sdk, transition, None)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        // The proof of a delta-based update is verified by merging the
+        // delta onto the contract it was built on. That contract goes
+        // with this wait rather than through the SDK's shared context
+        // provider, which keeps only the latest version of a contract:
+        // once the update is committed, a concurrent operation can
+        // register the updated contract there before this proof is
+        // verified, and the update would be reported as failed.
+        let confirmed =
+            wait_for_data_contract_update(&self.sdk, &transition, &Arc::new(existing), None)
+                .await
+                .map_err(PlatformWalletError::Sdk)?;
+
+        // Later operations on this contract verify against the
+        // confirmed one.
+        self.register_contract_for_proof_verification(&confirmed);
 
         Ok(confirmed)
     }
+}
+
+/// The contract an update asks for: `existing` at `new_version`, with the
+/// caller's sections merged in.
+///
+/// `existing` is already a valid V1 on-chain contract, so serializing it
+/// to the canonical `DataContractInSerializationFormat` JSON gives a base
+/// that carries every live field (config keeps its on-chain version,
+/// document/token/group sets are complete). Only what the caller supplied
+/// is overlaid ([`merge_contract_update_payload`]), and the document
+/// schemas and schema definitions the update leaves as they are come out
+/// exactly as Platform holds them ([`keep_unchanged_schemas_as_stored`]).
+#[allow(clippy::too_many_arguments)]
+fn assemble_updated_contract(
+    existing: &DataContract,
+    new_version: u32,
+    documents_schema_json: &str,
+    tokens_schema_json: Option<&str>,
+    groups_schema_json: Option<&str>,
+    keywords_json: Option<&str>,
+    description: Option<&str>,
+    config_json: Option<&str>,
+    platform_version: &PlatformVersion,
+) -> Result<DataContract, PlatformWalletError> {
+    let base_format =
+        DataContractInSerializationFormat::try_from_platform_versioned(existing, platform_version)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to convert existing contract to serialization format: {e}"
+                ))
+            })?;
+    let base_value = serde_json::to_value(&base_format).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to serialize existing contract format: {e}"
+        ))
+    })?;
+
+    let merged_value = merge_contract_update_payload(
+        base_value,
+        new_version,
+        parse_required_json("documents_schema_json", documents_schema_json)?,
+        parse_optional_json("tokens_schema_json", tokens_schema_json)?,
+        parse_optional_json("groups_schema_json", groups_schema_json)?,
+        parse_optional_json("keywords_json", keywords_json)?,
+        description.filter(|s| !s.is_empty()),
+        parse_optional_json("config_json", config_json)?,
+    )?;
+
+    // Round-trip through a string instead of `from_value` — see
+    // `create_data_contract_with_signer` for why the tagged-enum
+    // dispatch needs `to_string` + `from_str`.
+    let serialized = serde_json::to_string_pretty(&merged_value).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to serialize updated contract format: {e}"
+        ))
+    })?;
+    let mut format: DataContractInSerializationFormat =
+        serde_json::from_str(&serialized).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to assemble updated contract format: {e}\n\nAssembled JSON:\n{serialized}"
+            ))
+        })?;
+    keep_unchanged_schemas_as_stored(&mut format, &base_format)?;
+
+    let mut errors = vec![];
+    DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version).map_err(
+        |e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to build updated contract: {e}\n\nAssembled JSON:\n{serialized}"
+            ))
+        },
+    )
+}
+
+/// Puts back, exactly as Platform holds them, the document schemas and
+/// schema definitions that `updated` leaves as they are in `existing`.
+///
+/// `updated` was read from JSON, and JSON does not keep how a schema's
+/// values are typed: a `maxLength` Platform holds as a 32-bit integer reads
+/// back as a 64-bit one. A delta carries every schema that is not exactly
+/// the stored one, so a schema that only went through JSON would be sent
+/// again as replaced and its registration paid for again, and a contract
+/// grown past what one transition holds could not be updated at all. A
+/// schema is one the update leaves as it is when it reads as the same JSON
+/// as the stored one, whether the caller left it out or sent it again.
+fn keep_unchanged_schemas_as_stored(
+    updated: &mut DataContractInSerializationFormat,
+    existing: &DataContractInSerializationFormat,
+) -> Result<(), PlatformWalletError> {
+    let not_changeable = || {
+        PlatformWalletError::InvalidIdentityData(
+            "The updated contract is not in a format whose schemas can be set".to_string(),
+        )
+    };
+
+    let schemas = updated
+        .document_schemas_mut()
+        .map_err(|_| not_changeable())?;
+    for (name, schema) in schemas.iter_mut() {
+        if let Some(stored) = existing.document_schemas().get(name) {
+            if reads_as_the_same_json(schema, stored)? {
+                *schema = stored.clone();
+            }
+        }
+    }
+
+    let definitions = match updated {
+        DataContractInSerializationFormat::V0(v0) => &mut v0.schema_defs,
+        DataContractInSerializationFormat::V1(v1) => &mut v1.schema_defs,
+        DataContractInSerializationFormat::V2(_) => return Err(not_changeable()),
+    };
+    if let (Some(definitions), Some(stored_definitions)) = (definitions, existing.schema_defs()) {
+        for (name, definition) in definitions.iter_mut() {
+            if let Some(stored) = stored_definitions.get(name) {
+                if reads_as_the_same_json(definition, stored)? {
+                    *definition = stored.clone();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether two schema values are the same once written as JSON, the form
+/// the caller's sections arrive in.
+fn reads_as_the_same_json(a: &Value, b: &Value) -> Result<bool, PlatformWalletError> {
+    let json = |value: &Value| {
+        serde_json::to_value(value).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to write a schema as JSON: {e}"
+            ))
+        })
+    };
+    Ok(json(a)? == json(b)?)
 }
 
 /// Parse a required JSON `&str`. `field_name` only feeds the error
@@ -763,7 +869,11 @@ fn build_config_object(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::version::PlatformVersion;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::data_contract::update_values::DescriptionUpdate;
+    use dpp::platform_value::platform_value;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV1;
+    use dpp::tests::fixtures::get_data_contract_fixture;
     use serde_json::json;
 
     /// A minimal serialized-V1-contract base value, shaped like the
@@ -1044,5 +1154,149 @@ mod tests {
             contract.is_ok(),
             "assembled config must validate at the latest version: {contract:?} (errors: {errors:?})"
         );
+    }
+
+    /// A contract as Platform can hold one and JSON cannot say: its schemas hold
+    /// integers 32 bits wide, in two document types and in a schema definition.
+    fn contract_with_narrow_integers() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let mut format = DataContractInSerializationFormat::try_from_platform_versioned(
+            &fixture,
+            platform_version,
+        )
+        .expect("expected the fixture in serialization format");
+        let DataContractInSerializationFormat::V1(v1) = &mut format else {
+            panic!("expected format version 1");
+        };
+        v1.schema_defs.get_or_insert_with(Default::default).insert(
+            "shortName".to_string(),
+            platform_value!({"type": "string", "maxLength": 20u32}),
+        );
+        let contract =
+            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
+                .expect("expected a valid contract");
+
+        assert!(
+            holds_a_32_bit_integer(contract.document_schemas()["indexedDocument"]),
+            "the fixture's maxLength values are 32 bits wide"
+        );
+        contract
+    }
+
+    fn holds_a_32_bit_integer(value: &Value) -> bool {
+        match value {
+            Value::U32(_) => true,
+            Value::Map(entries) => entries
+                .iter()
+                .any(|(_, value)| holds_a_32_bit_integer(value)),
+            Value::Array(items) => items.iter().any(holds_a_32_bit_integer),
+            _ => false,
+        }
+    }
+
+    fn delta_between(
+        existing: &DataContract,
+        updated: &DataContract,
+    ) -> DataContractUpdateTransitionV1 {
+        match DataContractUpdateTransition::from_contract_update(
+            existing,
+            updated,
+            1,
+            PlatformVersion::latest(),
+        )
+        .expect("expected a contract update")
+        {
+            DataContractUpdateTransition::V1(delta) => delta,
+            other => panic!("expected a delta, got {other:?}"),
+        }
+    }
+
+    /// The whole contract goes through JSON on its way to the updated one, and JSON
+    /// reads a 32-bit integer back as a 64-bit one. An update that changes no schema
+    /// must still send none: a schema sent again is registered and paid for again.
+    #[test]
+    fn should_send_no_schema_in_the_delta_of_an_update_that_changes_none() {
+        let platform_version = PlatformVersion::latest();
+        let existing = contract_with_narrow_integers();
+
+        let updated = assemble_updated_contract(
+            &existing,
+            existing.version() + 1,
+            "{}",
+            None,
+            None,
+            None,
+            Some("a new description"),
+            None,
+            platform_version,
+        )
+        .expect("expected the updated contract");
+
+        let delta = delta_between(&existing, &updated);
+        assert!(
+            delta.updated_document_schemas.is_empty(),
+            "sent again: {:?}",
+            delta.updated_document_schemas.keys()
+        );
+        assert!(delta.new_document_schemas.is_empty());
+        assert!(
+            delta.updated_schema_defs.is_empty(),
+            "sent again: {:?}",
+            delta.updated_schema_defs.keys()
+        );
+        assert!(delta.new_schema_defs.is_empty());
+        assert_eq!(
+            delta.description,
+            DescriptionUpdate::Set("a new description".to_string())
+        );
+        assert_eq!(
+            delta
+                .registration_cost(platform_version)
+                .expect("expected a registration cost"),
+            0
+        );
+        // The schemas asked for are the stored ones exactly, 32-bit integers included
+        assert_eq!(updated.document_schemas(), existing.document_schemas());
+        assert_eq!(updated.schema_defs(), existing.schema_defs());
+    }
+
+    /// A schema the caller sends as it is stored is left out like one it does not
+    /// send, and a schema it changes is still sent.
+    #[test]
+    fn should_send_only_the_schema_the_caller_changes() {
+        let platform_version = PlatformVersion::latest();
+        let existing = contract_with_narrow_integers();
+        let as_stored = serde_json::to_value(existing.document_schemas()["indexedDocument"])
+            .expect("expected the stored schema as JSON");
+        let mut changed = serde_json::to_value(existing.document_schemas()["noTimeDocument"])
+            .expect("expected the stored schema as JSON");
+        changed["properties"]["nickname"] =
+            json!({"type": "string", "maxLength": 20, "position": 1});
+        let documents =
+            json!({"indexedDocument": as_stored, "noTimeDocument": changed}).to_string();
+
+        let updated = assemble_updated_contract(
+            &existing,
+            existing.version() + 1,
+            &documents,
+            None,
+            None,
+            None,
+            None,
+            None,
+            platform_version,
+        )
+        .expect("expected the updated contract");
+
+        let delta = delta_between(&existing, &updated);
+        assert_eq!(
+            delta.updated_document_schemas.keys().collect::<Vec<_>>(),
+            ["noTimeDocument"]
+        );
+        assert!(delta.new_document_schemas.is_empty());
+        assert!(delta.updated_schema_defs.is_empty());
+        assert!(delta.new_schema_defs.is_empty());
     }
 }

@@ -26,6 +26,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1.
+/// - `apply_update`, `Some(0)` rather than `None`: merges what a delta contract update carries
+///   onto the stored contract, the one definition of the merge, which block execution and the
+///   verification of a delta's execution proof both run.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -35,6 +38,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         // `jsonschema` crate, reaching the same verdicts but for one rule of its own: in a
         // `uniqueItems` list, `0.0` and `-0.0` are one value however long the list
         validate_document: 2,
+        // changed: merges a delta contract update onto the stored contract (v15 note 33)
+        apply_update: Some(0),
         ..CONTRACT_VERSIONS_V6.methods
     },
     document_type_versions: DocumentTypeVersions {

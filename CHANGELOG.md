@@ -22,6 +22,23 @@
 
 ### Changed
 
+- **dpp, drive (Rust API):** `DataContractUpdateTransition` gains version 1, the delta form,
+  which carries only what an update changes (protocol v15 note 33). An exhaustive match on
+  the transition or on `DataContractUpdateTransitionAction` needs a `V1` arm.
+  `DataContractUpdateTransitionAccessorsV0::data_contract()` returns
+  `Option<&DataContractInSerializationFormat>`, `None` for a delta, which embeds no contract,
+  and `set_data_contract` returns a `Result`; `data_contract_id()` is new and reads either
+  version. `new_from_data_contract`, which has only the new contract, always builds version
+  0; the new `new_from_contract_update(old_contract, new_contract, ...)` and
+  `from_contract_update` build the version the platform version defaults to, a delta from
+  protocol version 15. A delta's execution proof is verified against the contract as it was
+  before the update, and fails with `ProofError::MissingContextRequirement` without it: the
+  Rust SDK's new `wait_for_data_contract_update(sdk, &transition, &pre_update_contract,
+  settings)` takes that contract with the wait, where the context provider, which keeps
+  only the latest version of a contract, may no longer hold it. New consensus errors: 10283,
+  10284, 40010, 40011; the three that name a delta's entry (10283, 40010, 40011) carry at
+  most 256 bytes of its name.
+
 - **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
   `epochs_per_era` or `previous_fee_versions`:
   `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.

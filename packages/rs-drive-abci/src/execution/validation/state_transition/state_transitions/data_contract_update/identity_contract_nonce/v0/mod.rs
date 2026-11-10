@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::NonceOutOfBoundsError;
@@ -39,6 +40,14 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        // Edited in place: the accessor returns no contract for a delta contract update, which
+        // the dispatcher refuses before this generation, so an update that embeds its contract
+        // is judged as it was
+        let Some(data_contract) = self.data_contract() else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a delta contract update reached a generation that validates updates embedding their contract",
+            )));
+        };
         let revision_nonce = self.identity_contract_nonce();
 
         if revision_nonce & MISSING_IDENTITY_REVISIONS_FILTER > 0 {
@@ -48,8 +57,8 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
             ));
         }
 
-        let identity_id = self.data_contract().owner_id();
-        let contract_id = self.data_contract().id();
+        let identity_id = data_contract.owner_id();
+        let contract_id = data_contract.id();
         let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(
             identity_id.to_buffer(),
             contract_id.to_buffer(),

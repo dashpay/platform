@@ -65,6 +65,8 @@ use crate::consensus::state::identity::{IdentityAlreadyExistsError, IdentityInsu
 use crate::consensus::ConsensusError;
 use crate::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
+use crate::consensus::state::data_contract::data_contract_update_entry_already_exists_error::DataContractUpdateEntryAlreadyExistsError;
+use crate::consensus::state::data_contract::data_contract_update_entry_not_found_error::DataContractUpdateEntryNotFoundError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
@@ -771,6 +773,14 @@ pub enum StateError {
 
     #[error(transparent)]
     PrivateDocumentEntrySizeMismatchError(PrivateDocumentEntrySizeMismatchError),
+
+    // A delta contract update (protocol version 15) adding an entry the stored contract
+    // already has, or changing or removing one it does not have.
+    #[error(transparent)]
+    DataContractUpdateEntryAlreadyExistsError(DataContractUpdateEntryAlreadyExistsError),
+
+    #[error(transparent)]
+    DataContractUpdateEntryNotFoundError(DataContractUpdateEntryNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -783,6 +793,7 @@ impl From<StateError> for ConsensusError {
 mod tests {
     use super::*;
     use crate::block::block_info::BlockInfo;
+    use crate::consensus::basic::data_contract::DataContractUpdateEntryKind;
     use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
@@ -1749,6 +1760,27 @@ mod tests {
                 )
             )),
             180
+        );
+        // Delta contract updates (protocol version 15): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DataContractUpdateEntryAlreadyExistsError(
+                DataContractUpdateEntryAlreadyExistsError::new(
+                    identity_id,
+                    DataContractUpdateEntryKind::DocumentType,
+                    "note".to_string(),
+                )
+            )),
+            181
+        );
+        assert_eq!(
+            discriminant_of(StateError::DataContractUpdateEntryNotFoundError(
+                DataContractUpdateEntryNotFoundError::new(
+                    identity_id,
+                    DataContractUpdateEntryKind::DocumentType,
+                    "note".to_string(),
+                )
+            )),
+            182
         );
     }
 }

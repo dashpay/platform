@@ -53,6 +53,8 @@ use zeroize::Zeroizing;
 #[cfg(all(test, feature = "mocks"))]
 mod block_query_tests;
 #[cfg(all(test, feature = "mocks"))]
+mod contract_update_wait_tests;
+#[cfg(all(test, feature = "mocks"))]
 mod document_query_shape_tests;
 #[cfg(all(test, feature = "mocks"))]
 mod identity_discovery_tests;

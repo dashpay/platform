@@ -50,3 +50,7 @@ pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion 
 /// store paying from the credit shielded pool, is not active before it, as software that
 /// predates it cannot decode one.
 pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// Version 1 of the data contract update transition, the delta form, which carries only what an
+/// update changes instead of the whole contract, activates with protocol version 15. Below it a
+/// delta is refused without a fee, as software that predates it cannot decode one.
+pub const DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

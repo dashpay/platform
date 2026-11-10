@@ -20,6 +20,7 @@ use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize, PlatformSignable,
 };
 use platform_version::version::feature_initial_protocol_versions::{
+    DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION,
     PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION,
 };
@@ -1245,7 +1246,13 @@ impl StateTransition {
                 }
             }
             StateTransition::DataContractUpdate(data_contract_update_transition) => {
-                active_version_range_for_contract(data_contract_update_transition.data_contract())
+                match data_contract_update_transition.data_contract() {
+                    Some(contract) => active_version_range_for_contract(contract),
+                    // Version 1, the delta form, embeds no contract and exists from protocol
+                    // version 15. Binaries from before it cannot decode one, so an earlier
+                    // version rejects it without charging, exactly as they do.
+                    None => DATA_CONTRACT_UPDATE_V1_INITIAL_PROTOCOL_VERSION..=LATEST_VERSION,
+                }
             }
             StateTransition::Batch(batch_transition) => {
                 // Version 2 of the document base (the action fee agreement) exists from
