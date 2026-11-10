@@ -226,39 +226,32 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
     Task { _ = try? await walletManager.dashPaySyncNow() }
 }
 
-/// The contacts among `contactIds` whose pair with `identityId` the wallet
-/// holds for a private request, as a send decides it
-/// (`ManagedPlatformWallet.privatePairHeld`, one read per contact): a private
-/// request in flight, paid and not yet read back, or kept by the shielded
-/// store's journal. While a pair is held, Rust refuses another send or reply
-/// to it, so the views show it as pending and offer neither. Empty when the
-/// wallet does not manage the identity, as it then holds nothing for it. Nil
-/// when the wallet could not be read (no loaded wallet, or a read failed),
-/// which the views keep apart from "nothing pending"
-/// (`PrivateRepliesPendingSnapshot`).
+/// The wallet's two holds on `identityId`'s pairs with `contactIds`, one
+/// read of each per contact: held for a private request, as a send decides
+/// it (`ManagedPlatformWallet.privatePairHeld`: a private request in flight,
+/// paid and not yet read back, or kept by the shielded store's journal), and
+/// held for a public request whose broadcast may have been delivered
+/// (`ManagedPlatformWallet.publicContactRequestUnconfirmed`), which a DashPay
+/// sync settles. While either holds a pair, Rust refuses another send or
+/// reply to it, so the views offer neither. Empty when the wallet does not
+/// manage the identity, as it then holds nothing for it. Nil when the wallet
+/// could not be read (no loaded wallet, or a read failed), which the views
+/// keep apart from "nothing held" (`PrivateRepliesPendingSnapshot`).
 @MainActor
-func privateRepliesPending(
+func contactRequestHolds(
     wallet: ManagedPlatformWallet?,
     identityId: Data,
     contactIds: [Data]
-) -> Set<Data>? {
-    guard !contactIds.isEmpty else { return [] }
+) -> ContactRequestHolds? {
+    guard !contactIds.isEmpty else { return ContactRequestHolds() }
     guard let wallet else { return nil }
-    do {
-        var pending = Set<Data>()
-        for contactId in contactIds {
-            if try wallet.privatePairHeld(senderId: identityId, recipientId: contactId) {
-                pending.insert(contactId)
-            }
+    return contactRequestHolds(
+        contactIds: contactIds,
+        privatePairHeld: { try wallet.privatePairHeld(senderId: identityId, recipientId: $0) },
+        publicUnconfirmed: {
+            try wallet.publicContactRequestUnconfirmed(senderId: identityId, recipientId: $0)
         }
-        return pending
-    } catch PlatformWalletError.identityNotFound(_) {
-        // Code 7: the wallet does not hold the identity, so it holds nothing
-        // for it.
-        return []
-    } catch {
-        return nil
-    }
+    )
 }
 
 /// The wallet's readiness for `identityId`'s contact requests and, when it

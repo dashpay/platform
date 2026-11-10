@@ -588,6 +588,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A public contact request whose outcome is unconfirmed holds the pair by
+    /// its own code and typed case, apart from a private request pending (71).
+    func testShouldReportAnUnconfirmedPublicRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED
+        )
+        XCTAssertEqual(code, .errorPublicContactRequestUnconfirmed)
+        XCTAssertEqual(code.rawValue, 76)
+        let detail = "a public contact request to 9fRYTJZW was broadcast and its outcome is not proved"
+        guard case .publicContactRequestUnconfirmed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed public-unconfirmed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

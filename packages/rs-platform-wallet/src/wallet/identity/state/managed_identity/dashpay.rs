@@ -11,6 +11,8 @@ use crate::wallet::identity::{
     ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
 };
 use dpp::prelude::Identifier;
+use dpp::state_transition::StateTransition;
+use key_wallet::bip32::ExtendedPubKey;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How an identity and a contact exchanged private contact requests (protocol
@@ -36,6 +38,25 @@ pub struct PrivateContact {
 pub(crate) struct PendingPrivateReply {
     pub(crate) attempt: u64,
     pub(crate) commitment: Option<[u8; 32]>,
+}
+
+/// A public contact request to one recipient whose broadcast may have been
+/// delivered, and whose outcome no proof settled yet
+/// ([`DashPayState::public_contact_request_unconfirmed`]): the signed
+/// transition, which a retry broadcasts again, and what recording the request
+/// takes once it is proved on Platform. Only the attempt that held it settles
+/// it.
+#[derive(Debug, Clone)]
+pub(crate) struct UnconfirmedPublicRequest {
+    pub(crate) attempt: u64,
+    pub(crate) transition: StateTransition,
+    /// The account reference the request carries: its document is looked up
+    /// by the sender, the recipient and it, DashPay's unique index.
+    pub(crate) account_reference: u32,
+    /// Our receiving (friendship) account for the pair, registered once the
+    /// request is recorded, as a send registers it.
+    pub(crate) account_index: u32,
+    pub(crate) contact_xpub: ExtendedPubKey,
 }
 
 /// DashPay social state carried by one [`ManagedIdentity`](super::ManagedIdentity).
@@ -179,6 +200,18 @@ pub struct DashPayState {
     /// so a send that outlived its wallet's removal and re-creation under the
     /// same id cannot release a claim of the new wallet. In memory only.
     pub(super) public_contact_request_claims: BTreeMap<Identifier, BTreeSet<u64>>,
+
+    /// The public request to each recipient whose broadcast may have been
+    /// delivered while no proof settled its outcome: it may still execute, so
+    /// no other request to the recipient is signed, public or private, until a
+    /// proved read shows its document on Platform (it is then recorded as
+    /// sent) or shows the transition can no longer write it. A retry
+    /// broadcasts the same signed bytes. In memory only, bound to the wallet
+    /// generation that holds this state: a process that starts afresh reads
+    /// the identity contract nonce from Platform and finds a request already
+    /// on Platform before it sends, which is what keeps a second one from
+    /// executing then.
+    pub(super) unconfirmed_public_requests: BTreeMap<Identifier, UnconfirmedPublicRequest>,
 
     /// Whether this identity was loaded with a private contact request
     /// payment that may be unresolved
@@ -374,13 +407,36 @@ impl DashPayState {
     /// A recipient this identity holds a contact request in flight to, if
     /// any: a private request it is paying for or has not read back
     /// ([`Self::private_reply_pending`]), or a public one claimed and not yet
-    /// recorded ([`Self::public_contact_request_claimed`]).
+    /// recorded ([`Self::public_contact_request_claimed`]) or unconfirmed
+    /// ([`Self::public_contact_request_unconfirmed`]).
     pub fn contact_request_in_flight(&self) -> Option<Identifier> {
         self.pending_private_replies
             .keys()
             .chain(self.public_contact_request_claims.keys())
+            .chain(self.unconfirmed_public_requests.keys())
             .next()
             .copied()
+    }
+
+    /// Whether a public request to `contact` was broadcast and may have been
+    /// delivered, with no proof settling its outcome yet; see the field doc.
+    pub fn public_contact_request_unconfirmed(&self, contact: &Identifier) -> bool {
+        self.unconfirmed_public_requests.contains_key(contact)
+    }
+
+    /// The unconfirmed public request to `contact`, if any
+    /// ([`Self::public_contact_request_unconfirmed`]).
+    pub(crate) fn unconfirmed_public_request(
+        &self,
+        contact: &Identifier,
+    ) -> Option<&UnconfirmedPublicRequest> {
+        self.unconfirmed_public_requests.get(contact)
+    }
+
+    /// The recipients this identity holds an unconfirmed public request to
+    /// ([`Self::public_contact_request_unconfirmed`]).
+    pub(crate) fn unconfirmed_public_request_recipients(&self) -> Vec<Identifier> {
+        self.unconfirmed_public_requests.keys().copied().collect()
     }
 
     /// Whether this identity was loaded with a private contact request payment

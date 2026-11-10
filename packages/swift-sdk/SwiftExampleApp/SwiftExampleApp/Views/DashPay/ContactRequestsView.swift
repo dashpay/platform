@@ -48,7 +48,8 @@ struct ContactRequestsView: View {
     @State private var rowErrors: [Data: String] = [:]
 
     /// Contact ids whose pair the wallet holds for a private request, as a
-    /// send decides it (`privateRepliesPending`): the row stays pending,
+    /// send decides it, or for a public request awaiting its outcome
+    /// (`contactRequestHolds`): the row stays pending or "being checked",
     /// without its buttons, until the wallet's read says the pair is free.
     /// Read from the wallet on appear, after an accept and after each sync
     /// pass, so leaving and reopening the screen keeps it. A failed read
@@ -158,6 +159,7 @@ struct ContactRequestsView: View {
                                         || !walletPending.allowsSubmission(to: row.contactIdentityId),
                                     errorMessage: ContactRequestSubmissionOutcome.rowMessage(
                                         pending: walletPending.isPending(row.contactIdentityId),
+                                        awaitingOutcome: walletPending.isAwaitingOutcome(row.contactIdentityId),
                                         restoring: walletPending.isRestoringPrivatePayments,
                                         restoreFailure: walletPending.restoreFailure,
                                         shieldedStoreFailure: shieldedStoreFailure,
@@ -200,6 +202,8 @@ struct ContactRequestsView: View {
             }
         }
         .refreshable {
+            // The DashPay sync settles a public request awaiting its outcome
+            // first, so the reload below reads what it decided.
             await attachOrStartSync(walletManager)
             if let wallet = try? requireWallet() {
                 privateRefreshNotice = await syncPrivateContactRequests(wallet)
@@ -256,8 +260,9 @@ struct ContactRequestsView: View {
     /// Re-read from the wallet its readiness (`PrivatePaymentsRecovery.refresh`:
     /// the wallet is asked to retry a restoration first when its payments are
     /// not restored, and the readiness shown is read after that), then which
-    /// incoming rows' pairs it holds for a private request, and keep
-    /// refreshing on a timer while the payments stay unrestored.
+    /// incoming rows' pairs it holds for a private request or for a public
+    /// request awaiting its outcome, and keep refreshing on a timer while the
+    /// payments stay unrestored.
     private func reloadPendingReplies() {
         let contactIds = incomingPending.map(\.contactIdentityId)
         let wallet = try? requireWallet()
@@ -271,7 +276,7 @@ struct ContactRequestsView: View {
         walletPending.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
         shieldedStoreFailure = refreshed.storeFailure
         walletPending.record(
-            privateRepliesPending(wallet: wallet, identityId: identityId, contactIds: contactIds),
+            contactRequestHolds(wallet: wallet, identityId: identityId, contactIds: contactIds),
             for: contactIds
         )
         if PrivatePaymentsRecovery.recheckDelay(after: walletPending.readiness, attempt: readinessRechecks) != nil {
@@ -338,21 +343,24 @@ struct ContactRequestsView: View {
                 removedOverlayIds.insert(contactId)
                 kickDashPaySync(walletManager)
             } catch {
-                switch ContactRequestSubmissionOutcome.of(error) {
-                case .mayHaveGoneThrough:
+                let outcome = ContactRequestSubmissionOutcome.of(error)
+                walletPending.recordOutcome(outcome, for: contactId)
+                switch outcome {
+                case .mayHaveGoneThrough, .publicRequestUnconfirmed:
                     // As `SendViewModel` treats an unconfirmed spend: not a
-                    // failure to retry. The wallet keeps the reply pending,
-                    // and the row reads that; the next sync settles it.
+                    // failure to retry. The wallet holds the pair (a private
+                    // reply pending, or a public one awaiting its outcome, 76
+                    // when an earlier one still does), and the row reads that;
+                    // the sync settles it.
                     kickDashPaySync(walletManager)
                 case .privateRequestPending:
                     // Nothing was sent: the wallet holds the pair. The row
                     // stays pending until its per-contact read says free.
-                    walletPending.recordRefusal(of: contactId)
                     kickDashPaySync(walletManager)
                 case .privatePaymentsNotRestored:
                     // The wallet is held until its private payments are
                     // restored; every row waits for the readiness to say so.
-                    walletPending.recordRestoringRefusal()
+                    break
                 case .privateStoreNotRead:
                     // Nothing was sent and nothing is pending: the user may
                     // accept again, which continues the read.

@@ -5,7 +5,7 @@
 //! - Receiving contact requests (incoming)
 //! - Automatically establishing contacts when both parties send requests
 
-use super::dashpay::PendingPrivateReply;
+use super::dashpay::{PendingPrivateReply, UnconfirmedPublicRequest};
 use super::ManagedIdentity;
 use crate::changeset::{
     ContactChangeSet, ContactRequestEntry, PrivateContactRequestsPosition,
@@ -18,6 +18,8 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
+use dpp::state_transition::StateTransition;
+use key_wallet::bip32::ExtendedPubKey;
 use platform_encryption::account_reference_version;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1074,7 +1076,8 @@ impl ManagedIdentity {
     /// returning the attempt that holds it; `None` when one already is. See
     /// [`DashPayState::private_reply_pending`](super::DashPayState::private_reply_pending).
     pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> Option<u64> {
-        // A public request being sent to the recipient holds the pair too.
+        // A public request being sent to the recipient, or one unconfirmed,
+        // holds the pair too.
         if self
             .dashpay
             .pending_private_replies
@@ -1082,6 +1085,10 @@ impl ManagedIdentity {
             || self
                 .dashpay
                 .public_contact_request_claims
+                .contains_key(&recipient)
+            || self
+                .dashpay
+                .unconfirmed_public_requests
                 .contains_key(&recipient)
         {
             return None;
@@ -1115,6 +1122,53 @@ impl ManagedIdentity {
             if claims.is_empty() {
                 self.dashpay.public_contact_request_claims.remove(recipient);
             }
+        }
+    }
+
+    /// Hold the pair with `recipient` for the public request `transition`
+    /// signs, whose broadcast may have been delivered, under a new attempt it
+    /// returns: until that attempt settles it
+    /// ([`Self::settle_unconfirmed_public_request`]), no other request to the
+    /// recipient is signed, public or private. A request already held for the
+    /// recipient is replaced, as only one can be signed while another is held.
+    pub(crate) fn hold_unconfirmed_public_request(
+        &mut self,
+        recipient: Identifier,
+        transition: StateTransition,
+        account_reference: u32,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay.unconfirmed_public_requests.insert(
+            recipient,
+            UnconfirmedPublicRequest {
+                attempt,
+                transition,
+                account_reference,
+                account_index,
+                contact_xpub,
+            },
+        );
+        attempt
+    }
+
+    /// Settle the unconfirmed public request `attempt` holds to `recipient`:
+    /// a proved read showed its document on Platform, or showed the
+    /// transition can no longer write it. Nothing when another attempt holds
+    /// the recipient by now.
+    pub(crate) fn settle_unconfirmed_public_request(
+        &mut self,
+        recipient: &Identifier,
+        attempt: u64,
+    ) {
+        if self
+            .dashpay
+            .unconfirmed_public_requests
+            .get(recipient)
+            .is_some_and(|held| held.attempt == attempt)
+        {
+            self.dashpay.unconfirmed_public_requests.remove(recipient);
         }
     }
 

@@ -756,6 +756,18 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorProtocolVersionNotActive`] (70).
     ErrorSdkPinnedBelowProtocolVersion = 75,
 
+    /// Maps `PlatformWalletError::PublicContactRequestUnconfirmed`: a public
+    /// contact request to that identity was broadcast and may have been
+    /// delivered (its own send or accept reported
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`] (20)), and no proof
+    /// settled its outcome yet. Nothing new was signed. Unconfirmed, not
+    /// failed: do not submit it again. A public contact request sync settles
+    /// it, recording the request once its document is proved on Platform and
+    /// freeing the pair once its transition is proved unable to write it.
+    /// A private request pending to the identity is
+    /// [`Self::ErrorPrivateContactRequestPending`] (71).
+    ErrorPublicContactRequestUnconfirmed = 76,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1229,6 +1241,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // it again.
             PlatformWalletError::PrivateContactRequestPending(..) => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+            }
+            // A public request to the contact was broadcast and its outcome is
+            // not proved yet: unconfirmed, not failed, so the host must not
+            // submit it again.
+            PlatformWalletError::PublicContactRequestUnconfirmed(..) => {
+                PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3079,6 +3097,26 @@ mod private_contact_request_error_tests {
         assert_eq!(
             map_spend_result(Err(pending()), "private contact request").code,
             PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
+    }
+
+    /// A public request to a contact whose outcome is unconfirmed holds the
+    /// pair by its own code, not as a private request pending, whichever path
+    /// reports it: the blanket conversion, and the shielded spend contract the
+    /// private send and accepts use.
+    #[test]
+    fn should_report_an_unconfirmed_public_request_by_its_own_code() {
+        let unconfirmed = || PlatformWalletError::PublicContactRequestUnconfirmed([7; 32].into());
+        let result = PlatformWalletFFIResult::from(unconfirmed());
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
+        );
+        assert_eq!(result.code as u32, 76);
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            map_spend_result(Err(unconfirmed()), "private contact request").code,
+            PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
         );
     }
 

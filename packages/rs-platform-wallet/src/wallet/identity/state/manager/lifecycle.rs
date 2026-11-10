@@ -213,7 +213,9 @@ impl IdentityManager {
     /// request channel is held: a contact request in flight, private or
     /// public, or a private payment that may still execute, whether its own
     /// state or the wallet's journal holds it
-    /// ([`PlatformWalletError::PrivateContactRequestPending`]), or one from an
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]; a public one
+    /// whose outcome is unconfirmed is
+    /// [`PlatformWalletError::PublicContactRequestUnconfirmed`]), or one from an
     /// earlier process not restored yet
     /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]). Removed
     /// and loaded again, the identity would start with none of those holds,
@@ -226,6 +228,15 @@ impl IdentityManager {
     ) -> Result<Identity, PlatformWalletError> {
         if let Some(managed) = self.managed_identity(identity_id) {
             let dashpay = managed.dashpay();
+            if let Some(recipient) = dashpay
+                .unconfirmed_public_request_recipients()
+                .first()
+                .copied()
+            {
+                return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
+                    recipient,
+                ));
+            }
             if let Some(recipient) = dashpay
                 .contact_request_in_flight()
                 .or_else(|| persister.private_sender_journaled(identity_id))

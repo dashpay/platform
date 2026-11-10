@@ -152,6 +152,31 @@ extension ManagedPlatformWallet {
         return PrivateContactReadiness(ffi: ffi)
     }
 
+    /// Whether a public contact request from `senderId`, one of this
+    /// wallet's identities, to `recipientId` was broadcast and may have been
+    /// delivered, with no proof settling its outcome yet. The send or accept
+    /// that broadcast it threw `PlatformWalletError.transactionBroadcastUnconfirmed`
+    /// (20); while it stands, Rust refuses every contact request or
+    /// acceptance to the recipient, public or private
+    /// (`PlatformWalletError.publicContactRequestUnconfirmed`, 76), so show the
+    /// pair as unconfirmed and offer neither. A public contact request sync
+    /// (the DashPay sync) settles it. Read it beside
+    /// `privatePairHeld(senderId:recipientId:)`, which reads a private request
+    /// pending. Throws `PlatformWalletError.identityNotFound` (code 7) for a
+    /// sender the wallet does not hold.
+    public func publicContactRequestUnconfirmed(senderId: Identifier, recipientId: Identifier) throws -> Bool {
+        var unconfirmed = false
+        let handle = self.handle
+        let result = senderId.withFFIBytes { senderPtr in
+            recipientId.withFFIBytes { recipientPtr in
+                platform_wallet_get_public_contact_request_unconfirmed(
+                    handle, senderPtr, recipientPtr, &unconfirmed)
+            }
+        }
+        try result.check()
+        return unconfirmed
+    }
+
     /// Why the last restoration of this wallet's private payments failed,
     /// while they are not restored for `identityId` and none succeeded since,
     /// or `nil` when none failed (restored, or only not restored yet). What
@@ -268,7 +293,9 @@ extension PlatformWalletManager {
     /// SDK could not confirm a transition it may have accepted, and
     /// `.privateContactRequestPending` when the
     /// pair is held for a private request (in flight, paid and not yet read
-    /// back, or kept by the journal): in each case do not send again.
+    /// back, or kept by the journal), or `.publicContactRequestUnconfirmed`
+    /// when a public request to the pair awaits its outcome: in each case do
+    /// not send again.
     /// `.privateContactStoreNotRead` sent nothing; calling again continues
     /// the read. `.privateContactPaymentsNotRestored` and
     /// `.privateContactRecoveryUnsupported` refuse before the read.
