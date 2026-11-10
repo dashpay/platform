@@ -20,7 +20,10 @@ import org.junit.Test
  * an unsupported store (73) and a pinned SDK (75) are configuration messages,
  * an unfinished private store read (74) is a retry with no pending row, and a
  * network that does not serve the private store yet is quiet while real
- * failures are shown.
+ * failures are shown. A public request or accept that may have gone through
+ * (20), or one the wallet refuses while an earlier one awaits its outcome
+ * (76), shows "being checked" with no submission offered until the wallet's
+ * read of the pair says settled.
  */
 class ContactRequestOutcomesTest {
 
@@ -33,11 +36,6 @@ class ContactRequestOutcomesTest {
         )
     }
 
-    /**
-     * A pending private request (code 71), which a public send or accept can
-     * meet too, sent nothing: it is shown as pending, with a private sync to
-     * settle it, rather than as a submission that may have gone through.
-     */
     /**
      * Code 20: a state transition the SDK could not confirm after it may have
      * been accepted, which a private send or accept can now return through
@@ -64,6 +62,11 @@ class ContactRequestOutcomesTest {
         )
     }
 
+    /**
+     * A pending private request (code 71), which a public send or accept can
+     * meet too, sent nothing: it is shown as pending, with a private sync to
+     * settle it, rather than as a submission that may have gone through.
+     */
     @Test
     fun shouldKeepAPendingPrivateRequestPending() {
         val error = DashSdkError.PlatformWallet.PrivateContactRequestPending("not yet read back from the store")
@@ -102,7 +105,7 @@ class ContactRequestOutcomesTest {
     @Test
     fun shouldKeepThePendingSnapshotAndOfferNothingAfterAFailedRead() {
         val contacts = listOf("01", "02")
-        var snapshot = PrivateRepliesPendingSnapshot().recorded(setOf("01"), contacts)
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld("01"), contacts)
         assertTrue(snapshot.isPending("01"))
         assertFalse(snapshot.allowsSubmission("01"))
         assertTrue(snapshot.allowsSubmission("02"))
@@ -113,7 +116,7 @@ class ContactRequestOutcomesTest {
         assertFalse(snapshot.allowsSubmission("01"))
         assertFalse(snapshot.allowsSubmission("02"))
 
-        snapshot = snapshot.recorded(emptySet(), contacts)
+        snapshot = snapshot.recorded(privatelyHeld(), contacts)
         assertFalse(snapshot.isUnavailable)
         assertTrue(snapshot.allowsSubmission("01"))
     }
@@ -127,7 +130,7 @@ class ContactRequestOutcomesTest {
     @Test
     fun shouldReEnableARefusedPairOnlyWhenThePerContactReadSaysFree() {
         var snapshot = PrivateRepliesPendingSnapshot()
-            .recorded(emptySet(), listOf("01"))
+            .recorded(privatelyHeld(), listOf("01"))
             .withRefusal("01")
         assertTrue(snapshot.isPending("01"))
         assertFalse(snapshot.allowsSubmission("01"))
@@ -142,13 +145,13 @@ class ContactRequestOutcomesTest {
         assertFalse(snapshot.allowsSubmission("01"))
 
         // The pair's read says held: still pending.
-        snapshot = snapshot.recorded(setOf("01"), listOf("01"))
+        snapshot = snapshot.recorded(privatelyHeld("01"), listOf("01"))
         assertTrue(snapshot.isPending("01"))
         assertFalse(snapshot.allowsSubmission("01"))
 
         // A payment that will never land frees the pair once the wallet
         // proves so; the next read says free and the controls come back.
-        snapshot = snapshot.recorded(emptySet(), listOf("01"))
+        snapshot = snapshot.recorded(privatelyHeld(), listOf("01"))
         assertFalse(snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("01"))
     }
@@ -158,7 +161,7 @@ class ContactRequestOutcomesTest {
     fun shouldKeepARefusalAReadDidNotCover() {
         val snapshot = PrivateRepliesPendingSnapshot()
             .withRefusal("01")
-            .recorded(emptySet(), listOf("02"))
+            .recorded(privatelyHeld(), listOf("02"))
         assertTrue(snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("02"))
     }
@@ -176,7 +179,7 @@ class ContactRequestOutcomesTest {
                 DashSdkError.PlatformWallet.PrivateContactStoreNotRead("not read to its end"),
             ),
         )
-        val snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        val snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld(), listOf("01"))
         assertFalse("the screen records no refusal for 74", snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("01"))
         assertTrue(
@@ -217,7 +220,7 @@ class ContactRequestOutcomesTest {
                 PrivateContactReadinessRead(readiness(restored = true, storeRead = true), null)
             }
         }
-        var snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld(), listOf("01"))
 
         // The first refresh: the store opened, the restoration failed, and the
         // retry it asks for fails too.
@@ -274,7 +277,7 @@ class ContactRequestOutcomesTest {
         assertEquals(true, refreshed.read?.readiness?.privatePaymentsRestored)
         val shown = PrivateRepliesPendingSnapshot()
             .withReadiness(readiness(restored = false, storeRead = true))
-            .recorded(emptySet(), listOf("01"))
+            .recorded(privatelyHeld(), listOf("01"))
             .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
         assertTrue(shown.allowsSubmission("01"))
     }
@@ -334,7 +337,7 @@ class ContactRequestOutcomesTest {
         val read: suspend () -> PrivateContactReadinessRead? = {
             PrivateContactReadinessRead(readiness(restored = deferredDone, storeRead = true), null)
         }
-        var snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld(), listOf("01"))
         val pauses = mutableListOf<Long>()
         var refreshes = 0
         // Well past the first minute: 200 automatic refreshes, about 46 minutes.
@@ -424,7 +427,7 @@ class ContactRequestOutcomesTest {
     @Test
     fun shouldShowWhyARestorationFailedUntilTheReadinessSaysRestored() {
         var snapshot = PrivateRepliesPendingSnapshot()
-            .recorded(emptySet(), listOf("01"))
+            .recorded(privatelyHeld(), listOf("01"))
             .withReadiness(
                 readiness(restored = false, storeRead = false, restoreFailed = true),
                 "the journal does not read",
@@ -467,7 +470,7 @@ class ContactRequestOutcomesTest {
      */
     @Test
     fun shouldHoldOnCode72UntilTheReadinessSaysRestored() {
-        var snapshot = PrivateRepliesPendingSnapshot().withRestoringRefusal().recorded(emptySet(), listOf("01"))
+        var snapshot = PrivateRepliesPendingSnapshot().withRestoringRefusal().recorded(privatelyHeld(), listOf("01"))
         assertTrue(snapshot.isRestoringPrivatePayments)
         assertFalse(snapshot.allowsSubmission("01"))
 
@@ -489,7 +492,7 @@ class ContactRequestOutcomesTest {
     @Test
     fun shouldShowRestoringFromTheReadinessAlone() {
         val snapshot = PrivateRepliesPendingSnapshot()
-            .recorded(emptySet(), listOf("01"))
+            .recorded(privatelyHeld(), listOf("01"))
             .withReadiness(readiness(restored = false, storeRead = false))
         assertTrue(snapshot.isRestoringPrivatePayments)
         assertFalse(snapshot.allowsSubmission("01"))
@@ -501,7 +504,7 @@ class ContactRequestOutcomesTest {
      */
     @Test
     fun shouldOfferEveryContactASuccessfulEmptyReadCovered() {
-        val snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        val snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld(), listOf("01"))
         assertFalse(snapshot.isUnavailable)
         assertFalse(snapshot.isPending("01"))
         assertTrue(snapshot.allowsSubmission("01"))
@@ -545,4 +548,162 @@ class ContactRequestOutcomesTest {
             PrivateContactRefreshNotice.notice(unpersistedIdentityCount = 2),
         )
     }
+
+    /**
+     * Code 76: an earlier public request to the pair awaits its outcome, so
+     * the wallet signed nothing. Not a failure to retry: the contact shows
+     * "being checked" and no submission is offered.
+     */
+    @Test
+    fun shouldShowARefusedUnconfirmedPublicRequestAsBeingChecked() {
+        val outcome = ContactRequestSubmissionOutcome.of(
+            DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed("an earlier request awaits its outcome"),
+        )
+        assertEquals(ContactRequestSubmissionOutcome.PublicRequestUnconfirmed, outcome)
+        val snapshot = PrivateRepliesPendingSnapshot().recorded(privatelyHeld(), listOf("01"))
+            .withOutcome(outcome, "01")
+        assertTrue(snapshot.isAwaitingOutcome("01"))
+        assertFalse("not a private request pending", snapshot.isPending("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals(
+            ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE,
+            rowMessage(snapshot, "01"),
+        )
+    }
+
+    /**
+     * Code 20 on a public accept, followed by an empty private-pending read
+     * and a public sync that did not settle it: an unsuccessful one (the read
+     * after it fails) or an incomplete one (the wallet's public hold still
+     * stands). The row stays held through both; a second accept is not
+     * offered, and one made anyway is refused (76) with no error to retry;
+     * once the sync settles the hold the read frees the pair and the accept
+     * comes back.
+     */
+    @Test
+    fun shouldKeepAPublicAcceptHeldAfterCode20ThroughAnEmptyPrivateReadAndAnUnsettledSync() = runTest {
+        val wallet = FakeContactRequestHolds()
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(wallet.read(), listOf("01"))
+        assertTrue("the accept is offered", snapshot.allowsSubmission("01"))
+
+        // The accept broadcasts and its result cannot be confirmed: the
+        // wallet holds the pair, the signed transition kept.
+        wallet.publicUnconfirmed = setOf("01")
+        val accepted = ContactRequestSubmissionOutcome.of(
+            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("result could not be confirmed"),
+        )
+        assertEquals(ContactRequestSubmissionOutcome.MayHaveGoneThrough, accepted)
+        snapshot = snapshot.withOutcome(accepted, "01")
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals(ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE, rowMessage(snapshot, "01"))
+
+        // An unsuccessful sync: the read after it fails, and the row stays
+        // held as the last read left it.
+        wallet.failure = DashSdkError.PlatformWallet.WalletOperation("no node answered")
+        snapshot = snapshot.recorded(wallet.read(), listOf("01"))
+        assertTrue(snapshot.isUnavailable)
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals(ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE, rowMessage(snapshot, "01"))
+
+        // An incomplete sync: the private-pending read is empty, the public
+        // hold stands, and the row stays held.
+        wallet.failure = null
+        val reload = wallet.read()
+        assertEquals("the private-pending read is empty", emptySet<String>(), reload?.privatelyHeld)
+        snapshot = snapshot.recorded(reload, listOf("01"))
+        assertTrue(snapshot.isAwaitingOutcome("01"))
+        assertFalse("a second accept is not offered", snapshot.allowsSubmission("01"))
+        assertEquals(ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE, rowMessage(snapshot, "01"))
+
+        // A second accept made anyway is refused before anything is signed.
+        val retried = ContactRequestSubmissionOutcome.of(
+            DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed("an earlier request awaits its outcome"),
+        )
+        snapshot = snapshot.withOutcome(retried, "01").recorded(wallet.read(), listOf("01"))
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals(
+            "a refusal while held is not an error to retry",
+            ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE,
+            rowMessage(snapshot, "01"),
+        )
+
+        // The sync settles the hold (a proved-used nonce frees the pair; a
+        // request found is recorded as sent and the row leaves the list): the
+        // next read says free and the accept comes back.
+        wallet.publicUnconfirmed = emptySet()
+        snapshot = snapshot.recorded(wallet.read(), listOf("01"))
+        assertFalse(snapshot.isAwaitingOutcome("01"))
+        assertTrue(snapshot.allowsSubmission("01"))
+        assertNull(rowMessage(snapshot, "01"))
+    }
+
+    /** An unconfirmed submission marks only its own contact, and a read that does not cover it leaves the mark. */
+    @Test
+    fun shouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {
+        val snapshot = PrivateRepliesPendingSnapshot()
+            .withOutcome(ContactRequestSubmissionOutcome.MayHaveGoneThrough, "01")
+            .recorded(privatelyHeld(), listOf("02"))
+        assertTrue(snapshot.isAwaitingOutcome("01"))
+        assertTrue(snapshot.allowsSubmission("02"))
+    }
+
+    /**
+     * The screens' read covers both holds: the private one and the public
+     * one. A failed read is null, never "nothing held"; a cancelled one is
+     * not swallowed.
+     */
+    @Test
+    fun shouldReadBothHoldsAndTellAFailedReadFromNothingHeld() = runTest {
+        val wallet = FakeContactRequestHolds()
+        wallet.privatelyHeld = setOf("01")
+        wallet.publicUnconfirmed = setOf("02")
+        assertEquals(ContactRequestHolds(privatelyHeld = setOf("01"), publicUnconfirmed = setOf("02")), wallet.read())
+
+        wallet.failure = DashSdkError.PlatformWallet.WalletOperation("read failed")
+        assertNull(wallet.read())
+
+        wallet.failure = CancellationException("left the screen")
+        var cancelled = false
+        try {
+            wallet.read()
+        } catch (e: CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+    }
+}
+
+/** A read of both holds that found [contacts] held for a private request and none awaiting a public request's outcome. */
+private fun privatelyHeld(vararg contacts: String): ContactRequestHolds =
+    ContactRequestHolds(privatelyHeld = contacts.toSet())
+
+/** The message the screens show for [contact], from [snapshot]. */
+private fun rowMessage(snapshot: PrivateRepliesPendingSnapshot, contact: String): String? =
+    ContactRequestSubmissionOutcome.rowMessage(
+        pending = snapshot.isPending(contact),
+        awaitingOutcome = snapshot.isAwaitingOutcome(contact),
+        restoring = snapshot.isRestoringPrivatePayments,
+        restoreFailure = snapshot.restoreFailure,
+        unavailable = snapshot.isUnavailable,
+        error = null,
+    )
+
+/** The wallet's two per-contact holds, read through the screens' helper ([contactRequestHolds]) as the wallet answers them. */
+private class FakeContactRequestHolds {
+    var privatelyHeld: Set<String> = emptySet()
+    var publicUnconfirmed: Set<String> = emptySet()
+
+    /** Thrown by every read when set. */
+    var failure: Exception? = null
+
+    suspend fun read(): ContactRequestHolds? = contactRequestHolds(
+        readPrivatelyHeld = {
+            failure?.let { throw it }
+            privatelyHeld
+        },
+        readPublicUnconfirmed = {
+            failure?.let { throw it }
+            publicUnconfirmed
+        },
+    )
 }

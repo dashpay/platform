@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.dashpay
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.tokens.Dashpay
@@ -11,7 +12,11 @@ import org.dashfoundation.dashsdk.tokens.Dashpay
  * (Rust keeps its notes reserved), and so may a state transition the SDK could
  * not confirm after it may have been accepted (code 20), so the screen keeps
  * either pending and never offers a fresh submission; the next sync settles
- * it. A pair Rust reports as
+ * it. For a public request the wallet holds the pair itself after a 20, the
+ * signed transition kept, until a public contact request sync settles it,
+ * and refuses every later request or accept to it with code 76: the screen
+ * shows "may have gone through; it is being checked" until the wallet's
+ * per-contact read says settled. A pair Rust reports as
  * held for a private request (code 71), which a public send or accept can
  * also meet, sent nothing new: the screen shows it as pending until the
  * wallet's per-contact read says the pair is free. Unrestored private
@@ -31,6 +36,13 @@ sealed interface ContactRequestSubmissionOutcome {
     /** The wallet holds the pair for a private request; nothing was sent. */
     data object PrivateRequestPending : ContactRequestSubmissionOutcome
 
+    /**
+     * The wallet holds the pair for a public request whose outcome is not
+     * proved yet (code 76); nothing was signed. A public contact request
+     * sync settles it.
+     */
+    data object PublicRequestUnconfirmed : ContactRequestSubmissionOutcome
+
     /** The wallet's private payments are not restored yet; nothing was sent. */
     data object PrivatePaymentsNotRestored : ContactRequestSubmissionOutcome
 
@@ -46,6 +58,13 @@ sealed interface ContactRequestSubmissionOutcome {
     companion object {
         const val MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows up " +
             "after the next sync confirms it; do not submit it again."
+
+        /**
+         * A public request or accept that may have gone through, as the
+         * wallet holds it until a sync settles its outcome.
+         */
+        const val PUBLIC_REQUEST_UNCONFIRMED_MESSAGE = "This request may have gone through; " +
+            "it is being checked. The next sync settles it."
 
         const val PRIVATE_REQUEST_PENDING_MESSAGE = "A private request to this contact is " +
             "pending. It clears once the request is read back from the private store, " +
@@ -100,6 +119,7 @@ sealed interface ContactRequestSubmissionOutcome {
             is DashSdkError.StateTransitionResultUnconfirmed,
             -> MayHaveGoneThrough
             is DashSdkError.PlatformWallet.PrivateContactRequestPending -> PrivateRequestPending
+            is DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed -> PublicRequestUnconfirmed
             is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored -> PrivatePaymentsNotRestored
             is DashSdkError.PlatformWallet.PrivateContactStoreNotRead -> PrivateStoreNotRead
             is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported ->
@@ -110,13 +130,15 @@ sealed interface ContactRequestSubmissionOutcome {
 
         /**
          * The message a request row shows: the restoring notice while the
-         * wallet's private payments are not restored, the pending notice
-         * while the wallet holds the pair, the unavailable notice while the
-         * wallet could not be read, and whatever error an earlier attempt
-         * left otherwise.
+         * wallet's private payments are not restored, the being-checked
+         * notice while a request to the contact awaits its outcome, the
+         * pending notice while the wallet holds the pair for a private
+         * request, the unavailable notice while the wallet could not be
+         * read, and whatever error an earlier attempt left otherwise.
          */
         fun rowMessage(
             pending: Boolean,
+            awaitingOutcome: Boolean = false,
             restoring: Boolean = false,
             restoreFailure: String? = null,
             shieldedStoreFailure: String? = null,
@@ -124,6 +146,7 @@ sealed interface ContactRequestSubmissionOutcome {
             error: String?,
         ): String? = when {
             restoring -> restoringMessage(restoreFailure, shieldedStoreFailure)
+            awaitingOutcome -> PUBLIC_REQUEST_UNCONFIRMED_MESSAGE
             pending -> PRIVATE_REQUEST_PENDING_MESSAGE
             unavailable -> PrivateRepliesPendingSnapshot.UNAVAILABLE_MESSAGE
             else -> error
@@ -133,9 +156,11 @@ sealed interface ContactRequestSubmissionOutcome {
 
 /**
  * Which contacts (lower hex ids) the wallet holds a pair with for a private
- * request, as the screens last read it (`privateRepliesPending`, one pair
- * read per contact, which answers as a send decides it). While one is held,
- * Rust refuses another send or reply to that contact, so the screens turn off
+ * request, and which for a public request awaiting its outcome, as the
+ * screens last read it ([contactRequestHolds]: per contact, the private pair
+ * read, which answers as a send decides it, and the public one). While either
+ * holds a pair, Rust refuses another send or reply to that contact, so the
+ * screens turn off
  * what would submit one (Accept, Ignore, Send). A failed read is not "nothing
  * pending": the last successful snapshot stays, and those controls stay off
  * for every contact until a read covering it succeeds.
@@ -144,7 +169,12 @@ sealed interface ContactRequestSubmissionOutcome {
  * pending at once; the next successful read covering it decides, as it reads
  * what the refusal read. Controls for a pair re-enable only when that read
  * says it is free: a payment that will never land frees it only once the
- * wallet proves so, which the read shows.
+ * wallet proves so, which the read shows. So does a send or accept that may
+ * have gone through (18 or 20), or was refused as awaiting a public request's
+ * outcome (76): the contact shows "being checked" at once, and a read decides
+ * it the same way, so a reload whose sync did not settle the wallet's hold
+ * keeps it so. A read always covers both holds: a read of the private hold
+ * alone would offer a public request awaiting its outcome again.
  *
  * Whether the wallet's private payments are restored is the wallet's
  * readiness (`Dashpay.privateContactReadiness`), not anything the screens
@@ -155,7 +185,7 @@ sealed interface ContactRequestSubmissionOutcome {
  * ← Swift `PrivateRepliesPendingSnapshot` (`ContactRequestOutcomes.swift`).
  */
 data class PrivateRepliesPendingSnapshot(
-    /** The held contacts the last successful read found. */
+    /** The contacts the last successful read found held for a private request. */
     val pending: Set<String> = emptySet(),
     /** The contacts the last successful read covered. */
     val covered: Set<String> = emptySet(),
@@ -163,6 +193,14 @@ data class PrivateRepliesPendingSnapshot(
     val available: Boolean = true,
     /** Contacts a send or accept was refused for as pending (code 71) since the last successful read covering them. */
     val refused: Set<String> = emptySet(),
+    /** The contacts the last successful read found held for a public request awaiting its outcome. */
+    val publicUnconfirmed: Set<String> = emptySet(),
+    /**
+     * Contacts a send or accept may have gone through to (18, 20), or was
+     * refused for as awaiting a public request's outcome (76), since the last
+     * successful read covering them.
+     */
+    val awaitingOutcome: Set<String> = emptySet(),
     /** The wallet's readiness for the identity, as last read; null until a read succeeds. */
     val readiness: Dashpay.PrivateContactReadiness? = null,
     /** Why the last restoration failed, as last read with the readiness; null when none failed or it could not be read. */
@@ -174,15 +212,43 @@ data class PrivateRepliesPendingSnapshot(
     val isUnavailable: Boolean get() = !available
 
     /**
-     * This snapshot after a read of [contactIds]: [read] holds the held
-     * ones, or is null when the read failed. A successful read decides each
-     * contact it covered, a code 71 refusal included.
+     * This snapshot after a read of both holds for [contactIds]
+     * ([contactRequestHolds]), or after a failed one ([read] null). A
+     * successful read decides each contact it covered, a refusal or a
+     * submission that may have gone through included.
      */
-    fun recorded(read: Set<String>?, contactIds: Collection<String>): PrivateRepliesPendingSnapshot =
+    fun recorded(read: ContactRequestHolds?, contactIds: Collection<String>): PrivateRepliesPendingSnapshot =
         if (read == null) {
             copy(available = false)
         } else {
-            copy(pending = read, covered = contactIds.toSet(), refused = refused - contactIds.toSet(), available = true)
+            val decided = contactIds.toSet()
+            copy(
+                pending = read.privatelyHeld,
+                publicUnconfirmed = read.publicUnconfirmed,
+                covered = decided,
+                refused = refused - decided,
+                awaitingOutcome = awaitingOutcome - decided,
+                available = true,
+            )
+        }
+
+    /**
+     * This snapshot after a send or accept to [contactId] threw with
+     * [outcome]: a 71 refusal marks it pending and a 72 refusal holds every
+     * contact, as [withRefusal] and [withRestoringRefusal] do; one that may
+     * have gone through, or a 76 refusal, marks it awaiting its outcome.
+     * Nothing else changes a hold.
+     */
+    fun withOutcome(outcome: ContactRequestSubmissionOutcome, contactId: String): PrivateRepliesPendingSnapshot =
+        when (outcome) {
+            ContactRequestSubmissionOutcome.PrivateRequestPending -> withRefusal(contactId)
+            ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+            ContactRequestSubmissionOutcome.PublicRequestUnconfirmed,
+            -> copy(awaitingOutcome = awaitingOutcome + contactId)
+            ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored -> withRestoringRefusal()
+            ContactRequestSubmissionOutcome.PrivateStoreNotRead,
+            is ContactRequestSubmissionOutcome.Failed,
+            -> this
         }
 
     /** This snapshot after a send or accept to [contactId] was refused as pending (code 71). */
@@ -226,16 +292,59 @@ data class PrivateRepliesPendingSnapshot(
     fun isPending(contactId: String): Boolean = contactId in pending || contactId in refused
 
     /**
+     * Whether a request to [contactId] awaits its outcome: the last
+     * successful read found the pair held for a public request awaiting it,
+     * or a send or accept to the contact may have gone through, or was
+     * refused so (76), since.
+     */
+    fun isAwaitingOutcome(contactId: String): Boolean =
+        contactId in publicUnconfirmed || contactId in awaitingOutcome
+
+    /**
      * Whether a send or reply to [contactId] may be offered: a successful
-     * read covered it and found the pair free.
+     * read covered it and found the pair free of both holds.
      */
     fun allowsSubmission(contactId: String): Boolean =
-        available && contactId in covered && !isPending(contactId) && !isRestoringPrivatePayments
+        available && contactId in covered && !isPending(contactId) &&
+            !isAwaitingOutcome(contactId) && !isRestoringPrivatePayments
 
     companion object {
         const val UNAVAILABLE_MESSAGE = "Could not read whether a private request to this " +
             "contact is pending. Sync private requests to check again."
     }
+}
+
+/**
+ * One read of the wallet's two per-contact holds, as lower hex ids.
+ * ← Swift `ContactRequestHolds` (`ContactRequestOutcomes.swift`).
+ */
+data class ContactRequestHolds(
+    /** The contacts whose pair the wallet holds for a private request. */
+    val privatelyHeld: Set<String> = emptySet(),
+    /** The contacts whose pair the wallet holds for a public request awaiting its outcome. */
+    val publicUnconfirmed: Set<String> = emptySet(),
+)
+
+/**
+ * Read the wallet's two holds: the pairs held for a private request
+ * ([readPrivatelyHeld]) and those held for a public request awaiting its
+ * outcome ([readPublicUnconfirmed]). Null when either read failed, which the
+ * screens keep apart from "nothing held" ([PrivateRepliesPendingSnapshot]);
+ * an identity the wallet does not manage reads as nothing held in both.
+ * ← Swift `contactRequestHolds(contactIds:privatePairHeld:publicUnconfirmed:)`.
+ */
+suspend fun contactRequestHolds(
+    readPrivatelyHeld: suspend () -> Set<String>,
+    readPublicUnconfirmed: suspend () -> Set<String>,
+): ContactRequestHolds? = try {
+    ContactRequestHolds(
+        privatelyHeld = readPrivatelyHeld(),
+        publicUnconfirmed = readPublicUnconfirmed(),
+    )
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    null
 }
 
 /**

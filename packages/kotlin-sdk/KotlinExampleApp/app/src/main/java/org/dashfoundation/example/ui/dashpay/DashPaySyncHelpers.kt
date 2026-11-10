@@ -38,31 +38,35 @@ fun kickDashPaySync(scope: CoroutineScope, manager: PlatformWalletManager) {
 }
 
 /**
- * The hex ids of the contacts among [contactIds] whose pair with
- * [ourIdentityId] the wallet holds for a private request, as a send decides
- * it (`Dashpay.privateRepliesPending`, one pair read per contact): a private
- * request in flight, paid and not yet read back, or kept by the shielded
- * store's journal. While a pair is held, Rust refuses another send or reply
- * to it, so the screens show it as pending and offer neither. Empty when the
- * identity is not managed, as the wallet then holds nothing for it. Null when
- * the wallet could not be read (no wallet, or a read failed), which the
- * screens keep apart from "nothing pending" ([PrivateRepliesPendingSnapshot]).
- * ← Swift `privateRepliesPending` (`ContactsView.swift`).
+ * The wallet's two holds on [ourIdentityId]'s pairs with [contactIds], as
+ * hex ids, one read of each per contact: held for a private request, as a
+ * send decides it (`Dashpay.privateRepliesPending`: a private request in
+ * flight, paid and not yet read back, or kept by the shielded store's
+ * journal), and held for a public request whose broadcast may have been
+ * delivered (`Dashpay.publicContactRequestsUnconfirmed`), which a DashPay
+ * sync settles. While either holds a pair, Rust refuses another send or
+ * reply to it, so the screens offer neither. Empty when the identity is not
+ * managed, as the wallet then holds nothing for it. Null when the wallet
+ * could not be read (no wallet, or a read failed), which the screens keep
+ * apart from "nothing held" ([PrivateRepliesPendingSnapshot]).
+ * ← Swift `contactRequestHolds(wallet:identityId:contactIds:)` (`ContactsView.swift`).
  */
-suspend fun privateRepliesPending(
+suspend fun contactRequestHolds(
     wallet: ManagedPlatformWallet?,
     ourIdentityId: ByteArray,
     contactIds: List<ByteArray>,
-): Set<String>? {
-    if (contactIds.isEmpty()) return emptySet()
+): ContactRequestHolds? {
+    if (contactIds.isEmpty()) return ContactRequestHolds()
     if (wallet == null) return null
-    return try {
-        wallet.dashpay.privateRepliesPending(ourIdentityId, contactIds).map { it.toHex() }.toSet()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
-    }
+    return contactRequestHolds(
+        readPrivatelyHeld = {
+            wallet.dashpay.privateRepliesPending(ourIdentityId, contactIds).map { it.toHex() }.toSet()
+        },
+        readPublicUnconfirmed = {
+            wallet.dashpay.publicContactRequestsUnconfirmed(ourIdentityId, contactIds)
+                .map { it.toHex() }.toSet()
+        },
+    )
 }
 
 /** The wallet's readiness for an identity's contact requests and, when it flags a failed restoration, why. */
