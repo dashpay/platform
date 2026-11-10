@@ -652,6 +652,22 @@ pub enum PlatformWalletError {
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. The
+    /// recorded recipient is the one the user confirmed; the resume pays
+    /// nobody. Resume with the recorded recipient instead. Rows tracked
+    /// before the recipient was recorded carry none and accept the caller's.
+    #[error(
+        "Asset lock {out_point} was built to pay shielded recipient {} and cannot be resumed to {}",
+        hex::encode(recorded),
+        hex::encode(requested)
+    )]
+    AssetLockRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: crate::changeset::ShieldedRecipientRaw,
+        requested: crate::changeset::ShieldedRecipientRaw,
+    },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 

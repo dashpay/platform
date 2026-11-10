@@ -317,17 +317,23 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         let ContractDocumentChangeContext {
                             data_contract_fetch_info,
                             document,
+                            storage_holder_id,
                         } = document_change
                             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                             "a document field change action must carry what its validation built",
                         )))?;
                         // The document is updated the way a replace updates it, every index and
-                        // aggregate of its type included. Its storage flags name its owner, as a
-                        // replace's do: the moderator pays for the bytes the change adds, and a
-                        // refund of the document's storage stays the owner's, as it always was.
+                        // aggregate of its type included. Its storage flags name whoever holds
+                        // its storage: the holder the validation read (protocol version 15 on),
+                        // or else its owner, as a replace's do. So the change hands the document
+                        // to nobody: the moderator pays for the bytes the change adds, and a
+                        // refund of the document's storage stays with whoever it was due to. The
+                        // document's owner still keys its `$ownerId` index paths.
                         let owner_id = document.owner_id();
-                        let storage_flags =
-                            StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                        let storage_flags = StorageFlags::new_single_epoch(
+                            epoch.index,
+                            Some(storage_holder_id.unwrap_or(owner_id).to_buffer()),
+                        );
                         operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
                             owned_document_info: OwnedDocumentInfo {
                                 document_info: DocumentOwnedInfo((
@@ -460,8 +466,12 @@ fn removal_record_size(removal: &ContractDocumentRemoval) -> Result<u32, Error> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::contract::DataContractFetchInfo;
     use dpp::data_contract::config::moderation::ContractModerationReason;
+    use dpp::document::{Document, DocumentV0};
     use dpp::platform_value::Identifier;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     fn action(
         action: ContractUserModerationAction,
@@ -547,6 +557,65 @@ mod tests {
             &ops[1],
             ContractModerationOperation(ContractModerationOperationType::RemoveWarnings { .. })
         ));
+    }
+
+    #[test]
+    fn should_write_a_field_change_in_the_name_of_the_storage_holder_or_else_the_owner() {
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(3).expect("epoch");
+        let owner = Identifier::from([0xCC; 32]);
+        let holder = Identifier::from([0xDD; 32]);
+
+        // Who the written storage flags name, and who keys the `$ownerId` index paths.
+        let written_for = |storage_holder_id: Option<Identifier>| {
+            let mut change = action(
+                ContractUserModerationAction::ChangeDocumentFields {
+                    document_type_name: "domain".to_string(),
+                    document_id: Identifier::from([0x77; 32]),
+                    fields: BTreeMap::new(),
+                    reason: ContractModerationReason::from_text("handled"),
+                },
+                false,
+            );
+            let ContractUserModerationTransitionAction::V0(v0) = &mut change;
+            v0.document_change = Some(ContractDocumentChangeContext {
+                data_contract_fetch_info: Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                    platform_version.protocol_version,
+                )),
+                document: Document::V0(DocumentV0 {
+                    id: Identifier::from([0x77; 32]),
+                    owner_id: owner,
+                    ..Default::default()
+                }),
+                storage_holder_id,
+            });
+            let ops = change
+                .into_high_level_drive_operations(&epoch, platform_version)
+                .expect("operations");
+            let Some(DocumentOperation(DocumentOperationType::UpdateDocument {
+                owned_document_info:
+                    OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((_, Some(storage_flags))),
+                        owner_id: index_owner_id,
+                    },
+                ..
+            })) = ops.into_iter().last()
+            else {
+                panic!("a field change ends with the document's update");
+            };
+            (storage_flags.owner_id().copied(), index_owner_id)
+        };
+
+        // The holder the validation read is named, so the storage stays with it.
+        assert_eq!(
+            written_for(Some(holder)),
+            (Some(holder.to_buffer()), Some(owner.to_buffer()))
+        );
+        // Without one (every version before protocol version 15) the owner is named, as before.
+        assert_eq!(
+            written_for(None),
+            (Some(owner.to_buffer()), Some(owner.to_buffer()))
+        );
     }
 
     #[test]

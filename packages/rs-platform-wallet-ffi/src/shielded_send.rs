@@ -877,7 +877,8 @@ fn map_asset_lock_funding_result(
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }),
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockRecipientMismatch { .. }),
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
@@ -3163,6 +3164,23 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
         );
         assert!(message_of(&not_tracked).contains("is not tracked by this wallet"));
+
+        // A resume naming another recipient than the row recorded is the one
+        // refusal a host must render as "wrong destination", never as a
+        // generic operation failure.
+        let recipient_mismatch = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: [1; 43],
+                requested: [2; 43],
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            recipient_mismatch.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&recipient_mismatch).contains("cannot be resumed to"));
 
         let mismatch = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockFundingMismatch {

@@ -20,7 +20,9 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
-use drive::state_transition_action::batch::{action_fee_operations, action_fees_total};
+use drive::state_transition_action::batch::{
+    action_fee_operations, action_fees_total, record_gas_sponsor_as_storage_owner,
+};
 use drive::util::batch::DriveOperation;
 use std::collections::BTreeMap;
 
@@ -28,6 +30,31 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    /// Generation 1: a sponsor's batch stores what it writes under the owner the documents name.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn execute_event_v1(
+        &self,
+        event: ExecutionEvent,
+        consensus_errors: Vec<ConsensusError>,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
+        block_credit_mints: &mut Credits,
+        platform_version: &PlatformVersion,
+    ) -> Result<EventExecutionResult, Error> {
+        self.execute_event_v1_body(
+            event,
+            consensus_errors,
+            block_info,
+            transaction,
+            address_balances_in_update,
+            block_credit_mints,
+            false,
+            platform_version,
+        )
+    }
+
     /// v1 executes a `Paid` event whose signing key carries a budget, whose batch names a gas
     /// sponsor, or whose batch owes document action fees, all recorded on the event from protocol
     /// version 14. Every other event, including one signed by a key that only expires, is
@@ -56,7 +83,7 @@ where
     /// like the balance change, and never changes what is stored.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn execute_event_v1(
+    pub(super) fn execute_event_v1_body(
         &self,
         mut event: ExecutionEvent,
         mut consensus_errors: Vec<ConsensusError>,
@@ -64,6 +91,7 @@ where
         transaction: &Transaction,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         block_credit_mints: &mut Credits,
+        sponsor_owns_what_it_writes: bool,
         platform_version: &PlatformVersion,
     ) -> Result<EventExecutionResult, Error> {
         // The sponsor pays for a valid batch only; fee validation below must judge the same
@@ -150,6 +178,11 @@ where
             // credits that were not there.
             let mut operations = operations;
             operations.extend(action_fee_operations(payer_id, &action_fees)?);
+            if sponsor_owns_what_it_writes {
+                if let Some(gas_sponsor) = paying_sponsor {
+                    record_gas_sponsor_as_storage_owner(&mut operations, gas_sponsor.identity_id);
+                }
+            }
             let action_fees_owed_by_identity = if paying_sponsor.is_some() {
                 0
             } else {

@@ -40,6 +40,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use grovedb::{GroveDb, PathQuery};
+use grovedb_version::version::{v4::GROVE_V4, GroveVersion};
 use std::collections::BTreeMap;
 
 const POST_A: [u8; 32] = [0xA1; 32];
@@ -1323,8 +1324,10 @@ fn chained_posts_tipped_by<'a>(
 
 /// For a page with rows, the merged query the proof covers is the one the
 /// merge built when the inner half still carried its limit as a global
-/// one: grovedb's merge lifts a global limit into the same per-instance
-/// cap, so such a page proves to the same bytes as before.
+/// one: before grove version 5, grovedb's merge lifted a global limit into
+/// the same per-instance cap, so such a page proves to the same bytes. From
+/// version 5 that merge refuses a global limit over subqueries, so the old
+/// form is only built at version 4.
 fn assert_merged_query_matches_the_lifted_global_limit(
     chained: &DriveDocumentQuery,
     join_values: &[Identifier],
@@ -1341,11 +1344,14 @@ fn assert_merged_query_matches_the_lifted_global_limit(
         lifted[0].query.limit.is_some(),
         "the plain lowering carries the limit as a global one"
     );
-    let merge = |path_queries: &[PathQuery]| {
-        PathQuery::merge(path_queries.iter().collect(), &pv.drive.grove_version)
+    let merge = |path_queries: &[PathQuery], grove_version: &GroveVersion| {
+        PathQuery::merge(path_queries.iter().collect(), grove_version)
             .expect("the components merge")
     };
-    assert_eq!(merge(&components), merge(&lifted));
+    assert_eq!(
+        merge(&components, &pv.drive.grove_version),
+        merge(&lifted, &GROVE_V4)
+    );
 }
 
 /// Reads `chained` without and with a proof, verifies the proof, checks
