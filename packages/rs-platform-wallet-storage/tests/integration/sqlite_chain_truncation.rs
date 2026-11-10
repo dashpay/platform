@@ -18,7 +18,6 @@ use dashcore::{
     address::Payload,
     block::{Header, Version},
     ephemerealdata::instant_lock::InstantLock,
-    hashes::Hash,
     Address, Block, BlockHash, CompactTarget, Network, OutPoint, PubkeyHash, Transaction, TxIn,
     TxMerkleNode, TxOut, Txid,
 };
@@ -375,18 +374,9 @@ impl Chain {
 
     /// A payment from `coin` that returns the change to the wallet.
     fn spend(&self, coin: OutPoint, value: u64) -> Transaction {
-        let manager = self.manager.try_read().unwrap();
-        common::authorize(
-            manager.get_wallet(&self.wallet_id).unwrap(),
-            &manager
-                .get_wallet_info(&self.wallet_id)
-                .unwrap()
-                .core_wallet,
-            &self.ours,
-            transaction(
-                &[coin],
-                &[(&self.ours, value / 2), (&foreign(), value / 2 - FEE)],
-            ),
+        transaction(
+            &[coin],
+            &[(&self.ours, value / 2), (&foreign(), value / 2 - FEE)],
         )
     }
 

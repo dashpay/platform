@@ -2153,7 +2153,6 @@ mod tests {
     /// overwrite the lock with a plain mempool sighting.
     #[test]
     fn should_project_a_transaction_a_merged_truncation_keeps_as_instant_send_locked() {
-        use dashcore::hashes::Hash;
         use dashcore::{Address, BlockHash, Network, OutPoint, ScriptBuf, TxIn, TxOut, Witness};
         use key_wallet::managed_account::transaction_record::{
             OutputDetail, OutputRole, TransactionDirection, TransactionRecord,

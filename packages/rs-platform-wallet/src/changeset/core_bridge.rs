@@ -8072,7 +8072,6 @@ mod tests {
     const FORK_HEIGHT: u32 = 30;
 
     fn truncated_event(wallet_id: WalletId) -> WalletEvent {
-        use dashcore::hashes::Hash as _;
         WalletEvent::ChainTruncated {
             wallet_id,
             height: FORK_HEIGHT,

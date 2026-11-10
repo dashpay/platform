@@ -4341,7 +4341,6 @@ mod chain_truncation_merge_tests {
     //! what each later truncation undid in the wallet.
 
     use super::*;
-    use dashcore::hashes::Hash;
     use dashcore::{Address, BlockHash, TxOut};
     use key_wallet::transaction_checking::BlockInfo;
 

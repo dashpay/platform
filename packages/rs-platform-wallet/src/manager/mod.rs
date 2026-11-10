@@ -1481,7 +1481,6 @@ mod tests {
     /// runs of the SPV client, when nothing listens for one.
     #[tokio::test]
     async fn should_fence_a_coin_again_when_a_truncation_undoes_its_spend() {
-        use dashcore::hashes::Hash as _;
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use key_wallet_manager::WalletInterface;
 

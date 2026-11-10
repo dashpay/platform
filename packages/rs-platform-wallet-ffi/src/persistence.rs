@@ -8767,7 +8767,6 @@ mod tests {
     /// changeset that follows describes the wallet after them.
     #[test]
     fn should_deliver_truncations_before_the_rest_of_the_round() {
-        use dashcore::hashes::Hash as _;
         use platform_wallet::changeset::changeset::{ChainTruncation, SweepBatch};
         use platform_wallet::changeset::CoreChangeSet;
 
