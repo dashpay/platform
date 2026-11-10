@@ -3,6 +3,7 @@
 //! to, and execution proofs.
 
 use super::*;
+use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
@@ -12,6 +13,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::data_contract::DataContractUpdateEntryKind;
 use dpp::consensus::basic::UnsupportedVersionError;
+use dpp::consensus::signature::SignatureError;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -733,6 +735,48 @@ mod check_tx {
             )]
         );
         assert_bumps_nonce(&result, contract.owner_id(), contract.id());
+    }
+
+    /// check_tx validates a transition's basic structure before it looks for the identity
+    /// that signed it, so that validation runs for anyone, on whatever a transition can
+    /// carry. A delta from an identity that does not exist, naming thousands of keywords to
+    /// add and as many to remove, is refused for its signer: comparing the two lists costs
+    /// what their lengths add up to, not their product.
+    #[test]
+    fn should_refuse_a_delta_with_long_keyword_lists_from_an_unknown_identity_for_its_signer() {
+        let platform_version = PlatformVersion::latest();
+        let platform = platform();
+        let contract = fixture_contract();
+        let mut next_version = contract.clone();
+        next_version.increment_version();
+        let mut fields = delta_fields(&delta(&contract, &next_version));
+        fields.add_keywords = vec!["a".to_string(); 3_000];
+        fields.remove_keywords = vec!["b".to_string(); 3_000];
+        let transition: StateTransition = DataContractUpdateTransition::V1(fields).into();
+        let bytes = transition
+            .serialize_to_bytes()
+            .expect("expected to serialize the transition");
+        assert!(
+            bytes.len() <= platform_version.system_limits.max_state_transition_size as usize,
+            "the transition must be one a node decodes"
+        );
+
+        let state = platform.state.load();
+        let result = platform
+            .check_tx(
+                &bytes,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref(&platform, &state),
+                platform_version,
+            )
+            .expect("expected check_tx to run");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(_)
+            )]
+        );
     }
 }
 

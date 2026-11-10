@@ -76,7 +76,7 @@ export type DataContractUpdateTransitionObject =
 export interface DataContractUpdateTransitionV0JSON {
     $formatVersion: "0";
     dataContract: DataContractJSON;
-    "$identity-contract-nonce": string;
+    "$identity-contract-nonce": number | string;
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: string;
@@ -88,7 +88,7 @@ export interface DataContractUpdateTransitionV0JSON {
  */
 export interface DataContractUpdateTransitionV1JSON {
     $formatVersion: "1";
-    "$identity-contract-nonce": string;
+    "$identity-contract-nonce": number | string;
     dataContractId: string;
     ownerId: string;
     version: number;
