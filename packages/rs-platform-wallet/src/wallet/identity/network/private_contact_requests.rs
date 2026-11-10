@@ -2045,9 +2045,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         else {
                             continue;
                         };
-                        // Read for it, whatever its ingest does: the height
-                        // its read rests on only rises.
-                        managed.note_private_store_page_read(page_height);
                         if held.contains(&identity_id) && !identity.failed {
                             identity.failed = true;
                             report.unpersisted_identities.push(identity_id);
@@ -2136,6 +2133,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                             }
                             let before = managed.dashpay().private_contact_requests_position();
                             identity.advance(managed, read.next_position);
+                            // Read with its keys, from its own cursor: the
+                            // height its read rests on rises. Not by a page of
+                            // a pass whose keys changed under it, or whose
+                            // cursor was rewound under it, which counts for
+                            // nothing: the rewind kept the height the read
+                            // rested on as the floor a read since must reach
+                            // (`ManagedIdentity::rewind_private_store_read`),
+                            // and such a page would pass it.
+                            if !identity.failed && !identity.rewound {
+                                managed.note_private_store_page_read(page_height);
+                            }
                             let after = managed.dashpay().private_contact_requests_position();
                             // Stored once it moved, once the last private
                             // payment it held settled, or once its marker
@@ -7189,6 +7197,120 @@ mod tests {
         managed(&bob_wallet, BOB, |managed| {
             assert!(managed.dashpay().incoming_request(&alice.id()).is_some());
             assert_eq!(managed.dashpay().private_contact_requests_position(), 1);
+        })
+        .await;
+    }
+
+    /// A pass whose keys changed under it raises nothing its read rests on.
+    /// Bob read the store at H with keys missing the decryption key another
+    /// device added, to which Alice's request at position 1 is sealed. A pass
+    /// started with those keys is overtaken by the key update, which rewinds
+    /// his read and keeps H as its floor; its page counts for nothing. So a
+    /// read with the new keys from a node a block behind, which holds only
+    /// the entry before hers, does not count as read to the end.
+    #[tokio::test]
+    async fn should_not_let_a_pass_with_replaced_keys_raise_the_read_height() {
+        const H: u64 = 20;
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+        let (entry, _) = alice_to_bob([0x55; 43]).await;
+        let stale = without_key(&bob, DECRYPTION_KEY_ID);
+        let (_manager, bob_wallet) = wallet(BOB_PHRASE, &stale, &[&alice, &bob], vec![]).await;
+        let filler = vec![0xA0; 589];
+        let page = |start: u64, entries: Vec<Vec<u8>>, total: u64| {
+            let mut page = store_page(start, entries);
+            page.total_count = total;
+            page
+        };
+        let contract = dashpay_contract().expect("bundled DashPay");
+        let query = |start| {
+            PrivateDocumentEntriesQuery::new(
+                contract.id(),
+                PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+                start,
+            )
+        };
+        let sdk = (*bob_wallet.identity().sdk).clone();
+        sdk.clone().mock().set_response_height(H);
+        let serve = |pages: Vec<(u64, PrivateDocumentEntries, u64)>| {
+            let mut sdk = sdk.clone();
+            async move {
+                let mut mock = sdk.mock();
+                for (start, page, height) in pages {
+                    mock.remove_fetch_expectation::<PrivateDocumentEntries, _>(query(start))
+                        .await;
+                    mock.expect_fetch(query(start), Some(page))
+                        .await
+                        .expect("page expectation");
+                    mock.set_response_height_for::<PrivateDocumentEntries, _>(query(start), height);
+                }
+            }
+        };
+        serve(vec![
+            (0, page(0, vec![filler.clone(), entry], 2), H),
+            (2, page(2, vec![], 2), H),
+        ])
+        .await;
+        let view = bob_wallet.identity().dashpay();
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store at H with his older keys");
+        assert!(store_read(&bob_wallet, BOB).await);
+
+        // A pass from his cursor, overtaken by the key update before it scans.
+        let mut updating = HookedCrypto::new(BOB_PHRASE);
+        updating.before_scan = Some({
+            let bob_wallet = Arc::clone(&bob_wallet);
+            let bob = bob.clone();
+            Arc::new(move || {
+                let (bob_wallet, bob) = (Arc::clone(&bob_wallet), bob.clone());
+                Box::pin(async move {
+                    let iw = bob_wallet.identity();
+                    let mut wm = iw.wallet_manager.write().await;
+                    let managed = wm
+                        .get_wallet_info_mut(&bob_wallet.wallet_id())
+                        .expect("wallet info")
+                        .identity_manager
+                        .managed_identity_mut(&bob.id())
+                        .expect("Bob");
+                    managed.identity = bob;
+                    managed.reconcile_private_scan_keys();
+                })
+            })
+        });
+        view.sync_private_contact_requests(&updating, 4)
+            .await
+            .expect("the pass with the older keys");
+        managed(&bob_wallet, BOB, |managed| {
+            assert!(
+                !managed.dashpay().private_contact_requests_read(),
+                "rewound"
+            );
+            assert_eq!(
+                managed.dashpay().private_store_read_height(),
+                None,
+                "its page counts for nothing"
+            );
+        })
+        .await;
+
+        // A read with the new keys, from a node a block behind.
+        serve(vec![
+            (0, page(0, vec![filler], 1), H - 1),
+            (1, page(1, vec![], 1), H - 1),
+        ])
+        .await;
+        view.sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("the read from behind");
+        managed(&bob_wallet, BOB, |managed| {
+            assert_eq!(managed.dashpay().private_store_read_height(), Some(H - 1));
+            assert!(
+                !managed.dashpay().private_contact_requests_read(),
+                "not read to the end of the store already seen"
+            );
+            assert!(managed.dashpay().incoming_request(&alice.id()).is_none());
         })
         .await;
     }
