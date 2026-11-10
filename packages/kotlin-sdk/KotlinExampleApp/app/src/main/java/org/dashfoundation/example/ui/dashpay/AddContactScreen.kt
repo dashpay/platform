@@ -116,6 +116,9 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
     var isSyncingPrivate by remember { mutableStateOf(false) }
     var pendingReadVersion by remember { mutableStateOf(0) }
+    // The automatic refreshes made since the wallet's private payments were
+    // last read restored (`PrivatePaymentsRecovery.rechecks`).
+    var readinessRechecks by remember { mutableStateOf(0) }
     var collisionRecipient by remember { mutableStateOf<ByteArray?>(null) }
     var previewProfile by remember { mutableStateOf<DashPayProfile?>(null) }
 
@@ -195,11 +198,30 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
     val recipientHex = resolvedRecipient?.toHex()
     LaunchedEffect(recipientHex, wallet, pendingReadVersion) {
         val contactIds = listOfNotNull(resolvedRecipient)
+        // Recovery first: the readiness shown is read after the wallet was
+        // asked to retry a restoration its payments still wait for.
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = recipientPending.readiness,
+            storeFailure = container.shieldedStoreFailure.value,
+            readReadiness = { privateContactReadiness(wallet, idBytes) },
+            configureAgain = { container.configureShieldedStoreAgain() },
+        )
+        shieldedStoreFailure = refreshed.storeFailure
         val pendingRead = privateRepliesPending(wallet, idBytes, contactIds)
-        val readiness = privateContactReadiness(wallet, idBytes)
-        recipientPending = recipientPending.recorded(pendingRead, contactIds.map { it.toHex() })
-            .withReadiness(readiness?.readiness, readiness?.restoreFailure)
-        shieldedStoreFailure = container.shieldedStoreFailureRetrying()
+        recipientPending = recipientPending
+            .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+            .recorded(pendingRead, contactIds.map { it.toHex() })
+        // While the payments stay unrestored, refresh again after a pause: a
+        // restoration the wallet deferred behind a busy store completes later
+        // and changes no key of this effect (Add Contact observes neither a
+        // bind nor a DashPay sync for it).
+        if (PrivatePaymentsRecovery.rechecks(recipientPending.readiness, readinessRechecks)) {
+            delay(PrivatePaymentsRecovery.RECHECK_INTERVAL_MS)
+            readinessRechecks++
+            pendingReadVersion++
+        } else if (recipientPending.readiness?.privatePaymentsRestored == true) {
+            readinessRechecks = 0
+        }
     }
     // Binding the shielded account restores the wallet's private payments:
     // read the readiness again then.

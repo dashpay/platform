@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.dashpay
 
+import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.junit.Assert.assertEquals
@@ -164,6 +165,161 @@ class ContactRequestOutcomesTest {
             ContactRequestSubmissionOutcome.of(error),
         )
         assertEquals(ContactRequestSubmissionOutcome.SDK_PINNED_MESSAGE, PrivateContactRefreshNotice.notice(error))
+    }
+
+    /**
+     * The store opened, but the wallet's journal restoration failed for a
+     * transient reason. A DashPay refresh asks the wallet to retry even
+     * though no store-open failure is recorded, reads the readiness after the
+     * attempt, and once the retry restores the payments the gate lifts: no
+     * bind, no restart and no submitted request.
+     */
+    @Test
+    fun shouldRetryARestorationThatFailedAfterTheStoreOpenedOnARefresh() = runTest {
+        var restorationFails = true
+        var configures = 0
+        val read: suspend () -> PrivateContactReadinessRead? = {
+            if (restorationFails) {
+                PrivateContactReadinessRead(
+                    readiness(restored = false, storeRead = true, restoreFailed = true),
+                    "the journal could not be read",
+                )
+            } else {
+                PrivateContactReadinessRead(readiness(restored = true, storeRead = true), null)
+            }
+        }
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+
+        // The first refresh: the store opened, the restoration failed, and the
+        // retry it asks for fails too.
+        var refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) {
+            configures++
+            null
+        }
+        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        assertEquals("not restored asks the wallet to retry with no store failure recorded", 1, configures)
+        assertNull(refreshed.storeFailure)
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertEquals("the journal could not be read", snapshot.restoreFailure)
+        assertTrue(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 0))
+
+        // The failure was transient: the next refresh asks first, the retry
+        // restores, and the readiness shown is the one read after it.
+        refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) {
+            configures++
+            restorationFails = false
+            null
+        }
+        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        assertEquals(2, configures)
+        assertFalse(snapshot.isRestoringPrivatePayments)
+        assertNull(snapshot.restoreFailure)
+        assertTrue("the gate lifts on the refresh alone", snapshot.allowsSubmission("01"))
+        assertFalse(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 1))
+    }
+
+    /**
+     * A refresh asks for the retry before it reads the readiness it shows:
+     * a screen that last showed "not restored" asks first and shows only the
+     * read made after it, so recovery without an isBound change re-enables
+     * the existing screen.
+     */
+    @Test
+    fun shouldShowTheReadinessReadAfterTheRetry() = runTest {
+        val events = mutableListOf<String>()
+        var restored = false
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = readiness(restored = false, storeRead = true),
+            storeFailure = null,
+            readReadiness = {
+                events += "read"
+                PrivateContactReadinessRead(readiness(restored = restored, storeRead = true), null)
+            },
+            configureAgain = {
+                events += "configure"
+                restored = true
+                null
+            },
+        )
+        assertEquals(listOf("configure", "read"), events)
+        assertEquals(true, refreshed.read?.readiness?.privatePaymentsRestored)
+        val shown = PrivateRepliesPendingSnapshot()
+            .withReadiness(readiness(restored = false, storeRead = true))
+            .recorded(emptySet(), listOf("01"))
+            .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        assertTrue(shown.allowsSubmission("01"))
+    }
+
+    /** Restored payments and an open store need no retry: one read. */
+    @Test
+    fun shouldNotAskTheWalletToRetryWhenThePaymentsAreRestored() = runTest {
+        var configures = 0
+        var reads = 0
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = readiness(restored = true, storeRead = true),
+            storeFailure = null,
+            readReadiness = {
+                reads++
+                PrivateContactReadinessRead(readiness(restored = true, storeRead = true), null)
+            },
+            configureAgain = {
+                configures++
+                null
+            },
+        )
+        assertEquals(0, configures)
+        assertEquals(1, reads)
+        assertEquals(true, refreshed.read?.readiness?.privatePaymentsRestored)
+    }
+
+    /**
+     * Opening the store succeeds on the refresh after a failed open: the
+     * failure clears, whatever the readiness says.
+     */
+    @Test
+    fun shouldOpenTheStoreAgainWhileAStoreFailureIsRecorded() = runTest {
+        var configures = 0
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = null,
+            storeFailure = "disk full",
+            readReadiness = { null },
+            configureAgain = {
+                configures++
+                null
+            },
+        )
+        assertEquals(1, configures)
+        assertNull(refreshed.storeFailure)
+    }
+
+    /**
+     * A restoration the wallet deferred behind a busy store completes later,
+     * changing no key of the screen's effect: the screen refreshes again on
+     * its own, bounded, while the payments stay unrestored, and the refresh
+     * after the deferred restoration lifts the gate.
+     */
+    @Test
+    fun shouldRefreshAgainWhileARestorationIsDeferred() = runTest {
+        var deferredDone = false
+        val read: suspend () -> PrivateContactReadinessRead? = {
+            PrivateContactReadinessRead(readiness(restored = deferredDone, storeRead = true), null)
+        }
+        var snapshot = PrivateRepliesPendingSnapshot().recorded(emptySet(), listOf("01"))
+        var refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) { null }
+        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        assertFalse(snapshot.allowsSubmission("01"))
+        assertTrue(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 0))
+        assertFalse(
+            "bounded",
+            PrivatePaymentsRecovery.rechecks(snapshot.readiness, PrivatePaymentsRecovery.RECHECK_LIMIT),
+        )
+        assertFalse(PrivatePaymentsRecovery.rechecks(null, 0))
+
+        deferredDone = true
+        refreshed = PrivatePaymentsRecovery.refresh(snapshot.readiness, null, read) { null }
+        snapshot = snapshot.withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+        assertTrue(snapshot.allowsSubmission("01"))
+        assertFalse(PrivatePaymentsRecovery.rechecks(snapshot.readiness, 1))
     }
 
     private fun readiness(

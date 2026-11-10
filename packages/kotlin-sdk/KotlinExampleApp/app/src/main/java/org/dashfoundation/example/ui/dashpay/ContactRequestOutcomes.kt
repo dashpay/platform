@@ -233,6 +233,74 @@ data class PrivateRepliesPendingSnapshot(
 }
 
 /**
+ * The DashPay screens' readiness refresh, one flow for Requests and Add
+ * Contact. The wallet owns the recovery: on a store already open, a repeat
+ * `configureShielded` retries restoring every wallet whose private payments
+ * are still held, a restoration that failed after the store opened included,
+ * and defers it to a task while a scan holds the store. So a refresh asks for
+ * it whenever the payments are not restored, or the store did not open, and
+ * only then reads the readiness it shows: the readiness is read after the
+ * attempt, never cached from before it. While the payments stay unrestored (a
+ * deferred restoration completes later, changing nothing a screen observes),
+ * the screen refreshes again on a bounded timer, so the gate lifts without a
+ * bind, a restart or a submitted request. The screens change no hold
+ * themselves.
+ * ← Swift `PrivatePaymentsRecovery` (`ContactRequestOutcomes.swift`).
+ */
+object PrivatePaymentsRecovery {
+    /** How many times a screen refreshes again on its own while the payments stay unrestored. */
+    const val RECHECK_LIMIT = 20
+
+    /** How long a screen waits before it refreshes again. */
+    const val RECHECK_INTERVAL_MS = 3_000L
+
+    /**
+     * Whether a refresh asks the wallet to retry before it reads the
+     * readiness it shows: the store did not open last time, or the last
+     * readiness read says the payments are not restored.
+     */
+    fun retries(readiness: Dashpay.PrivateContactReadiness?, storeFailure: String?): Boolean =
+        storeFailure != null || readiness?.privatePaymentsRestored == false
+
+    /**
+     * Whether a screen refreshes again on its own after [attempt] automatic
+     * refreshes: the payments are still not restored and the limit is not
+     * reached. A failed read (null) is left to the next refresh the screen
+     * makes anyway.
+     */
+    fun rechecks(after: Dashpay.PrivateContactReadiness?, attempt: Int): Boolean =
+        after?.privatePaymentsRestored == false && attempt < RECHECK_LIMIT
+
+    /** A refresh's readiness read, null when it failed, and why the store did not open, or null. */
+    data class Refreshed(val read: PrivateContactReadinessRead?, val storeFailure: String?)
+
+    /**
+     * One refresh. [lastReadiness] is the readiness the screen shows now;
+     * [readReadiness] reads the wallet's (with the reason a restoration
+     * failed); [configureAgain] asks the wallet to retry and returns why the
+     * store did not open, or null. When [retries] says so, the wallet is asked
+     * first and the readiness is read after it; otherwise it is read once.
+     */
+    suspend fun refresh(
+        lastReadiness: Dashpay.PrivateContactReadiness?,
+        storeFailure: String?,
+        readReadiness: suspend () -> PrivateContactReadinessRead?,
+        configureAgain: suspend () -> String?,
+    ): Refreshed {
+        if (retries(lastReadiness, storeFailure)) {
+            val failure = configureAgain()
+            return Refreshed(readReadiness(), failure)
+        }
+        val read = readReadiness()
+        if (retries(read?.readiness, storeFailure)) {
+            val failure = configureAgain()
+            return Refreshed(readReadiness(), failure)
+        }
+        return Refreshed(read, storeFailure)
+    }
+}
+
+/**
  * What the request list's private-store refresh tells the user. A network
  * that does not serve the store yet (before protocol version 15) is expected
  * and stays quiet; an operational failure, or requests read but not saved,

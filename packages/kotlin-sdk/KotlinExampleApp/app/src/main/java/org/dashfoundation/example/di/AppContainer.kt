@@ -215,7 +215,7 @@ class AppContainer(private val context: Context) {
     /**
      * Why opening the active network's shielded store failed, until a later
      * attempt succeeds. The DashPay screens show it while the wallet's private
-     * payments wait for that store, and retry it ([shieldedStoreFailureRetrying]).
+     * payments wait for that store, and retry it ([configureShieldedStoreAgain]).
      * ← Swift `WalletManagerStore.shieldedStoreFailures`.
      */
     val shieldedStoreFailure: StateFlow<String?> = _shieldedStoreFailure.asStateFlow()
@@ -239,12 +239,15 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Why the active network's shielded store could not be opened, after
-     * trying it again, or null when it is open.
-     * ← Swift `WalletManagerStore.shieldedStoreFailure(retrying:)`.
+     * Open the active network's shielded store again and return why it
+     * failed, or null once it is open. On a store already open this asks the
+     * wallet to retry restoring every wallet whose private payments are still
+     * held, a restoration that failed after the store opened included; it
+     * never waits on a busy store (a busy store defers the restoration to a
+     * task).
+     * ← Swift `WalletManagerStore.configureShieldedAgain(_:)`.
      */
-    suspend fun shieldedStoreFailureRetrying(): String? {
-        if (_shieldedStoreFailure.value == null) return null
+    suspend fun configureShieldedStoreAgain(): String? {
         val manager = walletManagerStore.activeManager.value ?: return _shieldedStoreFailure.value
         configureShieldedStore(manager)
         return _shieldedStoreFailure.value
