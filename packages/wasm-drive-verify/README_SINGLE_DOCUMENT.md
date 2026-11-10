@@ -70,6 +70,10 @@ Documents in Drive can have different contested statuses:
 - **MaybeContested (1)**: We don't know if the document was contested, or we're not sure if the contest is over
 - **Contested (2)**: We know that the document was contested and the contest is not over
 
+A `MaybeContested` query looks in both places at once, so its proof has to cover both: a proof
+made for a `NotContested` or a `Contested` query does not verify against it. Such a proof
+verifies from protocol version 15. A `MaybeContested` query with a block time is not supported.
+
 ## API Reference
 
 ### Classes

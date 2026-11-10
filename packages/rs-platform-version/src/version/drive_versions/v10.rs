@@ -95,6 +95,10 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Storage handover** (protocol v15 note 28): `grove_methods` is
 ///   `DRIVE_GROVE_METHOD_VERSIONS_V2`.
 ///
+/// * **A document that may be contested** (protocol v15 note 29):
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets `single_document.verify_proof_keep_serialized` to
+///   1, which verifies the proof of a single document query in its "maybe contested" status.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -127,7 +131,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
