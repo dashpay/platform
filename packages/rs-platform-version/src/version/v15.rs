@@ -677,7 +677,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     (`DataContractUpdateEntryAlreadyExistsError`, 40010) is refused in a block as a paid
 ///     nonce bump; one naming an entry in two sections that cannot both apply
 ///     (`DataContractUpdateOverlappingEntriesError`, 10283) is refused without a fee by
-///     `basic_structure` 3. A delta pays the registration cost of what it registers alone (its
+///     `basic_structure` 3. Each of these three errors carries at most 256 bytes of the
+///     entry's name, as a delta can name an entry longer than a consensus error can be
+///     (`MAX_DATA_CONTRACT_UPDATE_ENTRY_NAME_BYTES`). A delta pays the registration cost of what it registers alone (its
 ///     new and replaced document types, new tokens and added keywords), where an update
 ///     carrying the whole contract pays the whole contract's again; it pays the processing of
 ///     validating the whole merged contract as that update does. As a state transition is

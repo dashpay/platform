@@ -1,3 +1,4 @@
+use crate::consensus::basic::data_contract::bounded_entry_name;
 use crate::consensus::basic::data_contract::DataContractUpdateEntryKind;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
@@ -48,7 +49,7 @@ impl DataContractUpdateEntryAlreadyExistsError {
         Self {
             data_contract_id,
             entry_kind,
-            name,
+            name: bounded_entry_name(name),
         }
     }
 
@@ -60,6 +61,9 @@ impl DataContractUpdateEntryAlreadyExistsError {
         self.entry_kind
     }
 
+    /// The entry's name, cut to
+    /// [`MAX_DATA_CONTRACT_UPDATE_ENTRY_NAME_BYTES`](crate::consensus::basic::data_contract::MAX_DATA_CONTRACT_UPDATE_ENTRY_NAME_BYTES)
+    /// bytes.
     pub fn name(&self) -> &str {
         &self.name
     }
