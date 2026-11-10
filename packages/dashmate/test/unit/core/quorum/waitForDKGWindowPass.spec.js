@@ -611,4 +611,36 @@ describe('waitForDKGWindowPass', () => {
 
     expect(waiting.resolved).to.be.true();
   });
+
+  it('should keep blocking a DKG it saw announced when Core restarts into initial block download', async function it() {
+    // A restarted Core reports initial block download, yet it may finish
+    // syncing in time for the DKG this node is a member of.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 2,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 2,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 2, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.isSyncing = true;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 2, upcoming_dkgs: [] };
+    await expectStillPolling(waiting, rpcClient);
+
+    // Once the DKG's Commit phase has ended, a syncing Core may stop.
+    core.height = start + 10;
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
 });

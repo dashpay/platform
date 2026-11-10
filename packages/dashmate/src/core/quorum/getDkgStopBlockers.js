@@ -88,8 +88,7 @@ export function hasMembershipActiveDkgs(coreVersion) {
  * @typedef {Object} DkgStopBlocker
  * @property {string} reason `session`, `new-round`, `unrecorded`, `upcoming`,
  *   `imminent`, `active-count` or `unreadable`
- * @property {string|number|null} [llmqType] LLMQ name, or Core's numeric id
- *   when dashmate does not know the type
+ * @property {string} [llmqType] LLMQ name
  * @property {number} [quorumIndex]
  * @property {boolean} [membershipKnown] for `upcoming`: `false` when Core
  *   could not determine whether this node is a member
@@ -162,7 +161,7 @@ function getImminentDkgBlocker(dkgInfo, height) {
  * the cycle starts, so every DKG starting within `MIN_BLOCKS_BEFORE_DKG`
  * is listed. A DKG this node is a member of, or whose membership Core could
  * not determine, blocks from the restart margin before its start until its
- * Commit phase ends.
+ * Commit phase ends; one of a type dashmate does not know is unreadable.
  */
 function getUpcomingDkgBlockers(upcomingDkgs, height) {
   if (!Array.isArray(upcomingDkgs)) {
@@ -179,15 +178,21 @@ function getUpcomingDkgBlockers(upcomingDkgs, height) {
     }
 
     const llmq = LLMQ_TYPES.find(({ id }) => id === dkg.llmqType);
+
+    // Without its Commit phase nothing says when such a DKG stops blocking.
+    if (!llmq) {
+      return [unreadable(`quorum dkginfo upcoming_dkgs llmqType ${dkg.llmqType}`)];
+    }
+
     const start = height + dkg.blocksUntilStart;
 
     return [{
       reason: 'upcoming',
-      llmqType: llmq ? llmq.name : dkg.llmqType,
+      llmqType: llmq.name,
       quorumIndex: dkg.quorumIndex,
       membershipKnown: dkg.known,
       from: start - MIN_BLOCKS_BEFORE_DKG,
-      until: llmq ? start + getActiveDkgBlocks(llmq) : null,
+      until: start + getActiveDkgBlocks(llmq),
     }];
   });
 }

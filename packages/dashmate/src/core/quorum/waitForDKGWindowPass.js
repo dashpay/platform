@@ -48,7 +48,7 @@ export default async function waitForDKGWindowPass(rpcClient) {
         .filter((key) => isDkgKeyCurrent(key, check.height)));
 
       check.blockers
-        .filter(({ reason, until }) => reason === 'upcoming' && until !== null)
+        .filter(({ reason }) => reason === 'upcoming')
         .forEach((dkg) => {
           announcedDkgs.set(`${dkg.llmqType}:${dkg.quorumIndex}:${dkg.from}`, dkg);
         });
@@ -60,8 +60,10 @@ export default async function waitForDKGWindowPass(rpcClient) {
       });
     }
 
+    // A remembered DKG blocks even while Core syncs: Core restarted into initial
+    // block download may finish in time for it.
     if (check.status === 'safe'
-      && (check.isSyncing || getBlockersAt([...announcedDkgs.values()], check.height).length === 0)) {
+      && getBlockersAt([...announcedDkgs.values()], check.height).length === 0) {
       return;
     }
 

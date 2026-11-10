@@ -174,17 +174,20 @@ describe('getDkgStopBlockers', () => {
       expect(blockersAt({ dkgInfo, coreVersion: CORE_24_0 })).to.be.empty();
     });
 
-    it('should block a member DKG of a type dashmate does not know, with no known end', () => {
+    it('should not read a DKG of a type dashmate does not know that may include this node', () => {
+      // With no known Commit phase, nothing says when it stops blocking.
       const dkgInfo = {
         active_dkgs: 0,
-        next_dkg: 1,
-        upcoming_dkgs: [upcomingDkg(1, true, 250)],
+        next_dkg: 20,
+        upcoming_dkgs: [upcomingDkg(20, true, 250), upcomingDkg(3, false, 251)],
       };
 
       const blockers = blockersAt({ dkgInfo, coreVersion: CORE_24_0 });
 
       expect(blockers).to.have.lengthOf(1);
-      expect(blockers[0]).to.include({ reason: 'upcoming', llmqType: 250, until: null });
+      expect(blockers[0]).to.include({
+        reason: 'unreadable', source: 'quorum dkginfo upcoming_dkgs llmqType 250', from: null,
+      });
     });
 
     describe('fail-safe on malformed upcoming_dkgs', () => {
