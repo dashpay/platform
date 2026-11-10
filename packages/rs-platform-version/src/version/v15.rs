@@ -9,7 +9,7 @@ use crate::version::dpp_versions::dpp_method_versions::v3::DPP_METHOD_VERSIONS_V
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::STATE_TRANSITION_CONVERSION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v2::STATE_TRANSITION_METHOD_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v3::STATE_TRANSITION_SERIALIZATION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_state_transition_versions::v4::STATE_TRANSITION_VERSIONS_V4;
+use crate::version::dpp_versions::dpp_state_transition_versions::v5::STATE_TRANSITION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VERSIONS_V5;
 use crate::version::dpp_versions::dpp_voting_versions::v3::VOTING_VERSION_V3;
@@ -599,7 +599,22 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     time, as it does in every status. No state transition is proved in this status, so
 ///     block execution and the proofs of state transitions are unchanged.
 ///
-/// 30. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
+/// 30. **A chain asset lock proof is not held to the input cap**: the asset lock transaction
+///     an instant proof embeds, with its InstantSend lock, may carry at most
+///     `max_asset_lock_transaction_inputs` (100) inputs, so that the proof fits a state
+///     transition. `validate_asset_lock_transaction_structure` 0 checked the cap, and Drive
+///     runs it on the transaction it fetches from Core for a chain proof too, though a chain
+///     proof carries only an outpoint and a height: a mined asset lock of more than 100
+///     inputs, which no instant proof may carry either, could not be redeemed at all
+///     (`IdentityAssetLockTransactionTooManyInputsError`, 10534). `STATE_TRANSITION_VERSIONS_V5`
+///     selects `validate_asset_lock_transaction_structure` 1, which drops the cap, and
+///     `validate_instant_asset_lock_proof_structure` 1, which checks it after the instant
+///     lock's txid and before the transaction's structure, where 0 reached it, so an instant
+///     proof gets the verdict and the error it got before. Both refusals are unpaid. Protocol
+///     v14 and earlier keep both at 0, so the blocks committed under them replay with the same
+///     verdicts.
+///
+/// 31. **Token listings**: three token transitions of a batch, `TokenPlaceAsk` (lists an amount
 ///     of a tradeable token at a price in credits per whole token and moves it into escrow),
 ///     `TokenFillAsk` (buys part or all of a listing, paying the seller the change in the
 ///     listing's rounded-up running total) and `TokenCancelOrder` (returns what an order holds
@@ -639,7 +654,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
-        state_transitions: STATE_TRANSITION_VERSIONS_V4,
+        state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
