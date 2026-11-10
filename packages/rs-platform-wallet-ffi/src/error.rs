@@ -3196,6 +3196,27 @@ mod private_contact_request_error_tests {
         }
     }
 
+    /// The SDK's unconfirmed outcome keeps its unconfirmed code (20) through
+    /// the shielded spend contract, as through the blanket conversion: it may
+    /// have executed, so it never reads as a failure a host may retry.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_keep_an_unconfirmed_sdk_outcome_unconfirmed_through_the_spend_contract() {
+        let unconfirmed = || {
+            PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::Generic("the acknowledgement was lost".into()),
+            )))
+        };
+        assert_eq!(
+            map_spend_result(Err(unconfirmed()), "shielded transfer").code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(
+            PlatformWalletFFIResult::from(unconfirmed()).code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+    }
+
     /// An identity the wallet does not hold reaches the host by its own code,
     /// not the catch-all.
     #[test]

@@ -688,6 +688,18 @@ pub(crate) fn map_spend_result(
         // here as the blanket `From` conversion does, so hosts route to key
         // repair instead of reading a generic wallet failure. Structural
         // position-0 check only, never a substring sniff of the rendering.
+        // The SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`)
+        // that reached here unclassified: the transition may have executed,
+        // so it keeps the blanket conversion's unconfirmed code rather than
+        // reading as a failure a host may retry.
+        Err(e)
+            if matches!(
+                &e,
+                PlatformWalletError::Sdk(source) if source.is_state_transition_result_unconfirmed()
+            ) =>
+        {
+            e.into()
+        }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),

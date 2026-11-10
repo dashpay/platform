@@ -28,7 +28,10 @@
 ///   transition Platform executed and rejected on its merits.
 ///
 /// Recurses through a `NoAvailableAddressesToRetry` envelope, mirroring
-/// [`crate::error::as_address_invalid_nonce`].
+/// [`crate::error::as_address_invalid_nonce`], and not through the SDK's
+/// unconfirmed-outcome envelope (`StateTransitionResultUnconfirmed`): a
+/// verdict under it follows an attempt that may have been delivered, so it
+/// shows no refusal.
 ///
 /// Only these prove the transition was evaluated and REJECTED. Everything
 /// else — transport errors, timeouts, `AlreadyExists` (which proves the
@@ -212,7 +215,8 @@ where
     let mut maybe_delivered: Option<dash_sdk::Error> = None;
     for _ in 0..dispatches.max(1) {
         let error = match dispatch().await {
-            Ok(()) | Err(dash_sdk::Error::AlreadyExists(_)) => return BroadcastDelivery::Admitted,
+            Ok(()) => return BroadcastDelivery::Admitted,
+            Err(error) if node_holds_transition(&error) => return BroadcastDelivery::Admitted,
             Err(error) => error,
         };
         // Refused before anything was sent: no address, or the SDK's own
@@ -250,6 +254,19 @@ where
         None => BroadcastDelivery::MaybeDelivered(dash_sdk::Error::Generic(
             "no broadcast dispatch was made".to_string(),
         )),
+    }
+}
+
+/// Whether `error` says a node already holds the transition
+/// (`AlreadyExists`): bare, or under the SDK's unconfirmed-outcome envelope
+/// (`StateTransitionResultUnconfirmed`), which the SDK puts a duplicate
+/// answer under as it may follow a delivery, or under its retry envelope.
+fn node_holds_transition(error: &dash_sdk::Error) -> bool {
+    match error {
+        dash_sdk::Error::AlreadyExists(_) => true,
+        dash_sdk::Error::StateTransitionResultUnconfirmed(inner)
+        | dash_sdk::Error::NoAvailableAddressesToRetry(inner) => node_holds_transition(inner),
+        _ => false,
     }
 }
 
@@ -731,6 +748,49 @@ mod tests {
             "no address input: {delivery:?}"
         );
         assert_eq!(dispatched, 1);
+    }
+
+    /// The SDK puts a dispatch that may have been delivered under its
+    /// unconfirmed-outcome envelope (`StateTransitionResultUnconfirmed`): it
+    /// is maybe delivered whatever it wraps, never a refusal before anything
+    /// was sent, and does not end the dispatches as a verdict would; a node
+    /// that holds the transition under it is admitted.
+    #[tokio::test]
+    async fn should_read_the_sdk_s_unconfirmed_outcome_as_maybe_delivered() {
+        let unconfirmed = |inner: dash_sdk::Error| {
+            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(inner))
+        };
+        for inner in [
+            grpc(Code::Unavailable),
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            rejection(),
+        ] {
+            let inner = &inner;
+            let (delivery, dispatched) = tracked(|_| Err(unconfirmed(copy(inner)))).await;
+            assert!(
+                matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
+                "{inner:?}: {delivery:?}"
+            );
+            assert_eq!(dispatched, BUDGET, "{inner:?}");
+        }
+        let (delivery, dispatched) = tracked(|_| {
+            Err(unconfirmed(dash_sdk::Error::AlreadyExists(
+                "state transition already in mempool".to_string(),
+            )))
+        })
+        .await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::Admitted),
+            "{delivery:?}"
+        );
+        assert_eq!(dispatched, 1);
+        #[cfg(feature = "shielded")]
+        {
+            assert!(!broadcast_was_refused(&unconfirmed(rejection())));
+            assert!(!broadcast_was_refused(&unconfirmed(grpc(
+                Code::InvalidArgument
+            ))));
+        }
     }
 
     /// A dispatch a node admitted, or already holds, is admitted, after any
