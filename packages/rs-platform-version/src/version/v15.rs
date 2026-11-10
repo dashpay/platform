@@ -659,7 +659,23 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `update_masternode_list` 0 or 1, `update_operator_identity` 0 and
 ///     `add_new_keys_to_masternode_identity` 0.
 ///
-/// 33. **A reference whose target the document names**: `CONTRACT_VERSIONS_V7` selects
+/// 33. **A contest among documents**: `CONTRACT_VERSIONS_V7` selects
+///     `parse_contested_documents_resolution` 0: a contested index may declare
+///     `"resolution": 2` (`ContestedIndexResolution::MasternodeVoteOnDocuments`), which the
+///     native schema check of note 7 admits and meta-schema v3 refuses. Masternodes vote for
+///     a contender, abstain or lock, as under resolution 0, but each document entered for the
+///     index values is a contender of its own: the contest keeps it under its document id
+///     where the other resolutions keep it under its owner's id, so an identity may enter
+///     several (no `DocumentContestIdentityAlreadyContestantError`), a vote towards a
+///     contender names the document id, and the stored result names the winning document.
+///     The winner is stored under the owner its document names. The methods that write, check
+///     and award a contender read the resolution of the contested index, which no contract
+///     registered before this version can declare, so the generations protocol v14 and
+///     earlier select behave as they did. The decision proposals contract's `choice` type
+///     uses it for the choices of a multiple choice proposal. Protocol v14 and earlier keep
+///     `parse_contested_documents_resolution` `None` and refuse the value.
+///
+/// 34. **A reference whose target the document names**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_property_reference` 1: a `permanentDocument` or `moderatedDocument` `refersTo`
 ///     on an identifier property may name `contractIdProperty` and `documentTypeProperty`,
 ///     two top-level properties of the referring document (an identifier and a string), in

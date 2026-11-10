@@ -18,6 +18,10 @@ use std::fmt;
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
     NoWinner,
+    /// The contender that won, by the id the contest names its contenders by: the winning
+    /// identity's id, or, in a vote among documents
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the winning document's id,
+    /// whose owner is the document's `owner_id`.
     WonByIdentity(Identifier),
     Locked,
 }

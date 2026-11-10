@@ -5098,13 +5098,13 @@
                                     "id": "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender",
                                     "key": {
                                       "type": "dynamic",
-                                      "name": "identity_id",
+                                      "name": "contender_id",
                                       "matcher": {
                                         "type": "len",
                                         "len": 32
                                       },
                                       "encoding": "identifier32",
-                                      "description": "The contending identity's id"
+                                      "description": "The contending identity's id, or the contending document's id in a vote among documents (contested index resolution 2, protocol version 15)"
                                     },
                                     "kinds": [
                                       "Tree"
@@ -5117,7 +5117,7 @@
                                     "since": 1,
                                     "presence": "always",
                                     "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                                    "description": "One contender, below the last value of the index. A 32 byte key is an index value at the levels before that, so what is below the key tells the two apart.",
+                                    "description": "One contender, below the last value of the index. A 32 byte key is an index value at the levels before that, so what is below the key tells the two apart. A contest keeps one contender for each identity, except a vote among documents, which keeps one for each document entered.",
                                     "children": [
                                       {
                                         "id": "votes.contested_resource.active_polls.contract.document_type.indexes.value.contender.document",

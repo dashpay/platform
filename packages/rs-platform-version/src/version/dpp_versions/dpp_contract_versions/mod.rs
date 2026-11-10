@@ -214,6 +214,14 @@ pub struct DocumentTypeSchemaVersions {
     /// the contracts admitted under meta-schema v0, which left the doctype level open. 0
     /// (protocol version 15).
     pub parse_private_document: OptionalFeatureVersion,
+    /// `ContestedIndexResolution::try_from_schema_value`: reads the `resolution` a contested
+    /// index declares. Version 0 also reads 2
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`): each document entered for the
+    /// index values is a contender of its own, named by its document id, so an identity may
+    /// enter several. `None` on versions that predate it: the value is converted as it always
+    /// was, which refuses 2 as an unknown resolution, and so do the meta-schemas (v1 to v3
+    /// list the resolutions they admit). 0 (protocol version 15).
+    pub parse_contested_documents_resolution: OptionalFeatureVersion,
     /// Parses the `generatedFrom` property keyword (a string property whose
     /// value a built-in function generates from other properties of the same
     /// document) onto the property, and checks the properties it reads at
