@@ -100,6 +100,10 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         self.inner.rate_limit_ban_duration()
     }
+
+    fn is_node_busy(&self) -> bool {
+        self.inner.is_node_busy()
+    }
 }
 
 /// Request execution response.
