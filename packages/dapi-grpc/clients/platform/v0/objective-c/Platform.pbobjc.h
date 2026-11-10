@@ -325,6 +325,11 @@ CF_EXTERN_C_BEGIN
 @class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
 @class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
 @class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
+@class GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown;
 @class GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors;
@@ -7758,6 +7763,162 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
  * Clears whatever value was set for the oneof 'result'.
  **/
 void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message);
+
+#pragma mark - GetRecentStateTransitionStatusRequest
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_FieldNumber) {
+  GetRecentStateTransitionStatusRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_Version_OneOfCase) {
+  GetRecentStateTransitionStatusRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * The answering node's own view of a state transition, read from its Tenderdash
+ * at once, with nothing re-broadcast. Nothing in the answer is proved: mempools
+ * differ between nodes, anyone who saw the signed transition can broadcast it
+ * again, and a node can answer anything. Use it to decide whether waiting longer
+ * makes sense, never to decide that a transition cannot execute: a client that
+ * must know that reads the transition's inputs with proofs (the SDK's proven
+ * transition outcome). A shielded or private document client should ask only the
+ * node it broadcast to, since asking several nodes about one transition spreads
+ * the link between the client's address and the transition.
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentStateTransitionStatusRequest_ClearVersionOneOfCase(GetRecentStateTransitionStatusRequest *message);
+
+#pragma mark - GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0_FieldNumber) {
+  GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0_FieldNumber_StateTransitionHash = 1,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 : GPBMessage
+
+/** The 32-byte hash of the state transition */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_Version_OneOfCase) {
+  GetRecentStateTransitionStatusResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentStateTransitionStatusResponse_ClearVersionOneOfCase(GetRecentStateTransitionStatusResponse *message);
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Committed = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Pending = 2,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Unknown = 3,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Metadata = 4,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Committed = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Pending = 2,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Unknown = 3,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase statusOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed *committed;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending *pending;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown *unknown;
+
+/** The node's latest block when it answered, unproved */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'status'.
+ **/
+void GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_ClearStatusOneOfCase(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *message);
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Height = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Error = 2,
+};
+
+/**
+ * In a block of this node's chain, from its transaction index
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed : GPBMessage
+
+/** Height of the block that holds it */
+@property(nonatomic, readwrite) uint64_t height;
+
+/**
+ * Set only when its result code is not 0: the code and the error, as
+ * waitForStateTransitionResult reports a committed transition's error
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
+/** Test to see if @c error has been set. */
+@property(nonatomic, readwrite) BOOL hasError;
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending
+
+/**
+ * In this node's mempool
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending : GPBMessage
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown
+
+/**
+ * Neither in this node's mempool nor in its chain. It may be in another
+ * node's mempool, may have been dropped, or may never have been broadcast.
+ * Tenderdash reads no RPC from its mempool cache, so a hash it saw and
+ * dropped also answers this.
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown : GPBMessage
+
+@end
 
 #pragma mark - GetConsensusParamsRequest
 

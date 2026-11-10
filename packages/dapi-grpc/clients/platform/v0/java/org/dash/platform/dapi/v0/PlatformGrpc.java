@@ -1007,6 +1007,37 @@ public final class PlatformGrpc {
     return getWaitForStateTransitionResultMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentStateTransitionStatus",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getGetRecentStateTransitionStatusMethod;
+    if ((getGetRecentStateTransitionStatusMethod = PlatformGrpc.getGetRecentStateTransitionStatusMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentStateTransitionStatusMethod = PlatformGrpc.getGetRecentStateTransitionStatusMethod) == null) {
+          PlatformGrpc.getGetRecentStateTransitionStatusMethod = getGetRecentStateTransitionStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentStateTransitionStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentStateTransitionStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentStateTransitionStatusMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse> getGetConsensusParamsMethod;
 
@@ -2710,6 +2741,18 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public void getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentStateTransitionStatusMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -3291,6 +3334,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse>(
                   this, METHODID_WAIT_FOR_STATE_TRANSITION_RESULT)))
+          .addMethod(
+            getGetRecentStateTransitionStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>(
+                  this, METHODID_GET_RECENT_STATE_TRANSITION_STATUS)))
           .addMethod(
             getGetConsensusParamsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3888,6 +3938,19 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getWaitForStateTransitionResultMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public void getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentStateTransitionStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -4537,6 +4600,18 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse getRecentStateTransitionStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentStateTransitionStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -5168,6 +5243,19 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
+     * What the node answering knows of a state transition, by hash, without
+     * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+     * (protocol version 15 and later)
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse> getRecentStateTransitionStatus(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentStateTransitionStatusMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
      * &#64;sdk-ignore: Consensus params fetched via Tenderdash RPC
      * </pre>
      */
@@ -5602,52 +5690,53 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 29;
   private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 30;
   private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 31;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 32;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 33;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 34;
-  private static final int METHODID_GET_EPOCHS_INFO = 35;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 36;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 37;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 38;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 39;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 40;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 41;
-  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 42;
-  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 43;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 44;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 45;
-  private static final int METHODID_GET_PATH_ELEMENTS = 46;
-  private static final int METHODID_GET_STATUS = 47;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 48;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 49;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 50;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 51;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 52;
-  private static final int METHODID_GET_TOKEN_STATUSES = 53;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 54;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 55;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 56;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 57;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 58;
-  private static final int METHODID_GET_GROUP_INFO = 59;
-  private static final int METHODID_GET_GROUP_INFOS = 60;
-  private static final int METHODID_GET_GROUP_ACTIONS = 61;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 62;
-  private static final int METHODID_GET_ADDRESS_INFO = 63;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 64;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 65;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 66;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 67;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 68;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 69;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 70;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 71;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 72;
-  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 73;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 74;
-  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 75;
-  private static final int METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK = 76;
-  private static final int METHODID_GET_BLOCKS = 77;
+  private static final int METHODID_GET_RECENT_STATE_TRANSITION_STATUS = 32;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 33;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 34;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 35;
+  private static final int METHODID_GET_EPOCHS_INFO = 36;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 37;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 38;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 39;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 40;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 41;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 42;
+  private static final int METHODID_GET_YES_NO_VOTE_POLL_STATE = 43;
+  private static final int METHODID_GET_MASTERNODE_YES_NO_VOTE = 44;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 45;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 46;
+  private static final int METHODID_GET_PATH_ELEMENTS = 47;
+  private static final int METHODID_GET_STATUS = 48;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 49;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 50;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 51;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 52;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 53;
+  private static final int METHODID_GET_TOKEN_STATUSES = 54;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 55;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 56;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 57;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 58;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 59;
+  private static final int METHODID_GET_GROUP_INFO = 60;
+  private static final int METHODID_GET_GROUP_INFOS = 61;
+  private static final int METHODID_GET_GROUP_ACTIONS = 62;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 63;
+  private static final int METHODID_GET_ADDRESS_INFO = 64;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 65;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 66;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 67;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 68;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 69;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 70;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 71;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 72;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 73;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 74;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 75;
+  private static final int METHODID_GET_PRIVATE_DOCUMENT_ENTRIES = 76;
+  private static final int METHODID_GET_OWNER_TRANSACTIONS_IN_BLOCK = 77;
+  private static final int METHODID_GET_BLOCKS = 78;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -5793,6 +5882,10 @@ public final class PlatformGrpc {
         case METHODID_WAIT_FOR_STATE_TRANSITION_RESULT:
           serviceImpl.waitForStateTransitionResult((org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultResponse>) responseObserver);
+          break;
+        case METHODID_GET_RECENT_STATE_TRANSITION_STATUS:
+          serviceImpl.getRecentStateTransitionStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentStateTransitionStatusResponse>) responseObserver);
           break;
         case METHODID_GET_CONSENSUS_PARAMS:
           serviceImpl.getConsensusParams((org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest) request,
@@ -6071,6 +6164,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityByPublicKeyHashMethod())
               .addMethod(getGetIdentityByNonUniquePublicKeyHashMethod())
               .addMethod(getWaitForStateTransitionResultMethod())
+              .addMethod(getGetRecentStateTransitionStatusMethod())
               .addMethod(getGetConsensusParamsMethod())
               .addMethod(getGetProtocolVersionUpgradeStateMethod())
               .addMethod(getGetProtocolVersionUpgradeVoteStatusMethod())
