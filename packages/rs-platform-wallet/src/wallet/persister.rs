@@ -98,6 +98,14 @@ pub struct WalletPersister {
     /// last store or its flush failed. Shared by the clones the wallet and
     /// the coordinator hold. In memory only.
     stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process, the backend dropping what it buffered: what the wallet tracks
+    /// in memory since may then not be on disk, so nothing is discharged on
+    /// the strength of it alone ([`Self::buffered_writes_lost`]). Shared by
+    /// the clones the wallet and the coordinator hold. In memory only: the
+    /// next process tracks what its load read from disk.
+    #[cfg(feature = "shielded")]
+    buffered_writes_lost: Arc<AtomicBool>,
     /// Why the last restoration of this wallet's private payments failed,
     /// while no later one succeeded (`PlatformWalletError::PrivateContactPaymentsNotRestored`
     /// then holds for it, not only for one not run yet). Shared by the
@@ -160,6 +168,8 @@ impl WalletPersister {
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
+            #[cfg(feature = "shielded")]
+            buffered_writes_lost: Arc::default(),
             private_payment_restore_failure: Arc::default(),
             #[cfg(feature = "shielded")]
             private_payment_restore_retry: Arc::default(),
@@ -519,7 +529,22 @@ impl WalletPersister {
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
-        self.inner.flush(self.wallet_id)
+        let flushed = self.inner.flush(self.wallet_id);
+        #[cfg(feature = "shielded")]
+        if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
+            self.buffered_writes_lost.store(true, Ordering::SeqCst);
+        }
+        flushed
+    }
+
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process (anything but a transient failure, which keeps the buffer):
+    /// what the wallet tracked before it may not be on disk, though it is in
+    /// memory. A restoration then leaves the journal records it finds settled
+    /// by tracked requests for the next process to discharge.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn buffered_writes_lost(&self) -> bool {
+        self.buffered_writes_lost.load(Ordering::SeqCst)
     }
 
     pub(crate) fn store_commits_inline(&self) -> bool {

@@ -3498,7 +3498,9 @@ mod tests {
 
     /// A read-back whose records' flush fails for good, the backend dropping
     /// what it buffered, drops its notice: the journal record stays, the pair
-    /// held, and a later flush that succeeds notes nothing.
+    /// held, and a later flush that succeeds notes nothing; a restoration in
+    /// the same process leaves the record too, the request it finds tracked
+    /// being in memory only.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_drop_a_read_back_notice_whose_records_the_backend_dropped() {
@@ -3538,6 +3540,14 @@ mod tests {
             .await;
         assert_eq!(fixture.journaled().await, 1, "the record stays");
         assert!(persister.private_pair_journaled(&alice.id(), &bob.id()));
+        // Nor does a restoration in this process discharge it, though the
+        // request is tracked: in memory only, as its flush was lost.
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert_eq!(fixture.journaled().await, 1, "kept for the next process");
     }
 
     /// An entry that only starts with a journal record's commitment, as anyone

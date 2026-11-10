@@ -3167,8 +3167,11 @@ impl PrivatePaymentRestore {
         // A record whose request the tracked one records or supersedes was
         // read back by an earlier process, which ended before it discharged
         // it: discharged now, so its store is not read for it on every launch.
-        // A busy store leaves it for the next restoration.
-        if !settled.is_empty() {
+        // A busy store leaves it for the next restoration. Not once a flush of
+        // the wallet's records failed for good in this process: the tracked
+        // request may be in memory only, and a restart would then find neither
+        // it nor the record.
+        if !settled.is_empty() && !self.persister.buffered_writes_lost() {
             let store = if wait {
                 Some(self.coordinator.store().write().await)
             } else {
