@@ -56,7 +56,9 @@ pub(super) enum StoredContestedFieldMatch {
     PositiveIntegerMatch(u128),
 }
 
-/// [`ContestedIndexResolution`].
+/// [`ContestedIndexResolution`], variant for variant and under the same names, which all
+/// start alike.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub(super) enum StoredContestedResolution {
     MasternodeVote,
