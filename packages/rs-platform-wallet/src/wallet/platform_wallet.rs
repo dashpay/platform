@@ -1884,13 +1884,20 @@ impl PlatformWallet {
     /// before the journal kept it, with its request, is added to the
     /// journal.
     ///
-    /// Run also by [`PlatformWalletManager::configure_shielded`] for every
-    /// wallet the manager holds, and by its load for the wallets it loads once
-    /// the store is configured: no keys are needed. Once it succeeds, the
-    /// wallet's contact requests, which a load holds for a wallet that bound
-    /// a shielded account before, and for an identity whose position record
-    /// marks a private payment that may be unresolved
-    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]), go ahead.
+    /// Run also by [`PlatformWalletManager::configure_shielded`] for the
+    /// wallets the manager holds, by the registration or load of a wallet once
+    /// the store is configured, and once by a contact request refused as not
+    /// restored: no keys are needed. Once it succeeds, the wallet's contact
+    /// requests go ahead, which are held
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]) for a wallet
+    /// published with no shielded store configured while its persister keeps
+    /// the private scan state, one loaded after binding a shielded account, one
+    /// whose last restoration failed or waits for a busy store, and an identity
+    /// whose position record, its own or one its persister kept after its
+    /// wallet's removal, marks a private payment that may be unresolved. A
+    /// payment whose request its sender does not track rewinds the sender's
+    /// read of the store to where it was when it paid, so the entry is read
+    /// again.
     ///
     /// [`PlatformWalletManager::configure_shielded`]: crate::PlatformWalletManager::configure_shielded
     #[cfg(feature = "shielded")]
@@ -2815,6 +2822,7 @@ impl PlatformWallet {
             wallets: _,
             #[cfg(feature = "shielded")]
                 shielded: _,
+            retained_private_contact_scan_states: _,
         } = self.load_persisted()?;
 
         if let Some(persisted) = platform_addresses.remove(&self.wallet_id) {
@@ -3342,6 +3350,7 @@ where
                     Identifier::from(record.payment.recipient),
                     record.payment.account_reference,
                     record.commitment,
+                    record.store_position,
                 )
             })
             .collect(),

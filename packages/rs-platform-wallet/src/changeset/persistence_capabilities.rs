@@ -134,6 +134,20 @@ impl PersistenceCapabilities {
     /// ([`Self::PRIVATE_CONTACT_SCAN_STATE_RESTART`]): the scan state is written
     /// in changesets that must commit whole, so a backend declaring this bit
     /// alone is treated as keeping none of it.
+    ///
+    /// A backend declaring it keeps a position record whose
+    /// `private_payments_unresolved` is set when it removes the record's
+    /// wallet or purges that wallet's rows, until a record stored cleared for
+    /// the same wallet and owner replaces it, and returns such records for a
+    /// wallet it no longer holds in
+    /// `ClientStartState::retained_private_contact_scan_states`. The marker
+    /// stands for a private payment that may still execute: a wallet
+    /// registered again under the id holds the identity it names, in every
+    /// build, until a restoration from the shielded store's journal shows the
+    /// payment resolved. The wallet itself never asks for a marked record to
+    /// be deleted: `PlatformWalletManager::remove_wallet` stores nothing, and
+    /// `IdentityManager::remove_identity` refuses while the identity's record
+    /// is marked.
     pub const PRIVATE_CONTACT_REQUEST_SCAN_STATE: Self = Self(1 << 15);
 
     /// Index of the highest bit declared above. It lives here, beside the

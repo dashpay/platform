@@ -297,17 +297,19 @@ pub unsafe extern "C" fn platform_wallet_get_private_contact_readiness(
     check_ptr!(out_readiness);
     unsafe { *out_readiness = PrivateContactReadinessFFI::default() };
     let identity_id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            identity
-                .dashpay()
-                .private_contact_readiness(&identity_id)
-                .await
-        })
-    });
-    let result = unwrap_option_or_return!(option);
-    let readiness = unwrap_result_or_return!(result);
+    // Look the identity up under the registry guard, but wait outside it: the
+    // read can wait on the wallet's write lock, and a registry read guard held
+    // across that wait would stall `platform_wallet_destroy` (a registry
+    // write) and every registry reader queued behind it.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let readiness = unwrap_result_or_return!(block_on_worker(async move {
+        identity
+            .dashpay()
+            .private_contact_readiness(&identity_id)
+            .await
+    }));
     unsafe { *out_readiness = readiness.into() };
     PlatformWalletFFIResult::ok()
 }
@@ -551,7 +553,10 @@ mod tests {
                 &mut readiness,
             )
         };
-        assert_ne!(stranger.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            stranger.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
         assert_eq!(readiness, PrivateContactReadinessFFI::default(), "reset");
         PLATFORM_WALLET_STORAGE.remove(handle);
     }
