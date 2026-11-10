@@ -1794,7 +1794,7 @@ pub(crate) mod gas_sponsorship_tests {
     }
 
     #[tokio::test]
-    async fn should_hand_a_sponsored_history_version_to_the_user_who_rewrites_it_in_its_block() {
+    async fn should_hand_a_sponsored_history_pointer_and_index_to_the_user_who_updates_it() {
         // Each revision is immutable even within one block. The first user update hands
         // the pointer and unchanged index entry over, while the sponsored revision stays.
         let setup = history_card_game();
