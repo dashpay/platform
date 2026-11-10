@@ -161,7 +161,7 @@ async fn should_surface_history_version_status_without_response_decoding_or_fall
         let sdk = fixture.sdk(Network::Devnet, true);
         let SdkInstance::Mock { dapi, .. } = &sdk.inner else { panic!("mock transport") };
         dapi.lock().await.expect(&fixture.request, &Err(ExecutionError {
-                possibly_accepted: false,
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(Status::invalid_argument(message))),
             address: None, retries: 0,
         })).unwrap();
