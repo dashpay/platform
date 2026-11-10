@@ -263,6 +263,138 @@ final class ContactRequestOutcomesTests: XCTestCase {
             "a contact the read did not cover is not offered yet")
     }
 
+    private func readiness(restored: Bool, failed: Bool = false) -> PrivateContactReadiness {
+        PrivateContactReadiness(
+            privatePaymentsRestored: restored, privateStoreRead: true,
+            unresolvedPrivatePayment: false, privatePaymentsRestoreFailed: failed)
+    }
+
+    /// The store opened, but the wallet's journal restoration failed for a
+    /// transient reason. A DashPay refresh asks the wallet to retry even
+    /// though no store-open failure is recorded, reads the readiness after
+    /// the attempt, and once the retry restores the payments the gate lifts:
+    /// no bind, no restart and no submitted request.
+    @MainActor
+    func testShouldRetryARestorationThatFailedAfterTheStoreOpenedOnARefresh() {
+        let contact = Data(repeating: 1, count: 32)
+        var restorationFails = true
+        var configures = 0
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([], for: [contact])
+        let read = { () -> (readiness: PrivateContactReadiness?, restoreFailure: String?) in
+            restorationFails
+                ? (self.readiness(restored: false, failed: true), "the journal could not be read")
+                : (self.readiness(restored: true), nil)
+        }
+
+        // The first refresh: the store opened, the restoration failed, and
+        // the retry it asks for fails too.
+        var refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
+            configureAgain: { configures += 1; return nil })
+        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        XCTAssertEqual(configures, 1, "not restored asks the wallet to retry with no store failure recorded")
+        XCTAssertNil(refreshed.storeFailure)
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertEqual(snapshot.restoreFailure, "the journal could not be read")
+        XCTAssertTrue(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 0))
+
+        // The failure was transient: the next refresh asks first, the retry
+        // restores, and the readiness shown is the one read after it.
+        refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
+            configureAgain: { configures += 1; restorationFails = false; return nil })
+        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        XCTAssertEqual(configures, 2)
+        XCTAssertFalse(snapshot.isRestoringPrivatePayments)
+        XCTAssertNil(snapshot.restoreFailure)
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact), "the gate lifts on the refresh alone")
+        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 1))
+    }
+
+    /// A refresh asks for the retry before it reads the readiness it shows:
+    /// a view that last showed "not restored" asks first and shows only the
+    /// read made after it.
+    @MainActor
+    func testShouldShowTheReadinessReadAfterTheRetry() {
+        var events: [String] = []
+        var restored = false
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: readiness(restored: false), storeFailure: nil,
+            readReadiness: {
+                events.append("read")
+                return (self.readiness(restored: restored), nil)
+            },
+            configureAgain: {
+                events.append("configure")
+                restored = true
+                return nil
+            })
+        XCTAssertEqual(events, ["configure", "read"])
+        XCTAssertEqual(refreshed.readiness?.privatePaymentsRestored, true)
+    }
+
+    /// Restored payments and an open store need no retry: one read.
+    @MainActor
+    func testShouldNotAskTheWalletToRetryWhenThePaymentsAreRestored() {
+        var configures = 0
+        var reads = 0
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: readiness(restored: true), storeFailure: nil,
+            readReadiness: { reads += 1; return (self.readiness(restored: true), nil) },
+            configureAgain: { configures += 1; return nil })
+        XCTAssertEqual(configures, 0)
+        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(refreshed.readiness?.privatePaymentsRestored, true)
+    }
+
+    /// A store that did not open is opened again on a refresh, whatever the
+    /// readiness says, and its failure clears once it opens.
+    @MainActor
+    func testShouldOpenTheStoreAgainWhileAStoreFailureIsRecorded() {
+        var configures = 0
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: nil, storeFailure: "disk full",
+            readReadiness: { (nil, nil) },
+            configureAgain: { configures += 1; return nil })
+        XCTAssertEqual(configures, 1)
+        XCTAssertNil(refreshed.storeFailure)
+    }
+
+    /// A restoration the wallet deferred behind a busy store completes later,
+    /// changing nothing the view observes: the view refreshes again on its
+    /// own, bounded, while the payments stay unrestored, and the refresh after
+    /// the deferred restoration lifts the gate.
+    @MainActor
+    func testShouldRefreshAgainWhileARestorationIsDeferred() {
+        let contact = Data(repeating: 1, count: 32)
+        var deferredDone = false
+        var snapshot = PrivateRepliesPendingSnapshot()
+        snapshot.record([], for: [contact])
+        let read = { () -> (readiness: PrivateContactReadiness?, restoreFailure: String?) in
+            (self.readiness(restored: deferredDone), nil)
+        }
+        var refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
+            configureAgain: { nil })
+        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        XCTAssertFalse(snapshot.allowsSubmission(to: contact))
+        XCTAssertTrue(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 0))
+        XCTAssertFalse(
+            PrivatePaymentsRecovery.rechecks(
+                after: snapshot.readiness, attempt: PrivatePaymentsRecovery.recheckLimit),
+            "bounded")
+        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: nil, attempt: 0))
+
+        deferredDone = true
+        refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: snapshot.readiness, storeFailure: nil, readReadiness: read,
+            configureAgain: { nil })
+        snapshot.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        XCTAssertTrue(snapshot.allowsSubmission(to: contact))
+        XCTAssertFalse(PrivatePaymentsRecovery.rechecks(after: snapshot.readiness, attempt: 1))
+    }
+
     func testShouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {
         let accept = CollisionAccept.of(sendPrivately: true)
         XCTAssertEqual(accept, .privateReply)

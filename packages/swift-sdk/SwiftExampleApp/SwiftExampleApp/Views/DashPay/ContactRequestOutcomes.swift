@@ -229,6 +229,68 @@ struct PrivateRepliesPendingSnapshot: Equatable {
     }
 }
 
+/// The DashPay views' readiness refresh, one flow for the request list and
+/// Add Contact. The wallet owns the recovery: on a store already open, a
+/// repeat `configureShielded` retries restoring every wallet whose private
+/// payments are still held, a restoration that failed after the store
+/// opened included, and defers it to a task while a scan holds the store.
+/// So a refresh asks for it whenever the payments are not restored, or the
+/// store did not open, and only then reads the readiness it shows: the
+/// readiness is read after the attempt, never cached from before it. While
+/// the payments stay unrestored (a deferred restoration completes later,
+/// changing nothing a view observes), the view refreshes again on a bounded
+/// timer, so the gate lifts without a bind, a restart or a submitted
+/// request. The views change no hold themselves.
+enum PrivatePaymentsRecovery {
+    /// How many times a view refreshes again on its own while the payments
+    /// stay unrestored.
+    static let recheckLimit = 20
+    /// How long a view waits before it refreshes again.
+    static let recheckInterval: Duration = .seconds(3)
+
+    /// Whether a refresh asks the wallet to retry before it reads the
+    /// readiness it shows: the store did not open last time, or the last
+    /// readiness read says the payments are not restored.
+    static func retries(readiness: PrivateContactReadiness?, storeFailure: String?) -> Bool {
+        storeFailure != nil || readiness?.privatePaymentsRestored == false
+    }
+
+    /// Whether a view refreshes again on its own after `attempt` automatic
+    /// refreshes: the payments are still not restored and the limit is not
+    /// reached. A failed read (nil) is left to the next refresh the view
+    /// makes anyway.
+    static func rechecks(after readiness: PrivateContactReadiness?, attempt: Int) -> Bool {
+        readiness?.privatePaymentsRestored == false && attempt < recheckLimit
+    }
+
+    /// One refresh. `lastReadiness` is the readiness the view shows now;
+    /// `readReadiness` reads the wallet's (with the reason a restoration
+    /// failed); `configureAgain` asks the wallet to retry and returns why the
+    /// store did not open, or nil. When `retries` says so, the wallet is asked
+    /// first and the readiness is read after it; otherwise it is read once.
+    @MainActor
+    static func refresh(
+        lastReadiness: PrivateContactReadiness?,
+        storeFailure: String?,
+        readReadiness: () -> (readiness: PrivateContactReadiness?, restoreFailure: String?),
+        configureAgain: () -> String?
+    ) -> (readiness: PrivateContactReadiness?, restoreFailure: String?, storeFailure: String?) {
+        var storeFailure = storeFailure
+        if retries(readiness: lastReadiness, storeFailure: storeFailure) {
+            storeFailure = configureAgain()
+            let read = readReadiness()
+            return (read.readiness, read.restoreFailure, storeFailure)
+        }
+        let read = readReadiness()
+        if retries(readiness: read.readiness, storeFailure: storeFailure) {
+            storeFailure = configureAgain()
+            let again = readReadiness()
+            return (again.readiness, again.restoreFailure, storeFailure)
+        }
+        return (read.readiness, read.restoreFailure, storeFailure)
+    }
+}
+
 /// How Add Contact's collision alert accepts the request the recipient
 /// already sent us. With "Send privately" on, the user chose a private
 /// request, so the accept replies privately

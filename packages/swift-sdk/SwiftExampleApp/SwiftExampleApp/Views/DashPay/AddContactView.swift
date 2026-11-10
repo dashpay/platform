@@ -81,6 +81,10 @@ struct AddContactView: View {
     /// pending state; nil when it is open.
     @State private var shieldedStoreFailure: String?
 
+    /// The automatic refreshes made since the wallet's private payments were
+    /// last read restored (`PrivatePaymentsRecovery.rechecks`).
+    @State private var readinessRechecks = 0
+
     /// A private sync the footer started is running.
     @State private var isSyncingPrivate = false
 
@@ -171,6 +175,16 @@ struct AddContactView: View {
             }
             .navigationTitle("Add Contact")
             .task(id: resolvedRecipient) { reloadRecipientPending() }
+            // While the wallet's private payments stay unrestored, refresh
+            // again after a pause: a restoration the wallet deferred behind a
+            // busy store completes later and changes nothing this view
+            // observes.
+            .task(id: readinessRechecks) {
+                guard readinessRechecks > 0 else { return }
+                try? await Task.sleep(for: PrivatePaymentsRecovery.recheckInterval)
+                guard !Task.isCancelled else { return }
+                reloadRecipientPending()
+            }
             .onChange(of: shieldedService.isBound) { _, _ in reloadRecipientPending() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -470,23 +484,33 @@ struct AddContactView: View {
         }
     }
 
-    /// Re-read from the wallet whether it holds the pair with the resolved
-    /// recipient for a private request, and its readiness, and try a
-    /// shielded store that did not open again.
+    /// Re-read from the wallet its readiness (`PrivatePaymentsRecovery.refresh`:
+    /// the wallet is asked to retry a restoration first when its payments are
+    /// not restored, and the readiness shown is read after that), then
+    /// whether it holds the pair with the resolved recipient for a private
+    /// request, and refresh again on a bounded timer while the payments stay
+    /// unrestored.
     private func reloadRecipientPending() {
         let contactIds = resolvedRecipient.map { [$0] } ?? []
         let wallet = try? requireWallet()
+        let identityId = identity.identityId
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: recipientPending.readiness,
+            storeFailure: walletManagerStore.shieldedStoreFailure(of: walletManager),
+            readReadiness: { privateContactReadiness(wallet: wallet, identityId: identityId) },
+            configureAgain: { walletManagerStore.configureShieldedAgain(walletManager) }
+        )
+        recipientPending.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        shieldedStoreFailure = refreshed.storeFailure
         recipientPending.record(
-            privateRepliesPending(
-                wallet: wallet,
-                identityId: identity.identityId,
-                contactIds: contactIds
-            ),
+            privateRepliesPending(wallet: wallet, identityId: identityId, contactIds: contactIds),
             for: contactIds
         )
-        let read = privateContactReadiness(wallet: wallet, identityId: identity.identityId)
-        recipientPending.recordReadiness(read.readiness, restoreFailure: read.restoreFailure)
-        shieldedStoreFailure = walletManagerStore.shieldedStoreFailure(retrying: walletManager)
+        if PrivatePaymentsRecovery.rechecks(after: recipientPending.readiness, attempt: readinessRechecks) {
+            readinessRechecks += 1
+        } else if recipientPending.readiness?.privatePaymentsRestored == true {
+            readinessRechecks = 0
+        }
     }
 
     /// Read the private store, which settles a pending private request, then

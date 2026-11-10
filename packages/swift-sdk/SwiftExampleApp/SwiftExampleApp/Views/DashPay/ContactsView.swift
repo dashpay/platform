@@ -245,11 +245,6 @@ func privateRepliesPending(
     guard !contactIds.isEmpty else { return [] }
     guard let wallet else { return nil }
     do {
-        do {
-            _ = try wallet.managedIdentity(identityId: identityId)
-        } catch PlatformWalletError.notFound(_) {
-            return []
-        }
         var pending = Set<Data>()
         for contactId in contactIds {
             if try wallet.privatePairHeld(senderId: identityId, recipientId: contactId) {
@@ -257,6 +252,10 @@ func privateRepliesPending(
             }
         }
         return pending
+    } catch PlatformWalletError.identityNotFound(_) {
+        // Code 7: the wallet does not hold the identity, so it holds nothing
+        // for it.
+        return []
     } catch {
         return nil
     }

@@ -60,6 +60,10 @@ struct ContactRequestsView: View {
     /// pending state; nil when it is open.
     @State private var shieldedStoreFailure: String?
 
+    /// The automatic refreshes made since the wallet's private payments were
+    /// last read restored (`PrivatePaymentsRecovery.rechecks`).
+    @State private var readinessRechecks = 0
+
     /// What the last private-store refresh has to tell the user, if anything.
     @State private var privateRefreshNotice: String?
 
@@ -203,6 +207,15 @@ struct ContactRequestsView: View {
             reloadPendingReplies()
         }
         .task { reloadPendingReplies() }
+        // While the wallet's private payments stay unrestored, refresh again
+        // after a pause: a restoration the wallet deferred behind a busy
+        // store completes later and changes nothing this view observes.
+        .task(id: readinessRechecks) {
+            guard readinessRechecks > 0 else { return }
+            try? await Task.sleep(for: PrivatePaymentsRecovery.recheckInterval)
+            guard !Task.isCancelled else { return }
+            reloadPendingReplies()
+        }
         .onChange(of: shieldedService.isBound) { _, _ in reloadPendingReplies() }
         .onChange(of: rowSignature) { _, _ in
             pruneOverlays()
@@ -234,23 +247,32 @@ struct ContactRequestsView: View {
         }
     }
 
-    /// Re-read from the wallet which incoming rows' pairs it holds for a
-    /// private request and its readiness, and try a shielded store that did
-    /// not open again.
+    /// Re-read from the wallet its readiness (`PrivatePaymentsRecovery.refresh`:
+    /// the wallet is asked to retry a restoration first when its payments are
+    /// not restored, and the readiness shown is read after that), then which
+    /// incoming rows' pairs it holds for a private request, and refresh again
+    /// on a bounded timer while the payments stay unrestored.
     private func reloadPendingReplies() {
         let contactIds = incomingPending.map(\.contactIdentityId)
         let wallet = try? requireWallet()
+        let identityId = identity.identityId
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: walletPending.readiness,
+            storeFailure: walletManagerStore.shieldedStoreFailure(of: walletManager),
+            readReadiness: { privateContactReadiness(wallet: wallet, identityId: identityId) },
+            configureAgain: { walletManagerStore.configureShieldedAgain(walletManager) }
+        )
+        walletPending.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        shieldedStoreFailure = refreshed.storeFailure
         walletPending.record(
-            privateRepliesPending(
-                wallet: wallet,
-                identityId: identity.identityId,
-                contactIds: contactIds
-            ),
+            privateRepliesPending(wallet: wallet, identityId: identityId, contactIds: contactIds),
             for: contactIds
         )
-        let read = privateContactReadiness(wallet: wallet, identityId: identity.identityId)
-        walletPending.recordReadiness(read.readiness, restoreFailure: read.restoreFailure)
-        shieldedStoreFailure = walletManagerStore.shieldedStoreFailure(retrying: walletManager)
+        if PrivatePaymentsRecovery.rechecks(after: walletPending.readiness, attempt: readinessRechecks) {
+            readinessRechecks += 1
+        } else if walletPending.readiness?.privatePaymentsRestored == true {
+            readinessRechecks = 0
+        }
     }
 
     // MARK: - Overlay maintenance
