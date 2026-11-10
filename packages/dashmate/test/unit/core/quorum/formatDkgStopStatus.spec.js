@@ -142,6 +142,11 @@ describe('formatDkgStopStatus', () => {
       .to.equal('Core\'s DKG state changed while reading it; checking again');
   });
 
+  it('should not describe a status it does not know as a failed RPC call', () => {
+    expect(formatDkgStopStatus({ type: 'something-new', height: HEIGHT }, { blockTimeSeconds: null }))
+      .to.equal('Checking Core\'s DKG state');
+  });
+
   it('should describe a failed RPC call it retries, with the cause on a line of its own', () => {
     const text = formatDkgStopStatus({
       type: 'rpc-error', error: new Error('Work queue depth exceeded'), failedPolls: 2, maxFailedPolls: 6,

@@ -140,9 +140,11 @@ export default function formatDkgStopStatus(status, { blockTimeSeconds }) {
         + `in ${SAFE_STOP_CONFIRMATION_DELAY_MS / 1000}s`;
     case 'unsettled':
       return 'Core\'s DKG state changed while reading it; checking again';
-    default:
+    case 'rpc-error':
       return `Core RPC failed (${status.failedPolls} of ${status.maxFailedPolls}), retrying:\n`
         + `${status.error.message}`;
+    default:
+      return 'Checking Core\'s DKG state';
   }
 }
 

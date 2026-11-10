@@ -32,6 +32,7 @@ function getRestartableCoreRpcMock(sinon, core) {
   return {
     getNetworkInfo: guard('getNetworkInfo'),
     getBlockchainInfo: guard('getBlockchainInfo'),
+    getBlockHash: guard('getBlockHash'),
     quorum: guard('quorum'),
   };
 }
@@ -291,7 +292,7 @@ describe('waitForDKGWindowPass', () => {
     expect(progressCallback).to.not.have.been.calledWithMatch({ type: 'confirming' });
   });
 
-  it('should rely on Core\'s record once it has recorded a DKG it saw announced', async function it() {
+  it('should keep a DKG it saw announced alongside Core\'s record of it', async function it() {
     const progressCallback = this.sinon.stub();
     const start = 24 * 5000;
     const core = {
@@ -318,8 +319,9 @@ describe('waitForDKGWindowPass', () => {
     };
     await clock.tickAsync(NEXT_POLL_MS);
 
-    expect(progressCallback.lastCall.args[0].blockers.map(({ reason }) => reason))
-      .to.deep.equal(['session']);
+    // The formatter lists the two as one DKG.
+    expect(progressCallback.lastCall.args[0].blockers.map(({ reason }) => reason).sort())
+      .to.deep.equal(['session', 'upcoming']);
   });
 
   it('should report when Core\'s state changed while reading it', async function it() {
@@ -764,6 +766,85 @@ describe('waitForDKGWindowPass', () => {
     await clock.tickAsync(NEXT_POLL_MS);
 
     expect(waiting.resolved).to.be.true();
+  });
+
+  it('should keep blocking a DKG it saw announced after Core restarts and forgets the session', async function it() {
+    // Core keeps its session records in memory. Restarted mid-session it
+    // reports no session, no announcement and no count for the running DKG.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 22, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+    };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    core.height = start + 3;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 21, upcoming_dkgs: [] };
+    core.dkgStatus = { session: [] };
+    await expectStillPolling(waiting, rpcClient);
+  });
+
+  it('should treat a Core version it cannot read as a failed check', async function it() {
+    // Whether Core's session count applies depends on the version.
+    const progressCallback = this.sinon.stub();
+    const core = {
+      version: undefined,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient, { progressCallback }));
+    await clock.tickAsync(1);
+
+    expect(waiting.resolved).to.be.false();
+    expect(progressCallback).to.have.been.calledWithMatch({ type: 'rpc-error', failedPolls: 1 });
+    expect(rpcClient.quorum).to.not.have.been.called();
+
+    core.version = CORE_24_1;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should count only unreadable polls in a row, starting again after an interrupted one', async function it() {
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: {} },
+      dkgStatus: { session: [] },
+      down: false,
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1) - 1);
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    core.down = false;
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1));
+
+    expect(waiting.error).to.be.undefined();
+    expect(waiting.resolved).to.be.false();
   });
 
   it('should forget DKGs announced without this node when a reorg replaces their chain', async function it() {
