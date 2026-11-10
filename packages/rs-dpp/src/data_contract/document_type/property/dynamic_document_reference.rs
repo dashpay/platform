@@ -45,6 +45,7 @@ use crate::data_contract::document_type::property::{
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_value::Value;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -198,6 +199,18 @@ pub enum SlotValue {
 }
 
 impl SlotValue {
+    /// The `type` a contract schema declares the slot with; a byte array is an `array`
+    /// declared beside `"byteArray": true`.
+    pub const fn schema_type(self) -> &'static str {
+        match self {
+            SlotValue::String => "string",
+            SlotValue::ByteArray => "array",
+            SlotValue::Identifier => "identifier",
+            SlotValue::Integer => "integer",
+            SlotValue::Boolean => "boolean",
+        }
+    }
+
     /// The `type` the slot is written with, for messages.
     pub const fn wire_name(self) -> &'static str {
         match self {
@@ -234,7 +247,43 @@ pub enum SlotRequirementTerm {
     Group(Vec<String>),
 }
 
+/// A schema object: its members in the order given.
+fn schema_object(members: Vec<(&str, Value)>) -> Value {
+    Value::Map(
+        members
+            .into_iter()
+            .map(|(key, value)| (Value::Text(key.to_string()), value))
+            .collect(),
+    )
+}
+
+/// A schema list of names.
+fn schema_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Value {
+    Value::Array(names.into_iter().cloned().map(Value::Text).collect())
+}
+
 impl SlotRequirement {
+    /// `require` as a contract schema declares it: a slot name, or `anyOf` / `allOf` over
+    /// slot names and groups, a group written as the other combinator. What the parser
+    /// reads back to this requirement.
+    pub fn to_schema_value(&self) -> Value {
+        let (combinator, group_combinator, terms) = match self {
+            SlotRequirement::Slot(slot) => return Value::Text(slot.clone()),
+            SlotRequirement::AnyOf(terms) => ("anyOf", "allOf", terms),
+            SlotRequirement::AllOf(terms) => ("allOf", "anyOf", terms),
+        };
+        let terms = terms
+            .iter()
+            .map(|term| match term {
+                SlotRequirementTerm::Slot(slot) => Value::Text(slot.clone()),
+                SlotRequirementTerm::Group(slots) => {
+                    schema_object(vec![(group_combinator, schema_names(slots))])
+                }
+            })
+            .collect();
+        schema_object(vec![(combinator, Value::Array(terms))])
+    }
+
     /// Whether the requirement holds when exactly the slots `filled` reports are filled.
     pub fn holds(&self, filled: impl Fn(&str) -> bool) -> bool {
         match self {
@@ -266,6 +315,36 @@ impl SlotRequirement {
 }
 
 impl RequiredPropertySlot {
+    /// The slot as a contract schema declares it: `name`, `type`, `byteArray` on a byte
+    /// array, and `maxBytes`, `distinctFrom` (always a list) and `when` when it has them.
+    /// What the parser reads back to this slot.
+    pub fn to_schema_value(&self) -> Value {
+        let name = match &self.name {
+            SlotPropertyName::Any => Value::Text(ANY_PROPERTY_NAME.to_string()),
+            SlotPropertyName::Named(name) => Value::Text(name.clone()),
+            SlotPropertyName::FromProperty(property) => {
+                schema_object(vec![("property", Value::Text(property.clone()))])
+            }
+        };
+        let mut members = vec![
+            ("name", name),
+            ("type", Value::Text(self.value.schema_type().to_string())),
+        ];
+        if self.value == SlotValue::ByteArray {
+            members.push(("byteArray", Value::Bool(true)));
+        }
+        if let Some(max_bytes) = self.max_bytes {
+            members.push(("maxBytes", Value::U32(max_bytes)));
+        }
+        if !self.distinct_from.is_empty() {
+            members.push(("distinctFrom", schema_names(&self.distinct_from)));
+        }
+        if let Some(when) = &self.when {
+            members.push(("when", when.to_schema_value()));
+        }
+        schema_object(members)
+    }
+
     /// Whether `property`, a top-level property of the referenced type, matches the slot's
     /// description, its name and its `when` aside. A transient property is never stored, so
     /// it fills nothing.
@@ -299,6 +378,24 @@ impl RequiredPropertySlot {
 }
 
 impl DocumentTypeRequirements {
+    /// `documentTypeRequirements` as a contract schema declares it: the slots under
+    /// `properties`, each as [`RequiredPropertySlot::to_schema_value`] gives it, and
+    /// `require` when not every slot is required. The one place the declared shape is
+    /// written out of the parsed one; the parser reads it back to these requirements.
+    pub fn to_schema_value(&self) -> Value {
+        let slots = Value::Map(
+            self.slots
+                .iter()
+                .map(|(name, slot)| (Value::Text(name.clone()), slot.to_schema_value()))
+                .collect(),
+        );
+        let mut members = vec![("properties", slots)];
+        if let Some(require) = &self.require {
+            members.push(("require", require.to_schema_value()));
+        }
+        schema_object(members)
+    }
+
     /// The properties of the declaring type a slot takes its property name from.
     pub fn name_properties(&self) -> impl Iterator<Item = &str> {
         self.slots.values().filter_map(|slot| match &slot.name {
