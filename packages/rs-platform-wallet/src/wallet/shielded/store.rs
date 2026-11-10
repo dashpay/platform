@@ -620,10 +620,10 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// with it, and the private payment journal's record of each entry the
     /// spend appends (`entries`, each with the hash of the whole entry),
     /// which outlives it ([`PrivatePaymentRecord`]), with the sender's private
-    /// store read position when it paid (`store_position`). All of it is saved in one write that is
-    /// durable once this returns, across a crash or power loss too: the
-    /// spend is broadcast only after it. A store that cannot keep all of it
-    /// durably fails, and the payment is refused.
+    /// store read position when it paid (`store_position`). All of it is saved
+    /// in one write that is durable once this returns, across a crash or power
+    /// loss too: the spend is broadcast only after it. A store that cannot
+    /// keep all of it durably fails, and the payment is refused.
     /// `anchor_height` is the proved height of the recorded-anchor set the
     /// spend's anchor was chosen from ([`PrivatePaymentRecord::anchor_height`]).
     fn arm_private_contact_payment(
@@ -2272,6 +2272,61 @@ mod tests {
                 "{anchor_height:?}"
             );
         }
+    }
+
+    /// A format 4 journal record keeps its entry's hash and its store
+    /// position across its bytes, each present or not; a format 3 record,
+    /// which kept neither, reads back with neither. A presence byte other than
+    /// 0 or 1, or bytes past the last field, do not read.
+    #[test]
+    fn should_keep_a_journal_record_s_entry_hash_and_position_across_its_bytes() {
+        let record = |entry_hash, store_position| PrivatePaymentRecord {
+            account_index: 2,
+            activity_id: [0x61; 32],
+            anchor: [0x62; 32],
+            anchor_height: Some(41),
+            commitment: [0x63; 32],
+            payment: PrivateContactPayment {
+                sender: [0x64; 32],
+                recipient: [0x65; 32],
+                account_reference: 3,
+            },
+            nullifiers: vec![[0x66; 32], [0x68; 32]],
+            entry_hash,
+            store_position,
+        };
+        for (entry_hash, store_position) in [
+            (None, None),
+            (Some([0x67; 32]), None),
+            (None, Some(9)),
+            (Some([0x67; 32]), Some(u64::MAX - 1)),
+        ] {
+            let bytes = record(entry_hash, store_position)
+                .to_bytes()
+                .expect("encodes");
+            assert_eq!(
+                PrivatePaymentRecord::from_bytes(&bytes),
+                Some(record(entry_hash, store_position)),
+                "{entry_hash:?} {store_position:?}"
+            );
+            let mut longer = bytes;
+            longer.push(0);
+            assert_eq!(PrivatePaymentRecord::from_bytes(&longer), None);
+        }
+        // Format 3: the fields up to the nullifiers.
+        let mut format_3 = record(None, None).to_bytes().expect("encodes");
+        format_3.truncate(format_3.len() - 2);
+        format_3[0] = 3;
+        assert_eq!(
+            PrivatePaymentRecord::from_bytes(&format_3),
+            Some(record(None, None))
+        );
+        format_3.push(0);
+        assert_eq!(PrivatePaymentRecord::from_bytes(&format_3), None);
+        let mut unknown_presence = record(None, None).to_bytes().expect("encodes");
+        let at = unknown_presence.len() - 2;
+        unknown_presence[at] = 2;
+        assert_eq!(PrivatePaymentRecord::from_bytes(&unknown_presence), None);
     }
 
     /// The fund-safe release: once the anchor is pruned (absent from the

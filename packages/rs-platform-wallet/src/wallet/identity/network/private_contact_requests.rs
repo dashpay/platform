@@ -3925,6 +3925,16 @@ mod tests {
         // A host keeping the private scan state configures the shielded store
         // at activation: until then, a loaded wallet is held.
         #[cfg(feature = "shielded")]
+        assert!(
+            manager
+                .get_wallet(&before.wallet_id())
+                .await
+                .expect("the relaunched wallet")
+                .private_payments_held()
+                .await,
+            "held until the store is configured"
+        );
+        #[cfg(feature = "shielded")]
         let _store = {
             let dir = tempfile::tempdir().expect("temporary shielded store");
             manager
@@ -10322,6 +10332,59 @@ mod tests {
             .await;
             assert!(restored.is_ok(), "the wallet stays held");
         }
+    }
+
+    /// A wallet still held once it is published, under a store configured
+    /// since its registration found none, is restored by the check the
+    /// registration makes once the wallet is published: the configuration's
+    /// own walk ran before the wallet was published, so it did not see it.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_restore_a_wallet_still_held_once_published_under_a_store_configured_since() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        ))
+        .await;
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("the shielded store is configured");
+        let wallet = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        // As the registration's check before the store was configured left it.
+        wallet.persister().hold_until_private_payments_restored();
+        manager
+            .restore_private_payments_configured_since(&wallet)
+            .await;
+        assert!(!wallet.private_payments_held().await);
+    }
+
+    /// The first configure reads the journal of every wallet whose id it may
+    /// keep payments of, held or not: a backend that no longer attests the
+    /// private scan state holds no wallet for want of a store, yet the
+    /// payments journaled while it did still hold their pairs.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_read_the_journal_of_a_wallet_not_held_at_the_first_configure() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let path = dir.path().join("tree.sqlite");
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::NONE,
+        ))
+        .await;
+        let wallet = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert!(!wallet.private_payments_held().await);
+        journal_alice_to_bob(&path, wallet.wallet_id());
+        manager
+            .configure_shielded(&path)
+            .await
+            .expect("the shielded store is configured");
+        assert!(wallet
+            .persister()
+            .private_pair_journaled(&alice.id(), &bob.id()));
     }
 
     /// A repeat `configure_shielded`, as a host makes on every bind from its
