@@ -252,6 +252,8 @@ mod tests {
         }
     }
 
+    /// The cap written at protocol version 15 merges to the query protocol version 14 built,
+    /// with and without history, so a proof keeps its shape from one version to the next
     #[test]
     fn should_build_the_maybe_contested_query_the_protocol_version_before_built() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
@@ -270,6 +272,8 @@ mod tests {
         }
     }
 
+    /// Protocol version 14 does not enter the new branch: it builds the plain merge of the two
+    /// lookups, with and without a block time
     #[test]
     fn should_leave_the_maybe_contested_query_of_protocol_version_14_as_it_was() {
         let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
