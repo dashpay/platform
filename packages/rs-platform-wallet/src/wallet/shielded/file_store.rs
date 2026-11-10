@@ -23,7 +23,7 @@ use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retentio
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
-    PendingRedrive, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote,
+    PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
     ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
 use crate::error::PlatformWalletError;
@@ -821,6 +821,12 @@ impl FileBackedShieldedStore {
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("PRAGMA synchronous=FULL: {e}"))
             })?;
+        // On Apple platforms `synchronous=FULL` syncs with `fsync`, which does
+        // not flush the drive's own cache; `fullfsync` makes it `F_FULLFSYNC`,
+        // so a record that returned durable survives a power loss there too.
+        // Elsewhere SQLite ignores it.
+        conn.pragma_update(None, "fullfsync", "ON")
+            .map_err(|e| FileShieldedStoreError::Storage(format!("PRAGMA fullfsync=ON: {e}")))?;
         Ok(conn)
     }
 
@@ -1125,19 +1131,22 @@ impl ShieldedStore for FileBackedShieldedStore {
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
-        commitments: &[[u8; 32]],
+        entries: &[PrivatePaymentEntry],
         anchor_height: u64,
+        store_position: Option<u64>,
     ) -> Result<(), Self::Error> {
-        let records: Vec<PrivatePaymentRecord> = commitments
+        let records: Vec<PrivatePaymentRecord> = entries
             .iter()
-            .map(|commitment| PrivatePaymentRecord {
+            .map(|entry| PrivatePaymentRecord {
                 account_index: id.account_index,
                 activity_id: redrive.activity_id,
                 anchor: redrive.anchor,
                 anchor_height: Some(anchor_height),
-                commitment: *commitment,
+                commitment: entry.commitment,
                 payment,
                 nullifiers: redrive.nullifiers.clone(),
+                entry_hash: Some(entry.entry_hash),
+                store_position,
             })
             .collect();
         self.arm_redrive_paying_for(id, redrive, Some(payment), &records)
@@ -1837,7 +1846,14 @@ mod tests {
         {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
             store
-                .arm_private_contact_payment(id, record(1, 3), payment, &[[0xC1; 32]], 0)
+                .arm_private_contact_payment(
+                    id,
+                    record(1, 3),
+                    payment,
+                    &[PrivatePaymentEntry::for_commitment([0xC1; 32])],
+                    0,
+                    None,
+                )
                 .expect("arm the payment");
             store.arm_redrive(id, record(4, 6)).expect("arm a spend");
             store.bump_redrive_attempts(id, &[1u8; 32]).expect("bump");
@@ -1907,8 +1923,9 @@ mod tests {
                     id,
                     record(activity, nullifier),
                     payment,
-                    &[[activity; 32]],
+                    &[PrivatePaymentEntry::for_commitment([activity; 32])],
                     0,
+                    None,
                 )
                 .expect("armed");
         };
@@ -2138,7 +2155,14 @@ mod tests {
         let arm = || {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
             store
-                .arm_private_contact_payment(id, record.clone(), payment, &[[0xC2; 32]], 0)
+                .arm_private_contact_payment(
+                    id,
+                    record.clone(),
+                    payment,
+                    &[PrivatePaymentEntry::for_commitment([0xC2; 32])],
+                    0,
+                    None,
+                )
                 .unwrap();
         };
         let set = |assignment: &str| {
@@ -3049,6 +3073,8 @@ mod tests {
             commitment: [0xC3; 32],
             payment,
             nullifiers: redrive.nullifiers.clone(),
+            entry_hash: Some([0; 32]),
+            store_position: None,
         };
         let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
         assert!(!store
@@ -3058,7 +3084,14 @@ mod tests {
             store.mark_pending(id, nullifier).expect("reserved");
         }
         store
-            .arm_private_contact_payment(id, redrive.clone(), payment, &[[0xC3; 32]], 0)
+            .arm_private_contact_payment(
+                id,
+                redrive.clone(),
+                payment,
+                &[PrivatePaymentEntry::for_commitment([0xC3; 32])],
+                0,
+                None,
+            )
             .expect("armed");
         assert!(store
             .private_payment_journal_open(wallet_id)
@@ -3095,6 +3128,26 @@ mod tests {
             .private_payment_journal(wallet_id)
             .expect("journal")
             .is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The connection the durable records are written through syncs to the
+    /// drive itself on Apple platforms (`fullfsync`), not only to the OS, with
+    /// `synchronous=FULL`.
+    #[test]
+    fn should_open_the_recovery_connection_with_full_syncs() {
+        let path = temp_tree_path("recovery_pragmas");
+        let conn =
+            FileBackedShieldedStore::open_recovery_connection(&path).expect("the connection");
+        let fullfsync: i64 = conn
+            .pragma_query_value(None, "fullfsync", |row| row.get(0))
+            .expect("fullfsync");
+        let synchronous: i64 = conn
+            .pragma_query_value(None, "synchronous", |row| row.get(0))
+            .expect("synchronous");
+        assert_eq!(fullfsync, 1);
+        assert_eq!(synchronous, 2, "FULL");
+        drop(conn);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -3169,7 +3222,14 @@ mod tests {
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
             store.mark_pending(id, &[0x33; 32]).expect("reserved");
             store
-                .arm_private_contact_payment(id, redrive.clone(), payment, &[commitment], 0)
+                .arm_private_contact_payment(
+                    id,
+                    redrive.clone(),
+                    payment,
+                    &[PrivatePaymentEntry::for_commitment(commitment)],
+                    0,
+                    None,
+                )
                 .expect("armed");
             match case {
                 "write fails" => store
@@ -3261,8 +3321,9 @@ mod tests {
                             anchor_height: None,
                         },
                         payment,
-                        &[[0xD4; 32]],
+                        &[PrivatePaymentEntry::for_commitment([0xD4; 32])],
                         0,
+                        None,
                     )
                     .expect("armed");
                 store

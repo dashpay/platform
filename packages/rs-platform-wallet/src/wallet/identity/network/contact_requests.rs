@@ -777,12 +777,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // removed meanwhile is refused at the gate.
         // Boxed: the read's future (a private sync) is large, and the send's
         // callers nest it in their own.
-        let read = Box::pin(self.read_private_store_before_deciding(
-            sender_identity_id,
-            recipient_identity_id,
-            crypto,
-        ))
-        .await;
+        let read =
+            Box::pin(self.read_private_store_before_deciding(sender_identity_id, crypto)).await;
         let claim = {
             let _lifecycle = self.generation.payment_guard().await;
             if !self.is_current_generation().await {
@@ -790,10 +786,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )));
             }
-            read?;
+            let store_read = read?;
             self.release_discharged_private_requests().await?;
             match self
-                .claim_public_pair(sender_identity_id, recipient_identity_id, adopt_reply)
+                .claim_public_pair(
+                    sender_identity_id,
+                    recipient_identity_id,
+                    adopt_reply,
+                    store_read,
+                )
                 .await?
             {
                 Some(claim) => claim,
@@ -832,13 +833,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// (`WalletPersister::private_pair_journaled`), or once their requests
     /// came or went privately, as a `contactRequest` document would publish
     /// the relationship (replies and rotations go privately instead). The
-    /// refusal reads what the wallet tracks, so on a restored or second device
-    /// it holds only once the private sync has read the store.
+    /// refusal reads what the wallet tracks, which the store read before the
+    /// send brought up to date (`DashPayView::read_private_store_before_deciding`).
+    /// When that read applied (`store_read`), the sender's read must still be
+    /// to the store's end here, in the same lock: a rewind since (keys that
+    /// changed, a sender unignored) refuses with
+    /// [`PlatformWalletError::PrivateContactStoreNotRead`].
     pub(super) async fn claim_public_pair(
         &self,
         sender: &Identifier,
         recipient: &Identifier,
         adopt_reply: bool,
+        store_read: bool,
     ) -> Result<Option<PublicContactClaim>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let managed = wm
@@ -850,6 +856,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // A reply finds the one another accept recorded, in the same lock.
         if adopt_reply && managed.dashpay().outgoing_request(recipient).is_some() {
             return Ok(None);
+        }
+        if store_read && !managed.dashpay().private_contact_requests_read() {
+            return Err(PlatformWalletError::PrivateContactStoreNotRead(*sender));
         }
         if managed.dashpay().private_reply_pending(recipient)
             || self.persister.private_pair_journaled(sender, recipient)
@@ -4110,8 +4119,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.read_private_store_before_deciding(&request.recipient_id, &request.sender_id, crypto)
-            .await?;
+        Box::pin(self.read_private_store_before_deciding(&request.recipient_id, crypto)).await?;
         if self.needs_private_reply(request).await {
             return Err(PlatformWalletError::PrivateContactRequestNeedsPrivateReply(
                 request.sender_id,

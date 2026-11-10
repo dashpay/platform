@@ -931,7 +931,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             if existing.db_path() == db_path.as_path() {
                 let existing = Arc::clone(existing);
                 drop(slot);
-                self.restore_private_contact_payment_holds(&existing).await;
+                // A repeat call, on the main thread of a host binding again:
+                // a scan may hold the store, so nothing waits on it.
+                self.restore_private_payments_without_waiting(&existing, false)
+                    .await;
                 return Ok(());
             }
             return Err(crate::error::PlatformWalletError::ShieldedStoreError(
@@ -990,17 +993,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
-    /// Restore from `coordinator`'s store, with no keys, the reservations of
-    /// the unconfirmed private contact request payments of every wallet this
-    /// manager holds whose public contact requests wait for them, or whose id
-    /// the store's journal keeps payments of
-    /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet loaded
-    /// after binding a shielded account in an earlier process, with an
-    /// identity marking a private payment that may be unresolved
-    /// ([`PlatformWallet::private_payments_held`]), or re-created under the id
-    /// of one removed while its payments were unresolved, which only the
-    /// journal shows. A wallet whose restoration fails stays held, until a
-    /// bind or a later call restores it.
+    /// Restore from `coordinator`'s store, just opened, with no keys, the
+    /// reservations of the unconfirmed private contact request payments of
+    /// every wallet this manager holds whose contact requests wait for them,
+    /// or whose id the store's journal keeps payments of
+    /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet
+    /// published before the store was configured with a persister that keeps
+    /// the private scan state, one loaded after binding a shielded account in
+    /// an earlier process, one with an identity marking a private payment that
+    /// may be unresolved ([`PlatformWallet::private_payments_held`]), or one
+    /// whose id another process journaled payments under. Nothing else holds a
+    /// store just opened, so this waits for nothing long. A wallet whose
+    /// restoration fails stays held, until a bind, a contact request's own
+    /// retry or a later call restores it.
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_contact_payment_holds(
         &self,
@@ -1009,9 +1014,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
         for wallet in wallets {
             if !wallet.private_payments_held().await
-                && !coordinator
-                    .journals_private_payments_of(wallet.wallet_id())
-                    .await
+                && !coordinator.may_journal_private_payments_of(wallet.wallet_id())
             {
                 continue;
             }
@@ -1020,9 +1023,74 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     wallet_id = %hex::encode(wallet.wallet_id()),
                     %error,
                     "unconfirmed private contact request payments not restored; the wallet's \
-                     public contact requests stay held until a bind or a later configure \
-                     restores them"
+                     contact requests stay held until a restoration succeeds"
                 );
+            }
+        }
+    }
+
+    /// [`Self::restore_private_contact_payment_holds`] for a store configured
+    /// before, which a shielded scan may hold for minutes: none waits on the
+    /// store ([`PlatformWallet::restore_private_payments_or_defer`]), a busy
+    /// store deferring it to a task, the wallet held until it runs. The
+    /// wallets still held are restored, and with `journaled_too` those whose
+    /// id the journal may keep payments of
+    /// (`NetworkShieldedCoordinator::may_journal_private_payments_of`, a busy
+    /// store counting as may): a load passes it, a repeat configure does not,
+    /// so a configure during a scan holds no wallet that was not held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_without_waiting(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        journaled_too: bool,
+    ) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if wallet.private_payments_held().await
+                || (journaled_too
+                    && coordinator.may_journal_private_payments_of(wallet.wallet_id()))
+            {
+                wallet.restore_private_payments_or_defer(coordinator).await;
+            }
+        }
+    }
+
+    /// Before `wallet` is published: hold its contact requests until its
+    /// private payments are restored, or restore them now. The shielded
+    /// store's journal outlives a wallet's removal and a process's end, so a
+    /// wallet created or loaded under an id may have payments that may still
+    /// execute, which no marker shows and only the journal does. With a store
+    /// configured, the journal is read now, without waiting on the store
+    /// ([`PlatformWallet::restore_private_payments_or_defer`]): restored, the
+    /// pairs are held through the wallet's journal mirror whether or not their
+    /// senders are loaded yet; a busy store or a read that fails holds the
+    /// wallet until a restoration succeeds. With none, a wallet whose persister
+    /// keeps the private scan state is held until `configure_shielded` or a
+    /// bind reads the journal: only such a persister lets a private payment be
+    /// paid, so only its wallet can have journal records no marker shows. One
+    /// that does not is never held for want of a store.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn hold_or_restore_private_payments(&self, wallet: &PlatformWallet) {
+        match self.shielded_coordinator().await {
+            Some(coordinator) => {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
+            }
+            None if wallet.persister().persists_private_contact_scan_state() => {
+                wallet.persister().hold_until_private_payments_restored();
+            }
+            None => {}
+        }
+    }
+
+    /// After `wallet` is published: a store configured since
+    /// [`Self::hold_or_restore_private_payments`] found none restored the
+    /// wallets published then, which this one was not yet, so it is restored
+    /// here, without waiting on the store, while it is still held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_configured_since(&self, wallet: &PlatformWallet) {
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            if wallet.private_payments_held().await {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
             }
         }
     }

@@ -260,6 +260,39 @@ pub struct PrivatePaymentRecord {
     pub payment: PrivateContactPayment,
     /// The nullifiers of the notes its spend consumes; never empty.
     pub nullifiers: Vec<[u8; 32]>,
+    /// SHA-256 of the whole entry it appends: the expiry's read of the store
+    /// takes the payment as executed only for an entry that hashes to it, not
+    /// for any entry that merely starts with [`Self::commitment`], which
+    /// anyone who saw the commitment can append. `None` for a record saved
+    /// before it was kept (format version 3), which matches on the commitment.
+    pub entry_hash: Option<[u8; 32]>,
+    /// The sender identity's private store read position when the payment was
+    /// made: its entry is appended at or after it, so the expiry's read of the
+    /// store starts there. `None` for a record saved before it was kept, or
+    /// with no position known, which is read from the store's start.
+    pub store_position: Option<u64>,
+}
+
+/// An entry a private contact request payment appends, as its journal record
+/// keeps it ([`ShieldedStore::arm_private_contact_payment`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivatePaymentEntry {
+    /// The entry's first 32 bytes, which key its record.
+    pub commitment: [u8; 32],
+    /// SHA-256 of the whole entry ([`PrivatePaymentRecord::entry_hash`]).
+    pub entry_hash: [u8; 32],
+}
+
+impl PrivatePaymentEntry {
+    /// An entry of `commitment` with a placeholder hash, for tests whose
+    /// expiry never reads the store.
+    #[cfg(test)]
+    pub(crate) fn for_commitment(commitment: [u8; 32]) -> Self {
+        Self {
+            commitment,
+            entry_hash: [0; 32],
+        }
+    }
 }
 
 impl PrivatePaymentRecord {
@@ -269,8 +302,11 @@ impl PrivatePaymentRecord {
 
     /// The format version [`Self::to_bytes`] writes. Versions 1 and 2, written
     /// before the anchor and its height were kept, do not read back: their
-    /// wallet's holds stay.
-    const FORMAT_VERSION: u8 = 3;
+    /// wallet's holds stay. Version 3, written before the entry's hash and the
+    /// store position were kept, reads back with neither.
+    const FORMAT_VERSION: u8 = 4;
+    /// The version before [`Self::FORMAT_VERSION`], still read.
+    const FORMAT_VERSION_WITHOUT_ENTRY_HASH: u8 = 3;
     /// The bytes before the nullifiers: version, account index, activity id,
     /// anchor, anchor height, commitment, sender, recipient, account reference
     /// and nullifier count.
@@ -280,7 +316,9 @@ impl PrivatePaymentRecord {
     /// account index little-endian, the activity id, the anchor, the anchor
     /// height little-endian, the commitment, the sender, the recipient, the
     /// account reference little-endian, the nullifier count as a
-    /// little-endian `u16`, then the nullifiers. `None` when it has no
+    /// little-endian `u16`, the nullifiers, then the entry's hash and the
+    /// store position, each a presence byte (0 or 1) and, when present, the
+    /// 32 bytes or the position little-endian. `None` when it has no
     /// nullifier or more than a `u16` counts.
     pub(super) fn to_bytes(&self) -> Option<Vec<u8>> {
         let count = u16::try_from(self.nullifiers.len()).ok()?;
@@ -306,15 +344,29 @@ impl PrivatePaymentRecord {
         for nullifier in &self.nullifiers {
             bytes.extend_from_slice(nullifier);
         }
+        match &self.entry_hash {
+            Some(hash) => {
+                bytes.push(1);
+                bytes.extend_from_slice(hash);
+            }
+            None => bytes.push(0),
+        }
+        match self.store_position {
+            Some(position) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&position.to_le_bytes());
+            }
+            None => bytes.push(0),
+        }
         Some(bytes)
     }
 
-    /// The record [`Self::to_bytes`] wrote, or `None` for any other bytes: a
-    /// different version, a length that does not match the count, or no
-    /// nullifier.
+    /// The record [`Self::to_bytes`] wrote, or one of version 3, or `None`
+    /// for any other bytes: another version, a length that does not match the
+    /// count, or no nullifier.
     pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let (&version, rest) = bytes.split_first()?;
-        if version != Self::FORMAT_VERSION {
+        if version != Self::FORMAT_VERSION && version != Self::FORMAT_VERSION_WITHOUT_ENTRY_HASH {
             return None;
         }
         let (account_index, rest) = rest.split_first_chunk::<4>()?;
@@ -327,10 +379,40 @@ impl PrivatePaymentRecord {
         let (account_reference, rest) = rest.split_first_chunk::<4>()?;
         let (count, rest) = rest.split_first_chunk::<2>()?;
         let count = usize::from(u16::from_le_bytes(*count));
-        let (nullifiers, remainder) = rest.as_chunks::<32>();
+        let (nullifiers, rest) = rest.split_at_checked(32 * count)?;
+        let (nullifiers, remainder) = nullifiers.as_chunks::<32>();
         if count == 0 || nullifiers.len() != count || !remainder.is_empty() {
             return None;
         }
+        let (entry_hash, store_position) = if version == Self::FORMAT_VERSION {
+            let (&has_hash, rest) = rest.split_first()?;
+            let (entry_hash, rest) = match has_hash {
+                0 => (None, rest),
+                1 => {
+                    let (hash, rest) = rest.split_first_chunk::<32>()?;
+                    (Some(*hash), rest)
+                }
+                _ => return None,
+            };
+            let (&has_position, rest) = rest.split_first()?;
+            let (store_position, rest) = match has_position {
+                0 => (None, rest),
+                1 => {
+                    let (position, rest) = rest.split_first_chunk::<8>()?;
+                    (Some(u64::from_le_bytes(*position)), rest)
+                }
+                _ => return None,
+            };
+            if !rest.is_empty() {
+                return None;
+            }
+            (entry_hash, store_position)
+        } else {
+            if !rest.is_empty() {
+                return None;
+            }
+            (None, None)
+        };
         Some(Self {
             account_index: u32::from_le_bytes(*account_index),
             activity_id: *activity_id,
@@ -344,6 +426,8 @@ impl PrivatePaymentRecord {
                 account_reference: u32::from_le_bytes(*account_reference),
             },
             nullifiers: nullifiers.to_vec(),
+            entry_hash,
+            store_position,
         })
     }
 }
@@ -538,11 +622,12 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// [`Self::arm_redrive`] for a spend paying for the DashPay private
     /// contact request `payment`, which is kept with the record and dropped
     /// with it, and the private payment journal's record of each entry the
-    /// spend appends (`commitments`), which outlives it
-    /// ([`PrivatePaymentRecord`]). All of it is saved in one write that is
-    /// durable once this returns, across a crash or power loss too: the
-    /// spend is broadcast only after it. A store that cannot keep all of it
-    /// durably fails, and the payment is refused.
+    /// spend appends (`entries`, each with the hash of the whole entry),
+    /// which outlives it ([`PrivatePaymentRecord`]), with the sender's private
+    /// store read position when it paid (`store_position`). All of it is saved
+    /// in one write that is durable once this returns, across a crash or power
+    /// loss too: the spend is broadcast only after it. A store that cannot
+    /// keep all of it durably fails, and the payment is refused.
     /// `anchor_height` is the proved height of the recorded-anchor set the
     /// spend's anchor was chosen from ([`PrivatePaymentRecord::anchor_height`]).
     fn arm_private_contact_payment(
@@ -550,8 +635,9 @@ pub trait ShieldedStore: Send + Sync + 'static {
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
-        commitments: &[[u8; 32]],
+        entries: &[PrivatePaymentEntry],
         anchor_height: u64,
+        store_position: Option<u64>,
     ) -> Result<(), Self::Error>;
 
     /// The armed records of `wallet_id` that pay for a private contact
@@ -1402,28 +1488,31 @@ impl ShieldedStore for InMemoryShieldedStore {
         id: SubwalletId,
         redrive: PendingRedrive,
         payment: PrivateContactPayment,
-        commitments: &[[u8; 32]],
+        entries: &[PrivatePaymentEntry],
         anchor_height: u64,
+        store_position: Option<u64>,
     ) -> Result<(), Self::Error> {
         if redrive.nullifiers.is_empty() {
             return Err(InMemoryStoreError(
                 "a private payment's record spends no note".to_string(),
             ));
         }
-        if !commitments.is_empty() {
+        if !entries.is_empty() {
             self.private_payment_journals.insert(id.wallet_id);
         }
-        for commitment in commitments {
+        for entry in entries {
             self.private_payment_journal.insert(
-                (id.wallet_id, *commitment),
+                (id.wallet_id, entry.commitment),
                 PrivatePaymentRecord {
                     account_index: id.account_index,
                     activity_id: redrive.activity_id,
                     anchor: redrive.anchor,
                     anchor_height: Some(anchor_height),
-                    commitment: *commitment,
+                    commitment: entry.commitment,
                     payment,
                     nullifiers: redrive.nullifiers.clone(),
+                    entry_hash: Some(entry.entry_hash),
+                    store_position,
                 },
             );
         }
@@ -2171,6 +2260,8 @@ mod tests {
                 account_reference: 3,
             },
             nullifiers: vec![[0x66; 32]],
+            entry_hash: None,
+            store_position: None,
         };
         for anchor_height in [None, Some(0), Some(41)] {
             let bytes = record(anchor_height).to_bytes().expect("encodes");
@@ -2186,6 +2277,61 @@ mod tests {
                 "{anchor_height:?}"
             );
         }
+    }
+
+    /// A format 4 journal record keeps its entry's hash and its store
+    /// position across its bytes, each present or not; a format 3 record,
+    /// which kept neither, reads back with neither. A presence byte other than
+    /// 0 or 1, or bytes past the last field, do not read.
+    #[test]
+    fn should_keep_a_journal_record_s_entry_hash_and_position_across_its_bytes() {
+        let record = |entry_hash, store_position| PrivatePaymentRecord {
+            account_index: 2,
+            activity_id: [0x61; 32],
+            anchor: [0x62; 32],
+            anchor_height: Some(41),
+            commitment: [0x63; 32],
+            payment: PrivateContactPayment {
+                sender: [0x64; 32],
+                recipient: [0x65; 32],
+                account_reference: 3,
+            },
+            nullifiers: vec![[0x66; 32], [0x68; 32]],
+            entry_hash,
+            store_position,
+        };
+        for (entry_hash, store_position) in [
+            (None, None),
+            (Some([0x67; 32]), None),
+            (None, Some(9)),
+            (Some([0x67; 32]), Some(u64::MAX - 1)),
+        ] {
+            let bytes = record(entry_hash, store_position)
+                .to_bytes()
+                .expect("encodes");
+            assert_eq!(
+                PrivatePaymentRecord::from_bytes(&bytes),
+                Some(record(entry_hash, store_position)),
+                "{entry_hash:?} {store_position:?}"
+            );
+            let mut longer = bytes;
+            longer.push(0);
+            assert_eq!(PrivatePaymentRecord::from_bytes(&longer), None);
+        }
+        // Format 3: the fields up to the nullifiers.
+        let mut format_3 = record(None, None).to_bytes().expect("encodes");
+        format_3.truncate(format_3.len() - 2);
+        format_3[0] = 3;
+        assert_eq!(
+            PrivatePaymentRecord::from_bytes(&format_3),
+            Some(record(None, None))
+        );
+        format_3.push(0);
+        assert_eq!(PrivatePaymentRecord::from_bytes(&format_3), None);
+        let mut unknown_presence = record(None, None).to_bytes().expect("encodes");
+        let at = unknown_presence.len() - 2;
+        unknown_presence[at] = 2;
+        assert_eq!(PrivatePaymentRecord::from_bytes(&unknown_presence), None);
     }
 
     /// The fund-safe release: once the anchor is pruned (absent from the

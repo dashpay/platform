@@ -98,7 +98,38 @@ pub struct WalletPersister {
     /// last store or its flush failed. Shared by the clones the wallet and
     /// the coordinator hold. In memory only.
     stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process, the backend dropping what it buffered: what the wallet tracks
+    /// in memory since may then not be on disk, so nothing is discharged on
+    /// the strength of it alone ([`Self::buffered_writes_lost`]). Shared by
+    /// the clones the wallet and the coordinator hold. In memory only: the
+    /// next process tracks what its load read from disk.
+    #[cfg(feature = "shielded")]
+    buffered_writes_lost: Arc<AtomicBool>,
+    /// Why the last restoration of this wallet's private payments failed,
+    /// while no later one succeeded (`PlatformWalletError::PrivateContactPaymentsNotRestored`
+    /// then holds for it, not only for one not run yet). Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    private_payment_restore_failure: Arc<std::sync::Mutex<Option<String>>>,
+    /// How the wallet's views run one more restoration of its private
+    /// payments, without waiting on the shielded store, before a contact
+    /// request is refused as not restored: installed by the wallet whenever
+    /// it builds a restoration with a shielded coordinator. Shared by the
+    /// clones the wallet and its views hold. In memory only.
+    #[cfg(feature = "shielded")]
+    private_payment_restore_retry: Arc<std::sync::Mutex<Option<PrivatePaymentRestoreRetry>>>,
 }
+
+/// One more restoration of a wallet's private payments, run on the persister
+/// it is given (`WalletPersister::retry_private_payment_restore`): taking it
+/// as an argument, rather than holding one, keeps the persister that stores
+/// it from holding itself.
+#[cfg(feature = "shielded")]
+pub(crate) type PrivatePaymentRestoreRetry = Arc<
+    dyn Fn(WalletPersister) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// The commitments [`WalletPersister::note_discharged_private_entries`] noted,
 /// and the pairs the journal's unresolved payments hold, all updated under one
@@ -137,6 +168,61 @@ impl WalletPersister {
             discharged_private_entries: Arc::default(),
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
+            #[cfg(feature = "shielded")]
+            buffered_writes_lost: Arc::default(),
+            private_payment_restore_failure: Arc::default(),
+            #[cfg(feature = "shielded")]
+            private_payment_restore_retry: Arc::default(),
+        }
+    }
+
+    /// Note how the last restoration of this wallet's private payments went:
+    /// `Some(reason)` when it failed, `None` once one succeeded
+    /// ([`Self::private_payment_restore_failure`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_private_payment_restore(&self, failure: Option<String>) {
+        *self
+            .private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = failure;
+    }
+
+    /// Why the last restoration of this wallet's private payments failed, if
+    /// it did and none succeeded since.
+    pub(crate) fn private_payment_restore_failure(&self) -> Option<String> {
+        self.private_payment_restore_failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Install how the wallet's views run one more restoration of its private
+    /// payments ([`Self::retry_private_payment_restore`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) fn set_private_payment_restore_retry(&self, retry: PrivatePaymentRestoreRetry) {
+        *self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry);
+    }
+
+    /// Run one more restoration of this wallet's private payments, which waits
+    /// on nothing: a busy shielded store leaves the wallet held. Returns
+    /// whether one ran, as none does before the wallet built a restoration
+    /// with a shielded coordinator.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn retry_private_payment_restore(&self) -> bool {
+        let retry = self
+            .private_payment_restore_retry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match retry {
+            Some(retry) => {
+                retry(self.clone()).await;
+                true
+            }
+            None => false,
         }
     }
 
@@ -180,12 +266,13 @@ impl WalletPersister {
     /// recorded, for their journal records to be discharged
     /// ([`Self::note_read_back_private_entries`]), once what records them is
     /// durable: at once for a backend that commits inline, after a flush
-    /// otherwise. Those a flush failed for are kept, with every one kept
-    /// before, and noted by the next call whose flush succeeds: an empty one
-    /// retries them. Their records, and so the pairs they hold, stay until
-    /// then. The host's flush runs with none of the persister's locks held,
-    /// so a call during it, from another thread or the flush itself, neither
-    /// waits nor loses what it adds.
+    /// otherwise. Those a transient flush failure left are kept, with every
+    /// one kept before, and noted by the next call whose flush succeeds: an
+    /// empty one retries them. Those any other failure left are dropped, as the
+    /// backend dropped the records they rest on. Their journal records, and so
+    /// the pairs they hold, stay until noted. The host's flush runs with none
+    /// of the persister's locks held, so a call during it, from another thread
+    /// or the flush itself, neither waits nor loses what it adds.
     #[cfg(feature = "shielded")]
     pub(crate) fn note_read_back_once_durable(
         &self,
@@ -201,14 +288,36 @@ impl WalletPersister {
         }
         if !self.store_commits_inline() {
             if let Err(error) = self.flush() {
-                tracing::warn!(
-                    %error,
-                    kept = pending.len(),
-                    "private requests read back are not durably recorded; their journal \
-                     records stay until a later flush succeeds"
-                );
-                // With any added meanwhile.
-                self.unflushed_read_back_entries().extend(pending);
+                if error.is_transient() {
+                    tracing::warn!(
+                        %error,
+                        kept = pending.len(),
+                        "private requests read back are not durably recorded; their journal \
+                         records stay until a later flush succeeds"
+                    );
+                    // A transient failure keeps the buffer: with any added
+                    // meanwhile.
+                    self.unflushed_read_back_entries().extend(pending);
+                } else {
+                    // Any other failure dropped the buffer, the records these
+                    // notices rest on with it: the notices go, so their journal
+                    // records, and the pairs they hold, stay. Their read is not
+                    // rewound: a read again would find the requests already
+                    // tracked, store nothing, and note them again over records
+                    // that never reached disk. The markers stored into that
+                    // buffer are forgotten, so the next comparison stores them
+                    // again (`Self::private_marker_stored`).
+                    tracing::error!(
+                        %error,
+                        dropped = pending.len(),
+                        "private requests read back are not durably recorded, and the backend \
+                         dropped what it buffered; their journal records stay"
+                    );
+                    self.stored_private_markers
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
+                }
                 return;
             }
         }
@@ -420,7 +529,22 @@ impl WalletPersister {
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
-        self.inner.flush(self.wallet_id)
+        let flushed = self.inner.flush(self.wallet_id);
+        #[cfg(feature = "shielded")]
+        if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
+            self.buffered_writes_lost.store(true, Ordering::SeqCst);
+        }
+        flushed
+    }
+
+    /// Whether a flush of this wallet's records failed for good in this
+    /// process (anything but a transient failure, which keeps the buffer):
+    /// what the wallet tracked before it may not be on disk, though it is in
+    /// memory. A restoration then leaves the journal records it finds settled
+    /// by tracked requests for the next process to discharge.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn buffered_writes_lost(&self) -> bool {
+        self.buffered_writes_lost.load(Ordering::SeqCst)
     }
 
     pub(crate) fn store_commits_inline(&self) -> bool {
@@ -554,6 +678,8 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 mod tests {
     use super::*;
     #[cfg(feature = "shielded")]
+    use crate::changeset::PersistenceErrorKind;
+    #[cfg(feature = "shielded")]
     use std::sync::{mpsc, OnceLock};
     #[cfg(feature = "shielded")]
     use std::time::Duration;
@@ -614,7 +740,10 @@ mod tests {
                     }
                 }
                 if self.flush_fails.load(Ordering::SeqCst) {
-                    return Err(PersistenceError::backend("the disk is full"));
+                    return Err(PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    ));
                 }
                 Ok(())
             }

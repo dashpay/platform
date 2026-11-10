@@ -29,7 +29,8 @@ use super::note_selection::{
     select_notes_with_fee, ShieldedFeeKind,
 };
 use super::store::{
-    PendingRedrive, PrivateContactPayment, ShieldedNote, ShieldedStore, SubwalletId,
+    PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
+    SubwalletId,
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
@@ -40,6 +41,7 @@ use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 use crate::wallet::identity::network::PaymentStarted;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use sha2::{Digest, Sha256};
 
 use std::collections::{BTreeMap, HashSet};
 use std::future::Future;
@@ -4066,7 +4068,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     let journal = match private_contact {
         Some(payment) => Some((
             payment,
-            private_document_commitments(state_transition).ok_or_else(|| {
+            private_document_entries(state_transition).ok_or_else(|| {
                 PlatformWalletError::ShieldedBuildError(format!(
                     "{operation}: the entries this private contact request payment appends do \
                      not read, so it is not broadcast"
@@ -4087,12 +4089,13 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     };
     let mut store = store.write().await;
     match journal {
-        Some((payment, commitments)) => store.arm_private_contact_payment(
+        Some((payment, entries)) => store.arm_private_contact_payment(
             id,
             redrive,
             payment,
-            &commitments,
+            &entries,
             anchor_recorded_at,
+            payment_started.and_then(PaymentStarted::store_position),
         ),
         None => store.arm_redrive(id, redrive),
     }
@@ -4136,6 +4139,30 @@ pub(crate) fn discharge_read_back_private_payments<S: ShieldedStore>(
     if !kept.is_empty() {
         persister.note_read_back_private_entries(kept);
     }
+}
+
+/// [`private_document_commitments`], each with the SHA-256 of its whole entry,
+/// as a private contact request payment's journal records keep them.
+pub(crate) fn private_document_entries(
+    state_transition: &StateTransition,
+) -> Option<Vec<PrivatePaymentEntry>> {
+    use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+
+    let StateTransition::PrivateDocumentCreateFromShieldedPool(transition) = state_transition
+    else {
+        return None;
+    };
+    let commitments = private_document_commitments(state_transition)?;
+    Some(
+        commitments
+            .into_iter()
+            .zip(transition.entries())
+            .map(|(commitment, entry)| PrivatePaymentEntry {
+                commitment,
+                entry_hash: Sha256::digest(entry.as_slice()).into(),
+            })
+            .collect(),
+    )
 }
 
 /// The commitments of the entries the private document create (type 29)
@@ -5498,8 +5525,9 @@ mod redrive_tests {
                     anchor_height: None,
                 },
                 payment,
-                &[[0xC4; 32]],
+                &[PrivatePaymentEntry::for_commitment([0xC4; 32])],
                 0,
+                None,
             )
             .expect("the newer payment saved");
             drop(held);

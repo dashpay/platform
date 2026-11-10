@@ -680,19 +680,30 @@ pub enum PlatformWalletError {
     PrivateContactRequestNeedsPrivateReply(Identifier),
 
     /// A private contact request to this identity is being paid for, or was
-    /// paid for and is not yet read back from DashPay's store: no other one is
-    /// sent, privately or publicly, until the private sync reads it back or
-    /// its payment definitely fails, as the store keeps every entry appended.
-    /// Also returned, with nothing sealed, paid or broadcast, by the first
-    /// send or accept from an identity since load, public or private, while
-    /// DashPay's store cannot yet be read to its end for it: a request paid
-    /// for in an earlier process may be there unread. Syncing private contact
-    /// requests and trying again goes on from where that read stopped.
+    /// paid for and is not yet read back from DashPay's store, or a private
+    /// payment the shielded store's journal keeps unresolved holds the pair:
+    /// no other one is sent, privately or publicly, until the private sync
+    /// reads it back or its payment provably never executes, as the store
+    /// keeps every entry appended. Pending, not failed: it is not submitted
+    /// again.
     #[error(
         "a private contact request to {0} is in flight or not yet read back from the store; sync \
          private contact requests to settle it"
     )]
     PrivateContactRequestPending(Identifier),
+
+    /// DashPay's private contact request store was not read to its end for
+    /// this identity with the keys Platform proves it holds, before a contact
+    /// request from it, public or private, or an acceptance, was decided: a
+    /// request in the store unread could hold the pair. Nothing was reserved,
+    /// sealed, paid or broadcast. Calling again goes on with the read from
+    /// where it stopped (a node behind the store already seen, or keys that
+    /// kept changing, stop it).
+    #[error(
+        "DashPay's private contact request store was not read to its end for {0}; nothing was \
+         sent, and trying again continues the read"
+    )]
+    PrivateContactStoreNotRead(Identifier),
 
     /// This wallet bound a shielded account before this process started, or
     /// the identity was loaded with its private scan state marking a private
@@ -1045,12 +1056,14 @@ pub enum PlatformWalletError {
     ShieldedBroadcastFailed(String),
 
     /// A shielded spend's broadcast failed in a way that does not prove the
-    /// transition was never delivered: an `Unavailable` status, which can
-    /// follow delivery. Its notes are released, as for
-    /// [`Self::ShieldedBroadcastFailed`], since the on-chain nullifier set
-    /// keeps funds safe, but the transition may still execute: a private
-    /// contact request it pays for keeps its pair held, as for one paid for
-    /// and not read back.
+    /// transition was never delivered, so it may still execute. None of this
+    /// crate's spends returns it: a note spend that may have been delivered
+    /// reports [`Self::ShieldedSpendUnconfirmed`], its notes and redrive record
+    /// kept. A payment a caller makes for a private contact request (the `pay`
+    /// a private send or accept takes) may return it, and is then handled as
+    /// unconfirmed, never as failed: the request stays pending and its pair
+    /// held, as for one paid for and not read back, and the FFI reports it as
+    /// `ErrorShieldedSpendUnconfirmed` (18), so a host does not pay again.
     #[error("Shielded broadcast failed, but may have been delivered: {0}")]
     ShieldedBroadcastMaybeDelivered(String),
 

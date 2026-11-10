@@ -55,6 +55,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::merge::Merge;
@@ -486,16 +487,17 @@ impl NetworkShieldedCoordinator {
         &self.db_path
     }
 
-    /// Whether the store's private payment journal keeps a record of
-    /// `wallet_id`'s, or does not read: a wallet re-created under an id keeps
-    /// the unresolved private payments of the one removed under it, which only
-    /// the journal shows (`PlatformWalletManager::restore_private_contact_payment_holds`).
-    pub(crate) async fn journals_private_payments_of(&self, wallet_id: WalletId) -> bool {
-        self.store
-            .read()
-            .await
-            .private_payment_journal(wallet_id)
-            .map_or(true, |records| !records.is_empty())
+    /// Whether the store's private payment journal may keep a record of
+    /// `wallet_id`'s: it does, it does not read, or the store is busy, as this
+    /// waits on nothing. A wallet created or loaded under an id another process
+    /// journaled payments under has them unresolved, which only the journal
+    /// shows (`PlatformWalletManager::restore_private_contact_payment_holds`).
+    pub(crate) fn may_journal_private_payments_of(&self, wallet_id: WalletId) -> bool {
+        self.store.try_read().map_or(true, |store| {
+            store
+                .private_payment_journal(wallet_id)
+                .map_or(true, |records| !records.is_empty())
+        })
     }
 
     /// Reference to the shared store. The full sync / spend
@@ -2060,12 +2062,19 @@ impl NetworkShieldedCoordinator {
         if candidates.is_empty() {
             return;
         }
-        let commitments: HashSet<[u8; 32]> = candidates
+        let commitments: BTreeMap<[u8; 32], Option<[u8; 32]>> = candidates
             .iter()
-            .map(|(_, record)| record.commitment)
+            .map(|(_, record)| (record.commitment, record.entry_hash))
             .collect();
+        // Each entry is appended at or after its sender's read position when
+        // it paid; a record that kept none is read for from the store's start.
+        let start = candidates
+            .iter()
+            .map(|(_, record)| record.store_position)
+            .try_fold(u64::MAX, |lowest, position| position.map(|p| lowest.min(p)))
+            .unwrap_or(0);
         let held = match self
-            .private_contact_requests_held(&commitments, recorded_height)
+            .private_contact_requests_held(&commitments, start, recorded_height)
             .await
         {
             Ok(held) => held,
@@ -2119,21 +2128,26 @@ impl NetworkShieldedCoordinator {
     }
 
     /// Which of `candidates` DashPay's private contact request store holds,
-    /// read now from its start through the end its first page shows, raw: an
-    /// entry starts with its commitment. Only the matches are kept, though
-    /// every entry is read to show the others absent. Every page must be
-    /// proved at or above `floor`, the first page's end with it: a page below
-    /// fails the read, as the store it shows may predate the floor.
+    /// read now from `start` through the end its first page shows, raw: an
+    /// entry starts with its commitment, and is taken as the candidate's only
+    /// when the whole entry hashes to the hash the candidate's journal record
+    /// kept (`PrivatePaymentRecord::entry_hash`), as anyone who saw the
+    /// commitment can append an entry starting with it; a record saved before
+    /// the hash was kept matches on the commitment. Only the matches are kept,
+    /// though every entry is read to show the others absent. Every page must
+    /// be proved at or above `floor`, the first page's end with it: a page
+    /// below fails the read, as the store it shows may predate the floor.
     pub(crate) async fn private_contact_requests_held(
         &self,
-        candidates: &HashSet<[u8; 32]>,
+        candidates: &BTreeMap<[u8; 32], Option<[u8; 32]>>,
+        start: u64,
         floor: u64,
     ) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
         let contract_id = dashpay_contract()?.id();
         let mut pages = std::pin::pin!(self.sdk.private_document_pages_with_heights(
             contract_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
-            0,
+            start,
             MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
         ));
         let mut held = HashSet::new();
@@ -2151,12 +2165,18 @@ impl NetworkShieldedCoordinator {
             }
             read = true;
             for entry in page.entries.entries {
-                if let Some(commitment) = entry
+                let Some(commitment) = entry
                     .data
                     .get(..32)
                     .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
-                    .filter(|commitment| candidates.contains(commitment))
-                {
+                else {
+                    continue;
+                };
+                let matches = candidates.get(&commitment).is_some_and(|hash| match hash {
+                    Some(hash) => <[u8; 32]>::from(Sha256::digest(&entry.data)) == *hash,
+                    None => true,
+                });
+                if matches {
                     held.insert(commitment);
                 }
             }
@@ -4810,6 +4830,8 @@ mod tests {
                     account_reference: 0,
                 },
                 nullifiers: vec![[0x62; 32], [0x65; 32]],
+                entry_hash: None,
+                store_position: None,
             },
         )];
         let floors = heightless_anchor_floors(&store, &stale, &journal);
