@@ -66,7 +66,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::{Identifier, IdentityNonce};
+use dpp::prelude::{AddressNonce, Identifier, IdentityNonce};
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition,
     build_identity_top_up_from_shielded_pool_transition,
@@ -727,12 +727,12 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
         )
     };
 
-    // Broadcast keeping what every dispatch proved, then wait for proven
-    // execution (not just relay-ACK) so the host only sees success once
-    // Platform has actually included the transition. A shield proof
-    // authenticates the input addresses' post-state, not this exact shield's
-    // execution, so the affected-state snapshot is accepted. The proven
-    // result is discarded; we only need the confirmation.
+    // Broadcast keeping what every dispatch proved, then wait for the
+    // verified snapshot of the input addresses (not just a relay ACK). A
+    // shield's proof authenticates those addresses as of its block, not this
+    // exact shield's execution, so the host sees success only once the
+    // snapshot reads every input at or past the nonce this shield signed, and
+    // the activity row stays pending until the scan observes the note.
     broadcast_shield(
         sdk,
         store,
@@ -744,7 +744,12 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
         describe,
     )
     .await?;
-    info!(account, credits = amount, "Shield broadcast succeeded");
+    info!(
+        account,
+        credits = amount,
+        "Shield admitted with its input addresses proved spent; the activity row awaits \
+         on-chain confirmation by the shielded scan"
+    );
     Ok(())
 }
 
@@ -767,12 +772,16 @@ where
     D: Fn(&dash_sdk::Error) -> String,
 {
     let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    // A transition that names no input is no shield from addresses: its
+    // result then shows nothing spent, and it settles as unconfirmed.
+    let no_inputs = BTreeMap::new();
     settle_shield(
         store,
         persister,
         wallet_id,
         id,
         pending_entry,
+        state_transition.inputs().unwrap_or(&no_inputs),
         delivery,
         describe,
         || state_transition.wait_for_affected_state::<StateTransitionProofResult>(sdk, None),
@@ -782,8 +791,9 @@ where
 
 /// What a signed shield's broadcast (`delivery`) and result wait (`wait`, run
 /// only when a dispatch may have reached a node) came to, recording it on the
-/// shield's activity row (`pending_entry`). `describe` renders an endpoint's
-/// answer for the reason an unconfirmed shield reports.
+/// shield's activity row (`pending_entry`). `signed_inputs` are the shield's
+/// input addresses with the nonces it signed, and `describe` renders an
+/// endpoint's answer for the reason an unconfirmed shield reports.
 ///
 /// Only a transition that never left the wallet
 /// ([`BroadcastDelivery::NeverDelivered`]: refused before anything was sent)
@@ -791,20 +801,26 @@ where
 /// ([`PlatformWalletError::ShieldedBroadcastFailed`]): nothing holds its bytes
 /// but the wallet, so it can never execute, its row reads failed and the host
 /// may retry. Once a dispatch may have reached a node, every outcome short
-/// of a proved result is [`PlatformWalletError::ShieldedSpendUnconfirmed`],
-/// and the row stays pending: a wait that fails, an endpoint's refusal of the
+/// of a verified result that reads its inputs spent
+/// ([`shield_inputs_read_spent`]) is
+/// [`PlatformWalletError::ShieldedSpendUnconfirmed`]: a wait that fails, a
+/// result that does not show the inputs spent, an endpoint's refusal of the
 /// broadcast and a consensus verdict on either call included. The endpoint
 /// that sends a verdict is unauthenticated, no proof or quorum signature
 /// backs it, and one that kept or forwarded the signed transition can answer
 /// with any verdict, while a retry signs a second shield with the inputs'
 /// next nonces, and a shield's note can be a recipient's ([`shield_to`]).
 ///
+/// The row stays pending on every outcome but the failed one, a successful
+/// one included, as a shield from an identity's does: the result proves the
+/// input addresses as of its block, which does not bind this transition or
+/// its note. The scan confirms the row when the note commitment appears on
+/// chain.
+///
 /// The shield takes no note reservation and keeps no record of its signed
-/// transition. An unconfirmed one that executes is confirmed by the scan,
-/// which flips the row when its note commitment appears on chain. What shows
-/// it can no longer execute is its inputs' nonces (one of them used by
-/// another transition), which nothing reads for it: until then the row stays
-/// pending.
+/// transition. What shows that an unconfirmed one can no longer execute is
+/// its inputs' nonces (one of them used by another transition), which
+/// nothing reads for it: until then the row stays pending.
 #[allow(clippy::too_many_arguments)]
 async fn settle_shield<S, D, W, Fut>(
     store: &Arc<RwLock<S>>,
@@ -812,6 +828,7 @@ async fn settle_shield<S, D, W, Fut>(
     wallet_id: WalletId,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    signed_inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     delivery: BroadcastDelivery,
     describe: D,
     wait: W,
@@ -847,35 +864,77 @@ where
         }
     };
 
-    if let Err(wait_err) = wait().await {
-        // Leave the activity row Pending: the scan's confirmation pass flips
-        // it when the shielded note lands on-chain.
-        warn!(
-            account = id.account_index,
-            error = %wait_err,
-            rejected = carries_consensus_rejection(&wait_err),
-            "Shield broadcast but its result is unconfirmed; leaving the activity row pending"
-        );
-        let waited = describe(&wait_err);
-        return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
-            operation: "shield",
-            reason: match broadcast_answer {
-                Some(answer) => format!("{waited}; its broadcast answered: {answer}"),
-                None => waited,
-            },
-        });
-    }
+    // Whatever the wait comes to, the activity row stays Pending: the scan's
+    // confirmation pass flips it when the shielded note lands on-chain.
+    let unproved = match wait().await {
+        Ok(snapshot) => match shield_inputs_read_spent(signed_inputs, &snapshot) {
+            Ok(()) => return Ok(()),
+            Err(unproved) => {
+                warn!(
+                    account = id.account_index,
+                    reason = %unproved,
+                    "Shield result does not read its inputs spent; leaving the activity row pending"
+                );
+                unproved
+            }
+        },
+        Err(wait_err) => {
+            warn!(
+                account = id.account_index,
+                error = %wait_err,
+                rejected = carries_consensus_rejection(&wait_err),
+                "Shield broadcast but its result is unconfirmed; leaving the activity row pending"
+            );
+            describe(&wait_err)
+        }
+    };
+    Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+        operation: "shield",
+        reason: match broadcast_answer {
+            Some(answer) => format!("{unproved}; its broadcast answered: {answer}"),
+            None => unproved,
+        },
+    })
+}
 
-    record_activity_status(
-        store,
-        persister,
-        wallet_id,
-        id,
-        pending_entry,
-        ShieldedActivityStatus::Confirmed,
-        None,
-    )
-    .await;
+/// Whether `snapshot`, the verified result a shield's wait returned, reads
+/// every input address of the shield at or past the nonce the shield signed
+/// it with (`signed_inputs`), or why it does not.
+///
+/// The proof behind a shield's result authenticates its input addresses as
+/// of the proof's block, not the shield's execution. An address's nonce
+/// advances only when a transition signed with that nonce executes, so
+/// inputs at or past their signed nonces show those nonces used. A result
+/// that is no address snapshot shows nothing of the shield, and one that
+/// leaves an input out, proves no state for it or reads it below its signed
+/// nonce shows the shield had not executed at that block, whatever the
+/// endpoint that returned it claims.
+fn shield_inputs_read_spent(
+    signed_inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    snapshot: &StateTransitionProofResult,
+) -> Result<(), String> {
+    let StateTransitionProofResult::VerifiedAddressInfos(proved) = snapshot else {
+        return Err(format!(
+            "a proof of its input addresses was expected, received {snapshot}"
+        ));
+    };
+    if signed_inputs.is_empty() {
+        return Err("it names no input address".to_string());
+    }
+    for (address, (signed, _)) in signed_inputs {
+        match proved.get(address) {
+            Some(Some((proved, _))) if proved >= signed => {}
+            Some(Some((proved, _))) => {
+                return Err(format!(
+                    "its result proves an input address at nonce {proved}, below the nonce \
+                     {signed} it signed"
+                ));
+            }
+            Some(None) | None => {
+                return Err("its result proves no state for an input address".to_string());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -3929,10 +3988,20 @@ async fn settle_failed_spend<S: ShieldedStore>(
         return match error {
             unconfirmed @ (PlatformWalletError::ShieldedSpendUnconfirmed { .. }
             | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => unconfirmed,
-            other => PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation,
-                reason: other.to_string(),
-            },
+            other => {
+                // The reported error keeps the cause's text alone: its type
+                // goes to the log.
+                warn!(
+                    account = id.account_index,
+                    operation,
+                    cause = ?other,
+                    "Shielded spend ended with its record saved; reporting it unconfirmed"
+                );
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation,
+                    reason: other.to_string(),
+                }
+            }
         };
     }
     // The guard owns the notes until they are released, so a drop on the
@@ -6967,7 +7036,7 @@ mod redrive_tests {
     /// A signed shield from a Platform address (type 15).
     fn shield_transition() -> StateTransition {
         ShieldTransitionV0 {
-            inputs: BTreeMap::from([(PlatformAddress::P2pkh([7; 20]), (1, 2_000_000))]),
+            inputs: BTreeMap::from([(SHIELD_INPUT, (SHIELD_NONCE, 2_000_000))]),
             actions: vec![spend_action(), spend_action()],
             amount: 1_000_000,
             anchor: SPEND_ANCHOR,
@@ -7013,6 +7082,27 @@ mod redrive_tests {
 
     fn wait_timeout() -> dash_sdk::Error {
         dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(80), "waiting".to_string())
+    }
+
+    /// The input address of [`shield_transition`] and the nonce it signed.
+    const SHIELD_INPUT: PlatformAddress = PlatformAddress::P2pkh([7; 20]);
+    const SHIELD_NONCE: AddressNonce = 1;
+
+    /// What [`shield_transition`] signed: its input addresses and nonces.
+    fn shield_inputs() -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+        shield_transition()
+            .inputs()
+            .expect("a shield spends from addresses")
+            .clone()
+    }
+
+    /// A verified result reading the shield's input address at `nonce`, or
+    /// with no state when `None`.
+    fn input_snapshot(nonce: Option<AddressNonce>) -> StateTransitionProofResult {
+        StateTransitionProofResult::VerifiedAddressInfos(BTreeMap::from([(
+            SHIELD_INPUT,
+            nonce.map(|nonce| (nonce, 1_000_000)),
+        )]))
     }
 
     /// An in-memory store holding the pending activity row `activity_id` of a
@@ -7093,6 +7183,7 @@ mod redrive_tests {
                 wallet_id,
                 id,
                 &entry,
+                &shield_inputs(),
                 delivery,
                 |e: &dash_sdk::Error| e.to_string(),
                 || std::future::ready(Err(wait_error)),
@@ -7134,6 +7225,7 @@ mod redrive_tests {
             wallet_id,
             id,
             &entry,
+            &shield_inputs(),
             BroadcastDelivery::NeverDelivered(dash_sdk::Error::DapiClientError(
                 DapiClientError::NoAvailableAddresses,
             )),
@@ -7158,16 +7250,26 @@ mod redrive_tests {
         );
     }
 
-    /// A shield whose result is proved is confirmed, whatever its broadcast
-    /// was answered with.
+    /// A shield succeeds once its verified result reads every input address
+    /// at or past the nonce it signed, whatever its broadcast was answered
+    /// with. Its row stays pending: the result proves the input addresses,
+    /// not this shield or its note, which the scan confirms.
     #[tokio::test]
-    async fn should_confirm_a_shield_whose_result_is_proved() {
+    async fn should_accept_a_shield_whose_inputs_read_spent_and_leave_its_row_to_the_scan() {
         let wallet_id = [0x78; 32];
         let id = SubwalletId::new(wallet_id, 0);
         let activity_id = [0x81; 32];
-        for delivery in [
-            BroadcastDelivery::Admitted,
-            BroadcastDelivery::MaybeDelivered(unavailable()),
+        for (delivery, proved_nonce) in [
+            (BroadcastDelivery::Admitted, SHIELD_NONCE),
+            (BroadcastDelivery::Admitted, SHIELD_NONCE + 1),
+            (
+                BroadcastDelivery::MaybeDelivered(unavailable()),
+                SHIELD_NONCE,
+            ),
+            (
+                BroadcastDelivery::MaybeDelivered(nonce_verdict(false)),
+                SHIELD_NONCE,
+            ),
         ] {
             let (store, entry) = recorded_shield(id, activity_id).await;
             settle_shield(
@@ -7176,21 +7278,101 @@ mod redrive_tests {
                 wallet_id,
                 id,
                 &entry,
+                &shield_inputs(),
                 delivery,
                 |e: &dash_sdk::Error| e.to_string(),
-                || {
-                    std::future::ready(Ok(StateTransitionProofResult::VerifiedTokenBalanceAbsence(
-                        Identifier::from([1; 32]),
-                    )))
-                },
+                || std::future::ready(Ok(input_snapshot(Some(proved_nonce)))),
             )
             .await
-            .expect("proved");
+            .expect("its inputs read spent");
             assert_eq!(
                 shield_status(&store, id, &activity_id).await,
-                ShieldedActivityStatus::Confirmed
+                ShieldedActivityStatus::Pending,
+                "nonce {proved_nonce}"
             );
         }
+    }
+
+    /// A verified result that does not read the shield's inputs spent shows
+    /// the shield had not executed at its block, whatever the endpoint that
+    /// returned it claims: a result of another kind, one that leaves an input
+    /// out or proves no state for it, and an input still below the nonce the
+    /// shield signed leave it unconfirmed, its row pending.
+    #[tokio::test]
+    async fn should_report_a_shield_unconfirmed_when_its_result_does_not_read_its_inputs_spent() {
+        let wallet_id = [0x7A; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x83; 32];
+        let cases = [
+            (
+                "a result of another kind",
+                StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1; 32])),
+            ),
+            (
+                "an input left out",
+                StateTransitionProofResult::VerifiedAddressInfos(BTreeMap::from([(
+                    PlatformAddress::P2pkh([8; 20]),
+                    Some((SHIELD_NONCE, 1_000_000)),
+                )])),
+            ),
+            ("an input with no state", input_snapshot(None)),
+            (
+                "an input below its signed nonce",
+                input_snapshot(Some(SHIELD_NONCE - 1)),
+            ),
+        ];
+        for (case, snapshot) in cases {
+            let (store, entry) = recorded_shield(id, activity_id).await;
+            let settled = settle_shield(
+                &store,
+                None,
+                wallet_id,
+                id,
+                &entry,
+                &shield_inputs(),
+                BroadcastDelivery::Admitted,
+                |e: &dash_sdk::Error| e.to_string(),
+                || std::future::ready(Ok(snapshot)),
+            )
+            .await;
+            assert!(
+                matches!(
+                    settled,
+                    Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: "shield",
+                        ..
+                    })
+                ),
+                "{case}: {settled:?}"
+            );
+            assert_eq!(
+                shield_status(&store, id, &activity_id).await,
+                ShieldedActivityStatus::Pending,
+                "{case}"
+            );
+        }
+
+        // A transition that names no input shows nothing spent.
+        let (store, entry) = recorded_shield(id, activity_id).await;
+        let settled = settle_shield(
+            &store,
+            None,
+            wallet_id,
+            id,
+            &entry,
+            &BTreeMap::new(),
+            BroadcastDelivery::Admitted,
+            |e: &dash_sdk::Error| e.to_string(),
+            || std::future::ready(Ok(input_snapshot(Some(SHIELD_NONCE)))),
+        )
+        .await;
+        assert!(
+            matches!(
+                settled,
+                Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            ),
+            "no input: {settled:?}"
+        );
     }
 
     /// The broadcast of a signed shield through a network SDK: a node that
@@ -7205,8 +7387,9 @@ mod redrive_tests {
         let transition = shield_transition();
 
         let (store, entry) = recorded_shield(id, activity_id).await;
+        let (refusing, _port) = sdk_refusing_connections();
         let refused = broadcast_shield(
-            &Arc::new(sdk_refusing_connections()),
+            &Arc::new(refusing),
             &store,
             None,
             wallet_id,

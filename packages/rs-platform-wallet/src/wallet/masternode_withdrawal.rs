@@ -537,13 +537,10 @@ where
     W: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
 {
-    let unconfirmed = |reason: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
-        identity_id,
-        amount_credits,
-        reason,
-    };
-    match delivery {
-        BroadcastDelivery::Admitted => {}
+    // What the broadcast was answered with, kept for the reason an
+    // unconfirmed withdrawal reports.
+    let broadcast_answer = match delivery {
+        BroadcastDelivery::Admitted => None,
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(PlatformWalletError::InvalidIdentityData(format!(
                 "masternode withdrawal failed: {e}"
@@ -556,15 +553,24 @@ where
                 "masternode withdrawal broadcast may have been delivered; falling through \
                  to the result wait"
             );
+            Some(e.to_string())
         }
-    }
+    };
+    let unconfirmed = |waited: String| PlatformWalletError::MasternodeWithdrawalUnconfirmed {
+        identity_id,
+        amount_credits,
+        reason: match &broadcast_answer {
+            Some(answer) => format!("{waited}; its broadcast answered: {answer}"),
+            None => waited,
+        },
+    };
 
     match wait().await {
         Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial
             .balance
             .ok_or_else(|| unconfirmed("the result proof carried no identity balance".to_string())),
-        // Proved, but not the shape a withdrawal produces — the transition
-        // landed; only the balance read-back is missing.
+        // Verified, but not the identity balance a withdrawal's result
+        // carries: the remaining balance is not proved.
         Ok(_) => Err(unconfirmed(
             "the result proof did not carry the identity's balance".to_string(),
         )),
@@ -853,7 +859,8 @@ mod tests {
     /// Once a dispatch may have reached a node, a withdrawal whose result is
     /// not proved is unconfirmed, never failed: a node's refusal of the
     /// broadcast and a consensus verdict on either call included, as no proof
-    /// backs an endpoint's answer and a retry signs a second withdrawal.
+    /// backs an endpoint's answer and a retry signs a second withdrawal. The
+    /// reason keeps what the wait and the broadcast were answered with.
     #[tokio::test]
     async fn should_report_a_masternode_withdrawal_unconfirmed_once_a_dispatch_may_have_reached_a_node(
     ) {
@@ -880,6 +887,11 @@ mod tests {
             ),
         ];
         for (case, delivery, wait_error) in cases {
+            let broadcast_answer = match &delivery {
+                BroadcastDelivery::MaybeDelivered(e) => Some(e.to_string()),
+                _ => None,
+            };
+            let waited = wait_error.to_string();
             let settled = settle_masternode_withdrawal(
                 Identifier::from(WITHDRAWN_FROM),
                 WITHDRAWN,
@@ -887,7 +899,14 @@ mod tests {
                 || std::future::ready(Err(wait_error)),
             )
             .await;
-            assert!(is_unconfirmed(&settled), "{case}: {settled:?}");
+            let Err(PlatformWalletError::MasternodeWithdrawalUnconfirmed { reason, .. }) = settled
+            else {
+                panic!("{case}: {settled:?}");
+            };
+            assert!(reason.contains(&waited), "{case}: {reason}");
+            if let Some(answer) = broadcast_answer {
+                assert!(reason.contains(&answer), "{case}: {reason}");
+            }
         }
     }
 
@@ -958,8 +977,9 @@ mod tests {
         }
         .into();
 
+        let (refusing, _port) = sdk_refusing_connections();
         let refused = broadcast_masternode_withdrawal(
-            &sdk_refusing_connections(),
+            &refusing,
             &transition,
             Identifier::from(WITHDRAWN_FROM),
             WITHDRAWN,

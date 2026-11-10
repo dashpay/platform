@@ -400,7 +400,13 @@ where
     .await
 }
 
-fn is_address_nonce_ahead(transition: &StateTransition, error: &Error) -> bool {
+/// Whether `error` is a node refusing `transition` because one of its input
+/// addresses' nonces is ahead of what that node has: the answer of a node
+/// that is behind the one the nonce was read from. A broadcast answers it by
+/// sending the same signed bytes to another node, within its retry budget.
+/// A caller that broadcasts in single dispatches (`retries: Some(0)`) gets
+/// no such failover from the SDK and reads this to keep dispatching.
+pub fn is_address_nonce_ahead(transition: &StateTransition, error: &Error) -> bool {
     let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
         return false;
     };
