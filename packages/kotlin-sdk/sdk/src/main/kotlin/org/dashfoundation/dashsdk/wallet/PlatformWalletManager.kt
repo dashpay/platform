@@ -2155,8 +2155,17 @@ class PlatformWalletManager(
      * [shieldedAddress] is the 43-byte raw Orchard address the contact may
      * pay us at privately. Blocks for the Halo 2 proof.
      *
-     * Throws [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when
-     * the payment may already be on chain: do not send again.
+     * Before anything is paid the wallet reads DashPay's private store for
+     * the sender to its end. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when the payment
+     * may already be on chain, and
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the
+     * pair is held for a private request: either way do not send again.
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] sent nothing;
+     * calling again continues the read.
+     * [DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored] and
+     * [DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported] refuse
+     * before the read.
      *
      * @return the created request; close it (or `use {}`) when done.
      */
@@ -2243,7 +2252,12 @@ class PlatformWalletManager(
      * A public or adopted reply needs neither shielded support nor a
      * mnemonic read for the payment. Throws
      * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when a private
-     * reply may already be on chain: do not accept again; and
+     * reply may already be on chain, or
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the pair
+     * is held for one: do not accept again;
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] when the
+     * private store read every accept runs first did not finish (nothing
+     * sent; calling again continues it); and
      * [DashSdkError.PlatformWallet.ShieldedBuildRequired] when the request
      * needs a private reply and the native library has no shielded support.
      *

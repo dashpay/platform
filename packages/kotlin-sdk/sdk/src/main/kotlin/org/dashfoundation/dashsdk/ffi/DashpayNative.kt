@@ -338,23 +338,37 @@ internal object DashpayNative {
     external fun managedIdentityPrivateContact(identityHandle: Long, contactId: ByteArray): String?
 
     /**
-     * Whether a private contact request from the managed identity to
-     * [contactId] is being paid for, or was paid for and is not yet read
-     * back from the store. A pure read; in memory only on the Rust side.
-     * ← Swift `ManagedIdentity.privateReplyPending(contactId:)`.
+     * Whether a contact request from [senderId], one of the wallet's
+     * identities, to [recipientId], public or private, is held for a private
+     * one, as a send decides it (`platform_wallet_get_private_pair_held`): a
+     * private request in flight, paid and not yet read back, or kept by the
+     * shielded store's journal. A journal record discharged since is applied
+     * first. An unknown wallet handle throws (NotFound), as does a sender the
+     * wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`.
      */
-    external fun managedIdentityPrivateReplyPending(identityHandle: Long, contactId: ByteArray): Boolean
+    external fun privatePairHeld(walletHandle: Long, senderId: ByteArray, recipientId: ByteArray): Boolean
 
     /**
      * What a contact request from [identityId], one of the wallet's
-     * identities, waits for, as the wallet decides it: three flags,
-     * `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment]`
-     * (`platform_wallet_get_private_contact_readiness`). An unknown wallet
-     * handle throws (NotFound), as does an identity the wallet does not
-     * hold.
+     * identities, waits for, as the wallet decides it: four flags,
+     * `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment,
+     * privatePaymentsRestoreFailed]`
+     * (`platform_wallet_get_private_contact_readiness`). A journal record
+     * discharged since is applied first. An unknown wallet handle throws
+     * (NotFound), as does an identity the wallet does not hold.
      * ← Swift `ManagedPlatformWallet.privateContactReadiness(identityId:)`.
      */
     external fun privateContactReadiness(walletHandle: Long, identityId: ByteArray): BooleanArray?
+
+    /**
+     * Why the last restoration of the wallet's private payments failed,
+     * while they are not restored for [identityId]
+     * (`platform_wallet_get_private_payments_restore_failure`), or null when
+     * none failed. Throws as [privateContactReadiness] does.
+     * ← Swift `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)`.
+     */
+    external fun privatePaymentsRestoreFailure(walletHandle: Long, identityId: ByteArray): String?
 
     /**
      * Accept the incoming contact request [requestHandle] replying the way

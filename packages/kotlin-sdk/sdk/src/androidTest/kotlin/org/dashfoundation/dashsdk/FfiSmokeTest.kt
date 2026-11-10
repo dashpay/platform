@@ -131,10 +131,14 @@ class FfiSmokeTest {
             )
         }
         // The private contact read is benign on a miss (null, as Swift's
-        // nil); the pending read reports an unknown handle.
+        // nil); the pair-hold and restore-failure reads report an unknown
+        // wallet handle.
         assertNull(DashpayNative.managedIdentityPrivateContact(0L, ByteArray(32)))
         assertThrows(DashSDKException::class.java) {
-            DashpayNative.managedIdentityPrivateReplyPending(0L, ByteArray(32))
+            DashpayNative.privatePairHeld(0L, ByteArray(32), ByteArray(32))
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.privatePaymentsRestoreFailure(0L, ByteArray(32))
         }
     }
 

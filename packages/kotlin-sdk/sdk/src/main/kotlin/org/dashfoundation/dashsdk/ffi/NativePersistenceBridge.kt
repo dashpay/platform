@@ -102,11 +102,12 @@ abstract class NativePersistenceBridge {
 
         /**
          * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
-         * (bit 14, `0x4000`): the private contact request sync's scan state
-         * is stored on its round and restored at load. The one Kotlin home
-         * of this bit, aliased by the public diagnostic mirror.
+         * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
+         * private contact request sync's scan state is stored on its round
+         * and restored at load. The one Kotlin home of this bit, aliased by
+         * the public diagnostic mirror.
          */
-        const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 14
+        const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
         /**
          * Packed row widths of [onPersistPrivateContactScanState] and

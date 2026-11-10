@@ -220,10 +220,13 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0x4bbfL, handler.persistenceCapabilitiesBits())
+        // The private contact request scan state is bit 15 (0x8000).
+        assertEquals(0x8bbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
+        // Nor does it keep the shielded recipient of an asset lock (bit 14).
+        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x4000L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
             handler.persistenceCapabilitiesVersion(),

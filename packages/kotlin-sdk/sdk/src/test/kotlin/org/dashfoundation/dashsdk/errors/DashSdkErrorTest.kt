@@ -338,6 +338,36 @@ class DashSdkErrorTest {
         assertFalse("a configuration error, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * An unfinished private store read has its own code, apart from a
+     * pending request (71): nothing was reserved, and calling again
+     * continues the read.
+     */
+    @Test
+    fun shouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
+        val detail = "the private contact request store was not read to its end for 9fRYTJZW"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactStoreNotRead)
+        assertEquals(detail, mapped.message)
+        assertTrue("calling again continues the read", mapped.isRetryable)
+    }
+
+    /**
+     * An SDK pinned below the protocol version has its own code, apart from a
+     * network below it (70), which lifts by itself.
+     */
+    @Test
+    fun shouldReportAnSdkPinnedBelowTheProtocolVersionByItsOwnCode() {
+        val detail = "get_private_document_entries needs protocol version 15; " +
+            "the SDK is pinned at protocol version 14"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 75, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion)
+        assertEquals(detail, mapped.message)
+        assertFalse("only raising the pin lifts it", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

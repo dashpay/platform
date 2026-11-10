@@ -1379,34 +1379,41 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managed
     })
 }
 
-/// Whether a private contact request from this identity to `contactId` is
-/// being paid for, or was paid for and is not yet read back from the store,
-/// off a managed-identity handle (bridges
-/// `managed_identity_get_private_reply_pending`). A pure read; the wallet
-/// keeps it in memory only. ← Swift `ManagedIdentity.privateReplyPending(contactId:)`.
+/// Whether a contact request from `senderId`, one of the wallet's identities,
+/// to `recipientId`, public or private, is held for a private one, as a send
+/// decides it (bridges `platform_wallet_get_private_pair_held`): a private
+/// request in flight, paid and not yet read back, or kept by the shielded
+/// store's journal. A journal record discharged since is applied first.
+/// Throws on an unknown wallet or sender, returning false.
+/// ← Swift `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managedIdentityPrivateReplyPending(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privatePairHeld(
     mut env: JNIEnv,
     _class: JClass,
-    identity_handle: jlong,
-    contact_id: JByteArray,
+    wallet_handle: jlong,
+    sender_id: JByteArray,
+    recipient_id: JByteArray,
 ) -> jboolean {
     guard(&mut env, JNI_FALSE, |env| {
-        let Some(id) = read_id32(env, &contact_id, "contactId") else {
+        let Some(sender) = read_id32(env, &sender_id, "senderId") else {
             return JNI_FALSE;
         };
-        let mut pending = false;
+        let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
+            return JNI_FALSE;
+        };
+        let mut held = false;
         let result = unsafe {
-            platform_wallet_ffi::managed_identity_get_private_reply_pending(
-                identity_handle as Handle,
-                id.as_ptr(),
-                &mut pending,
+            platform_wallet_ffi::platform_wallet_get_private_pair_held(
+                wallet_handle as Handle,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                &mut held,
             )
         };
         if take_pwffi_error(env, result) {
             return JNI_FALSE;
         }
-        if pending {
+        if held {
             JNI_TRUE
         } else {
             JNI_FALSE
@@ -1414,10 +1421,52 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managed
     })
 }
 
+/// `DashpayNative.privatePaymentsRestoreFailure`: why the last restoration
+/// of the wallet's private payments failed, while they are not restored for
+/// `identity_id` (bridges `platform_wallet_get_private_payments_restore_failure`),
+/// or null when none failed. Throws on an unknown wallet or identity,
+/// returning null.
+/// ← Swift `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privatePaymentsRestoreFailure(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut reason: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_private_payments_restore_failure(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                &mut reason,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if reason.is_null() {
+            return ptr::null_mut();
+        }
+        // SAFETY: a non-null `reason` is the NUL-terminated string the call
+        // allocated; it is read once, then released to its allocator.
+        let text = unsafe { CStr::from_ptr(reason) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(reason) };
+        new_jstring(env, text)
+    })
+}
+
 /// `DashpayNative.privateContactReadiness`: the wallet's readiness for
 /// `identity_id`'s contact requests
-/// (`platform_wallet_get_private_contact_readiness`) as three flags,
-/// `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment]`.
+/// (`platform_wallet_get_private_contact_readiness`) as four flags,
+/// `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment,
+/// privatePaymentsRestoreFailed]`.
 /// Throws on an unknown wallet or identity, returning null.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privateContactReadiness(
@@ -1460,12 +1509,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_private
 }
 
 /// The readiness flags in the order Kotlin reads them.
-fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 3] {
+fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 4] {
     let flag = |set: bool| if set { JNI_TRUE } else { JNI_FALSE };
     [
         flag(readiness.private_payments_restored),
         flag(readiness.private_store_read),
         flag(readiness.unresolved_private_payment),
+        flag(readiness.private_payments_restore_failed),
     ]
 }
 
@@ -1767,11 +1817,23 @@ mod tests {
             private_payments_restored: true,
             private_store_read: false,
             unresolved_private_payment: true,
+            private_payments_restore_failed: false,
         };
-        assert_eq!(readiness_flags(&readiness), [JNI_TRUE, JNI_FALSE, JNI_TRUE]);
+        assert_eq!(
+            readiness_flags(&readiness),
+            [JNI_TRUE, JNI_FALSE, JNI_TRUE, JNI_FALSE]
+        );
+        let failed = PrivateContactReadinessFFI {
+            private_payments_restore_failed: true,
+            ..PrivateContactReadinessFFI::default()
+        };
+        assert_eq!(
+            readiness_flags(&failed),
+            [JNI_FALSE, JNI_FALSE, JNI_FALSE, JNI_TRUE]
+        );
         assert_eq!(
             readiness_flags(&PrivateContactReadinessFFI::default()),
-            [JNI_FALSE; 3]
+            [JNI_FALSE; 4]
         );
     }
 

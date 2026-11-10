@@ -268,11 +268,15 @@ sealed class DashSdkError(
         /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
          * (transfer / unshield / withdraw / shield) was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already be on chain. Rust intentionally KEEPS the spent notes'
-         * reservations, so the caller must NOT retry (a retry would rebuild
-         * the bundle against other notes and could double-spend); the next
-         * shielded sync reconciles the outcome. The Android analog of
+         * accepted, or may have been delivered (for every spend that consumes
+         * notes, an endpoint's verdict, which no proof backs, or a transport
+         * failure after a dispatch), but its execution result couldn't be
+         * confirmed — it may already be on chain. Rust intentionally KEEPS
+         * the spent notes' reservations and the recovery record, so the
+         * caller must NOT retry (a retry would rebuild the bundle against
+         * other notes and could double-spend); a sync shows it landed, or the
+         * redrive and anchor-prune passes release it once it provably never
+         * can. The Android analog of
          * Swift's `PlatformWalletError.shieldedSpendUnconfirmed`, which the
          * iOS send flow surfaces as a non-retryable "may have gone through"
          * outcome rather than an error.
@@ -304,10 +308,12 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
-         * non-execution outcome — relay/CheckTx rejected the transaction
-         * before it entered the chain, and any note reservations were
-         * released. Safe to retry (the opposite of the ambiguous
-         * [ShieldedSpendUnconfirmed]).
+         * non-execution outcome, and any note reservations were released.
+         * For a spend that consumes notes, the transition never left the
+         * wallet (refused before anything was sent); one that may have been
+         * delivered is [ShieldedSpendUnconfirmed]. A shield into the pool
+         * still reports a relay/CheckTx verdict here. Safe to retry (the
+         * opposite of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
@@ -691,7 +697,8 @@ sealed class DashSdkError(
          * request store before protocol version 15. Expected on such a
          * network, so a host may stay quiet about it; it lifts when the
          * network upgrades. A refusal that may lift sooner (the version could
-         * not be confirmed) arrives as [Generic] instead.
+         * not be confirmed) arrives as [Generic] instead, and an SDK pinned
+         * below the version as [SdkPinnedBelowProtocolVersion].
          * ← Swift `PlatformWalletError.protocolVersionNotActive`.
          */
         class ProtocolVersionNotActive(message: String, cause: Throwable? = null) :
@@ -699,11 +706,15 @@ sealed class DashSdkError(
 
         /**
          * `ErrorPrivateContactRequestPending` (native code 71). A private
-         * contact request to that identity is in flight (another private send
-         * or reply reserved it), or was paid for and is not yet read back from
-         * the store. Nothing new was paid; a later
-         * `Dashpay.syncPrivateContactRequests` settles it. Pending, not
-         * failed: do not submit it again.
+         * contact request to that identity is pending: in flight (another
+         * private send or reply reserved it), paid for and not yet read back
+         * from the store, or a private payment the shielded store's journal
+         * keeps unresolved holds the pair. Nothing new was paid. Pending, not
+         * failed: do not submit it again. A `Dashpay.syncPrivateContactRequests`
+         * that reads the entry back frees it, as does the payment proven never
+         * to execute; an endpoint's refusal of the payment does not.
+         * `Dashpay.privateRepliesPending` reads whether the pair is still held.
+         * An unfinished private store read is [PrivateContactStoreNotRead].
          * ← Swift `PlatformWalletError.privateContactRequestPending`.
          */
         class PrivateContactRequestPending(message: String, cause: Throwable? = null) :
@@ -711,12 +722,20 @@ sealed class DashSdkError(
 
         /**
          * `ErrorPrivateContactPaymentsNotRestored` (native code 72). The
-         * wallet, not one contact, is held: its private payments from an
-         * earlier process are not restored from the shielded store yet, so
-         * no public contact request is sent or accepted, nothing signed or
-         * broadcast. `PlatformWalletManager.configureShielded` or binding
-         * the wallet's shielded account restores them; a private sync does
-         * not. `Dashpay.privateContactReadiness` reads whether they are.
+         * wallet, not one contact, is held: its private payments are not
+         * restored from the shielded store's journal, so no contact request,
+         * public or private, is sent or accepted, nothing signed or
+         * broadcast. The wallet was published with no shielded store
+         * configured (configure it when the manager is activated, before
+         * loading or creating wallets, and again after a failure), it bound a
+         * shielded account in an earlier process, its last restoration failed
+         * or waits for a busy store, or the identity was loaded marking a
+         * private payment that may be unresolved.
+         * `PlatformWalletManager.configureShielded` or binding the wallet's
+         * shielded account restores them; a private sync does not.
+         * `Dashpay.privateContactReadiness` reads whether they are and
+         * whether the last restoration failed, and
+         * `Dashpay.privatePaymentsRestoreFailure` why.
          * ← Swift `PlatformWalletError.privateContactPaymentsNotRestored`.
          */
         class PrivateContactPaymentsNotRestored(message: String, cause: Throwable? = null) :
@@ -732,6 +751,31 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.privateContactRecoveryUnsupported`.
          */
         class PrivateContactRecoveryUnsupported(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPrivateContactStoreNotRead` (native code 74). DashPay's
+         * private contact request store could not be read to its end for the
+         * identity before a contact request or acceptance, public or private,
+         * was decided: a node behind the store already seen, or keys that
+         * kept changing, stop the read. Nothing was reserved, sent or paid;
+         * calling again continues the read. Not a pending request.
+         * ← Swift `PlatformWalletError.privateContactStoreNotRead`.
+         */
+        class PrivateContactStoreNotRead(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorSdkPinnedBelowProtocolVersion` (native code 75). The SDK is
+         * pinned below the protocol version the request needs, so it did not
+         * send it, whatever the network runs. A network upgrade does not lift
+         * it; only raising or removing the SDK's protocol version pin does: a
+         * developer's setting.
+         * ← Swift `PlatformWalletError.sdkPinnedBelowProtocolVersion`.
+         */
+        class SdkPinnedBelowProtocolVersion(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -939,6 +983,8 @@ sealed class DashSdkError(
             71 -> PlatformWallet.PrivateContactRequestPending(message, cause) // ErrorPrivateContactRequestPending
             72 -> PlatformWallet.PrivateContactPaymentsNotRestored(message, cause) // ErrorPrivateContactPaymentsNotRestored
             73 -> PlatformWallet.PrivateContactRecoveryUnsupported(message, cause) // ErrorPrivateContactRecoveryUnsupported
+            74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
+            75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
