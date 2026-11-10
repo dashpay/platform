@@ -1906,13 +1906,13 @@ impl PlatformWallet {
 
     /// The handles a restoration of this wallet's private contact request
     /// payments runs on ([`Self::restore_private_contact_payments`]).
-    #[cfg(feature = "shielded")]
     ///
     /// Installs on the persister one more restoration from `coordinator`, for
     /// the wallet's views to run, without waiting on the store, before a
     /// contact request is refused as not restored
     /// (`WalletPersister::retry_private_payment_restore`): a failed or
     /// deferred restoration then lifts at the next send.
+    #[cfg(feature = "shielded")]
     fn private_payment_restore(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,

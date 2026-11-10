@@ -1049,12 +1049,14 @@ pub enum PlatformWalletError {
     ShieldedBroadcastFailed(String),
 
     /// A shielded spend's broadcast failed in a way that does not prove the
-    /// transition was never delivered: an `Unavailable` status, which can
-    /// follow delivery. Its notes are released, as for
-    /// [`Self::ShieldedBroadcastFailed`], since the on-chain nullifier set
-    /// keeps funds safe, but the transition may still execute: a private
-    /// contact request it pays for keeps its pair held, as for one paid for
-    /// and not read back.
+    /// transition was never delivered, so it may still execute. None of this
+    /// crate's spends returns it: a note spend that may have been delivered
+    /// reports [`Self::ShieldedSpendUnconfirmed`], its notes and redrive record
+    /// kept. A payment a caller makes for a private contact request (the `pay`
+    /// a private send or accept takes) may return it, and is then handled as
+    /// unconfirmed, never as failed: the request stays pending and its pair
+    /// held, as for one paid for and not read back, and the FFI reports it as
+    /// `ErrorShieldedSpendUnconfirmed` (18), so a host does not pay again.
     #[error("Shielded broadcast failed, but may have been delivered: {0}")]
     ShieldedBroadcastMaybeDelivered(String),
 

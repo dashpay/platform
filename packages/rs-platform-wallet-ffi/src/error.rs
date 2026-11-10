@@ -140,8 +140,9 @@ pub enum PlatformWalletFFIResultCode {
     /// never left the wallet: it was refused before anything was sent (no
     /// address to send it to, or the SDK's own refusal). An endpoint's verdict
     /// proves nothing for such a spend, as no proof backs it: that is
-    /// [`Self::ErrorShieldedSpendUnconfirmed`], as is any broadcast that may
-    /// have been delivered. A shield into the pool also reports here a CheckTx
+    /// [`Self::ErrorShieldedSpendUnconfirmed`] ([`Self::ErrorShieldedBroadcastUnconfirmed`]
+    /// for an identity create), as is any broadcast that may have been
+    /// delivered. A shield into the pool also reports here a CheckTx
     /// or execution verdict. Any note reservations were released and the
     /// caller is free to retry.
     /// For identity-create, the new identity does NOT exist and
@@ -157,8 +158,9 @@ pub enum PlatformWalletFFIResultCode {
     /// the caller can hold the slot and surface the pending identity.
     ErrorShieldedBroadcastUnconfirmed = 17,
     /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (unshield /
-    /// shielded transfer / shielded withdrawal / identity top-up and create /
-    /// private document create from the pool), and
+    /// shielded transfer / shielded withdrawal / identity top-up / private
+    /// document create from the pool; an identity created from the pool
+    /// reports [`Self::ErrorShieldedBroadcastUnconfirmed`] (17) instead), and
     /// `PlatformWalletError::ShieldedBroadcastMaybeDelivered`. The spend
     /// transition was accepted by the relay, or may have been delivered, but
     /// its execution result could not be confirmed (a broadcast attempt that
@@ -642,20 +644,20 @@ pub enum PlatformWalletFFIResultCode {
     /// the contact requests with that identity came or went privately
     /// (protocol version 15), so a public `contactRequest` to it, in reply or
     /// as a rotation, would publish the relationship. The public send and the
-    /// public accept refuse it, and nothing was sent. Send it with
-    /// `platform_wallet_manager_send_private_contact_request`, or accept it
-    /// with `platform_wallet_manager_accept_contact_request_replying_in_kind`
-    /// (which replies privately itself) or
-    /// `platform_wallet_manager_accept_private_contact_request`, instead.
-    /// 62 to 67 are claimed by open branches, so this takes 68.
+    /// public accept refuse it, and nothing was sent: the request goes
+    /// privately instead, and the in-kind accept picks the private reply
+    /// itself. The shielded spend contract (`map_spend_result`) keeps the code,
+    /// as the in-kind accept can raise it. The exports that send and accept
+    /// contact requests are added by the FFI PR. 62 to 67 are claimed by open
+    /// branches, so this takes 68.
     ErrorPrivateContactRequestNeedsPrivateReply = 68,
 
     /// The operation needs the shielded pool, and this library was built
-    /// without the `shielded` feature: today, accepting a contact request
-    /// that came privately with
-    /// `platform_wallet_manager_accept_contact_request_replying_in_kind`,
-    /// whose private reply is paid from the pool. Nothing was sent. Not
-    /// retryable on this build; a build with shielded support accepts it.
+    /// without the `shielded` feature: accepting a contact request that came
+    /// privately in kind, whose private reply is paid from the pool (the
+    /// export is added by the FFI PR; no export in this crate returns it yet).
+    /// Nothing was sent. Not retryable on this build; a build with shielded
+    /// support accepts it.
     ErrorShieldedBuildRequired = 69,
 
     /// The SDK refused the request without sending it: the network is proven
@@ -675,10 +677,11 @@ pub enum PlatformWalletFFIResultCode {
     /// reserved it), or was paid for and is not yet read back from the store,
     /// or a private payment the shielded store's journal keeps unresolved
     /// holds the pair. Nothing new was paid. Pending, not failed: do not
-    /// submit it again. A later private contact request sync
-    /// (`platform_wallet_sync_private_contact_requests`) settles it once the
-    /// entry is read back, and the shielded sync once the payment provably
-    /// never executes.
+    /// submit it again. A later private contact request sync settles it once
+    /// the entry is read back, and the shielded sync once the payment provably
+    /// never executes. A read of the private store that did not finish before
+    /// the request was decided is not pending: it is
+    /// [`Self::ErrorPrivateContactStoreNotRead`] (74).
     ErrorPrivateContactRequestPending = 71,
 
     /// Maps `PlatformWalletError::PrivateContactPaymentsNotRestored`: the
