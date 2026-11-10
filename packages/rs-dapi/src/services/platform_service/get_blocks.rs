@@ -127,7 +127,7 @@ fn read_block(
     let results = if block.data.txs.is_empty() {
         Vec::new()
     } else {
-        results?.txs_results
+        held_block_results(height, results)?
     };
 
     let mut built = build_block(height, &result.block_id.hash, block, &results)?;
@@ -144,6 +144,22 @@ fn read_block(
     }
 
     Ok(Some(built))
+}
+
+/// The results of a block this node holds. Tenderdash stores a block before its results, so
+/// the newest block can be without them for a moment. That is answered as `Unavailable`,
+/// which a client retries, where a height the node lacks is `NotFound`.
+pub(super) fn held_block_results(
+    height: u64,
+    results: DAPIResult<ResultBlockResults>,
+) -> DAPIResult<Vec<BlockTxResult>> {
+    match results {
+        Ok(results) => Ok(results.txs_results),
+        Err(error) if error.is_missing_tenderdash_height() => Err(DapiError::Unavailable(format!(
+            "the results of block {height} are not available yet"
+        ))),
+        Err(error) => Err(error),
+    }
 }
 
 /// Validate the request, returning the heights it asks for and whether to prove them.
@@ -274,6 +290,7 @@ mod tests {
     use crate::services::platform_service::protobuf_request_errors::StalledTenderdash;
     use dapi_grpc::platform::v0::TenderdashBlockProof;
     use dapi_grpc::platform::v0::get_blocks_request::GetBlocksRequestV0;
+    use dapi_grpc::tonic::Code;
     use serde_json::json;
     use std::time::Duration;
 
@@ -484,7 +501,15 @@ mod tests {
         });
 
         let error = result.unwrap_err();
-        assert!(error.is_missing_tenderdash_height());
+        assert!(matches!(&error, DapiError::Unavailable(message) if message.contains("block 6")));
+        assert_eq!(error.to_status().code(), Code::Unavailable);
+    }
+
+    #[test]
+    fn should_keep_another_failure_to_read_results_as_it_is() {
+        let result = held_block_results(6, Err(DapiError::Internal("malformed".to_string())));
+
+        assert!(matches!(result, Err(DapiError::Internal(_))));
     }
 
     #[test]

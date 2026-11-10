@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::block_proof::{build_block_proof, transaction_proofs};
 use super::error_mapping::base64_decode;
-use super::get_blocks::MAX_RESPONSE_BYTES;
+use super::get_blocks::{MAX_RESPONSE_BYTES, held_block_results};
 use crate::cache::make_cache_key;
 use crate::clients::tenderdash_client::{BlockTxResult, MAX_TENDERDASH_HEIGHT, TenderdashClient};
 use crate::error::{DAPIResult, DapiError};
@@ -91,7 +91,7 @@ async fn read_owner_transactions(
     let results = if owned.is_empty() {
         Vec::new()
     } else {
-        tenderdash_client.block_results(height).await?.txs_results
+        held_block_results(height, tenderdash_client.block_results(height).await)?
     };
     let mut transactions = if owned.is_empty() {
         Vec::new()
