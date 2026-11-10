@@ -213,8 +213,8 @@ fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
 /// Each retry bumps `settings.user_fee_increase` so the resubmitted ST
 /// hashes differently — Tenderdash caches rejected ST hashes for ~24h
 /// on mainnet/testnet (`keep-invalid-txs-in-cache = true`), so an
-/// identical-bytes resubmit would be silently dropped before reaching
-/// Platform's CheckTx.
+/// identical-bytes resubmit would get the cached CheckTx rejection back
+/// without reaching Platform's CheckTx again.
 ///
 /// **Retry scope.** This wrapper retries ONLY consensus code 10506
 /// (CL-height-too-low). Every other `Error` — including
