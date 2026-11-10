@@ -104,6 +104,14 @@ pub trait CanRetry {
         None
     }
 
+    /// Returns true if the node answered that it is busy or rate limited (gRPC
+    /// `ResourceExhausted`): it is working, and only refuses more of this work for now.
+    /// A request can ask that a node is not banned for it, see
+    /// [RequestSettings::ban_busy_address].
+    fn is_node_busy(&self) -> bool {
+        false
+    }
+
     /// Get boolean flag that indicates if the error is retryable.
     ///
     /// Deprecated in favor of [CanRetry::can_retry].

@@ -24,6 +24,7 @@ fn applied_settings(ban: bool) -> AppliedRequestSettings {
         timeout: Duration::from_secs(10),
         retries: 5,
         ban_failed_address: ban,
+        ban_busy_address: true,
         max_decoding_message_size: None,
         #[cfg(not(target_arch = "wasm32"))]
         ca_certificate: None,
@@ -461,15 +462,158 @@ async fn rate_limited_node_banned_for_advertised_window_via_execute() {
     );
 }
 
-/// A node refuses these when its limits are reached, which says nothing about its health.
+/// A failed answer from the one node of a list, judged under `settings`.
+fn judge(status: dapi_grpc::tonic::Status, settings: &AppliedRequestSettings) -> AddressList {
+    let mut address_list = AddressList::new();
+    let address = make_address();
+    address_list.add(address.clone());
+
+    let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+        possibly_accepted: false,
+        inner: DapiClientError::Transport(TransportError::Grpc(status)),
+        retries: 0,
+        address: Some(address),
+    });
+    update_address_ban_status(&address_list, &result, settings);
+
+    address_list
+}
+
+fn rate_limited(reset_secs: &str) -> dapi_grpc::tonic::Status {
+    let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+    status.metadata_mut().insert(
+        "ratelimit-reset",
+        MetadataValue::try_from(reset_secs).unwrap(),
+    );
+    status
+}
+
+/// A node refuses a block query when its limits are reached, which says nothing about its
+/// health. Any other failure does.
 #[test]
-fn should_not_ban_a_node_for_failing_a_block_query() {
-    assert_eq!(
-        GetBlocksRequest::SETTINGS_OVERRIDES.ban_failed_address,
-        Some(false)
-    );
-    assert_eq!(
-        GetOwnerTransactionsInBlockRequest::SETTINGS_OVERRIDES.ban_failed_address,
-        Some(false)
-    );
+fn should_ban_a_node_that_fails_a_block_query_but_not_one_that_is_busy() {
+    for settings in [
+        GetBlocksRequest::SETTINGS_OVERRIDES,
+        GetOwnerTransactionsInBlockRequest::SETTINGS_OVERRIDES,
+    ] {
+        let settings = settings.finalize();
+        let node = make_address();
+
+        let busy = dapi_grpc::tonic::Status::resource_exhausted("too many requests in progress");
+        assert!(!judge(busy, &settings).is_banned(&node));
+        assert!(!judge(rate_limited("3600"), &settings).is_banned(&node));
+
+        let down = dapi_grpc::tonic::Status::unavailable("connection refused");
+        assert!(judge(down, &settings).is_banned(&node));
+        let slow = dapi_grpc::tonic::Status::deadline_exceeded("no answer in time");
+        assert!(judge(slow, &settings).is_banned(&node));
+    }
+}
+
+#[test]
+fn should_ban_a_busy_node_unless_the_request_asks_otherwise() {
+    let node = make_address();
+    let busy = || dapi_grpc::tonic::Status::resource_exhausted("429");
+
+    // Every other request keeps today's behaviour
+    let default = RequestSettings::default().finalize();
+    assert!(judge(busy(), &default).is_banned(&node));
+
+    // Turning bans off turns them off for a busy node too
+    let no_bans = RequestSettings {
+        ban_failed_address: Some(false),
+        ban_busy_address: Some(true),
+        ..RequestSettings::default()
+    }
+    .finalize();
+    assert!(!judge(busy(), &no_bans).is_banned(&node));
+    let down = dapi_grpc::tonic::Status::unavailable("connection refused");
+    assert!(!judge(down, &no_bans).is_banned(&node));
+}
+
+#[test]
+fn should_tell_a_busy_node_through_every_error_wrapper() {
+    let busy = || dapi_grpc::tonic::Status::resource_exhausted("429");
+    assert!(busy().is_node_busy());
+    assert!(TransportError::Grpc(busy()).is_node_busy());
+    assert!(DapiClientError::Transport(TransportError::Grpc(busy())).is_node_busy());
+    assert!(ExecutionError {
+        possibly_accepted: false,
+        inner: DapiClientError::Transport(TransportError::Grpc(busy())),
+        retries: 0,
+        address: None,
+    }
+    .is_node_busy());
+
+    assert!(!dapi_grpc::tonic::Status::unavailable("down").is_node_busy());
+    assert!(!DapiClientError::NoAvailableAddresses.is_node_busy());
+}
+
+const FAILING_PORT: u16 = 10311;
+const HEALTHY_PORT: u16 = 10312;
+
+/// Send a request that does not ban a busy node `times` times to a list of two nodes, one of
+/// which always answers with `failure`. Returns the client and how often that node was asked.
+async fn ask_two_nodes(
+    failure: fn() -> dapi_grpc::tonic::Status,
+    times: usize,
+) -> (DapiClient, usize) {
+    let address_list: AddressList =
+        format!("http://127.0.0.1:{FAILING_PORT},http://127.0.0.1:{HEALTHY_PORT}")
+            .parse()
+            .expect("valid address list");
+    let request = ScriptedRequest::new(move |uri| {
+        if uri.port_u16() == Some(FAILING_PORT) {
+            Err(TransportError::Grpc(failure()))
+        } else {
+            Ok(common::FakeResponse)
+        }
+    });
+    let settings = RequestSettings {
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    };
+    let client = DapiClient::new(address_list, RequestSettings::default());
+
+    for _ in 0..times {
+        client
+            .execute(request.clone(), settings)
+            .await
+            .expect("the healthy node answers");
+    }
+
+    let asked = request
+        .hit_uris
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|uri| uri.port_u16() == Some(FAILING_PORT))
+        .count();
+    (client, asked)
+}
+
+/// With only two nodes the failed one would come straight back into rotation if it were
+/// only moved out of it, so it has to be banned.
+#[tokio::test]
+async fn should_stop_asking_a_failed_node_of_a_short_list() {
+    let failing: Address = format!("http://127.0.0.1:{FAILING_PORT}")
+        .parse()
+        .expect("valid address");
+
+    let (client, asked) = ask_two_nodes(|| dapi_grpc::tonic::Status::unavailable("down"), 10).await;
+
+    assert!(client.address_list().is_banned(&failing));
+    assert_eq!(asked, 1, "a banned node is not asked again");
+}
+
+#[tokio::test]
+async fn should_keep_a_busy_node_of_a_short_list_available() {
+    let busy: Address = format!("http://127.0.0.1:{FAILING_PORT}")
+        .parse()
+        .expect("valid address");
+
+    let (client, asked) = ask_two_nodes(|| rate_limited("3600"), 10).await;
+
+    assert!(!client.address_list().is_banned(&busy));
+    assert!(asked > 1, "a busy node is asked again later");
 }
