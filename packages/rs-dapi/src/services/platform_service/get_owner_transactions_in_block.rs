@@ -15,7 +15,7 @@ use dapi_grpc::tonic::{Request, Response};
 use dpp::platform_value::Identifier;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use sha2::{Digest, Sha256};
+use drive_proof_verifier::block_proof::transaction_hash;
 use std::sync::Arc;
 
 use super::block_proof::{build_block_proof, transaction_proofs};
@@ -291,7 +291,7 @@ fn attach_results(
                 ))
             })?;
             Ok(OwnerTransaction {
-                hash: Sha256::digest(&transaction.state_transition).to_vec(),
+                hash: transaction_hash(&transaction.state_transition).to_vec(),
                 state_transition: transaction.state_transition,
                 code: result.code,
                 result_data,
@@ -327,6 +327,7 @@ mod tests {
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
     use std::time::Duration;
 
