@@ -32,6 +32,7 @@ Use the `--platform` flag to restart only the platform services while keeping Co
 
 If the node is a masternode participating in a quorum, restarting during a DKG (Distributed Key Generation) session can cause issues.
 Use the `--safe` flag to wait for any current DKG round to complete before restarting, or use `--force` to ignore this protection (which may result in the masternode being banned and lost rewards).
+See [Stopping a masternode safely](./stop.md#stopping-a-masternode-safely) for what dashmate checks and what `--safe` shows while it waits.
 
 ## Examples
 

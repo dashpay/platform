@@ -209,6 +209,52 @@ describe('checkMasternodeSafeToStop', () => {
     expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
   });
 
+  describe('beforeConfirmation', () => {
+    function startCheckWith(beforeConfirmation) {
+      const state = {};
+      checkMasternodeSafeToStop(rpcClient, core.version, { beforeConfirmation })
+        .then((result) => { state.result = result; });
+
+      return state;
+    }
+
+    it('should be asked before the confirmation delay', async function it() {
+      const beforeConfirmation = this.sinon.stub().returns(true);
+
+      const state = startCheckWith(beforeConfirmation);
+      await clock.tickAsync(0);
+
+      expect(beforeConfirmation).to.have.been.calledOnceWith(this.sinon.match({ status: 'safe', height: 1012 }));
+      expect(state.result).to.be.undefined();
+    });
+
+    it('should skip the confirmation when the caller will not stop at that height anyway', async () => {
+      const state = startCheckWith(() => false);
+      await clock.tickAsync(0);
+
+      expect(state.result).to.include({ status: 'safe', height: 1012 });
+      expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+    });
+
+    it('should not be asked about a confirmation that does not happen', async function it() {
+      const beforeConfirmation = this.sinon.stub().returns(true);
+
+      core.version = CORE_24_1;
+      startCheckWith(beforeConfirmation);
+      await clock.tickAsync(0);
+
+      core.version = CORE_23;
+      core.dkgInfo = { active_dkgs: 0, next_dkg: 3 };
+      startCheckWith(beforeConfirmation);
+      await clock.tickAsync(0);
+
+      core.isSyncing = true;
+      startCheckWith(beforeConfirmation);
+      await clock.tickAsync(0);
+
+      expect(beforeConfirmation).to.not.have.been.called();
+    });
+  });
   it('should report unsettled when a reorg replaced the first check\'s tip and the chain grew', async () => {
     // The replacing branch can put this node in a DKG starting on it that
     // Core has not recorded yet.

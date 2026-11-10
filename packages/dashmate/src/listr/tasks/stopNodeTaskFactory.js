@@ -4,8 +4,15 @@ import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
 import checkMasternodeSafeToStop, {
   readCoreVersion,
 } from '../../core/quorum/checkMasternodeSafeToStop.js';
-import { getBlockersAt } from '../../core/quorum/getDkgStopBlockers.js';
-import { NETWORK_LOCAL } from '../../constants.js';
+import formatDkgStopStatus, {
+  formatDkgStopRefusal,
+} from '../../core/quorum/formatDkgStopStatus.js';
+import {
+  NETWORK_DEVNET,
+  NETWORK_LOCAL,
+  NETWORK_MAINNET,
+  NETWORK_TESTNET,
+} from '../../constants.js';
 
 /**
  * Group commands stop a local network's miner before its masternodes. Without
@@ -27,6 +34,29 @@ function isLocalNetworkHalted(config, ctx) {
 // A check comes back unsettled while the chain moves too fast to read a
 // consistent DKG state, such as while Core catches up after a restart.
 const SAFE_STOP_CHECK_ATTEMPTS = 3;
+
+// Dash's target block spacing, which difficulty adjustment holds mainnet and
+// testnet to on average.
+const TARGET_BLOCK_SECONDS = 150;
+
+/**
+ * Block spacing to estimate waits with, or `null` where blocks come on their
+ * own schedule, as on local networks.
+ *
+ * @param {Config} config
+ * @return {number|null}
+ */
+function getTargetBlockSeconds(config) {
+  switch (config.get('network')) {
+    case NETWORK_MAINNET:
+    case NETWORK_TESTNET:
+      return TARGET_BLOCK_SECONDS;
+    case NETWORK_DEVNET:
+      return config.get('core.devnet.powTargetSpacing');
+    default:
+      return null;
+  }
+}
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -72,7 +102,7 @@ export default function stopNodeTaskFactory(
         title: 'Check node is participating in DKG',
         enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && !ctx.isSafe
           && !ctx.platformOnly && !isLocalNetworkHalted(config, ctx),
-        task: async () => {
+        task: async (ctx) => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
             user: 'dashmate',
@@ -91,25 +121,14 @@ export default function stopNodeTaskFactory(
             }
           }
 
-          const unreadable = check.status === 'blocked'
-            && getBlockersAt(check.blockers, check.height)
-              .find(({ reason }) => reason === 'unreadable');
-
-          if (unreadable) {
-            throw new Error(`dashmate cannot read Core's DKG state (${unreadable.source}). `
-              + 'Update dashmate, or continue with --force');
-          }
-
-          if (check.status === 'blocked') {
-            throw new Error('Your node is currently participating in a DKG exchange session '
-              + '(or one is about to start) and stopping it right now may result in a PoSe ban. '
-              + 'Try again later, or continue with --force or --safe flags');
-          }
-
-          if (check.status === 'unsettled') {
-            throw new Error('The chain kept advancing while checking for DKG sessions '
-              + '(is Core still syncing?). '
-              + 'Try again later, or continue with --force or --safe flags');
+          if (check.status !== 'safe') {
+            // Commands pass the flags they have, so `undefined` means the
+            // running command offers no such flag.
+            throw new Error(formatDkgStopRefusal(check, {
+              blockTimeSeconds: getTargetBlockSeconds(config),
+              canWait: ctx.isSafe !== undefined,
+              canForce: ctx.isForce !== undefined,
+            }));
           }
         },
       },
@@ -117,12 +136,42 @@ export default function stopNodeTaskFactory(
         title: 'Wait for DKG window to pass',
         enabled: (ctx) => config.get('core.masternode.enable') && !ctx.isForce && ctx.isSafe
           && !ctx.platformOnly && !isLocalNetworkHalted(config, ctx),
-        task: async () => waitForDKGWindowPass(createRpcClient({
-          port: config.get('core.rpc.port'),
-          user: 'dashmate',
-          pass: config.get('core.rpc.users.dashmate.password'),
-          host: await getConnectionHost(config, 'core', 'core.rpc.host'),
-        })),
+        task: async (ctx, task) => {
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
+            host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+          });
+
+          const blockTimeSeconds = getTargetBlockSeconds(config);
+          let output;
+
+          try {
+            await waitForDKGWindowPass(rpcClient, {
+              // Without a terminal, every output change is printed as a new line,
+              // so the output changes only when there is something new to say.
+              progressCallback: (status) => {
+                const text = formatDkgStopStatus(status, { blockTimeSeconds });
+
+                if (text !== output) {
+                  output = text;
+                  // eslint-disable-next-line no-param-reassign
+                  task.output = text;
+                }
+              },
+            });
+          } catch (e) {
+            if (!e.blocker) {
+              throw e;
+            }
+
+            throw new Error(formatDkgStopRefusal(
+              { status: 'blocked', height: null, blockers: [e.blocker] },
+              { blockTimeSeconds, canWait: false, canForce: ctx.isForce !== undefined },
+            ), { cause: e });
+          }
+        },
       },
       {
         title: `Stopping ${config.getName()} node`,

@@ -225,12 +225,20 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
  *   without this node at earlier checks
  * @param {{ height: number, hash: string }} [options.ancestor] tip of the
  *   latest earlier check
+ * @param {function(SafeStopCheck): boolean} [options.beforeConfirmation]
+ *   called with the first, safe check before waiting to confirm it; returning
+ *   `false` skips the confirmation and returns that check, for a caller that
+ *   will not stop the node at its height anyway
  * @return {Promise<SafeStopCheck>}
  */
 export default async function checkMasternodeSafeToStop(
   rpcClient,
   coreVersion,
-  { knownNonMemberDkgs = new Set(), ancestor } = {},
+  {
+    knownNonMemberDkgs = new Set(),
+    ancestor,
+    beforeConfirmation = () => true,
+  } = {},
 ) {
   const first = await evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestor && ancestor.height);
 
@@ -240,6 +248,10 @@ export default async function checkMasternodeSafeToStop(
   }
 
   if (first.status !== 'safe' || first.isSyncing || hasMembershipActiveDkgs(coreVersion)) {
+    return first;
+  }
+
+  if (!beforeConfirmation(first)) {
     return first;
   }
 

@@ -1,6 +1,7 @@
 import getDkgStopBlockers, {
   getAnnouncedNonMemberDkgs,
   getBlockersAt,
+  getEarliestSafeHeight,
   hasMembershipActiveDkgs,
   LLMQ_TYPES,
 } from '../../../../src/core/quorum/getDkgStopBlockers.js';
@@ -456,6 +457,55 @@ describe('getDkgStopBlockers', () => {
           expect(blocker).to.include({ reason: 'unreadable', until: null });
         });
       });
+    });
+  });
+
+  describe('getEarliestSafeHeight', () => {
+    function blocker(from, until, extra = {}) {
+      return {
+        reason: 'session', from, until, ...extra,
+      };
+    }
+
+    it('should be the current height when nothing blocks', () => {
+      expect(getEarliestSafeHeight([blocker(HEIGHT + 3, HEIGHT + 10)], HEIGHT)).to.equal(HEIGHT);
+    });
+
+    it('should be where the last overlapping blocker ends', () => {
+      // An llmq_400_60 session ends at +16, but the next hourly DKG of this
+      // node starts blocking at +14 and runs until +30.
+      const blockers = [
+        blocker(HEIGHT - 4, HEIGHT + 16),
+        blocker(HEIGHT + 14, HEIGHT + 30, { reason: 'upcoming' }),
+        blocker(HEIGHT + 40, HEIGHT + 50, { reason: 'upcoming' }),
+      ];
+
+      expect(getEarliestSafeHeight(blockers, HEIGHT)).to.equal(HEIGHT + 30);
+    });
+
+    it('should be unknown while a blocker with no known end stands in the way', () => {
+      expect(getEarliestSafeHeight([
+        blocker(HEIGHT - 1, HEIGHT + 5),
+        blocker(HEIGHT + 3, null, { reason: 'imminent' }),
+      ], HEIGHT)).to.be.null();
+    });
+
+    it('should ignore a blocker with no known end that starts after it', () => {
+      expect(getEarliestSafeHeight([
+        blocker(HEIGHT - 1, HEIGHT + 5),
+        blocker(HEIGHT + 8, null, { reason: 'imminent' }),
+      ], HEIGHT)).to.equal(HEIGHT + 5);
+    });
+
+    it('should not wait for Core\'s session count when recorded sessions account for it', () => {
+      const count = {
+        reason: 'active-count', count: 1, from: null, until: null,
+      };
+
+      expect(getEarliestSafeHeight([blocker(HEIGHT - 1, HEIGHT + 5), count], HEIGHT))
+        .to.equal(HEIGHT + 5);
+      expect(getEarliestSafeHeight([blocker(HEIGHT - 1, HEIGHT + 5), { ...count, count: 2 }], HEIGHT))
+        .to.be.null();
     });
   });
 
