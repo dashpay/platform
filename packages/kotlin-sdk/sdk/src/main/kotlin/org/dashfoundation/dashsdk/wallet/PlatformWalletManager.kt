@@ -2010,10 +2010,11 @@ class PlatformWalletManager(
     // (cached by [bindShielded]), so no signer or resolver handle crosses
     // JNI — matching the Swift counterparts, which take no signer either.
     // Each blocks for the ~30s Halo 2 proof on Dispatchers.IO. On the
-    // AMBIGUOUS outcome (broadcast accepted, execution unconfirmed) they
-    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
-    // — the caller must NOT retry (the spent notes stay reserved Rust-side;
-    // the next shielded sync reconciles the outcome).
+    // AMBIGUOUS outcome (the spend may have reached a node and its result is
+    // not proved, a node's refusal or verdict included) they
+    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+    // the caller must NOT retry (the spent notes stay reserved Rust-side
+    // until a later shielded sync resolves them).
 
     /**
      * Shielded → shielded transfer (Type 16) — port of Swift's

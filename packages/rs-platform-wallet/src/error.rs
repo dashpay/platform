@@ -1052,6 +1052,13 @@ pub enum PlatformWalletError {
     #[error("Shielded build error: {0}")]
     ShieldedBuildError(String),
 
+    /// A shielded transition (a shield from Platform addresses, or a spend
+    /// that consumes notes) never left the wallet: its broadcast was refused
+    /// before anything was sent. It can never execute, so a spend's notes are
+    /// released, its saved record retired, and the caller may retry. Once a
+    /// dispatch may have reached a node the outcome is
+    /// [`Self::ShieldedSpendUnconfirmed`] (or
+    /// [`Self::ShieldedBroadcastUnconfirmed`]) instead.
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
 
@@ -1067,11 +1074,13 @@ pub enum PlatformWalletError {
     #[error("Shielded broadcast failed, but may have been delivered: {0}")]
     ShieldedBroadcastMaybeDelivered(String),
 
-    /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
-    /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a
-    /// transient DAPI/proof error, not a platform rejection). The identity with `identity_id` may
+    /// The shielded identity-create transition was broadcast and accepted by the relay, or may
+    /// have been delivered, but the SDK could not confirm its execution result (a broadcast
+    /// attempt that failed in transport, an endpoint's refusal or verdict, a result-proof
+    /// fetch/verify failure). The identity with `identity_id` may
     /// already exist on chain, so the caller must NOT treat it as unregistered: the slot stays held
-    /// against re-submission and the spent notes' reservations are left in place (the next nullifier
+    /// against re-submission and the spent notes' reservations are left in place, with the
+    /// recovery record saved before the broadcast (the next nullifier
     /// sync reconciles them). `reason` carries the underlying SDK error for diagnostics.
     #[error(
         "Shielded broadcast succeeded but its execution result could not be confirmed; \
@@ -1099,16 +1108,19 @@ pub enum PlatformWalletError {
     #[error("shielded account {account_index} is required for payment recovery: {reason}; restore its original viewing keys or inspect the unresolved payment before choosing recovery")]
     ShieldedRecoveryKeysRequired { account_index: u32, reason: String },
 
-    /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
-    /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
-    /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
-    /// error or timeout, not a platform rejection). The operation may already be executed on
-    /// chain, so re-submitting risks a double-execution. For the spend-based operations the spent
+    /// A shielded transition (`operation` names it: `"shield"`, `"unshield"`, `"transfer"`,
+    /// `"withdraw"`, an identity top-up, a private document create) was broadcast and accepted
+    /// by the relay, or may have been delivered, but the SDK could not confirm its execution
+    /// result (a broadcast attempt that failed in transport, an endpoint's refusal or consensus
+    /// verdict, which no proof backs, a result-proof fetch/verify failure or a timeout). The
+    /// operation may already be executed on chain, or may still execute, so re-submitting risks
+    /// a double-execution. For the spend-based operations the spent
     /// notes' reservations are intentionally left in place rather than released — releasing them
-    /// would invite re-selecting notes whose nullifiers may already be consumed; a shield spends
-    /// no notes, so it has nothing reserved. The next sync (or an app restart, since reservations
-    /// are in-memory only) reconciles the outcome either way. `reason` carries the underlying SDK
-    /// error for diagnostics.
+    /// would invite re-selecting notes whose nullifiers may already be consumed. Their recovery
+    /// record is saved before the broadcast, so a restart restores the reservations from it, and
+    /// the next sync reconciles the outcome. A shield from Platform addresses spends no notes and
+    /// keeps no record: its activity row stays pending until the scan sees its note. `reason`
+    /// carries the underlying SDK error for diagnostics.
     ///
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
@@ -1122,11 +1134,13 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
-    /// A masternode (evonode) identity credit withdrawal was **broadcast and
-    /// accepted**, but its execution result could not be confirmed (the
-    /// result-proof fetch/verify failed — transient DAPI/proof error or
-    /// timeout, not a Platform rejection). The claim may already have
-    /// executed, and the SDK's identity-nonce cache was bumped for it, so
+    /// A masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, or may have been delivered, but its execution result could
+    /// not be confirmed (a broadcast attempt that failed in transport, an
+    /// endpoint's refusal or consensus verdict, which no proof backs, a
+    /// result-proof fetch/verify failure or a timeout). The claim may already
+    /// have executed, or may still execute, and the SDK's identity-nonce
+    /// cache was bumped for it, so
     /// re-submitting could execute a SECOND withdrawal with the next nonce.
     /// Callers must NOT retry until they have re-read the identity's
     /// claimable balance (and the payout) and reconciled the outcome.
@@ -1348,7 +1362,7 @@ pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
 /// Matches the three `dash_sdk::Error` shapes that can carry a consensus
 /// verdict — `StateTransitionBroadcastError` (wait-stream), `Protocol(
 /// ConsensusError)` (CheckTx), and a `NoAvailableAddressesToRetry` envelope it
-/// recurses into — staying in lockstep with `broadcast_definitely_failed`.
+/// recurses into, staying in lockstep with `carries_consensus_rejection`.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
 
@@ -1858,7 +1872,7 @@ mod address_nonce_tests {
     fn extracts_nonce_error_wrapped_in_no_available_addresses_to_retry() {
         // The dapi-client wraps the last rejection in `NoAvailableAddressesToRetry`
         // when every address is exhausted mid-retry; the extractor must recurse
-        // into it (lockstep with `broadcast_definitely_failed`).
+        // into it (lockstep with `carries_consensus_rejection`).
         let inner = Box::new(protocol_shape(9, 10));
         let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(inner);
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");

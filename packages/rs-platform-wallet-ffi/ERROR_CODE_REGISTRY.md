@@ -87,12 +87,12 @@ These are shipped ABI. Do not renumber.
 | 13 | `ErrorArithmeticOverflow` | Produced in-tree by `shielded_send.rs` (the shielded-send amount/fee overflow guard). Its rustdoc was corrected by #4360 (`e0b8baa850`), which documents the `PlatformWalletError::InputSumOverflow` mapping — the stale no-producer comment this row used to track is gone |
 | 14 | `ErrorNoSelectableInputs` | |
 | 15 | `ErrorWalletAlreadyExists` | |
-| 16 | `ErrorShieldedBroadcastFailed` | For a shielded spend that consumes notes, since #5810: only a transition refused before anything was sent (no address to send it to, or the SDK's own refusal), its notes released. An endpoint's verdict (CheckTx or execution, which no proof backs) and every transport failure after a dispatch, which note spends reported here before, now report 18, or 17 for an identity created from the pool. A shield into the pool still reports a verdict here |
+| 16 | `ErrorShieldedBroadcastFailed` | Only a transition refused before anything was sent (no address to send it to, or the SDK's own refusal), its notes released. For a shielded spend that consumes notes, since #5810: an endpoint's verdict (CheckTx or execution, which no proof backs) and every transport failure after a dispatch, which note spends reported here before, now report 18, or 17 for an identity created from the pool. A shield from Platform addresses no longer reports an endpoint's refusal or verdict here either: that is 18 |
 | 17 | `ErrorShieldedBroadcastUnconfirmed` | |
-| 18 | `ErrorShieldedSpendUnconfirmed` | Also, since #5810, what note spends (shielded transfers, unshields, withdrawals, identity top-ups and private document creations from the pool) reported as 16 before: an endpoint's verdict and any transport failure after a dispatch, as the transition may have been delivered. Also `ShieldedBroadcastMaybeDelivered`. The notes and the redrive record are kept; a host must not pay again with other notes |
+| 18 | `ErrorShieldedSpendUnconfirmed` | Also, since #5810, what note spends (shielded transfers, unshields, withdrawals, identity top-ups and private document creations from the pool) reported as 16 before: an endpoint's verdict and any transport failure after a dispatch, as the transition may have been delivered. Also `ShieldedBroadcastMaybeDelivered`. The notes and the redrive record are kept, the record saved before the broadcast and the reservation restored from it after a restart; a host must not pay again with other notes. Also what a shield from Platform addresses returns once a dispatch may have reached a node and its result is not proved, an endpoint's refusal or consensus verdict included |
 | 19 | `ErrorShieldedNoRecordedAnchor` | |
 | 20 | `ErrorTransactionBroadcastUnconfirmed` | |
-| 21 | `ErrorAddressNonceMismatch` | |
+| 21 | `ErrorAddressNonceMismatch` | No longer returned by a shield from Platform addresses: an endpoint's nonce verdict on a dispatched shield is 18. Transfers and withdrawals from Platform addresses, and identity registrations and top-ups from them, still return it |
 | 22 | `ErrorCoreInsufficientFunds` | |
 | 23 | `ErrorAssetLockNotTracked` | |
 | 24 | `ErrorAssetLockAlreadyConsumed` | |
@@ -109,7 +109,7 @@ These are shipped ABI. Do not renumber.
 | 39 | `ErrorInsufficientIdentityCredits` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 40 | `ErrorContestedNameNotTradable` | Merged 2026-08-09 by **#4348** (`6373e00f0c`) |
 | 41 | `ErrorShieldedInsufficientBalance` | Merged 2026-08-11 by **#4360** (`e0b8baa850`) |
-| 42 | `ErrorMasternodeWithdrawalUnconfirmed` | Merged 2026-08-22 by **#4451** (masternode-credit claiming). **Took the number active #4356 had claimed** for `ErrorAssetLockInputConflict` — see the proposed table's 42 note; #4356 renumbers via the frontier |
+| 42 | `ErrorMasternodeWithdrawalUnconfirmed` | Merged 2026-08-22 by **#4451** (masternode-credit claiming). **Took the number active #4356 had claimed** for `ErrorAssetLockInputConflict`; see the proposed table's 42 note. #4356 renumbers via the frontier. Returned once a dispatch may have reached a node and the result is not proved, an endpoint's refusal or consensus verdict included; only a withdrawal that never left the wallet keeps an ordinary, retryable code |
 | 46 | `ErrorMasternodeListUnavailable` | Merged 2026-08-24 by **#4465** (`8dd964277`). Initially minted as 43 (already held by active #4313's `ErrorShieldedInviteAlreadyClaimed` across all three layers) — collision flagged in review and renumbered to the then-frontier same day, Rust and Swift together |
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |

@@ -132,7 +132,7 @@ class DashSdkErrorTest {
             DashSdkError.fromNative(DashSDKException(offset + 18, "ambiguous spend"))
         assertTrue(spendUnconfirmed is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
         assertFalse(
-            "ShieldedSpendUnconfirmed must NOT be retryable (notes stay reserved)",
+            "ShieldedSpendUnconfirmed must NOT be retryable (a retry signs a second transition)",
             spendUnconfirmed.isRetryable,
         )
         // The message must warn against retrying, like the broadcast sibling.

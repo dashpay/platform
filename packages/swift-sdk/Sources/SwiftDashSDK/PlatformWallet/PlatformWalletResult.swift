@@ -21,23 +21,27 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
     case errorWalletAlreadyExists = 15
-    /// Definitive shielded-broadcast failure: the shielded transition
-    /// (identity-create, unshield, transfer, or withdrawal) was not executed
-    /// (relay/CheckTx rejection or a platform-reported execution error), the
-    /// spent notes were released, and the caller may retry.
+    /// Definitive shielded-broadcast failure: the shielded transition never
+    /// left the wallet (refused before anything was sent: no node address, or
+    /// the SDK's own refusal), so it can never execute. Any reserved notes
+    /// were released and the caller may retry. A node's refusal or consensus
+    /// verdict is unconfirmed instead (18, or 17 for identity-create).
     case errorShieldedBroadcastFailed = 16
-    /// Shielded broadcast accepted but its execution result could not be
-    /// confirmed; the identity may already exist on chain. The FFI also fills
-    /// the derived id into `outIdentityId` on this code, so the caller can
-    /// hold the slot rather than treat the registration as failed.
+    /// An identity create from the pool may have reached a node (accepted, a
+    /// send attempt that may have delivered it, a node's refusal or verdict),
+    /// its result is not proved and a direct fetch of the derived id came
+    /// back empty. The wallet keeps the notes reserved and the saved
+    /// transition. The identity may already exist on chain: do not treat it
+    /// as unregistered or re-submit. The FFI fills the derived id into
+    /// `outIdentityId` on this code, so the caller can hold the slot.
     case errorShieldedBroadcastUnconfirmed = 17
-    /// A shielded operation (shield / unshield / transfer / withdrawal) was
-    /// accepted by the relay but its execution result could not be
-    /// confirmed. It may have executed on chain; for the spend-based
-    /// operations the wallet keeps the notes reserved (a shield reserves
-    /// nothing) until the next sync (or app restart) reconciles the
-    /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
-    /// could double-execute if the original landed.
+    /// A shielded operation (shield from Platform addresses, unshield /
+    /// transfer / withdrawal) may have reached a node and its result is not
+    /// proved: a failed result wait, a node's refusal or a consensus verdict
+    /// (a stale address nonce included). It may have executed. Spends keep
+    /// their notes reserved and the saved transition for the wallet to
+    /// resolve; a shield's activity row stays pending until the scan sees its
+    /// note. Do NOT auto-retry: a retry signs a second transition.
     case errorShieldedSpendUnconfirmed = 18
     /// A shielded spend could not be built against a Platform-recorded anchor:
     /// the wallet's commitment tree isn't synced to a checkpoint Platform has
@@ -53,12 +57,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
     case errorTransactionBroadcastUnconfirmed = 20
-    /// A masternode (evonode) identity credit withdrawal was broadcast and
-    /// accepted, but its execution result could not be confirmed — it may
-    /// already have executed, and the identity nonce was consumed for it, so
-    /// a blind retry could submit a SECOND withdrawal. Do NOT retry; re-read
-    /// the claimable balance and reconcile first. Definitive rejections keep
-    /// their ordinary codes and stay retryable.
+    /// A masternode (evonode) identity credit withdrawal may have reached a
+    /// node and its remaining balance is not proved (a failed result wait, a
+    /// node's refusal or a consensus verdict included). It may have executed;
+    /// a retry signs a second withdrawal with the next identity nonce. Do NOT
+    /// retry; re-read the claimable balance first. Only a withdrawal that
+    /// failed before anything was sent keeps an ordinary, retryable code.
     case errorMasternodeWithdrawalUnconfirmed = 42
     /// The deterministic masternode list isn't available yet (SPV not
     /// running or masternode sync incomplete), so a list-backed query such
@@ -66,13 +70,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// `spvProgress.masternodes` reports the list synced.
     /// (46 — 43/44/45 are held by the shielded-invite error trio, #4313.)
     case errorMasternodeListUnavailable = 46
-    /// Definitively-failed address-nonce race: Platform rejected an
-    /// address-funds transition (shield, or identity top-up-from-addresses)
-    /// because the submitted address nonce raced Platform's expected value
-    /// (a lagging DAPI replica read). The transition did NOT execute and any
-    /// notes were released (a shield reserves none) — safe to retry; the retry
-    /// re-fetches the nonce and self-heals. The submitted/expected nonce values
-    /// travel in the message string, not as structured fields.
+    /// Address-nonce race: Platform rejected an address-funds transition (a
+    /// transfer or withdrawal from Platform addresses, or an identity
+    /// registration or top-up from them) because the submitted address nonce
+    /// raced Platform's expected value (a lagging DAPI replica read). Safe to
+    /// retry; the retry re-fetches the nonce and self-heals. A shield does not
+    /// return it (see `errorShieldedSpendUnconfirmed`). The submitted/expected
+    /// nonce values travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
     /// Atomic Core selection found no or insufficient unreserved UTXOs.
     case errorCoreInsufficientFunds = 22
@@ -601,22 +605,25 @@ public enum PlatformWalletError: LocalizedError {
     /// recipient was recorded carry none and accept the caller's.
     case assetLockRecipientMismatch(String)
     case walletAlreadyExists(String)
-    /// Definitive shielded-broadcast failure: the shielded transition
-    /// (identity-create or a spend — unshield / transfer / withdrawal) was
-    /// not executed and the spent notes were released; safe to retry.
+    /// Definitive shielded-broadcast failure: the shielded transition never
+    /// left the wallet (refused before anything was sent), so it cannot
+    /// execute; any reserved notes were released and a retry is safe.
     case shieldedBroadcastFailed(String)
-    /// Shielded broadcast accepted but its execution result could not be
-    /// confirmed; the identity may already exist on chain. Callers that need
-    /// the derived id should special-case the
+    /// An identity create from the pool may have reached a node (a node's
+    /// refusal or verdict included), its result is not proved and a direct
+    /// fetch of the derived id came back empty. The wallet keeps the notes
+    /// reserved and the saved transition; the identity may already exist on
+    /// chain, so do not treat it as unregistered or re-submit. Callers that
+    /// need the derived id should special-case the
     /// `.errorShieldedBroadcastUnconfirmed` result code (which carries
-    /// `outIdentityId`) before falling back to this error — see
+    /// `outIdentityId`) before falling back to this error: see
     /// `ShieldedIdentityCreateUnconfirmedError`.
     case shieldedBroadcastUnconfirmed(String)
-    /// A shielded operation (shield / unshield / transfer / withdrawal)
-    /// was accepted by the relay but its execution result could not be
-    /// confirmed. It may have executed; spend-based operations keep their
-    /// notes reserved wallet-side (a shield reserves nothing) until the
-    /// next sync reconciles the outcome. Do NOT auto-retry.
+    /// A shielded operation (shield from Platform addresses, unshield /
+    /// transfer / withdrawal) may have reached a node and its result is not
+    /// proved (a node's refusal or consensus verdict included). It may have
+    /// executed; spends keep their notes reserved, a shield stays pending
+    /// until the scan sees its note. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
     /// A shielded spend could not be built against a Platform-recorded anchor —
     /// the wallet's commitment tree isn't synced to a checkpoint Platform has
@@ -636,10 +643,10 @@ public enum PlatformWalletError: LocalizedError {
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
-    /// A masternode (evonode) credit withdrawal was broadcast and accepted
-    /// but its result could not be confirmed. It may already have executed
-    /// and the identity nonce was consumed — do NOT retry; re-read the
-    /// claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
+    /// A masternode (evonode) credit withdrawal may have reached a node and
+    /// its result is not proved (a node's refusal or verdict included). It may
+    /// have executed and a retry signs a second withdrawal: do NOT retry;
+    /// re-read the claimable balance first (`.errorMasternodeWithdrawalUnconfirmed`).
     case masternodeWithdrawalUnconfirmed(String)
     /// The masternode list hasn't synced yet, so there is nothing to look a
     /// masternode up in (`.errorMasternodeListUnavailable`). Retry after
@@ -648,12 +655,12 @@ public enum PlatformWalletError: LocalizedError {
     /// Core definitively rejected the transaction and its input reservation
     /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
     case transactionBroadcastRejected(String)
-    /// Definitively-failed address-nonce race (shield, or identity
-    /// top-up-from-addresses): Platform rejected the transition because the
-    /// submitted address nonce raced its expected value. The transition did
-    /// NOT execute and any notes were released (a shield reserves none) — safe
-    /// to retry, and the retry re-fetches the address nonce so the mismatch
-    /// self-heals. The submitted/expected nonce values are in the message.
+    /// Address-nonce race (transfer or withdrawal from Platform addresses, or
+    /// identity registration / top-up from them): Platform rejected the
+    /// transition because the submitted address nonce raced its expected
+    /// value. Safe to retry: the retry re-fetches the address nonce so the
+    /// mismatch self-heals. A shield does not return it. The submitted and
+    /// expected nonce values are in the message.
     case addressNonceMismatch(String)
     /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
     /// sync pass still in flight. The operation failed closed — retry once

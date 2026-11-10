@@ -2351,6 +2351,11 @@ impl PlatformWallet {
     /// at `payment_account` doesn't exist, or
     /// `PlatformShieldCapacityExceeded` if the selected Platform-address set
     /// can't cover `amount` plus the fee reserve.
+    ///
+    /// Succeeds once the shield's verified result reads every input address
+    /// at or past the nonce the shield signed. The activity row stays pending
+    /// until the shielded scan observes the note on-chain: the result proves
+    /// the input addresses, not this shield or its note.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
