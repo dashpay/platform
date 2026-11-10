@@ -45,6 +45,16 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     one_time_private_key: Option<PrivateKey>,
     amount: Option<Duffs>,
 ) -> Transaction {
+    instant_asset_lock_proof_transaction_fixture_with_inputs(one_time_private_key, amount, 1)
+}
+
+/// The asset lock transaction of [`instant_asset_lock_proof_transaction_fixture`], spending
+/// `input_count` outputs of the same funding transaction (vout 0, 1, …) instead of one.
+pub fn instant_asset_lock_proof_transaction_fixture_with_inputs(
+    one_time_private_key: Option<PrivateKey>,
+    amount: Option<Duffs>,
+    input_count: u32,
+) -> Transaction {
     let mut rng = rng();
 
     let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
@@ -66,14 +76,14 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     let input_txid =
         Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
 
-    let input_outpoint = OutPoint::new(input_txid, 0);
-
-    let input = TxIn {
-        previous_output: input_outpoint,
-        script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
-        sequence: 0,
-        witness: Default::default(),
-    };
+    let inputs = (0..input_count)
+        .map(|vout| TxIn {
+            previous_output: OutPoint::new(input_txid, vout),
+            script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
+            sequence: 0,
+            witness: Default::default(),
+        })
+        .collect();
 
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
@@ -100,7 +110,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     Transaction {
         version: 3,
         lock_time: 0,
-        input: vec![input],
+        input: inputs,
         output: vec![burn_output, change_output],
         special_transaction_payload: Some(payload),
     }

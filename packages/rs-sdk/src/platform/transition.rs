@@ -16,6 +16,8 @@ pub mod identity_create_from_shielded_pool;
 /// Shielded pool to an existing identity's balance.
 pub mod identity_top_up_from_shielded_pool;
 pub mod masternode_vote_keys;
+pub mod node_status;
+pub mod outcome;
 /// Shielded pool to entries of a private document type's store.
 pub mod private_document_create_from_shielded_pool;
 pub mod purchase_document;

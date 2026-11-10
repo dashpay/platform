@@ -165,16 +165,15 @@ pub(crate) fn spend_broadcast_dispatches(sdk: &dash_sdk::Sdk) -> usize {
 /// signed transition can answer with any verdict. Only a refusal before
 /// anything was sent is [`BroadcastDelivery::NeverDelivered`].
 ///
-/// A verdict ends the dispatches, with one exception the SDK's own broadcast
-/// makes too
-/// ([`is_address_nonce_ahead`](dash_sdk::platform::transition::broadcast::is_address_nonce_ahead)):
-/// a node that reads an input address's nonce as ahead of its own state is
-/// behind the node the nonce was read from, so the same signed bytes go to
-/// the next dispatch's node. A single dispatch gets none of the SDK's
-/// failover, and it does not step off the answering node as the SDK's loop
-/// does, so a later dispatch can reach that node again and spend one of the
-/// budget's dispatches on the same answer. The broadcast is maybe delivered
-/// either way.
+/// A verdict ends the dispatches, with one exception
+/// ([`is_address_nonce_ahead`]): a node that reads an input address's nonce
+/// as ahead of its own state is behind the node the nonce was read from, so
+/// the same signed bytes go to the next dispatch's node. The SDK's own
+/// broadcast ends on every concrete refusal; these single dispatches go on
+/// after this one, and they do not step off the answering node, so a later
+/// dispatch can reach that node again and spend one of the budget's
+/// dispatches on the same answer. The broadcast is maybe delivered either
+/// way.
 pub(crate) async fn broadcast_tracking_delivery(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
@@ -209,7 +208,6 @@ where
     Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
 {
     use dash_sdk::dapi_client::DapiClientError;
-    use dash_sdk::platform::transition::broadcast::is_address_nonce_ahead;
 
     let mut maybe_delivered: Option<dash_sdk::Error> = None;
     for _ in 0..dispatches.max(1) {
@@ -253,6 +251,29 @@ where
             "no broadcast dispatch was made".to_string(),
         )),
     }
+}
+
+/// Whether `error` is a node refusing `transition` because one of its input
+/// addresses' nonces is ahead of what that node has: the answer of a node
+/// that is behind the one the nonce was read from, which another node may
+/// admit. A nonce the node already passed, one of an address the transition
+/// does not spend from, or one other than the transition's, is not.
+fn is_address_nonce_ahead(
+    transition: &dpp::state_transition::StateTransition,
+    error: &dash_sdk::Error,
+) -> bool {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    let dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(consensus)) = error else {
+        return false;
+    };
+    matches!(consensus.as_ref(),
+        ConsensusError::StateError(StateError::AddressInvalidNonceError(nonce_error))
+            if nonce_error.provided_nonce() > nonce_error.expected_nonce()
+                && transition.inputs().and_then(|inputs| inputs.get(nonce_error.address()))
+                    .is_some_and(|(nonce, _)| *nonce == nonce_error.provided_nonce())
+    )
 }
 
 /// Network SDKs for the tests of the flows that broadcast through
