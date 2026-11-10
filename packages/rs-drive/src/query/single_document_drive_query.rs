@@ -130,10 +130,10 @@ impl SingleDocumentDriveQuery {
                         .merge
                         >= 2
                 {
-                    // A lookup at a block time is refused: no proof of one verifies, in any
-                    // contested status, and its range also reaches the pointer to the latest
-                    // version, so a time before the document was stored would answer with
-                    // that version.
+                    // A lookup at a block time is refused. No proof of one verifies for a
+                    // document outside a contest either, and its range also reaches the
+                    // pointer to the latest version, so a time before the document was
+                    // stored would answer with that version.
                     if self.block_time_ms.is_some() {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
                             "a document that may be contested can not be looked up at a block \
