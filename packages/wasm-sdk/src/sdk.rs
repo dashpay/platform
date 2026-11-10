@@ -58,6 +58,13 @@ pub struct WasmSdk {
     /// `Rc<RefCell>` because the wasm target is single-threaded and the
     /// map is only ever touched between `.await`s.
     inflight_contract_fetches: Rc<RefCell<HashMap<Identifier, SharedContractFetch>>>,
+    /// The version of each contract a private document read last persisted
+    /// ([`Self::mark_contract_version_persisted`]), so a store walk, which
+    /// reads the same contract for every page, persists it once a version
+    /// rather than once a page: persisting parses the network's whole stored
+    /// map. An entry is forgotten wherever this SDK removes or replaces the
+    /// stored contract. `Rc<RefCell>` as for the fetches above.
+    persisted_contract_versions: Rc<RefCell<HashMap<Identifier, u32>>>,
 }
 
 /// The contract store an SDK on `network` with `context` reads and writes; see
@@ -75,6 +82,7 @@ impl WasmSdk {
             sdk,
             context,
             inflight_contract_fetches: Rc::new(RefCell::new(HashMap::new())),
+            persisted_contract_versions: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -152,6 +160,26 @@ impl WasmSdk {
         }
     }
 
+    /// Whether `contract`'s version differs from the one last persisted for
+    /// its id through this call: then it is recorded as persisted, and the
+    /// caller persists it now ([`Self::cache_contract`]). A contract at the
+    /// recorded version is persisted already, as nothing lowers a stored
+    /// version without [`Self::forget_persisted_contract_version`].
+    pub(crate) fn mark_contract_version_persisted(&self, contract: &DataContract) -> bool {
+        self.persisted_contract_versions
+            .borrow_mut()
+            .insert(contract.id(), contract.version())
+            != Some(contract.version())
+    }
+
+    /// The stored contract `contract_id` is removed or replaced: the next
+    /// [`Self::mark_contract_version_persisted`] persists it again.
+    fn forget_persisted_contract_version(&self, contract_id: &Identifier) {
+        self.persisted_contract_versions
+            .borrow_mut()
+            .remove(contract_id);
+    }
+
     /// Whether documents outrun the contract snapshot used by a query.
     /// Remove retained entries only when they are also below the highest
     /// observed version. A newer entry can survive while the query still
@@ -186,6 +214,7 @@ impl WasmSdk {
             observed_version,
             self.sdk.version(),
         );
+        self.forget_persisted_contract_version(&id);
         true
     }
 
@@ -268,6 +297,7 @@ impl WasmSdk {
         contract_id: &dash_sdk::platform::Identifier,
     ) -> bool {
         contract_store::remove(self.contract_slot(), contract_id);
+        self.forget_persisted_contract_version(contract_id);
         self.context
             .as_ref()
             .map(|ctx| ctx.remove_known_contract(contract_id))
@@ -292,6 +322,7 @@ impl WasmSdk {
         };
         let contract: DataContract = contract.clone().into();
         contract_store::store(self.contract_slot(), &contract, self.sdk.version());
+        self.forget_persisted_contract_version(&contract.id());
         context.replace_known_contract(contract);
         true
     }

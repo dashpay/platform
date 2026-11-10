@@ -4,7 +4,7 @@ use super::{
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciVotingMethodVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -161,6 +161,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
         build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once V24 is recorded as active
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
+    },
+    state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
+        execute_event: 2, // changed in v15: a paying gas sponsor owns the storage its batch writes
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.state_transition_processing
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };
