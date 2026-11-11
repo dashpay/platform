@@ -1,5 +1,5 @@
-//! References whose target the referring document names (`contractIdProperty`,
-//! `documentTypeProperty`, `documentTypeRequirements`, protocol version 15): the parse of
+//! References whose target the referring document names (`contractId` and `documentType`
+//! written `"$self.<property>"`, `documentTypeRequirements`, protocol version 15): the parse of
 //! the declaration, where it may sit, the checks of the properties it reads, the protocol
 //! version gate, what a document type must look like to meet the requirements, and the
 //! platform serialization round trip.
@@ -38,8 +38,8 @@ fn string(position: u32) -> serde_json::Value {
 fn text_or_bytes() -> serde_json::Value {
     json!({
         "type": "moderatedDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": {
             "properties": {
                 "body": { "name": "$any", "type": "string" },
@@ -54,8 +54,8 @@ fn text_or_bytes() -> serde_json::Value {
 fn requiring(requirements: serde_json::Value) -> serde_json::Value {
     json!({
         "type": "moderatedDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": requirements
     })
 }
@@ -205,8 +205,8 @@ fn should_parse_a_reference_naming_its_target_through_the_referring_document() {
     // A permanent document, with no requirements
     let parsed = contract(note_contract(json!({
         "type": "permanentDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType"
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType"
     })))
     .expect("parses");
     let reference = dynamic_reference(&parsed);
@@ -220,7 +220,7 @@ fn should_parse_every_form_of_a_slot_and_of_require() {
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": "title"
             },
@@ -294,8 +294,8 @@ fn should_parse_every_form_of_a_slot_and_of_require() {
 #[test]
 fn should_not_read_a_dynamic_target_before_protocol_version_15() {
     let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
-    // Registration refuses the keys it does not know, and the parser of version 14, which
-    // does not read them, refuses the document reference they leave without a documentType
+    // Registration refuses `documentTypeRequirements`, a key it does not know, and the parser
+    // of version 14 a `contractId` that is no contract id: `$self.` reads nothing there
     for full_validation in [true, false] {
         contract_on(
             note_contract(text_or_bytes()),
@@ -304,20 +304,8 @@ fn should_not_read_a_dynamic_target_before_protocol_version_15() {
         )
         .expect_err("protocol version 14 has no dynamic target");
     }
-    // Beside a documentType, version 14's parser reads the reference it always read
-    let mut refers_to = text_or_bytes();
-    refers_to["documentType"] = json!("post");
-    let parsed = contract_on(note_contract(refers_to.clone()), false, platform_version_14)
-        .expect("version 14 does not read the keys");
-    let note = parsed.document_type_for_name("note").expect("note");
-    assert!(matches!(
-        note.properties()["descriptionId"].property_type,
-        DocumentPropertyType::IdentifierWithReference(
-            DocumentPropertyReferenceTarget::ModeratedDocument { .. }
-        )
-    ));
-    // where protocol version 15 refuses the two together
-    assert_refused_by_the_parser(note_contract(refers_to), "does not take documentType");
+    // which protocol version 15 reads
+    contract(note_contract(text_or_bytes())).expect("protocol version 15 reads it");
 }
 
 #[test]
@@ -328,11 +316,6 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
         note_contract(refers_to)
     };
     for (key, value) in [
-        ("documentType", json!("post")),
-        (
-            "contractId",
-            json!(Identifier::from(CONTRACT_ID).to_string(Encoding::Base58)),
-        ),
         ("where", json!({ "$ownerId": "$ownerId" })),
         ("findBy", json!({ "title": "." })),
     ] {
@@ -347,19 +330,53 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
         "only a permanentDocument or a moderatedDocument reference names its target",
     );
 
-    // Both properties, and two different ones
-    let mut missing = text_or_bytes();
-    missing
-        .as_object_mut()
-        .expect("an object")
-        .remove("documentTypeProperty");
+    // The contract and the document type both come from the document: not one of them
+    // from the schema, whether it is given there or left out
+    for (key, value) in [
+        ("documentType", json!("post")),
+        (
+            "contractId",
+            json!(Identifier::from(CONTRACT_ID).to_string(Encoding::Base58)),
+        ),
+    ] {
+        assert_refused_by_the_parser(
+            with(key, value),
+            &format!("reads both contractId and documentType from it: {key} must be"),
+        );
+        let mut missing = text_or_bytes();
+        missing.as_object_mut().expect("an object").remove(key);
+        assert_refused_by_the_parser(
+            note_contract(missing),
+            &format!("reads both contractId and documentType from it: {key} must be"),
+        );
+    }
+    // Requirements describe a type the schema does not name
     assert_refused_by_the_parser(
-        note_contract(missing),
-        "needs both contractIdProperty and documentTypeProperty",
+        note_contract(json!({
+            "type": "moderatedDocument",
+            "documentType": "post",
+            "documentTypeRequirements": {
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            }
+        })),
+        "reads both contractId and documentType from it",
     );
-    let mut same = text_or_bytes();
-    same["documentTypeProperty"] = json!("descriptionContractId");
-    assert_refused_by_the_parser(note_contract(same), "name the same property");
+    // What is read is a top-level property, and two different ones
+    for read in [
+        "$self.",
+        "$self.description.type",
+        "$self.$ownerId",
+        "$self.a-b",
+    ] {
+        assert_refused_by_the_parser(
+            with("documentType", json!(read)),
+            "documentType must read a top-level property",
+        );
+    }
+    assert_refused_by_the_parser(
+        with("documentType", json!("$self.descriptionContractId")),
+        "read the same property",
+    );
 }
 
 #[test]
@@ -371,7 +388,7 @@ fn should_refuse_a_dynamic_target_anywhere_but_on_an_identifier_property() {
     // The whole sentence, which travels in a consensus error: one space between its lines
     assert_refused_by_the_parser(
         on_a_string,
-        "a refersTo naming its target through contractIdProperty and documentTypeProperty is \
+        "a refersTo reading its contractId and documentType from the referring document is \
          only allowed on identifier properties: its value is the referenced document's id",
     );
 
@@ -400,25 +417,25 @@ fn should_refuse_a_dynamic_target_anywhere_but_on_an_identifier_property() {
 fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     let naming = |key: &str, property: &str| {
         let mut refers_to = text_or_bytes();
-        refers_to[key] = json!(property);
+        refers_to[key] = json!(format!("$self.{property}"));
         note_contract(refers_to)
     };
     // The contract id is a top-level identifier property, other than the reference
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "label"),
+        naming("contractId", "label"),
         "which is not an identifier property",
     );
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "missing"),
+        naming("contractId", "missing"),
         "which is not a top-level property",
     );
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "descriptionId"),
+        naming("contractId", "descriptionId"),
         "the property carrying the reference",
     );
     // The document type name is a string property
     assert_refused_by_the_parser(
-        naming("documentTypeProperty", "descriptionId"),
+        naming("documentType", "descriptionId"),
         "the property carrying the reference",
     );
     let mut type_from_an_identifier = note_contract(text_or_bytes());
@@ -427,14 +444,14 @@ fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     assert_refused_by_the_parser(type_from_an_identifier, "which is not a string property");
     // and each is required where the reference is
     assert_refused_by_the_parser(
-        naming("documentTypeProperty", "label"),
+        naming("documentType", "label"),
         "which is not required while the reference is",
     );
     // A slot's name property too
     let named_by = |property: &str| {
         note_contract(requiring(json!({
             "properties": {
-                "body": { "name": { "property": property }, "type": "string" }
+                "body": { "name": format!("$self.{property}"), "type": "string" }
             }
         })))
     };
@@ -449,7 +466,7 @@ fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     contract(named_by("bodyProperty")).expect("a required string property names the slot's");
 
     // An optional reference reads optional properties
-    let mut optional = naming("documentTypeProperty", "label");
+    let mut optional = naming("documentType", "label");
     optional["documentSchemas"]["note"]["required"] = json!(["descriptionContractId"]);
     contract(optional).expect("nothing is required where the reference is not");
 }
@@ -624,7 +641,7 @@ fn should_fill_a_slot_with_a_property_of_the_described_kind() {
         None
     ));
     // One the referring document names
-    let named = one(json!({ "name": { "property": "bodyProperty" }, "type": "string" }));
+    let named = one(json!({ "name": "$self.bodyProperty", "type": "string" }));
     assert!(post_meets(named.clone(), Some("body")));
     assert!(!post_meets(named.clone(), Some("count")));
     assert!(!post_meets(named.clone(), Some("missing")));
@@ -788,7 +805,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_a_dynamic_re
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": ["title"]
             },
@@ -846,7 +863,7 @@ fn moderated_note(abilities: serde_json::Value) -> Result<DocumentType, crate::P
     let mut description_id = identifier(0);
     description_id["refersTo"] = requiring(json!({
         "properties": {
-            "body": { "name": { "property": "bodyProperty" }, "type": "string" }
+            "body": { "name": "$self.bodyProperty", "type": "string" }
         }
     }));
     let schema = json!({
@@ -918,7 +935,7 @@ fn should_write_requirements_as_a_schema_declares_them() {
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": ["title"]
             },

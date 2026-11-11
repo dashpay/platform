@@ -1,6 +1,6 @@
 //! A document reference naming its target through the referring document
-//! (`contractIdProperty`, `documentTypeProperty`, `documentTypeRequirements`, protocol version
-//! 15): the document says which contract and which document type its value points into, so
+//! (`contractId` and `documentType` written `"$self.<property>"`, `documentTypeRequirements`,
+//! protocol version 15): the document says which contract and which document type its value points into, so
 //! everything about the target is checked when the document is written. The target here is
 //! `post`, a type whose documents only the contract's moderators remove, each removal leaving
 //! a record.
@@ -44,8 +44,8 @@ fn note_schema(requirements: Value) -> Value {
             "refersTo".to_string(),
             platform_value!({
                 "type": "moderatedDocument",
-                "contractIdProperty": "descriptionContractId",
-                "documentTypeProperty": "descriptionDocumentType",
+                "contractId": "$self.descriptionContractId",
+                "documentType": "$self.descriptionDocumentType",
                 "documentTypeRequirements": requirements,
             }),
         )
@@ -120,8 +120,8 @@ fn permanent_note_schema() -> Value {
     let mut schema = note_schema(text_or_bytes());
     let refers_to = platform_value!({
         "type": "permanentDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
     });
     schema
         .get_mut("properties")
@@ -166,7 +166,7 @@ async fn setup() -> Setup {
                 NAMED_NOTE,
                 note_schema(platform_value!({
                     "properties": {
-                        "text": { "name": { "property": "textProperty" }, "type": "string" },
+                        "text": { "name": "$self.textProperty", "type": "string" },
                     },
                 })),
             );

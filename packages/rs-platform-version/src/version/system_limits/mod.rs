@@ -92,7 +92,7 @@ pub struct SystemLimits {
     /// before.
     pub max_reference_expression_depth: u16,
     /// Maximum number of slots the `documentTypeRequirements` of a `refersTo` naming its
-    /// target through `contractIdProperty` and `documentTypeProperty` may declare (it holds
+    /// target through the referring document (`"$self.<property>"`) may declare (it holds
     /// at least one). Every write that checks such a reference looks for properties of the
     /// referenced document type to fill them with, a search that stays small only while
     /// the slots are few. Refused on every parse. Read by `apply_property_reference` 1

@@ -9,7 +9,7 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 /// A document reference naming its target through the referring document
-/// (`contractIdProperty`, `documentTypeProperty`, protocol version 15) points at a document
+/// (`contractId` and `documentType` written `$self.<property>`, protocol version 15) points at a document
 /// type that does not meet the reference's `documentTypeRequirements`: no choice of its
 /// properties fills the slots `require` asks for.
 #[derive(

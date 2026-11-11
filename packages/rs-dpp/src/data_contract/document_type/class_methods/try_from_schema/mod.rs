@@ -765,7 +765,7 @@ pub(in crate::data_contract::document_type::class_methods) fn apply_property_ref
 }
 
 /// Version 1 (protocol version 15): also reads a reference whose target the referring
-/// document names (`contractIdProperty`, `documentTypeProperty`,
+/// document names (`contractId` and `documentType` written `"$self.<property>"`,
 /// `documentTypeRequirements`), on an identifier property. Every other declaration is
 /// version 0's, except that an operand of a reference expression naming its target that way
 /// is refused, where version 0 does not read those keys.
@@ -789,7 +789,7 @@ fn apply_property_reference_v1(
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
     ) {
         return Err(DataContractError::InvalidContractStructure(
-            "a refersTo naming its target through contractIdProperty and documentTypeProperty \
+            "a refersTo reading its contractId and documentType from the referring document \
              is only allowed on identifier properties: its value is the referenced document's id"
                 .to_string(),
         ));

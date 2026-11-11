@@ -275,24 +275,25 @@ export type DocumentPropertyReferenceTarget =
        * A document of a document type the referring document names
        * (protocol version 15): permanent or moderated, found by the value
        * as its id. Told from the other members of the same `type` by its
-       * `contractIdProperty`: it has no `contractId` and no `documentType`,
-       * since the contract and the type are read from the referring
-       * document when it is written, where consensus checks that both
-       * exist, that the type is of this kind and that it meets
-       * `documentTypeRequirements` (code 40153 when it does not).
+       * `contractId` and `documentType`, which start with `$self.`: the
+       * contract and the type are read from the referring document (`$self`,
+       * as `$old` is the stored one in a rule) when it is written, where
+       * consensus checks that both exist, that the type is of this kind and
+       * that it meets `documentTypeRequirements` (code 40153 when it does
+       * not).
        */
       type: 'permanentDocument' | 'moderatedDocument';
       /**
-       * The top-level identifier property of the referring document
-       * holding the id of the contract the referenced document type lives
-       * in.
+       * `$self.` followed by the top-level identifier property of the
+       * referring document holding the id of the contract the referenced
+       * document type lives in.
        */
-      contractIdProperty: string;
+      contractId: `$self.${string}`;
       /**
-       * The top-level string property of the referring document holding
-       * the name of the referenced document type.
+       * `$self.` followed by the top-level string property of the referring
+       * document holding the name of the referenced document type.
        */
-      documentTypeProperty: string;
+      documentType: `$self.${string}`;
       /**
        * What the named document type must look like. Absent when the
        * declaration asks nothing of it beyond its kind.
@@ -321,10 +322,10 @@ export type DocumentTypeRequirements = {
 export type DocumentTypeRequirementSlot = {
   /**
    * Which property may fill the slot: `'$any'` for any property matching
-   * the rest, a property name, or `{ property }` for the property the
-   * referring document names in that string property of its own.
+   * the rest, a property name, or `$self.` followed by the string property
+   * of the referring document that names it.
    */
-  name: string | { property: string };
+  name: string;
   /** What the property holds; `'array'` comes with `byteArray: true`. */
   type: 'string' | 'identifier' | 'integer' | 'boolean' | 'array';
   byteArray?: true;
@@ -1058,19 +1059,19 @@ fn set_reference_target_fields(
             )?;
             set_key_requirements_field(object, key_requirements, path)?;
         }
-        // The keys the schema declares it with: no contract and no document type, which
-        // the referring document names when it is written
+        // As the schema declares it: the contract and the document type read from the
+        // referring document, which names them when it is written
         DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
             set_field(
                 object,
-                "contractIdProperty",
-                &JsValue::from_str(&reference.contract_id_property),
+                "contractId",
+                &JsValue::from_str(&reference.contract_id_schema_value()),
                 path,
             )?;
             set_field(
                 object,
-                "documentTypeProperty",
-                &JsValue::from_str(&reference.document_type_property),
+                "documentType",
+                &JsValue::from_str(&reference.document_type_schema_value()),
                 path,
             )?;
             if let Some(requirements) = &reference.requirements {
