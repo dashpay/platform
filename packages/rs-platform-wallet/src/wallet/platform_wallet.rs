@@ -3501,6 +3501,7 @@ mod private_contact_request_redrive_tests {
     fn redrive(st_bytes: Vec<u8>) -> PendingRedrive {
         PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [1; 32],
             anchor: [7; 32],
             nullifiers: vec![[1; 32]],

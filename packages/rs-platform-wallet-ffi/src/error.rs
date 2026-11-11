@@ -773,9 +773,10 @@ pub enum PlatformWalletFFIResultCode {
     /// identity create from the shielded pool did not create its identity and
     /// can never execute, as proven reads (at the node it was delivered to)
     /// show: every note it spends is spent, and the identity is absent at or
-    /// above the height they were spent by. The wallet marked the notes spent,
-    /// retired the create's recovery record and marked its activity row
-    /// failed; nothing is to be re-submitted. The reads do not show what
+    /// above the height they were spent by. The wallet marked the notes spent
+    /// and its activity row failed; the create's recovery record keeps the
+    /// outcome until the sync pass has written that row durably. Nothing is
+    /// to be re-submitted. The reads do not show what
     /// spent the notes: Platform's paid failure path for this transition (a
     /// key-state check failing in the block, which credits the denomination
     /// minus a penalty to `send_to_address_on_creation_failure`) is one

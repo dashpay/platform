@@ -29,8 +29,8 @@ use super::note_selection::{
     select_notes_with_fee, ShieldedFeeKind,
 };
 use super::store::{
-    PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
-    SubwalletId,
+    IdentityCreateOutcome, PendingRedrive, PrivateContactPayment, PrivatePaymentEntry,
+    ShieldedNote, ShieldedStore, SubwalletId,
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_tracking_endpoint, broadcast_was_refused,
@@ -1014,6 +1014,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
             id,
             PendingRedrive {
                 outcome_endpoint: None,
+                identity_outcome: None,
                 activity_id: entry.id,
                 anchor: transition.anchor(),
                 nullifiers: vec![],
@@ -2953,7 +2954,7 @@ where
                 );
             }
             // A create held for its outcome read keeps its record when its notes are marked
-            // spent (`PendingRedrive::outcome_endpoint`); its outcome is known now.
+            // spent (`PendingRedrive::identity_outcome`); its outcome is known now.
             retire_identity_create_record(store, id, pending_entry.as_ref().map(|entry| &entry.id))
                 .await;
             info!(
@@ -3408,14 +3409,14 @@ fn judge_identity_create_reads(
 }
 
 /// Settle an identity create proven unable to execute without its identity
-/// ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]): its notes are spent on
-/// chain, so they are marked spent, which also clears their reservations; its recovery record
-/// `activity_id` is retired; and its activity row reads failed at `consumed_by_height`, a height
-/// by which its notes were spent. The height keeps the row failed: the scan upgrades only rows
-/// that are pending or carry no height, and a row of this create the scan already confirmed is
-/// overwritten ([`record_proven_activity_status`]), as its outputs seen on chain do not show
-/// that the identity was created. A store write that fails is logged: the next pass reads the
-/// outcome again while the record is kept.
+/// ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]) where its result wait learnt
+/// it: its notes are spent on chain, so they are marked spent, which also clears their
+/// reservations; the proven outcome is kept durably with its recovery record `activity_id`
+/// ([`PendingRedrive::identity_outcome`]); and its activity row reads failed at
+/// `consumed_by_height`, a height by which its notes were spent. The record stays: the sync pass
+/// writes the failed row again after its scan's own rows and drops the record only once that
+/// write is durable ([`settle_held_identity_creates`]). A store write that fails is logged: a
+/// record whose outcome was not kept is read again by the next pass.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -3435,6 +3436,13 @@ pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
     let Some(activity_id) = activity_id else {
         return;
     };
+    keep_identity_outcome(
+        store,
+        id,
+        activity_id,
+        IdentityCreateOutcome::InputsConsumed { consumed_by_height },
+    )
+    .await;
     record_proven_activity_status(
         store,
         persister,
@@ -3445,13 +3453,12 @@ pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
         Some(consumed_by_height),
     )
     .await;
-    retire_identity_create_record(store, id, Some(activity_id)).await;
 }
 
 /// Drop the recovery record `activity_id` of an identity create whose outcome is known. A
-/// create held for its outcome read ([`PendingRedrive::outcome_endpoint`]) keeps its record when
-/// its notes are marked spent, so the code that learns its outcome drops it. A failure is
-/// logged: the record stays held, and the next pass reads the outcome again.
+/// create held for its outcome read ([`PendingRedrive::held_for_identity_outcome`]) keeps its
+/// record when its notes are marked spent, so the code that learns its outcome drops it. A
+/// failure is logged: the record stays held, and the next pass reads the outcome again.
 async fn retire_identity_create_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3466,6 +3473,52 @@ async fn retire_identity_create_record<S: ShieldedStore>(
             error = %e,
             "an identity create's recovery record was not retired; the next pass retries"
         );
+    }
+}
+
+/// Drop `id`'s recovery records `activity_ids` of identity creates whose proven outcome
+/// [`settle_held_identity_creates`] wrote into a pass changeset, once the host holds that
+/// changeset durably.
+pub(super) async fn retire_settled_identity_creates<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_ids: &[[u8; 32]],
+) {
+    for activity_id in activity_ids {
+        retire_identity_create_record(store, id, Some(activity_id)).await;
+    }
+}
+
+/// Keep `outcome`, proven for identity create `activity_id`, durably with its recovery record
+/// ([`PendingRedrive::identity_outcome`]). False, logged, when it was not kept.
+async fn keep_identity_outcome<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+    outcome: IdentityCreateOutcome,
+) -> bool {
+    match store
+        .write()
+        .await
+        .set_redrive_identity_outcome(id, activity_id, outcome)
+    {
+        Ok(true) => true,
+        Ok(false) => {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                "an identity create's proven outcome was not kept: its record is gone"
+            );
+            false
+        }
+        Err(e) => {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                error = %e,
+                "an identity create's proven outcome was not kept with its record; read again \
+                 next pass"
+            );
+            false
+        }
     }
 }
 
@@ -3536,25 +3589,26 @@ async fn record_proven_activity_status<S: ShieldedStore>(
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
 }
 
-/// What [`classify_held_identity_create`] did with a held identity create.
+/// What [`classify_held_identity_create`] learnt of a held identity create.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HeldIdentityCreate {
-    /// Its outcome was proven and settled: its record is retired.
-    Settled,
-    /// Nothing was proven: the record stays.
+    /// Its outcome was proven and kept with its record.
+    Proven(IdentityCreateOutcome),
+    /// Nothing was proven, or the proven outcome was not kept: the record stays as it was.
     Unknown,
 }
 
 /// Read, at the node it was delivered to, the outcome of the identity create whose recovery
-/// record `redrive` is held for it ([`PendingRedrive::outcome_endpoint`]), and settle what the
-/// reads prove ([`probe_identity_create`]):
+/// record `redrive` is held for it ([`PendingRedrive::outcome_endpoint`]), and keep what the
+/// reads prove ([`probe_identity_create`]) durably with the record
+/// ([`PendingRedrive::identity_outcome`]):
 ///
-/// - its identity exists: the notes are marked spent, the activity row confirmed, the record
-///   retired;
-/// - its notes are spent and its identity absent: settled as
-///   [`settle_inputs_consumed_identity_create`] settles it;
-/// - anything else, a record with no node or a transition that is not an identity create
-///   included: nothing changes.
+/// - its identity exists: [`IdentityCreateOutcome::Created`];
+/// - its notes are spent and its identity absent: [`IdentityCreateOutcome::InputsConsumed`].
+///
+/// Either way its notes are marked spent. Its activity row is not touched here: the sync pass
+/// writes it after its scan's rows ([`settle_held_identity_creates`]). Anything else, a record
+/// with no node or a transition that is not an identity create included, changes nothing.
 pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
     sdk: &dash_sdk::Sdk,
     store: &Arc<RwLock<S>>,
@@ -3583,26 +3637,10 @@ pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
     };
     let identity_id = create.identity_id();
     let reader = sdk.scoped_to_address(endpoint);
-    match probe_identity_create(&reader, &st, identity_id).await {
+    let outcome = match probe_identity_create(&reader, &st, identity_id).await {
         IdentityCreateProbe::Created(_) => {
             info!(derived_id = %identity_id, "identity create proven executed");
-            if let Err(e) =
-                mark_nullifiers_spent(store, persister, id.wallet_id, id, &redrive.nullifiers).await
-            {
-                warn!(error = %e, "an executed identity create's notes were not marked spent");
-            }
-            record_proven_activity_status(
-                store,
-                persister,
-                id.wallet_id,
-                id,
-                &redrive.activity_id,
-                ShieldedActivityStatus::Confirmed,
-                None,
-            )
-            .await;
-            retire_identity_create_record(store, id, Some(&redrive.activity_id)).await;
-            HeldIdentityCreate::Settled
+            IdentityCreateOutcome::Created
         }
         IdentityCreateProbe::InputsConsumed { consumed_by_height } => {
             warn!(
@@ -3611,43 +3649,55 @@ pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
                 "identity create proven unable to execute: its notes are spent and its \
                  identity absent"
             );
-            settle_inputs_consumed_identity_create(
-                store,
-                persister,
-                id.wallet_id,
-                id,
-                Some(&redrive.activity_id),
-                &redrive.nullifiers,
-                consumed_by_height,
-            )
-            .await;
-            HeldIdentityCreate::Settled
+            IdentityCreateOutcome::InputsConsumed { consumed_by_height }
         }
-        IdentityCreateProbe::Unknown => HeldIdentityCreate::Unknown,
+        IdentityCreateProbe::Unknown => return HeldIdentityCreate::Unknown,
+    };
+    if let Err(e) =
+        mark_nullifiers_spent(store, persister, id.wallet_id, id, &redrive.nullifiers).await
+    {
+        warn!(error = %e, "a settled identity create's notes were not marked spent");
     }
+    if !keep_identity_outcome(store, id, &redrive.activity_id, outcome).await {
+        return HeldIdentityCreate::Unknown;
+    }
+    HeldIdentityCreate::Proven(outcome)
 }
 
 /// The sync pass's settlement of `id`'s identity creates held for their outcome read
-/// ([`PendingRedrive::outcome_endpoint`]) whose notes the scan saw spent: the scan keeps their
-/// records and leaves their activity rows as they are, and each is read at the node it was
-/// delivered to ([`classify_held_identity_create`]). A create the reads do not settle counts
-/// an attempt; once [`MAX_REDRIVE_ATTEMPTS`] are spent its hold is given up and its record
-/// retired, as a scan that saw its notes spent would have retired it, and its row is left to
-/// the scan.
-pub(super) async fn classify_spent_identity_creates<S: ShieldedStore>(
+/// ([`PendingRedrive::held_for_identity_outcome`]). Runs after the scan's activity rows are on
+/// `changeset`, so what it writes there comes last:
+///
+/// - a create whose outcome is not proven yet, whose node is known and whose notes the scan saw
+///   spent is read at that node ([`classify_held_identity_create`]). A read that proves nothing
+///   counts an attempt. The attempts are shared with its re-broadcasts, so a create is read while
+///   they are at most [`MAX_REDRIVE_ATTEMPTS`]: one whose re-broadcasts spent them still gets one
+///   read. Past that it is not read again; its record stays held and its row is never confirmed
+///   from its outputs alone: it stays unconfirmed. So does a create with no known node, which is
+///   never read;
+/// - a create whose outcome is proven, now or by an earlier pass or result wait, gets its
+///   activity row written with that outcome (Confirmed, or Failed at `consumed_by_height`) in
+///   place of any row `changeset` already carries for it.
+///
+/// Returns the activity ids of the creates whose row is on `changeset` (or that have no row to
+/// write). Their records are dropped only once the host holds `changeset` durably
+/// ([`retire_settled_identity_creates`]); until then the next pass, after a restart included,
+/// writes the row again from the outcome kept with the record.
+pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
     sdk: &dash_sdk::Sdk,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     id: SubwalletId,
+    changeset: &mut ShieldedChangeSet,
     cancel: &CancellationToken,
-) {
+) -> Vec<[u8; 32]> {
     let held: Vec<PendingRedrive> = {
         let store = store.read().await;
         let redrives = match store.pending_redrives(id) {
             Ok(redrives) => redrives,
             Err(e) => {
                 warn!(error = %e, "held identity creates: pending_redrives failed; skipped");
-                return;
+                return Vec::new();
             }
         };
         let spent: HashSet<[u8; 32]> = match store.get_all_notes(id) {
@@ -3658,47 +3708,113 @@ pub(super) async fn classify_spent_identity_creates<S: ShieldedStore>(
                 .collect(),
             Err(e) => {
                 warn!(error = %e, "held identity creates: get_all_notes failed; skipped");
-                return;
+                return Vec::new();
             }
         };
         redrives
             .into_iter()
-            .filter(|redrive| {
-                redrive.outcome_endpoint.is_some()
-                    && !redrive.nullifiers.is_empty()
-                    && redrive.nullifiers.iter().all(|n| spent.contains(n))
+            .filter(|redrive| match redrive.identity_outcome {
+                Some(outcome) if outcome.is_proven() => true,
+                Some(IdentityCreateOutcome::Awaiting) => {
+                    redrive.outcome_endpoint.is_some()
+                        && redrive.attempts <= MAX_REDRIVE_ATTEMPTS
+                        && !redrive.nullifiers.is_empty()
+                        && redrive.nullifiers.iter().all(|n| spent.contains(n))
+                }
+                _ => false,
             })
             .collect()
     };
+    let mut settled = Vec::new();
     for redrive in held {
-        if cancel.is_cancelled() {
-            return;
-        }
-        if classify_held_identity_create(sdk, store, persister, id, &redrive).await
-            == HeldIdentityCreate::Settled
-        {
-            continue;
-        }
-        let attempts = match store
-            .write()
-            .await
-            .bump_redrive_attempts(id, &redrive.activity_id)
-        {
-            Ok(attempts) => attempts,
-            Err(e) => {
-                warn!(error = %e, "held identity create: attempt not counted; retried next pass");
-                continue;
+        let outcome = match redrive.identity_outcome {
+            Some(outcome) if outcome.is_proven() => outcome,
+            _ => {
+                if cancel.is_cancelled() {
+                    break;
+                }
+                match classify_held_identity_create(sdk, store, persister, id, &redrive).await {
+                    HeldIdentityCreate::Proven(outcome) => outcome,
+                    HeldIdentityCreate::Unknown => {
+                        count_unproven_identity_create_read(store, id, &redrive.activity_id).await;
+                        continue;
+                    }
+                }
             }
         };
-        if attempts >= MAX_REDRIVE_ATTEMPTS {
-            warn!(
-                activity_id = %hex::encode(redrive.activity_id),
-                attempts,
-                "held identity create: its outcome could not be read; giving up its hold"
-            );
-            retire_identity_create_record(store, id, Some(&redrive.activity_id)).await;
+        if write_proven_identity_create_row(store, id, &redrive.activity_id, outcome, changeset)
+            .await
+        {
+            settled.push(redrive.activity_id);
         }
     }
+    settled
+}
+
+/// Count a read of held identity create `activity_id` that proved nothing. The last read
+/// ([`settle_held_identity_creates`]) leaves it held and unconfirmed.
+async fn count_unproven_identity_create_read<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+) {
+    match store.write().await.bump_redrive_attempts(id, activity_id) {
+        Ok(attempts) if attempts > MAX_REDRIVE_ATTEMPTS => warn!(
+            activity_id = %hex::encode(activity_id),
+            attempts,
+            "held identity create: its outcome could not be read; it stays unconfirmed"
+        ),
+        Ok(_) => {}
+        Err(e) => {
+            warn!(error = %e, "held identity create: attempt not counted; retried next pass")
+        }
+    }
+}
+
+/// Write identity create `activity_id`'s row with its proven `outcome` into the in-memory store
+/// and onto `changeset`, in place of any row `changeset` already carries for it. True when the
+/// row is on `changeset`, or when there is no row to write; false, logged, when the row did not
+/// read or save.
+async fn write_proven_identity_create_row<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+    outcome: IdentityCreateOutcome,
+    changeset: &mut ShieldedChangeSet,
+) -> bool {
+    let (status, block_height) = match outcome {
+        IdentityCreateOutcome::Created => (ShieldedActivityStatus::Confirmed, None),
+        IdentityCreateOutcome::InputsConsumed { consumed_by_height } => {
+            (ShieldedActivityStatus::Failed, Some(consumed_by_height))
+        }
+        IdentityCreateOutcome::Awaiting => return false,
+    };
+    let mut store = store.write().await;
+    let stored = match store.get_activity_by_entry_id(id, activity_id) {
+        Ok(Some(stored)) => stored,
+        Ok(None) => return true,
+        Err(e) => {
+            warn!(
+                entry_id = %hex::encode(activity_id),
+                error = %e,
+                "held identity create: its row did not read; written next pass"
+            );
+            return false;
+        }
+    };
+    let next = with_status(&stored, status, block_height);
+    if let Err(e) = store.save_activity(id, &next) {
+        warn!(
+            entry_id = %hex::encode(activity_id),
+            error = %e,
+            "held identity create: its row did not save; written next pass"
+        );
+        return false;
+    }
+    let entries = changeset.activity_entries.entry(id).or_default();
+    entries.retain(|entry| entry.id != next.id);
+    entries.push(next);
+    true
 }
 
 // -------------------------------------------------------------------------
@@ -4561,8 +4677,16 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         )),
         None => None,
     };
+    // An identity create is held for its outcome read from its save, before any dispatch: a
+    // scan that sees its notes spent while its broadcast is still in flight must not drop it.
+    let identity_outcome = matches!(
+        state_transition,
+        StateTransition::IdentityCreateFromShieldedPool(_)
+    )
+    .then_some(IdentityCreateOutcome::Awaiting);
     let redrive = PendingRedrive {
         outcome_endpoint: None,
+        identity_outcome,
         activity_id,
         anchor,
         nullifiers,
@@ -4911,9 +5035,10 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 /// - accepted / inconclusive → count the attempt; wait for the next scan;
 /// - `NullifierAlreadySpent` → the original executed; the next scan
 ///   confirms — touch nothing. Except an identity create (Type 20) held for
-///   its outcome read ([`PendingRedrive::outcome_endpoint`]): its notes spent
-///   do not show that its identity was created, so its outcome is read at
-///   its node and settled ([`classify_held_identity_create`]);
+///   its outcome read at a known node ([`PendingRedrive::outcome_endpoint`]):
+///   its notes spent do not show that its identity was created, so its
+///   outcome is read at its node and kept with its record
+///   ([`classify_held_identity_create`]), for the sync pass to settle;
 /// - any other consensus verdict → inconclusive too: a node refusing the
 ///   re-broadcast does not show that no other node holds the original,
 ///   whose broadcast was ambiguous, so the notes stay reserved;
@@ -4927,7 +5052,8 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 ///
 /// A held identity create is re-broadcast only to the node it was
 /// delivered to, through an SDK scoped to it, and not at all once the scan
-/// saw its notes spent: [`classify_spent_identity_creates`] settles it then.
+/// saw its notes spent or its outcome is proven:
+/// [`settle_held_identity_creates`] settles it then.
 ///
 /// Runs after the scan's spent-note reconcile (a landed spend's record
 /// was already dropped by the `mark_spent` hook, so anything still
@@ -4981,6 +5107,13 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        // A held identity create whose outcome is proven is the sync pass's to settle.
+        if redrive
+            .identity_outcome
+            .is_some_and(IdentityCreateOutcome::is_proven)
+        {
+            continue;
+        }
         // A held identity create goes only to the node that holds it.
         let held_at = match redrive.outcome_endpoint.as_deref() {
             Some(endpoint) => match endpoint.parse::<dash_sdk::sdk::Address>() {
@@ -5020,8 +5153,10 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 // A held identity create's notes spent do not show its identity created:
                 // read its outcome at its node.
                 if held_at.is_some()
-                    && classify_held_identity_create(sdk, store, persister, id, &redrive).await
-                        == HeldIdentityCreate::Settled
+                    && matches!(
+                        classify_held_identity_create(sdk, store, persister, id, &redrive).await,
+                        HeldIdentityCreate::Proven(_)
+                    )
                 {
                     continue;
                 }
@@ -5410,6 +5545,7 @@ mod redrive_tests {
         let mut store = InMemoryShieldedStore::new();
         let archived = PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [6; 32],
             anchor: [1; 32],
             nullifiers: vec![],
@@ -5464,6 +5600,7 @@ mod redrive_tests {
                 id,
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id,
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5536,6 +5673,7 @@ mod redrive_tests {
                 SubwalletId::new(wallet_id, 3),
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [6; 32],
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5568,6 +5706,7 @@ mod redrive_tests {
                 SubwalletId::new(wallet_id, 0),
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [8; 32],
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5681,6 +5820,7 @@ mod redrive_tests {
                 previous_account,
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id,
                     anchor: [0xAB; 32],
                     nullifiers: vec![],
@@ -6057,6 +6197,7 @@ mod redrive_tests {
                 id,
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [0x79; 32],
                     anchor: [7; 32],
                     nullifiers: vec![note.nullifier],
@@ -6739,6 +6880,7 @@ mod redrive_tests {
                 id,
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id,
                     anchor,
                     nullifiers: vec![],
@@ -6779,6 +6921,7 @@ mod redrive_tests {
 
         let rec = |activity: u8, anchor: u8, attempts: u32| PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [activity; 32],
             anchor: [anchor; 32],
             nullifiers: vec![[activity ^ 0xFF; 32]],
@@ -6840,6 +6983,7 @@ mod redrive_tests {
         let retired = identity_shield_transition([0xA2; 32], 4);
         let record = |activity: u8, transition: &StateTransition| PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [activity; 32],
             anchor,
             nullifiers: vec![[activity ^ 0xFF; 32]],
@@ -6945,7 +7089,7 @@ mod redrive_tests {
 
     /// The note-consuming spends, by the code that saves, broadcasts and
     /// waits for them.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum SpendPath {
         /// Transfer, unshield, withdrawal and identity top-up
         /// ([`broadcast_shielded_spend_with_redrive_with_metadata`]): here a
@@ -7489,15 +7633,26 @@ mod redrive_tests {
                 .await
                 .mark_spent(id, &spend_note().nullifier)
                 .expect("marked"));
-            assert!(
-                restarted
-                    .read()
-                    .await
-                    .pending_redrives(id)
-                    .expect("records")
-                    .is_empty(),
-                "{spend_path:?}: resolved once its nullifier is seen spent"
-            );
+            let records = restarted
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records");
+            if spend_path == SpendPath::IdentityCreate {
+                // Its notes spent do not show whether its identity was created: held for the
+                // outcome read from its save.
+                assert_eq!(records.len(), 1, "{spend_path:?}: held");
+                assert_eq!(
+                    records[0].identity_outcome,
+                    Some(IdentityCreateOutcome::Awaiting),
+                    "{spend_path:?}"
+                );
+            } else {
+                assert!(
+                    records.is_empty(),
+                    "{spend_path:?}: resolved once its nullifier is seen spent"
+                );
+            }
         }
     }
 
@@ -8362,13 +8517,18 @@ mod redrive_tests {
             assert_eq!(row.status, ShieldedActivityStatus::Failed);
             assert_eq!(row.block_height, Some(0));
             drop(store);
-            assert!(
-                FileBackedShieldedStore::open_path(&path, 100)
-                    .expect("reopened")
-                    .pending_redrives(id)
-                    .expect("records")
-                    .is_empty(),
-                "the record is retired for good"
+            // The record stays, with the outcome, until the sync pass's write
+            // of the row is durable.
+            let records = FileBackedShieldedStore::open_path(&path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records");
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].identity_outcome,
+                Some(IdentityCreateOutcome::InputsConsumed {
+                    consumed_by_height: 0
+                })
             );
         }
     }
@@ -8426,9 +8586,10 @@ mod redrive_tests {
     }
 
     /// A held identity create is read at its node: its notes spent and its
-    /// identity absent settles it as inputs consumed (exactly its real
-    /// inputs marked spent), its identity found settles it confirmed, and
-    /// its notes free leave it. One with no node is never read.
+    /// identity absent keeps inputs consumed with its record (exactly its
+    /// real inputs marked spent), its identity found keeps created, and its
+    /// notes free leave it. Its row is the sync pass's to write. One with no
+    /// node is never read.
     #[tokio::test]
     async fn should_classify_a_held_identity_create_only_at_its_node() {
         let wallet_id = [0x75; 32];
@@ -8453,10 +8614,12 @@ mod redrive_tests {
             let row = activity_row(&store, id, &activity_id).await;
             match (held, spent, created) {
                 (true, true, false) => {
-                    assert_eq!(classified, HeldIdentityCreate::Settled, "{case}");
-                    assert!(records.is_empty(), "{case}");
-                    assert_eq!(row.status, ShieldedActivityStatus::Failed, "{case}");
-                    assert_eq!(row.block_height, Some(0), "{case}");
+                    let outcome = IdentityCreateOutcome::InputsConsumed {
+                        consumed_by_height: 0,
+                    };
+                    assert_eq!(classified, HeldIdentityCreate::Proven(outcome), "{case}");
+                    assert_eq!(records[0].identity_outcome, Some(outcome), "{case}");
+                    assert_eq!(row.status, ShieldedActivityStatus::Pending, "{case}");
                     assert_eq!(spent_nullifiers(&store, id).await, redrive.nullifiers);
                     assert!(redrive
                         .nullifiers
@@ -8464,25 +8627,31 @@ mod redrive_tests {
                         .all(|n| transition_nullifiers(&transition).contains(n)));
                 }
                 (true, true, true) => {
-                    assert_eq!(classified, HeldIdentityCreate::Settled, "{case}");
-                    assert!(records.is_empty(), "{case}");
-                    assert_eq!(row.status, ShieldedActivityStatus::Confirmed, "{case}");
+                    let outcome = IdentityCreateOutcome::Created;
+                    assert_eq!(classified, HeldIdentityCreate::Proven(outcome), "{case}");
+                    assert_eq!(records[0].identity_outcome, Some(outcome), "{case}");
+                    assert_eq!(row.status, ShieldedActivityStatus::Pending, "{case}");
                     assert_eq!(spent_nullifiers(&store, id).await, redrive.nullifiers);
                 }
                 _ => {
                     assert_eq!(classified, HeldIdentityCreate::Unknown, "{case}");
-                    assert_eq!(records.len(), 1, "{case}");
+                    assert_eq!(
+                        records[0].identity_outcome,
+                        Some(IdentityCreateOutcome::Awaiting),
+                        "{case}"
+                    );
                     assert_eq!(row.status, ShieldedActivityStatus::Pending, "{case}");
                 }
             }
         }
     }
 
-    /// A held identity create keeps its record when its notes are marked
-    /// spent, as a scan marks them: the notes spent do not show what it did.
-    /// Any other record is retired with its notes, as before.
+    /// An identity create is held from its save, before any node is known
+    /// for it: it keeps its record when its notes are marked spent, as a
+    /// scan marks them, whether or not its node was kept by then, as its
+    /// notes spent do not show what it did. Both survive a restart.
     #[tokio::test]
-    async fn should_keep_a_held_identity_create_s_record_when_its_notes_are_spent() {
+    async fn should_keep_an_identity_create_s_record_from_its_save_when_its_notes_are_spent() {
         let wallet_id = [0x76; 32];
         let id = SubwalletId::new(wallet_id, 0);
         let activity_id = [0x7F; 32];
@@ -8500,10 +8669,17 @@ mod redrive_tests {
                 .expect("reopened")
                 .pending_redrives(id)
                 .expect("records");
-            assert_eq!(records.len(), usize::from(held), "held {held}");
-            if held {
-                assert_eq!(records[0].outcome_endpoint.as_deref(), Some(ENDPOINT));
-            }
+            assert_eq!(records.len(), 1, "held {held}");
+            assert_eq!(
+                records[0].identity_outcome,
+                Some(IdentityCreateOutcome::Awaiting),
+                "held {held}"
+            );
+            assert_eq!(
+                records[0].outcome_endpoint.as_deref(),
+                held.then_some(ENDPOINT),
+                "held {held}"
+            );
         }
     }
 }

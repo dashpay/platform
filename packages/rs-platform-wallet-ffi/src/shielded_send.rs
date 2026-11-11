@@ -2497,6 +2497,7 @@ mod tests {
                 SubwalletId::new([7; 32], 9),
                 PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [8; 32],
                     anchor: [9; 32],
                     nullifiers: vec![[10; 32]],

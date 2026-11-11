@@ -522,6 +522,7 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
             subwallet,
             crate::wallet::shielded::store::PendingRedrive {
                 outcome_endpoint: None,
+                identity_outcome: None,
                 activity_id: [7; 32],
                 anchor: [8; 32],
                 nullifiers: vec![[2; 32]],
@@ -1076,6 +1077,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
             id,
             PendingRedrive {
                 outcome_endpoint: None,
+                identity_outcome: None,
                 activity_id: [1; 32],
                 anchor: [2; 32],
                 nullifiers: vec![],

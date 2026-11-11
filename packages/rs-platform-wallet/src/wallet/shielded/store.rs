@@ -187,12 +187,53 @@ pub struct PendingRedrive {
     pub identity_user_abandoned: bool,
     /// The DAPI node an identity create from the pool (Type 20) was
     /// delivered to, when one dispatch reached a node: the only node its
-    /// outcome may be read from, since the reads name its nullifiers. A
-    /// record that has one is held for that read: seeing its notes spent
-    /// ([`ShieldedStore::mark_spent`]) does not drop it, as its notes spent do
-    /// not show whether the identity was created. `None` for every other
-    /// spend, and for a create whose delivery no node was kept for.
+    /// outcome may be read from, since the reads name its nullifiers.
+    /// Keeping one also holds the record
+    /// ([`ShieldedStore::set_redrive_outcome_endpoint`]). `None` for every
+    /// other spend, and for a create whose delivery no node was kept for.
     pub outcome_endpoint: Option<String>,
+    /// Where an identity create from the pool (Type 20) stands in its hold
+    /// for the outcome read. A record that has one is held: seeing its notes
+    /// spent ([`ShieldedStore::mark_spent`]) does not drop it, as its notes
+    /// spent do not show whether the identity was created. A create's record
+    /// is held from the moment it is saved, before any dispatch, as
+    /// [`IdentityCreateOutcome::Awaiting`]; a proven outcome is kept here
+    /// durably until the activity row that reports it is durable too, then
+    /// the record is dropped. `None` for every other spend, and for a create
+    /// saved by a build that did not hold creates.
+    pub identity_outcome: Option<IdentityCreateOutcome>,
+}
+
+impl PendingRedrive {
+    /// Whether the record is held for an identity create's outcome read
+    /// ([`Self::identity_outcome`]).
+    pub fn held_for_identity_outcome(&self) -> bool {
+        self.identity_outcome.is_some()
+    }
+}
+
+/// Where a held identity create from the pool (Type 20) stands
+/// ([`PendingRedrive::identity_outcome`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityCreateOutcome {
+    /// No outcome is proven yet.
+    Awaiting,
+    /// Proven executed: its identity exists.
+    Created,
+    /// Proven unable to execute: every nullifier is spent by
+    /// `consumed_by_height` and its identity is absent at a height at or above
+    /// it.
+    InputsConsumed {
+        /// A height by which its notes were spent.
+        consumed_by_height: u64,
+    },
+}
+
+impl IdentityCreateOutcome {
+    /// Whether an outcome is proven.
+    pub fn is_proven(self) -> bool {
+        !matches!(self, Self::Awaiting)
+    }
 }
 
 /// The DashPay private contact request a saved spend pays for: which identity
@@ -489,6 +530,15 @@ pub(super) struct MarkSpentOutcome {
 ///
 /// A store is `'static`: a spend dropped before it hands its notes over
 /// releases their reservation on a spawned task when the store is locked.
+///
+/// An implementation outside this crate must also keep the identity-create
+/// hold: persist [`PendingRedrive::outcome_endpoint`] and
+/// [`PendingRedrive::identity_outcome`] with the record and restore both,
+/// implement [`Self::set_redrive_outcome_endpoint`] and
+/// [`Self::set_redrive_identity_outcome`] durably, and keep a held record
+/// ([`PendingRedrive::held_for_identity_outcome`]) when [`Self::mark_spent`]
+/// sees one of its notes spent. Dropping it there lets a scan confirm a
+/// failed create from its change outputs.
 pub trait ShieldedStore: Send + Sync + 'static {
     /// The error type returned by storage operations.
     type Error: StdError + Send + Sync + 'static;
@@ -510,7 +560,9 @@ pub trait ShieldedStore: Send + Sync + 'static {
     fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error>;
 
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
-    /// if a matching unspent note was found.
+    /// if a matching unspent note was found. Drops every redrive record
+    /// that carries `nullifier` except one held for its identity create's
+    /// outcome read ([`PendingRedrive::held_for_identity_outcome`]).
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
 
     /// Reserve `id`'s note with `nullifier` against an in-flight
@@ -729,13 +781,25 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<Vec<(SubwalletId, PendingRedrive)>, Self::Error>;
 
     /// Keep `endpoint` as the [`PendingRedrive::outcome_endpoint`] of `id`'s
-    /// redrive keyed by `activity_id`. Returns false, changing nothing, when no
-    /// such record exists.
+    /// redrive keyed by `activity_id`, durably, and hold the record: one with
+    /// no [`PendingRedrive::identity_outcome`] gets
+    /// [`IdentityCreateOutcome::Awaiting`]. Returns false, changing nothing,
+    /// when no such record exists.
     fn set_redrive_outcome_endpoint(
         &mut self,
         id: SubwalletId,
         activity_id: &[u8; 32],
         endpoint: &str,
+    ) -> Result<bool, Self::Error>;
+
+    /// Keep `outcome` as the [`PendingRedrive::identity_outcome`] of `id`'s
+    /// redrive keyed by `activity_id`, durably. Returns false, changing
+    /// nothing, when no such record exists.
+    fn set_redrive_identity_outcome(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        outcome: IdentityCreateOutcome,
     ) -> Result<bool, Self::Error>;
 
     /// Increment the attempt counter on `id`'s redrive keyed by
@@ -753,7 +817,8 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// implicitly when [`Self::mark_spent`] or [`Self::clear_pending`]
     /// resolves one of its nullifiers, since a transition lands or dies
     /// atomically for all of its nullifiers; [`Self::mark_spent`] keeps a
-    /// record held for its outcome read ([`PendingRedrive::outcome_endpoint`]).
+    /// record held for its outcome read
+    /// ([`PendingRedrive::held_for_identity_outcome`]).
     fn clear_redrive(&mut self, id: SubwalletId, activity_id: &[u8; 32])
         -> Result<(), Self::Error>;
 
@@ -1111,13 +1176,13 @@ impl SubwalletState {
     }
 
     /// [`Self::drop_redrives_containing`] for a spend seen landed: a record held
-    /// for its outcome read ([`PendingRedrive::outcome_endpoint`]) is kept, as a
-    /// landed spend of its notes does not show what it did.
+    /// for its outcome read ([`PendingRedrive::held_for_identity_outcome`]) is
+    /// kept, as a landed spend of its notes does not show what it did.
     fn drop_unheld_redrives_containing(&mut self, nullifier: &[u8; 32]) -> Vec<[u8; 32]> {
         let dropped: Vec<[u8; 32]> = self
             .redrives
             .iter()
-            .filter(|(_, r)| r.outcome_endpoint.is_none() && r.nullifiers.contains(nullifier))
+            .filter(|(_, r)| !r.held_for_identity_outcome() && r.nullifiers.contains(nullifier))
             .map(|(id, _)| *id)
             .collect();
         for id in &dropped {
@@ -1280,8 +1345,9 @@ impl SubwalletState {
         self.redrives.get(activity_id).map(|r| r.attempts)
     }
 
-    /// Set the record's [`PendingRedrive::outcome_endpoint`]; false when no
-    /// such record exists.
+    /// Set the record's [`PendingRedrive::outcome_endpoint`], holding it
+    /// ([`ShieldedStore::set_redrive_outcome_endpoint`]); false when no such
+    /// record exists.
     pub(super) fn set_redrive_outcome_endpoint(
         &mut self,
         activity_id: &[u8; 32],
@@ -1289,7 +1355,24 @@ impl SubwalletState {
     ) -> bool {
         self.redrives
             .get_mut(activity_id)
-            .map(|r| r.outcome_endpoint = Some(endpoint.to_string()))
+            .map(|r| {
+                r.outcome_endpoint = Some(endpoint.to_string());
+                r.identity_outcome
+                    .get_or_insert(IdentityCreateOutcome::Awaiting);
+            })
+            .is_some()
+    }
+
+    /// Set the record's [`PendingRedrive::identity_outcome`]; false when no
+    /// such record exists.
+    pub(super) fn set_redrive_identity_outcome(
+        &mut self,
+        activity_id: &[u8; 32],
+        outcome: IdentityCreateOutcome,
+    ) -> bool {
+        self.redrives
+            .get_mut(activity_id)
+            .map(|r| r.identity_outcome = Some(outcome))
             .is_some()
     }
 
@@ -1695,6 +1778,18 @@ impl ShieldedStore for InMemoryShieldedStore {
             .is_some_and(|sw| sw.set_redrive_outcome_endpoint(activity_id, endpoint)))
     }
 
+    fn set_redrive_identity_outcome(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        outcome: IdentityCreateOutcome,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .is_some_and(|sw| sw.set_redrive_identity_outcome(activity_id, outcome)))
+    }
+
     fn bump_redrive_attempts(
         &mut self,
         id: SubwalletId,
@@ -2088,6 +2183,7 @@ mod tests {
         store.save_note(id, &note).unwrap();
         let redrive = PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [9u8; 32],
             anchor: [8u8; 32],
             nullifiers: vec![n1, n2],
@@ -2486,6 +2582,7 @@ mod tests {
         let mut store = InMemoryShieldedStore::new();
         let identity_guard = PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [0x11; 32],
             anchor: [0x22; 32],
             nullifiers: vec![],
@@ -2497,6 +2594,7 @@ mod tests {
         };
         let note_spend = PendingRedrive {
             outcome_endpoint: None,
+            identity_outcome: None,
             activity_id: [0x44; 32],
             anchor: [0x55; 32],
             nullifiers: vec![[0x66; 32]],

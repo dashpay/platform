@@ -359,6 +359,7 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                 id,
                 super::store::PendingRedrive {
                     outcome_endpoint: None,
+                    identity_outcome: None,
                     activity_id: [9; 32],
                     anchor: [8; 32],
                     nullifiers: vec![[2; 32]],
