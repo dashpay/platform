@@ -135,7 +135,8 @@ export default class DockerImageCleanup {
     // Resolve every config, including disabled profiles and overrides, before
     // deleting anything. A missing local image has no ID to protect; other
     // Docker/parse errors abort cleanup instead of weakening protection.
-    for (const reference of this.getConfiguredDockerImages()) {
+    const configuredReferences = new Set([...references, ...this.getConfiguredDockerImages()]);
+    for (const reference of configuredReferences) {
       const image = await this.inspect(reference);
       if (image) {
         protectedIds.add(image.Id);
@@ -144,6 +145,10 @@ export default class DockerImageCleanup {
 
     const cutoff = Date.now() - MAX_IMAGE_AGE_MS;
     const result = { deleted: [], skipped: [] };
+    // Snapshot all containers once, including stopped and non-dashmate ones.
+    // Non-force removal below protects containers created after this snapshot.
+    const containers = await this.docker.listContainers({ all: true });
+    const containerImageIds = new Set(containers.map((container) => container.ImageID));
     const images = await this.docker.listImages({ all: true });
     for (const { Id: id } of images) {
       if (protectedIds.has(id)) {
@@ -159,13 +164,24 @@ export default class DockerImageCleanup {
         continue;
       }
 
-      // Include stopped and non-dashmate containers. Non-force removal also
-      // closes the race with a container created after this check.
-      const containers = await this.docker.listContainers({ all: true });
-      if (containers.some((container) => container.ImageID === id)) {
+      if (containerImageIds.has(id)) {
         result.skipped.push(id);
         continue;
       }
+
+      // Another Docker client can move configured tags during listing or an
+      // earlier deletion. Refresh their IDs just before removing this candidate,
+      // retaining both the original and newly referenced images for this run.
+      for (const reference of configuredReferences) {
+        const configuredImage = await this.inspect(reference);
+        if (configuredImage) {
+          protectedIds.add(configuredImage.Id);
+        }
+      }
+      if (protectedIds.has(id)) {
+        continue;
+      }
+
       try {
         await this.docker.getImage(id).remove({ force: false, noprune: true });
         result.deleted.push(id);

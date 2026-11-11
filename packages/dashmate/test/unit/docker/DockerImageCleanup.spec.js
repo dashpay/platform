@@ -63,11 +63,13 @@ describe('DockerImageCleanup', () => {
     addImage('core', { RepoTags: ['dashpay/dashd:20'] });
 
     const snapshot = await cleanup.prepare({});
+    docker.listContainers.resetHistory();
     const result = await cleanup.cleanup(snapshot);
 
     expect(result.deleted).to.deep.equal(['drive-2024', 'legacy-dapi', 'helper', 'core']);
     expect(removed).to.deep.equal(result.deleted);
     expect(docker.listImages).to.have.been.calledOnceWithExactly({ all: true });
+    expect(docker.listContainers).to.have.been.calledOnceWithExactly({ all: true });
   });
 
   it('should recognize historical digest-only images and canonical Docker Hub references', async () => {
@@ -148,6 +150,46 @@ describe('DockerImageCleanup', () => {
     expect(removed).to.deep.equal([]);
   });
 
+  it('should retain an image when a configured tag moves during candidate listing', async () => {
+    const reference = 'dashpay/drive:other';
+    const previous = addImage('previous', { RepoTags: [reference] });
+    const next = addImage('next');
+    addImage('unused');
+    configuredReferences.add(reference);
+    docker.listImages.callsFake(async () => {
+      previous.RepoTags = [];
+      next.RepoTags.push(reference);
+      images.set(reference, next);
+      return [...new Set(images.values())];
+    });
+
+    await cleanup.cleanup(await cleanup.prepare({}));
+
+    expect(removed).to.deep.equal(['unused']);
+  });
+
+  it('should refresh configured image IDs again after an earlier candidate is removed', async () => {
+    const reference = 'dashpay/drive:other';
+    const previous = addImage('previous', { RepoTags: [reference] });
+    const first = addImage('first');
+    const next = addImage('next');
+    configuredReferences.add(reference);
+    docker.getImage.withArgs('first').returns({
+      inspect: async () => first,
+      remove: async (options) => {
+        expect(options).to.deep.equal({ force: false, noprune: true });
+        removed.push(first.Id);
+        previous.RepoTags = [];
+        next.RepoTags.push(reference);
+        images.set(reference, next);
+      },
+    });
+
+    await cleanup.cleanup(await cleanup.prepare({}));
+
+    expect(removed).to.deep.equal(['first']);
+  });
+
   it('should retain all running and stopped container images, including unrelated containers', async () => {
     addImage('running');
     addImage('stopped');
@@ -185,6 +227,29 @@ describe('DockerImageCleanup', () => {
     await cleanup.cleanup(snapshot);
 
     expect(removed).to.deep.equal([]);
+  });
+
+  it('should let Docker protect a container created after the container snapshot', async function it() {
+    const image = addImage('new-container');
+    const remove = this.sinon.stub()
+      .rejects(Object.assign(new Error('image is in use'), { statusCode: 409 }));
+    docker.listImages.callsFake(async () => {
+      containers.push({ ImageID: image.Id });
+      return [image];
+    });
+    docker.getImage.withArgs(image.Id).returns({
+      inspect: async () => image,
+      remove,
+    });
+    const snapshot = await cleanup.prepare({});
+    docker.listContainers.resetHistory();
+
+    const result = await cleanup.cleanup(snapshot);
+
+    expect(result.deleted).to.deep.equal([]);
+    expect(result.skipped).to.deep.equal([image.Id]);
+    expect(docker.listContainers).to.have.been.calledOnceWithExactly({ all: true });
+    expect(remove).to.have.been.calledOnceWithExactly({ force: false, noprune: true });
   });
 
   it('should re-inspect aliases after listing images', async () => {

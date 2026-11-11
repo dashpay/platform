@@ -471,6 +471,7 @@ describe('Update command', () => {
         'format',
         'non-interactive',
         'skip-certificate-check',
+        'skip-image-cleanup',
         'verbose',
       ]);
     });
