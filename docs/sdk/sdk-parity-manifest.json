@@ -71,7 +71,8 @@
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
     "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
-    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_wallet_manager_shielded_shield_from_identity_to_recipient": "packages/rs-platform-wallet-ffi/src/shielded_send.rs"
   },
   "capabilities": [
     {
@@ -1971,6 +1972,39 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
           "id": "should_refuse_drain_on_a_buffered_persistence_backend",
           "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.shield_from_identity_to_recipient",
+      "title": "Shield an identity's credits to someone else's shielded address",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_shield_from_identity_to_recipient"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentityToRecipient bridges the export; the example app has no screen that pays an identity's credits to another wallet's shielded address."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge or Kotlin wrapper for shielding an identity's credits to a recipient yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests.swift",
+          "id": "testRecipientNot43BytesThrowsInvalidParameter",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldFromIdentityToRecipientGuardTests",
           "covers_restart": false
         }
       ]
