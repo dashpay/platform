@@ -148,6 +148,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
     max_document_type_requirement_slots: 4, // backfilled: dynamic references parse from protocol version 15
     max_document_type_requirement_condition_nodes: 16, // backfilled: a slot `when` parses from protocol version 15
+    max_document_type_requirement_condition_text_length: 256, // backfilled: a slot `when` parses from protocol version 15
     max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
     max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
     max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read

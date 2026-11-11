@@ -430,6 +430,35 @@ impl DocumentTypeRequirements {
         })
     }
 
+    /// How many comparisons judging `document_type` against the requirements takes, at
+    /// most: what a write that checks the reference is billed for, before it is judged.
+    ///
+    /// Each slot tries every top-level property of the type when it takes any property
+    /// (`"$any"`), and one when it names it. Trying a property is one comparison of it with
+    /// the slot's description, and one more for each node of the slot's `when`
+    /// ([`SlotCondition::node_count`]), whether or not the description admits it: the
+    /// count depends on the declaration and the size of the type alone, not on what the
+    /// type's properties are. The search for an assignment that follows is over at most
+    /// `max_document_type_requirement_slots` slots and is not counted.
+    pub fn comparisons(&self, document_type: DocumentTypeRef) -> u64 {
+        let properties = document_type.properties().len() as u64;
+        self.slots
+            .values()
+            .map(|slot| {
+                let tried = match slot.name {
+                    SlotPropertyName::Any => properties,
+                    SlotPropertyName::Named(_) | SlotPropertyName::FromProperty(_) => 1,
+                };
+                let per_property = slot
+                    .when
+                    .as_ref()
+                    .map_or(0, |when| when.node_count() as u64)
+                    .saturating_add(1);
+                tried.saturating_mul(per_property)
+            })
+            .fold(0u64, u64::saturating_add)
+    }
+
     /// Whether `document_type` meets the requirements.
     ///
     /// A slot is filled by one top-level property of the type that its description admits

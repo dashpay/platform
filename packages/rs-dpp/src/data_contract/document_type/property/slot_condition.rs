@@ -257,15 +257,18 @@ impl SlotCondition {
         }
     }
 
-    /// How many conditions this one is made of, itself included: what
-    /// `SystemLimits::max_document_type_requirement_condition_nodes` bounds.
+    /// How many nodes this condition is made of, itself included, each string an `in` or
+    /// a `notIn` lists counted as one: what
+    /// `SystemLimits::max_document_type_requirement_condition_nodes` bounds, and what
+    /// judging it for one property costs at most.
     pub fn node_count(&self) -> usize {
         match self {
             SlotCondition::Equal(..)
             | SlotCondition::NotEqual(..)
-            | SlotCondition::In(..)
-            | SlotCondition::NotIn(..)
             | SlotCondition::Contains(..) => 1,
+            SlotCondition::In(_, values) | SlotCondition::NotIn(_, values) => {
+                values.len().saturating_add(1)
+            }
             SlotCondition::Not(conditions)
             | SlotCondition::AnyOf(conditions)
             | SlotCondition::AllOf(conditions)

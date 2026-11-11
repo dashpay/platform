@@ -723,3 +723,134 @@ async fn should_check_a_reference_of_either_kind_as_the_kind_the_named_type_is()
     let repoint = replacement(&setup.stranger, &setup.contract, EITHER_NOTE, &mut note).await;
     assert_success(&setup.process(&repoint, &transaction));
 }
+
+/// The processing fee a write was charged, accepted or refused.
+fn processing_fee(execution: &StateTransitionExecutionResult) -> u64 {
+    match execution {
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
+            fee_result.processing_fee
+        }
+        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => {
+            actual_fees.processing_fee
+        }
+        other => panic!("expected a paid execution, got {other:?}"),
+    }
+}
+
+/// Judging the named type against the requirements is billed by the comparisons it may
+/// take, before it is judged: a slot's `when` adds its nodes for each property the slot
+/// tries, and a write refused because the type does not meet the requirements pays for
+/// the judging like one that is accepted.
+#[tokio::test]
+async fn should_bill_the_comparisons_judging_the_named_type_takes() {
+    const MEASURED: &str = "measuredNote";
+    let any_text = |when: Option<Value>| {
+        let mut slot = platform_value!({ "name": "$any", "type": "string" });
+        if let Some(when) = when {
+            slot.insert("when".to_string(), when)
+                .expect("expected to set the condition");
+        }
+        platform_value!({ "properties": { "body": slot } })
+    };
+    // The seven nodes of "a removal takes the text", and the same with two more
+    let seven = || {
+        text_removed_with_the_document()
+            .get("properties")
+            .expect("expected properties")
+            .expect("expected properties")
+            .get("body")
+            .expect("expected the slot")
+            .expect("expected the slot")
+            .get("when")
+            .expect("expected the condition")
+            .expect("expected the condition")
+            .clone()
+    };
+    let nine = || {
+        platform_value!({ "allOf": [
+            seven(),
+            { "notEqual": ["$property", { "const": "never" }] },
+        ] })
+    };
+    let per_comparison = PlatformVersion::latest()
+        .fee_version
+        .document_reference
+        .requirement_credits_per_comparison;
+    assert_eq!(per_comparison, 100);
+
+    // Each write is measured on a platform of its own, built the same way every time but
+    // for the `when` of the one slot of the note it writes: the note type has the same
+    // name and the same place in the contract, so two writes differ by the judging alone
+    let mut fee_of = Vec::new();
+    for (when, target_type) in [
+        (None, POST),
+        (Some(seven()), POST),
+        (Some(nine()), POST),
+        (Some(seven()), KEPT_POST),
+        (Some(nine()), KEPT_POST),
+    ] {
+        let setup = Setup::new_at_with(
+            Some(moderators_without_lists()),
+            PlatformVersion::latest(),
+            |contract| {
+                add_document_type(
+                    contract,
+                    POST,
+                    post_schema_with(platform_value!({ "canBeDeleted": false })),
+                );
+                add_document_type(
+                    contract,
+                    KEPT_POST,
+                    post_schema_with(platform_value!({
+                        "canBeDeleted": false,
+                        "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text"] },
+                    })),
+                );
+                add_document_type(
+                    contract,
+                    MEASURED,
+                    note_schema_of(platform_value!("moderatedDocument"), any_text(when)),
+                );
+            },
+        )
+        .await;
+        // A post has one property, so a slot taking any property tries one
+        assert_eq!(
+            setup
+                .contract
+                .document_type_for_name(target_type)
+                .expect("expected the type")
+                .properties()
+                .len(),
+            1
+        );
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let (target, create_target) = setup
+            .create_document_of_type(&setup.user, target_type)
+            .await;
+        assert_success(&setup.process(&create_target, &transaction));
+        let (_, create) = create_with(
+            &setup,
+            &setup.stranger,
+            MEASURED,
+            note_naming(setup.contract.id(), target_type, target.id()),
+        )
+        .await;
+        let execution = setup.process(&create, &transaction);
+        if target_type == POST {
+            assert_success(&execution);
+        } else {
+            assert_paid_with_code(&execution, REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET);
+        }
+        fee_of.push(processing_fee(&execution));
+    }
+    let [none, seven_accepted, nine_accepted, seven_refused, nine_refused] = fee_of[..] else {
+        panic!("expected five fees");
+    };
+
+    // One property tried: 1 comparison, 1 + 7 and 1 + 9
+    assert_eq!(seven_accepted - none, 7 * per_comparison);
+    assert_eq!(nine_accepted - seven_accepted, 2 * per_comparison);
+    // and a refused write pays for the judging that refused it
+    assert_eq!(nine_refused - seven_refused, 2 * per_comparison);
+}

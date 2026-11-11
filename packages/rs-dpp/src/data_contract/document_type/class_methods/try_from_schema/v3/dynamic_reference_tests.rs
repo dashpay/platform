@@ -1698,3 +1698,104 @@ fn should_read_a_stored_reference_naming_its_target_in_the_schema_as_it_was_regi
         )
     ));
 }
+
+/// A `when` is held to its nodes and to the length of its strings, so what one adds to a
+/// stored contract is bounded: each string an `in` or a `notIn` lists counts as a node, and
+/// no string is longer than a property path.
+#[test]
+fn should_bound_what_a_slot_condition_lists() {
+    let limits = &PlatformVersion::latest().system_limits;
+    let max_nodes = usize::from(limits.max_document_type_requirement_condition_nodes);
+    let max_length = usize::from(limits.max_document_type_requirement_condition_text_length);
+    let listing = |key: &str, count: usize| json!({ key: ["$property", (0..count).map(|index| format!("p{index}")).collect::<Vec<_>>()] });
+    let refused = |when: serde_json::Value, fragment: &str| {
+        assert_refused_by_the_parser(note_contract(requiring(body_when(when))), fragment);
+    };
+
+    // The list and the condition holding it: as many strings as the limit less one
+    for key in ["in", "notIn"] {
+        assert_eq!(
+            parsed_when(listing(key, max_nodes - 1)).node_count(),
+            max_nodes
+        );
+        refused(
+            listing(key, max_nodes),
+            &format!("when is made of more than {max_nodes} conditions, counting each string"),
+        );
+        // however many: the list is not read past the limit
+        refused(
+            listing(key, 50_000),
+            &format!("when is made of more than {max_nodes} conditions, counting each string"),
+        );
+    }
+    // The strings count with the conditions around them
+    refused(
+        json!({ "allOf": [
+            listing("in", max_nodes / 2),
+            listing("notIn", max_nodes / 2)
+        ] }),
+        &format!("when is made of more than {max_nodes} conditions"),
+    );
+
+    // A string is as long as a property path may be, and no longer
+    let long = |length: usize| "p".repeat(length);
+    parsed_when(json!({ "equal": ["$property", { "const": long(max_length) }] }));
+    refused(
+        json!({ "equal": ["$property", { "const": long(max_length + 1) }] }),
+        &format!("a string of 1 to {max_length} characters"),
+    );
+    parsed_when(json!({ "in": ["$property", [long(max_length), "body"]] }));
+    refused(
+        json!({ "in": ["$property", [long(max_length + 1), "body"]] }),
+        &format!("strings of 1 to {max_length} characters"),
+    );
+    refused(
+        json!({ "contains": ["$moderatorAbilities.changeFields", { "const": long(max_length + 1) }] }),
+        &format!("a string of 1 to {max_length} characters"),
+    );
+}
+
+/// Judging a type is billed by the comparisons it may take: each property a slot tries,
+/// and each node of the slot's `when` for it. The count reads the declaration and the size
+/// of the type, never what the type's properties are.
+#[test]
+fn should_count_the_comparisons_judging_a_type_takes() {
+    let parsed = |requirements_value: serde_json::Value| {
+        let parsed = contract(note_contract(requiring(requirements_value))).expect("parses");
+        let requirements = dynamic_reference(&parsed)
+            .requirements
+            .expect("requirements");
+        let post = parsed.document_type_for_name("post").expect("post");
+        (
+            requirements.comparisons(post),
+            post.properties().len() as u64,
+        )
+    };
+
+    // Any property: each of the type's is tried, whatever it holds
+    let (comparisons, properties) =
+        parsed(json!({ "properties": { "body": { "name": "$any", "type": "boolean" } } }));
+    assert_eq!(properties, 7);
+    assert_eq!(comparisons, properties);
+    // A named one: one, and one read from the document: one
+    let (comparisons, _) = parsed(json!({ "properties": {
+        "body": { "name": "body", "type": "string" },
+        "other": { "name": "$self.bodyProperty", "type": "string" }
+    } }));
+    assert_eq!(comparisons, 2);
+    // A `when` adds its nodes for each property tried, listed strings among them
+    let (comparisons, properties) = parsed(json!({ "properties": {
+        "body": {
+            "name": "$any",
+            "type": "string",
+            "when": { "notIn": ["$property", ["title", "summary", "label"]] }
+        },
+        "named": {
+            "name": "blob",
+            "type": "array",
+            "byteArray": true,
+            "when": { "not": { "equal": ["$property", { "const": "raw" }] } }
+        }
+    } }));
+    assert_eq!(comparisons, properties * (1 + 4) + (1 + 2));
+}

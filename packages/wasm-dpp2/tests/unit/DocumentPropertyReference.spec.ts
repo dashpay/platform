@@ -1162,7 +1162,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * ordinary key.
      */
     it('should keep a slot named __proto__ as an own key', () => {
-      const declared = JSON.stringify(namedSchemas.note.properties.descriptionId.refersTo);
+      const declared = JSON.stringify(
+        (namedSchemas.note.properties.descriptionId as { refersTo: object }).refersTo,
+      );
       // A replacer function: the text holds `$`, which a replacement string interprets
       const protoSchemas = JSON.parse(JSON.stringify(namedSchemas).replace(
         declared,
@@ -1183,6 +1185,97 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(Object.keys(slots)).to.deep.equal(['__proto__']);
       expect(Object.getPrototypeOf(slots)).to.equal(Object.prototype);
       expect(JSON.stringify(slots)).to.equal('{"__proto__":{"name":"$any","type":"string"}}');
+    });
+
+    /**
+     * `type` may list both kinds, reported as the list in its declared order
+     * of kinds, and a slot may carry a `when`, reported as declared: nested
+     * conditions, constants and listed strings (in order) included.
+     */
+    it('should report a type listing both kinds and a slot condition as declared', () => {
+      const when = {
+        ifThen: [
+          { equal: ['$kind', { const: 'moderatedDocument' }] },
+          {
+            allOf: [
+              { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$property'] } },
+              { not: { contains: ['$moderatorAbilities.changeFields', '$property'] } },
+            ],
+          },
+        ],
+      };
+      const eitherKind = structuredClone(namedSchemas);
+      (eitherKind.note.properties.descriptionId as { refersTo: object }).refersTo = {
+        // Given the other way round: reported permanent first
+        type: ['moderatedDocument', 'permanentDocument'],
+        contractId: '$self.descriptionContractId',
+        documentType: '$self.descriptionDocumentType',
+        documentTypeRequirements: {
+          properties: {
+            body: { name: '$any', type: 'string', when },
+            code: {
+              name: '$any',
+              type: 'string',
+              distinctFrom: 'body',
+              when: { notIn: ['$property', ['label', 'tags']] },
+            },
+          },
+        },
+      };
+      const [descriptionId] = buildNamedContract(eitherKind).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+
+      expect(descriptionId.type).to.deep.equal(['permanentDocument', 'moderatedDocument']);
+      expect(descriptionId.documentTypeRequirements).to.deep.equal({
+        properties: {
+          body: { name: '$any', type: 'string', when },
+          code: {
+            name: '$any',
+            type: 'string',
+            distinctFrom: ['body'],
+            when: { notIn: ['$property', ['label', 'tags']] },
+          },
+        },
+      });
+    });
+
+    it('should keep a slot named __proto__ with its condition as an own key', () => {
+      const declared = JSON.stringify(
+        (namedSchemas.note.properties.descriptionId as { refersTo: object }).refersTo,
+      );
+      const slot = '{"name":"$any","type":"string","when":{"notEqual":["$property",{"const":"title"}]}}';
+      const protoSchemas = JSON.parse(JSON.stringify(namedSchemas).replace(
+        declared,
+        () => `{
+          "type": "moderatedDocument",
+          "contractId": "$self.descriptionContractId",
+          "documentType": "$self.descriptionDocumentType",
+          "documentTypeRequirements": { "properties": { "__proto__": ${slot} } }
+        }`,
+      ));
+      const [descriptionId] = buildNamedContract(protoSchemas).documentTypeReferences(
+        'note',
+      ) as unknown as NamedReference[];
+      const slots = descriptionId.documentTypeRequirements!.properties;
+
+      expect(Object.keys(slots)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(slots)).to.equal(Object.prototype);
+      expect(JSON.stringify(slots)).to.equal(`{"__proto__":${slot}}`);
+    });
+
+    it('should refuse a list of kinds on a target the schema names', () => {
+      const listed = structuredClone(namedSchemas);
+      (listed.note.properties.descriptionId as { refersTo: object }).refersTo = {
+        type: ['permanentDocument', 'moderatedDocument'],
+        documentType: 'note',
+      };
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildNamedContract(listed, 15, fullValidation),
+          `full validation ${fullValidation}`,
+        ).to.throw();
+      }
     });
 
     it('should not read a target through the document before protocol version 15', () => {
