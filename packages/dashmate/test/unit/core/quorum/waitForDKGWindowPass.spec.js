@@ -1109,4 +1109,37 @@ describe('waitForDKGWindowPass', () => {
 
     expect(waiting.resolved).to.be.true();
   });
+
+  it('should keep blocking a running session through failed calls and a Core restart', async function it() {
+    // Waiting starts after the session's announcement is gone; a failed call
+    // and a restart later, Core reports nothing of the session.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_1,
+      height: start + 3,
+      dkgInfo: { active_dkgs: 1, next_dkg: 21 },
+      dkgStatus: {
+        session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+      },
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    core.down = false;
+    core.height = start + 4;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 20 };
+    core.dkgStatus = { session: [] };
+    await expectStillPolling(waiting, rpcClient);
+
+    core.height = start + 10;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 14 };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
 });
