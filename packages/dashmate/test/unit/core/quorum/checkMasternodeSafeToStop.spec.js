@@ -346,6 +346,23 @@ describe('checkMasternodeSafeToStop', () => {
       expect(result.status).to.equal('blocked');
     });
 
+    it('should not read Core\'s announcements as covering a tip that moved too far past them', async () => {
+      // Core lists a DKG once its work block, 8 blocks before its start, is
+      // mined. Read at start - 9, the list cannot hold a DKG starting at
+      // `start`, which the restart margin of start - 6 has to see.
+      core.version = CORE_24_0_PATCH;
+      core.height = start - 9;
+      core.dkgInfo = { active_dkgs: 0, next_dkg: 15, upcoming_dkgs: [] };
+      core.afterDkgStatus = () => {
+        core.height = start - 6;
+        core.afterDkgStatus = undefined;
+      };
+
+      const { result } = await startCheck();
+
+      expect(result.status).to.equal('unsettled');
+    });
+
     it('should count next_dkg from the earliest tip dkginfo may have seen', async () => {
       core.dkgInfo = { active_dkgs: 0, next_dkg: 7 };
 

@@ -13,6 +13,10 @@ import getDkgStopBlockers, {
  */
 export const SAFE_STOP_CONFIRMATION_DELAY_MS = 15000;
 
+// Core lists a DKG in `quorum dkginfo` once its work block, this many blocks
+// before the DKG starts, is mined (`llmq::WORK_DIFF_DEPTH`).
+const DKG_ANNOUNCEMENT_BLOCKS = 8;
+
 /**
  * Which stop rule applies depends on Core's version, so a version Core does
  * not report is an error rather than a guess.
@@ -59,6 +63,12 @@ async function readDkgSnapshot(rpcClient, ancestorHeight) {
   const isSyncing = before.initialblockdownload === true && after.initialblockdownload === true;
 
   if (!isSyncing && before.bestblockhash !== after.bestblockhash) {
+    return null;
+  }
+
+  // A list read at a lower tip lacks the DKGs starting past that tip's
+  // announcement horizon, which the restart margin of the later tip may need.
+  if (after.blocks - before.blocks > DKG_ANNOUNCEMENT_BLOCKS - MIN_BLOCKS_BEFORE_DKG) {
     return null;
   }
 
