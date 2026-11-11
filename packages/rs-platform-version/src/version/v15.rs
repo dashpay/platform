@@ -405,12 +405,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     Core block has payload version 4 or higher, which Core requires exactly while V24 is
 ///     active. The first block that sees it active stores the height in `Misc`
 ///     (`CORE_FORK_V24_ACTIVATION_KEY`, a big endian `u32` written once, through
-///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and no
-///     later block asks Core about V24. A chain born at this version asks at init chain, at
-///     the genesis core height. A block that keeps the chain locked height asks nothing, so
-///     a chain upgraded to this version records V24 at its first block that moves the height
-///     to one where V24 is active, which can be a few blocks after Core activated it. A Core
-///     error or a coinbase without a payload fails the block, as other Core errors in
+///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and
+///     `update_core_info` does not ask Core about V24 again. The masternode list's operator
+///     key normalization reads the record too (`update_masternode_list` 2, note 32), where
+///     `update_state_masternode_list` v0 and v1 ask Core at the block's chain locked height
+///     when Core re-reports an operator key unchanged or re-encoded. A chain born at this
+///     version asks at init chain, at the genesis core height. A block that keeps the chain
+///     locked height asks nothing, so a chain upgraded to this version records V24 at its
+///     first block that moves the height to one where V24 is active. The recorded height is
+///     the chain locked height at which Platform first observed V24 active, not Core's
+///     activation height, and it can trail that height without bound: on a chain where V24
+///     was active long before the upgrade, it is the chain locked height of that first block.
+///     A Core error or a coinbase without a payload fails the block, as other Core errors in
 ///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
 ///     neither asks nor records.
 ///
@@ -471,8 +477,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     so the returning key stayed disabled, every vote of the masternode was refused
 ///     (`PublicKeyIsDisabledError`), and the key of the address it left stayed enabled,
 ///     though it cannot vote for the masternode. Version 1 (`DRIVE_ABCI_METHOD_VERSIONS_V11`)
-///     re-enables the key of the returning identity. Protocol v14 and earlier keep
-///     `update_voter_identity` 0.
+///     re-enables the key of the returning identity. It applies to voting address changes from
+///     this protocol version on and repairs nothing at activation: a masternode whose returning
+///     key version 0 left disabled cannot vote until its voting address changes again, and
+///     that change leaves the key of the identity it moves to enabled, as for any other
+///     masternode. Protocol v14 and earlier keep `update_voter_identity` 0.
 ///
 /// 23. **An identity create's identity id is checked in basic structure**: the identity create
 ///     `basic_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses, without a fee, an
