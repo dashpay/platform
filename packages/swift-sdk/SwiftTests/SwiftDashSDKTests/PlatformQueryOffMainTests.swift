@@ -1,4 +1,5 @@
 import Foundation
+import os
 import XCTest
 
 @testable import SwiftDashSDK
@@ -43,6 +44,47 @@ final class PlatformQueryOffMainTests: XCTestCase {
 
     let released = try await waitResult
     XCTAssertTrue(released, "the parked query was not released by the main actor")
+  }
+
+  /// `identityGet` and `dpnsGetUsername` make their FFI call without the
+  /// main actor: the main thread is held for the whole of both calls, and
+  /// each still returns (with the mock's missing-expectation error) before it
+  /// is released. A call that needed the main actor would wait until the hold
+  /// timed out.
+  func testIdentityReadsDoNotNeedTheMainActor() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    let mainHeld = DispatchSemaphore(value: 0)
+    let releaseMain = DispatchSemaphore(value: 0)
+    let holdTimedOut = OSAllocatedUnfairLock(initialState: false)
+
+    DispatchQueue.main.async {
+      mainHeld.signal()
+      if releaseMain.wait(timeout: .now() + 5) == .timedOut {
+        holdTimedOut.withLock { $0 = true }
+      }
+    }
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global().async {
+        mainHeld.wait()
+        continuation.resume()
+      }
+    }
+
+    do {
+      _ = try await sdk.identityGet(identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk")
+      XCTFail("identityGet should fail without recorded responses")
+    } catch {}
+
+    do {
+      _ = try await sdk.dpnsGetUsername(
+        identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk", limit: 1)
+      XCTFail("dpnsGetUsername should fail without recorded responses")
+    } catch {}
+
+    let returnedWhileMainWasHeld = !holdTimedOut.withLock { $0 }
+    releaseMain.signal()
+    XCTAssertTrue(
+      returnedWhileMainWasHeld, "an identity read waited for the main actor")
   }
 
   /// The off-main entry points marshal their arguments, make the FFI call and
