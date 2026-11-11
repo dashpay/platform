@@ -448,7 +448,12 @@ fn should_refuse_a_dynamic_target_anywhere_but_on_an_identifier_property() {
     let mut on_a_string = note_contract(text_or_bytes());
     on_a_string["documentSchemas"]["note"]["properties"]["descriptionId"] =
         json!({ "type": "string", "maxLength": 64, "position": 0, "refersTo": text_or_bytes() });
-    assert_refused_by_the_parser(on_a_string, "only allowed on identifier properties");
+    // The whole sentence, which travels in a consensus error: one space between its lines
+    assert_refused_by_the_parser(
+        on_a_string,
+        "a refersTo naming its target through contractIdProperty and documentTypeProperty is \
+         only allowed on identifier properties: its value is the referenced document's id",
+    );
 
     // On the elements of a typed array
     let mut on_elements = note_contract(text_or_bytes());
