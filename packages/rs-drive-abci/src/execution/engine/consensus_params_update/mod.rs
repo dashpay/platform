@@ -600,6 +600,7 @@ mod tests {
 mod evidence_policy_tests {
     use super::*;
     use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use dpp::version::PLATFORM_VERSIONS;
     use prost::Message;
 
     fn epoch_info(is_epoch_change: bool, current_epoch_index: u16) -> EpochInfo {
@@ -748,6 +749,37 @@ mod evidence_policy_tests {
                         && params.abci.is_none()
                 );
             }
+        }
+    }
+
+    /// Tenderdash refuses consensus parameters that break the evidence rules of its
+    /// `ValidateConsensusParams` (`types/params.go`): ages in blocks and in time above zero and
+    /// a byte budget that is not negative. A refused update fails the activation block on every
+    /// node, and again after each restart, so the chain halts. The age in time must also fit the
+    /// Go `time.Duration` Tenderdash decodes it into.
+    #[test]
+    fn should_have_an_evidence_policy_tenderdash_accepts_in_every_platform_version() {
+        assert!(
+            PLATFORM_VERSIONS
+                .iter()
+                .any(|platform_version| platform_version.consensus.evidence.is_some()),
+            "some protocol version sets an evidence policy"
+        );
+        for platform_version in PLATFORM_VERSIONS {
+            let Some(evidence) = platform_version.consensus.evidence else {
+                continue;
+            };
+            let case = format!(
+                "protocol version {}: {evidence:?}",
+                platform_version.protocol_version
+            );
+            assert!(evidence.max_age_num_blocks > 0, "{case}");
+            assert!(evidence.max_age_duration_seconds > 0, "{case}");
+            assert!(
+                evidence.max_age_duration_seconds <= i64::MAX / 1_000_000_000,
+                "{case}: the age in time overflows a Go time.Duration"
+            );
+            assert!(evidence.max_bytes >= 0, "{case}");
         }
     }
 
