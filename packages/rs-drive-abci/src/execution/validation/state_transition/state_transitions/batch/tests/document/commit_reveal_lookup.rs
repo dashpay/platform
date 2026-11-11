@@ -61,10 +61,8 @@ mod commit_reveal_lookup_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::util::hash::hash_double;
     use dpp::version::DefaultForPlatformVersion;
-    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
     use drive::query::DriveDocumentQuery;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocumentRead;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
     use dpp::validation::SimpleConsensusValidationResult;
     use dpp::platform_value::string_encoding::Encoding;
@@ -1362,12 +1360,11 @@ mod commit_reveal_lookup_tests {
         );
         // Generation 1 (protocol version 15) keeps what the lookup read, for the create to
         // delete the commitment from: the stored preorder whole, which its index removals are
-        // built from, and its element's flags, which its refund goes by. Every block of the
-        // fixture is in epoch 0, and the preorder is Alice's
-        let (stored, stored_flags) = fixture
+        // built from
+        let stored = fixture
             .platform
             .drive
-            .query_documents_with_flags(
+            .query_documents(
                 DriveDocumentQuery::new_primary_key_single_item_query(
                     &fixture.contract,
                     fixture
@@ -1385,17 +1382,7 @@ mod commit_reveal_lookup_tests {
             .documents_owned()
             .pop()
             .expect("expected the stored preorder");
-        assert_eq!(
-            stored_flags,
-            Some(StorageFlags::new_single_epoch(0, Some(alice.to_buffer())))
-        );
-        assert_eq!(
-            consumed[0].document.read,
-            Some(ConsumedDocumentRead {
-                document: stored,
-                storage_flags: stored_flags,
-            })
-        );
+        assert_eq!(consumed[0].document.read, Some(stored));
 
         // A replace neither reads nor consumes: the commitment was revealed once
         let changed = BTreeSet::from(["label".to_string()]);
@@ -1843,11 +1830,10 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// Only a lookup declaring `consume` reads the storage flags of what it finds from protocol
-    /// version 15. A lookup that does not consume reads as before, so a post finding its
-    /// handle, and one finding none, cost the same at protocol versions 14 and 15. The handle
-    /// is keyed by its name alone, then by its owner and its name, where a writer with no
-    /// handle finds no tree of their own under the index's owner level.
+    /// A lookup that does not consume reads and bills at protocol version 15 as at 14, so a post
+    /// finding its handle, and one finding none, cost the same at both. The handle is keyed by
+    /// its name alone, then by its owner and its name, where a writer with no handle finds no
+    /// tree of their own under the index's owner level.
     #[tokio::test]
     async fn should_bill_a_lookup_that_does_not_consume_the_same_at_protocol_versions_14_and_15() {
         for keyed_by_owner in [false, true] {
@@ -1897,13 +1883,11 @@ mod commit_reveal_lookup_tests {
         }
     }
 
-    /// From protocol version 15 a consuming lookup reads through `query_documents_with_flags`,
-    /// where generation 0 reads through `query_documents`. Their GroveDB calls part ways only
-    /// past a layer a query item misses: `query` goes on with the next item, `query_item_value`
-    /// stops. A lookup fixes every property of a unique index, one key a layer, so a consuming
-    /// lookup that finds nothing stops at the same layer either way and pays the same. Pinned
-    /// for a commitment no preorder holds, a voucher nobody made, and a voucher keyed by its
-    /// owner, whose writer holds no tree under the owner level, or holds another serial.
+    /// A consuming lookup reads and bills at protocol version 15 as at 14: only what the create
+    /// does with the document found changes. So a consuming lookup that finds nothing refuses
+    /// the create for the same fee at both. Pinned for a commitment no preorder holds, a voucher
+    /// nobody made, and a voucher keyed by its owner, whose writer holds no tree under the owner
+    /// level, or holds another serial.
     #[tokio::test]
     async fn should_bill_a_consuming_lookup_that_finds_nothing_the_same_at_protocol_versions_14_and_15(
     ) {

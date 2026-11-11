@@ -64,9 +64,7 @@ use drive::drive::identity::key::fetch::{
 use drive::query::{TransactionArg, WhereClause, WhereOperator};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
-    ConsumedDocument, ConsumedDocumentRead,
-};
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use std::slice;
@@ -81,23 +79,18 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_document_with_id, fetch_documents_holding_in_order, hash_lookup_key, holds_key_part,
-    BilledLookupKey,
+    fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_in_order,
+    hash_lookup_key, holds_key_part, BilledLookupKey,
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
-use drive::util::storage_flags::StorageFlags;
 use crate::execution::validation::state_transition::common::validate_document_not_expired::document_is_expired;
 use crate::platform_types::platform::PlatformStateRef;
 
-mod lookup;
-
-use lookup::fetch_document_with_flags_through_lookup;
-
 /// Versioned, stateful validation of document references using the v1 rules (protocol
 /// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
-/// reads the document it finds with its stored element's storage flags and keeps that read in
-/// the [`ConsumedDocument`] it records, so the create conversion 1 deletes the document from it
-/// without reading it again. Any other lookup reads as generation 0's does.
+/// keeps the document it finds in the [`ConsumedDocument`] it records, so the create
+/// conversion 1 deletes the document from it without reading it again. Every lookup reads as
+/// generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
@@ -1387,7 +1380,7 @@ fn validate_reference_target_v1(
                     }
                 }
             };
-            let mut looked_up_document: Option<(Document, Option<StorageFlags>)> = None;
+            let mut looked_up_document: Option<Document> = None;
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
@@ -1402,7 +1395,7 @@ fn validate_reference_target_v1(
                             &id_value
                         }
                     };
-                    looked_up_document = fetch_document_with_flags_through_lookup(
+                    looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
@@ -1417,7 +1410,7 @@ fn validate_reference_target_v1(
                         transaction,
                         platform_version,
                     )?;
-                    looked_up_document.as_ref().map(|(document, _)| document)
+                    looked_up_document.as_ref()
                 }
                 (None, Some(document_id)) => fetched_documents.document(
                     effective_contract_id,
@@ -1700,18 +1693,13 @@ fn validate_reference_target_v1(
             // The commitment the reference consumes, recorded once nothing above reads it any
             // more: what the lookup read moves into it, so the create deletes the document from
             // that read without reading it again
-            if let (Some(lookup), Some((document, storage_flags))) =
-                (lookup, looked_up_document.take())
-            {
+            if let (Some(lookup), Some(document)) = (lookup, looked_up_document.take()) {
                 if lookup.consume {
                     consumed_documents.push(ConsumedLookupDocument {
                         document: ConsumedDocument {
                             document_id: document.id(),
                             document_type_name: document_type_name.to_string(),
-                            read: Some(ConsumedDocumentRead {
-                                document,
-                                storage_flags,
-                            }),
+                            read: Some(document),
                         },
                         referenced_id: Identifier::from(referenced_id),
                         reference_target: reference_target.clone(),

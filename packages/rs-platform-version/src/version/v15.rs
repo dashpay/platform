@@ -239,17 +239,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     a simple majority) of yes plus no. Decision proposals (note 12) open the polls.
 ///
 /// 11. **A consume deletes what its lookup read**: document reference validation 1
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) reads the commitment that the `refersTo` lookup of
-///     a reference declaring `consume` finds with its stored element's storage flags
-///     (`query_documents_with_flags`), and keeps that read in the `ConsumedDocument`. Any other
-///     lookup reads as document reference validation 0's does. The create
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) keeps the commitment that the `refersTo` lookup of
+///     a reference declaring `consume` finds in the `ConsumedDocument`; every lookup reads as
+///     document reference validation 0's does. The create
 ///     conversion 1 (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5`, which `DRIVE_VERSION_V10`
 ///     selects) deletes the document from it
 ///     (`Drive::force_delete_read_document_for_contract_operations`, the force delete's
 ///     operations less its read), where conversion 0 deletes it by id and bills a second read.
-///     A consume costs one document read less: a DPNS v3 name create's processing fee drops by
-///     10,660 credits. Storage fees and refunds are unchanged. Protocol v14 and earlier keep
-///     document reference validation 0 and the create conversion 0.
+///     A consume costs one document read fewer. What that read cost depends on where the
+///     commitment sits in its tree, so the drop differs from create to create (10,660 credits
+///     for the DPNS v3 name create the tests pin). Storage fees and refunds are unchanged.
+///     Protocol v14 and earlier keep document reference validation 0 and the create
+///     conversion 0.
 ///
 /// 12. **Decision proposals**: the decision proposals system contract
 ///     (`SystemDataContract::DecisionProposals`, `SYSTEM_DATA_CONTRACT_VERSIONS_V4`'s
