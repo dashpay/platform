@@ -18,6 +18,12 @@ struct AddContactView: View {
     let onSent: (Identifier, String?) -> Void
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// Observed for its bind: binding the shielded account restores the
+    /// wallet's private payments, so the readiness is read again then.
+    @EnvironmentObject var shieldedService: ShieldedService
+    /// Read for why the shielded store could not be opened, which keeps the
+    /// wallet's private payments waiting.
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -50,8 +56,42 @@ struct AddContactView: View {
     /// as the contact's "Their account" hint.
     @State private var accountLabel = ""
 
+    /// Send a private contact request (protocol version 15): paid from the
+    /// wallet's shielded balance, so nothing on chain names either side.
+    @State private var sendPrivately = false
+
     @State private var isSending = false
     @State private var errorMessage: String?
+
+    /// Set when a private send or reply may have gone through (its result
+    /// could not be confirmed): the view only offers to close, never to
+    /// submit again, as `SendTransactionView` does for an unconfirmed spend.
+    @State private var unconfirmedNotice: String?
+
+    /// Whether the wallet holds the pair with the resolved recipient for a
+    /// private request, as a send decides it (in flight, paid and not yet
+    /// read back, or kept by the shielded store's journal until the payment
+    /// is proven never to land), or for a public request awaiting its
+    /// outcome (`contactRequestHolds`). While it does, Send is off and the
+    /// footer offers the sync that settles it: the private one, which reads a
+    /// landed request back, or the DashPay one, which settles a public
+    /// request. Read from the wallet, so reopening this sheet keeps it. A
+    /// failed read keeps Send off until a read succeeds.
+    @State private var recipientPending = PrivateRepliesPendingSnapshot()
+
+    /// Why the shielded store could not be opened, as last read with the
+    /// pending state; nil when it is open.
+    @State private var shieldedStoreFailure: String?
+
+    /// The automatic refreshes made since the wallet's private payments were
+    /// last read restored (`PrivatePaymentsRecovery.recheckDelay`).
+    @State private var readinessRechecks = 0
+
+    /// A private sync the footer started is running.
+    @State private var isSyncingPrivate = false
+
+    /// A DashPay sync the footer started is running.
+    @State private var isCheckingPublic = false
 
     /// Send-collision flow.
     @State private var showCollisionAlert = false
@@ -90,6 +130,19 @@ struct AddContactView: View {
         resolvedRecipient != nil
             && resolvedRecipient != identity.identityId
             && !isSending
+            && unconfirmedNotice == nil
+            && resolvedRecipient.map(recipientPending.allowsSubmission(to:)) == true
+    }
+
+    /// Whether the footer shows the recipient's pending state: the wallet's
+    /// private payments are being restored, a request to them awaits its
+    /// outcome, a private request to them is pending, or the wallet could
+    /// not be read.
+    private var recipientBlocked: Bool {
+        guard let recipient = resolvedRecipient else { return false }
+        return recipientPending.isRestoringPrivatePayments
+            || recipientPending.isAwaitingOutcome(recipient)
+            || recipientPending.isPending(recipient) || recipientPending.isUnavailable
     }
 
     var body: some View {
@@ -114,6 +167,7 @@ struct AddContactView: View {
                     if let recipient = resolvedRecipient {
                         previewSection(recipient: recipient)
                         accountLabelSection
+                        sendPrivatelySection
                         sendSection
                     }
 
@@ -127,6 +181,30 @@ struct AddContactView: View {
                 }
             }
             .navigationTitle("Add Contact")
+            .task(id: resolvedRecipient) { reloadRecipientPending() }
+            // While the wallet's private payments stay unrestored, refresh
+            // again after a pause: a restoration the wallet deferred behind a
+            // busy store completes later and changes nothing this view
+            // observes.
+            .task(id: readinessRechecks) {
+                guard readinessRechecks > 0 else { return }
+                let due = await PrivatePaymentsRecovery.waitForRecheck(
+                    after: recipientPending.readiness, attempt: readinessRechecks - 1,
+                    sleep: { try await Task.sleep(for: $0) })
+                if due { reloadRecipientPending() }
+            }
+            // A deferred restoration runs once the shielded scan holding the store
+            // ends: refresh then too, ahead of the timer.
+            .onChange(of: shieldedService.isSyncing) { _, syncing in
+                if !syncing { reloadRecipientPending() }
+            }
+            .onChange(of: shieldedService.isBound) { _, _ in reloadRecipientPending() }
+            // A DashPay sync settles a public request awaiting its outcome:
+            // read the recipient's holds again when one ends, the background
+            // pass included.
+            .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
+                if !syncing { reloadRecipientPending() }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -140,14 +218,24 @@ struct AddContactView: View {
                 isPresented: $showCollisionAlert,
                 presenting: collisionRecipient
             ) { recipient in
-                Button("Accept") {
+                Button(CollisionAccept.of(sendPrivately: sendPrivately).buttonTitle) {
                     acceptIncoming(from: recipient)
                 }
                 Button("Continue anyway") {
                     send(to: recipient)
                 }
             } message: { _ in
-                Text("This person already sent you a request — accept it instead?")
+                Text(CollisionAccept.of(sendPrivately: sendPrivately).message)
+            }
+            .alert(
+                "Submitted",
+                isPresented: .constant(unconfirmedNotice != nil)
+            ) {
+                Button("Done") { dismiss() }
+            } message: {
+                if let unconfirmedNotice {
+                    Text(unconfirmedNotice)
+                }
             }
         }
     }
@@ -357,6 +445,15 @@ struct AddContactView: View {
         }
     }
 
+    private var sendPrivatelySection: some View {
+        Section {
+            Toggle("Send privately", isOn: $sendPrivately)
+                .accessibilityIdentifier("dashpay.addContact.sendPrivately")
+        } footer: {
+            Text("Paid from this wallet's shielded balance, so nothing on chain names either of you.")
+        }
+    }
+
     private var sendSection: some View {
         Section {
             Button {
@@ -374,6 +471,110 @@ struct AddContactView: View {
             }
             .disabled(!canSend)
             .accessibilityIdentifier("dashpay.addContact.send")
+        } footer: {
+            if let recipient = resolvedRecipient, recipientBlocked {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(ContactRequestSubmissionOutcome.rowMessage(
+                        pending: recipientPending.isPending(recipient),
+                        awaitingOutcome: recipientPending.isAwaitingOutcome(recipient),
+                        restoring: recipientPending.isRestoringPrivatePayments,
+                        restoreFailure: recipientPending.restoreFailure,
+                        shieldedStoreFailure: shieldedStoreFailure,
+                        unavailable: recipientPending.isUnavailable,
+                        error: nil
+                    ) ?? "")
+                    .accessibilityIdentifier("dashpay.addContact.pending")
+                    // A DashPay sync settles a public request awaiting its
+                    // outcome, and a private sync a pending private request;
+                    // neither restores private payments, so neither is offered
+                    // for that.
+                    if recipientPending.isRestoringPrivatePayments {
+                        EmptyView()
+                    } else if recipientPending.isAwaitingOutcome(recipient) {
+                        Button {
+                            checkPublicRequest()
+                        } label: {
+                            if isCheckingPublic {
+                                ProgressView()
+                            } else {
+                                Text("Check again")
+                            }
+                        }
+                        .disabled(isCheckingPublic)
+                        .accessibilityIdentifier("dashpay.addContact.checkPublic")
+                    } else {
+                        Button {
+                            syncPrivateRequests()
+                        } label: {
+                            if isSyncingPrivate {
+                                ProgressView()
+                            } else {
+                                Text("Sync private requests")
+                            }
+                        }
+                        .disabled(isSyncingPrivate)
+                        .accessibilityIdentifier("dashpay.addContact.syncPrivate")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Re-read from the wallet its readiness (`PrivatePaymentsRecovery.refresh`:
+    /// the wallet is asked to retry a restoration first when its payments are
+    /// not restored, and the readiness shown is read after that), then
+    /// whether it holds the pair with the resolved recipient for a private
+    /// request or for a public request awaiting its outcome, and keep
+    /// refreshing on a timer while the payments stay unrestored.
+    private func reloadRecipientPending() {
+        let contactIds = resolvedRecipient.map { [$0] } ?? []
+        let wallet = try? requireWallet()
+        let identityId = identity.identityId
+        let refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness: recipientPending.readiness,
+            storeFailure: walletManagerStore.shieldedStoreFailure(of: walletManager),
+            readReadiness: { privateContactReadiness(wallet: wallet, identityId: identityId) },
+            configureAgain: { walletManagerStore.configureShieldedAgain(walletManager) }
+        )
+        recipientPending.recordReadiness(refreshed.readiness, restoreFailure: refreshed.restoreFailure)
+        shieldedStoreFailure = refreshed.storeFailure
+        recipientPending.record(
+            contactRequestHolds(wallet: wallet, identityId: identityId, contactIds: contactIds),
+            for: contactIds
+        )
+        if PrivatePaymentsRecovery.recheckDelay(after: recipientPending.readiness, attempt: readinessRechecks) != nil {
+            readinessRechecks += 1
+        } else if recipientPending.readiness?.privatePaymentsRestored == true {
+            readinessRechecks = 0
+        }
+    }
+
+    /// Read the private store, which settles a pending private request, then
+    /// re-read the recipient's pending state: Send comes back once nothing
+    /// is pending, for the user to try again.
+    private func syncPrivateRequests() {
+        isSyncingPrivate = true
+        Task { @MainActor in
+            defer { isSyncingPrivate = false }
+            if let wallet = try? requireWallet() {
+                if let notice = await syncPrivateContactRequests(wallet) {
+                    errorMessage = notice
+                }
+            }
+            reloadRecipientPending()
+        }
+    }
+
+    /// Run a DashPay sync, which settles a public request awaiting its
+    /// outcome first (attaching to one already running), then re-read the
+    /// recipient's holds: Send comes back once the wallet frees the pair,
+    /// and a request found is recorded as sent.
+    private func checkPublicRequest() {
+        isCheckingPublic = true
+        Task { @MainActor in
+            defer { isCheckingPublic = false }
+            await attachOrStartSync(walletManager)
+            reloadRecipientPending()
         }
     }
 
@@ -451,19 +652,60 @@ struct AddContactView: View {
             defer { isSending = false }
             do {
                 let wallet = try requireWallet()
-                let signer = KeychainSigner(modelContainer: modelContext.container)
                 let label = accountLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-                _ = try await wallet.sendContactRequest(
-                    senderIdentityId: identity.identityId,
-                    recipientIdentityId: recipient,
-                    accountLabel: label.isEmpty ? nil : label,
-                    signer: signer
-                )
+                // Both sends sign with the same identity signer.
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                if sendPrivately {
+                    _ = try await walletManager.sendPrivateContactRequest(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        senderIdentityId: identity.identityId,
+                        recipientIdentityId: recipient,
+                        accountLabel: label.isEmpty ? nil : label,
+                        signer: signer
+                    )
+                } else {
+                    _ = try await wallet.sendContactRequest(
+                        senderIdentityId: identity.identityId,
+                        recipientIdentityId: recipient,
+                        accountLabel: label.isEmpty ? nil : label,
+                        signer: signer
+                    )
+                }
                 onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                let outcome = ContactRequestSubmissionOutcome.of(error)
+                recipientPending.recordOutcome(outcome, for: recipient)
+                switch outcome {
+                case .mayHaveGoneThrough:
+                    // Pending, not failed: the next sync settles it.
+                    onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
+                    kickDashPaySync(walletManager)
+                    unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .publicRequestUnconfirmed:
+                    // Nothing was signed: an earlier public request to the
+                    // recipient awaits its outcome. The footer shows it being
+                    // checked, with the DashPay sync, never a retry.
+                    kickDashPaySync(walletManager)
+                case .privateRequestPending:
+                    // Nothing was sent: the wallet holds the pair. The footer
+                    // shows it as pending, with the private sync, until the
+                    // per-contact read says it is free.
+                    break
+                case .privatePaymentsNotRestored:
+                    // Nothing was sent: the footer shows the wallet setting up
+                    // its private payments until its readiness says restored.
+                    break
+                case .privateStoreNotRead:
+                    // Nothing was sent and nothing is pending: Send stays on,
+                    // and sending again continues the read.
+                    errorMessage = ContactRequestSubmissionOutcome.privateStoreNotReadMessage
+                case .failed(let message):
+                    errorMessage = message
+                }
+                reloadRecipientPending()
             }
         }
     }
@@ -472,6 +714,11 @@ struct AddContactView: View {
     /// `ContactRequest` and accept it — establishing the contact
     /// directly instead of sending a redundant request.
     private func acceptIncoming(from recipient: Identifier) {
+        // A private request to this contact may be pending in the wallet.
+        guard recipientPending.allowsSubmission(to: recipient) else { return }
+        // "Send privately" is the user's choice of a private request, so it
+        // holds for the accept too (`CollisionAccept`).
+        let accept = CollisionAccept.of(sendPrivately: sendPrivately)
         isSending = true
         errorMessage = nil
         Task { @MainActor in
@@ -486,11 +733,50 @@ struct AddContactView: View {
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                _ = try await wallet.acceptContactRequest(request, signer: signer)
+                switch accept {
+                case .privateReply:
+                    // A private reply, paid from the shielded balance, even to
+                    // a request that came publicly.
+                    _ = try await walletManager.acceptPrivateContactRequest(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        request: request,
+                        signer: signer
+                    )
+                case .replyInKind:
+                    // The wallet replies the way the request came: privately
+                    // (paid from the shielded balance) or with a document.
+                    _ = try await walletManager.acceptContactRequestReplyingInKind(
+                        walletId: wallet.walletId,
+                        resolver: MnemonicResolver(),
+                        request: request,
+                        signer: signer
+                    )
+                }
                 kickDashPaySync(walletManager)
                 dismiss()
             } catch {
-                errorMessage = "Accept failed: \(error.localizedDescription)"
+                let outcome = ContactRequestSubmissionOutcome.of(error)
+                recipientPending.recordOutcome(outcome, for: recipient)
+                switch outcome {
+                case .mayHaveGoneThrough:
+                    kickDashPaySync(walletManager)
+                    unconfirmedNotice = ContactRequestSubmissionOutcome.mayHaveGoneThroughMessage
+                case .publicRequestUnconfirmed:
+                    // Nothing was signed: the footer shows the pair being
+                    // checked, with the DashPay sync, never a retry.
+                    kickDashPaySync(walletManager)
+                case .privateRequestPending:
+                    // Nothing was sent: the footer offers the private sync.
+                    break
+                case .privatePaymentsNotRestored:
+                    break
+                case .privateStoreNotRead:
+                    errorMessage = ContactRequestSubmissionOutcome.privateStoreNotReadMessage
+                case .failed(let message):
+                    errorMessage = "Accept failed: \(message)"
+                }
+                reloadRecipientPending()
             }
         }
     }

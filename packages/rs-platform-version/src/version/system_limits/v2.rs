@@ -23,6 +23,7 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_references_per_document: 256,
     max_reference_operands: 4,
     max_reference_expression_depth: 4,
+    max_document_type_requirement_slots: 4,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
     max_property_constraint_aggregates: 4,

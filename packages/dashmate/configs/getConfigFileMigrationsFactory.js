@@ -1868,7 +1868,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '5.1.0-beta.1': (configFile) => {
+      '5.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             // From protocol version 15 Drive reads, with protx info, the operator payout of a

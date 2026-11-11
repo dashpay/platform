@@ -403,6 +403,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentTypePrivateError(_) => 40150,
             Self::DocumentTypeNotPrivateError(_) => 40151,
             Self::PrivateDocumentEntrySizeMismatchError(_) => 40152,
+            Self::ReferencedDocumentTypeRequirementNotMetError(_) => 40153,
             Self::TokenNotTradeableError(_) => 40750,
             Self::TokenOrderNotFoundError(_) => 40751,
             Self::TokenOrderFillAmountError(_) => 40753,

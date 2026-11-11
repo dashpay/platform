@@ -85,6 +85,7 @@ use crate::consensus::state::document::referenced_document_removed_error::Refere
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use crate::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use crate::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
 use crate::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
@@ -772,6 +773,11 @@ pub enum StateError {
 
     #[error(transparent)]
     PrivateDocumentEntrySizeMismatchError(PrivateDocumentEntrySizeMismatchError),
+
+    // A document reference naming its target through the referring document points at a
+    // document type that does not meet its `documentTypeRequirements` (protocol version 15).
+    #[error(transparent)]
+    ReferencedDocumentTypeRequirementNotMetError(ReferencedDocumentTypeRequirementNotMetError),
 
     // The token marketplace (protocol version 15).
     #[error(transparent)]
@@ -1779,33 +1785,45 @@ mod tests {
             )),
             180
         );
+        // A dynamic document reference's unmet `documentTypeRequirements` (protocol version
+        // 15).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeRequirementNotMetError(
+                ReferencedDocumentTypeRequirementNotMetError::new(
+                    identity_id,
+                    "post".to_string(),
+                    "descriptionId".to_string(),
+                )
+            )),
+            181
+        );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenNotTradeableError(
                 TokenNotTradeableError::new(Identifier::from([1; 32]))
             )),
-            181
+            182
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderNotFoundError(
                 TokenOrderNotFoundError::new(Identifier::from([1; 32]), TokenOrderSide::Ask)
             )),
-            182
+            183
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderFillAmountError(
                 TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
             )),
-            183
+            184
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderPriceLimitError(
                 TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
             )),
-            184
+            185
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
@@ -1816,21 +1834,21 @@ mod tests {
                     Identifier::from([1; 32])
                 )
             )),
-            185
+            186
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderSelfFillError(
                 TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
             )),
-            186
+            187
         );
         // The token marketplace (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::TokenOrderDecimalsMismatchError(
                 TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
             )),
-            187
+            188
         );
     }
 }
