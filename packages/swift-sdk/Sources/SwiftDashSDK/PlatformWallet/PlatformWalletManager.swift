@@ -713,6 +713,13 @@ public class PlatformWalletManager: ObservableObject {
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
 
+    /// Test seam for the native call behind
+    /// `shieldedShieldFromIdentityToRecipient`, so its shutdown admission is
+    /// tested without a signer or network; same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
+        platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
     internal var nativePollCalls = PlatformWalletNativePollCalls.live

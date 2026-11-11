@@ -82,6 +82,13 @@ public struct ShieldedSyncEvent: Sendable {
     }
 }
 
+/// The native shield-from-identity-to-recipient call; injectable through
+/// `PlatformWalletManager.nativeShieldFromIdentityToRecipientCall`.
+typealias ShieldFromIdentityToRecipientCall = @Sendable (
+    Handle, UnsafePointer<UInt8>, UInt32, UnsafePointer<UInt8>, UnsafePointer<UInt8>,
+    UInt64, OpaquePointer, UnsafeMutablePointer<UInt64>
+) -> PlatformWalletFFIResult
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -1000,6 +1007,11 @@ extension PlatformWalletManager {
     /// compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
     /// Returns the identity's proven post-debit balance; any unconfirmed
     /// outcome throws `.shieldedSpendUnconfirmed` (do not resubmit).
+    ///
+    /// Admitted as an async native operation until the result is delivered:
+    /// `shutdown()` waits for it, a call made once a shutdown has begun throws
+    /// `invalidHandle` before any native work, and the synchronous wallet
+    /// create, load and delete throw `invalidHandle` while it is in flight.
     @discardableResult
     public func shieldedShieldFromIdentityToRecipient(
         walletId: Data,
@@ -1030,8 +1042,15 @@ extension PlatformWalletManager {
             )
         }
 
+        // Admitted through the detached call and the result delivery, like
+        // `withWalletDrainNativeOperation`: `shutdown()` waits for the spend
+        // before destroying the handle, and `deleteWallet` is rejected while
+        // it runs. Cancelling the caller does not release it early.
+        try admitNativeOp("shieldedShieldFromIdentityToRecipient")
+        defer { finishNativeOp() }
         let handle = self.handle
         let signerHandle = identitySigner.handle
+        let shield = nativeShieldFromIdentityToRecipientCall
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             var newBalance: UInt64 = 0
@@ -1057,7 +1076,7 @@ extension PlatformWalletManager {
                                     "recipientRaw43 baseAddress is nil"
                                 )
                             }
-                            try platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                            try shield(
                                 handle, widPtr, shieldedAccount, idPtr, rcpPtr, amount,
                                 signerHandle, &newBalance
                             ).check()
