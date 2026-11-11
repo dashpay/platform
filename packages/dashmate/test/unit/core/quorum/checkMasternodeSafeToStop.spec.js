@@ -276,6 +276,24 @@ describe('checkMasternodeSafeToStop', () => {
     expect(state.result.isReorg).to.not.equal(true);
   });
 
+  it('should report a replaced chain when the previous check\'s tip is replaced during the reads', async () => {
+    // A syncing Core's tip may move during the reads, so the previous tip is
+    // looked up on the chain the check reports.
+    core.isSyncing = true;
+    core.beforeDkgInfo = () => {
+      core.height += 1;
+      core.hashAt = (height) => `other-branch-${height}`;
+      core.beforeDkgInfo = undefined;
+    };
+    const state = {};
+    checkMasternodeSafeToStop(rpcClient, core.version, {
+      ancestor: { height: 1010, hash: 'hash-1010' },
+    }).then((result) => { state.result = result; });
+    await clock.tickAsync(0);
+
+    expect(state.result).to.include({ status: 'unsettled', isReorg: true });
+  });
+
   it('should still block a DKG this node is in while Core syncs', async () => {
     // A Core only a little behind leaves initial block download in time for
     // the DKGs it announces.
@@ -336,7 +354,14 @@ describe('checkMasternodeSafeToStop', () => {
         active_dkgs: 0,
         next_dkg: 7,
         upcoming_dkgs: [{
-          llmqType: 106, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 7, known: true, isMember: true,
+          llmqType: 106,
+          quorumIndex: 0,
+          quorumHeight: start,
+          blocksUntilStart: 7,
+          known: true,
+          isMember: true,
+          workBlockHeight: start - 8,
+          workBlockHash: `hash-${start - 8}`,
         }],
       };
 
@@ -346,10 +371,11 @@ describe('checkMasternodeSafeToStop', () => {
       expect(result.status).to.equal('blocked');
     });
 
-    it('should not read Core\'s announcements as covering a tip that moved too far past them', async () => {
-      // Core lists a DKG once its work block, 8 blocks before its start, is
-      // mined. Read at start - 9, the list cannot hold a DKG starting at
-      // `start`, which the restart margin of start - 6 has to see.
+    it('should not refuse a Core that connects several blocks during the reads', async () => {
+      // A syncing Core connects only blocks older than its 6-hour maximum tip
+      // age, so it moves this fast only while catching up on DKGs the network
+      // ran hours ago, which Core skips. Its tip moves on until it stops
+      // whichever tip the check reads.
       core.version = CORE_24_0_PATCH;
       core.height = start - 9;
       core.dkgInfo = { active_dkgs: 0, next_dkg: 15, upcoming_dkgs: [] };
@@ -360,7 +386,60 @@ describe('checkMasternodeSafeToStop', () => {
 
       const { result } = await startCheck();
 
+      expect(result).to.include({ status: 'safe', height: start - 6 });
+    });
+
+    it('should report unsettled when the block Core worked out membership from is replaced', async () => {
+      // Core leaves this node out of the DKG at `start` on the branch it read;
+      // the branch that replaces it, at the same height, may not.
+      core.version = CORE_24_0_PATCH;
+      core.height = start - 1;
+      core.hashAt = (height) => (height >= start - 8 ? `branch-a-${height}` : `hash-${height}`);
+      core.dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 106,
+          quorumIndex: 0,
+          quorumHeight: start,
+          blocksUntilStart: 1,
+          known: true,
+          isMember: false,
+          workBlockHeight: start - 8,
+          workBlockHash: `branch-a-${start - 8}`,
+        }],
+      };
+      core.afterDkgStatus = () => {
+        core.hashAt = (height) => (height >= start - 8 ? `branch-b-${height}` : `hash-${height}`);
+        core.afterDkgStatus = undefined;
+      };
+
+      const { result } = await startCheck();
+
       expect(result.status).to.equal('unsettled');
+    });
+
+    it('should take Core\'s word on membership while the block it worked it out from stays on the chain', async () => {
+      core.version = CORE_24_0_PATCH;
+      core.dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 7,
+        upcoming_dkgs: [{
+          llmqType: 106,
+          quorumIndex: 0,
+          quorumHeight: start,
+          blocksUntilStart: 7,
+          known: true,
+          isMember: false,
+          workBlockHeight: start - 8,
+          workBlockHash: `hash-${start - 8}`,
+        }],
+      };
+
+      const { result } = await startCheck();
+
+      expect(result).to.include({ status: 'safe', height: start - 6 });
+      expect([...result.nonMemberDkgs]).to.deep.equal([`llmq_test_platform:0:${start}`]);
     });
 
     it('should count next_dkg from the earliest tip dkginfo may have seen', async () => {

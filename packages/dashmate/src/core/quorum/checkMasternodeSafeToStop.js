@@ -13,10 +13,6 @@ import getDkgStopBlockers, {
  */
 export const SAFE_STOP_CONFIRMATION_DELAY_MS = 15000;
 
-// Core lists a DKG in `quorum dkginfo` once its work block, this many blocks
-// before the DKG starts, is mined (`llmq::WORK_DIFF_DEPTH`).
-const DKG_ANNOUNCEMENT_BLOCKS = 8;
-
 /**
  * Which stop rule applies depends on Core's version, so a version Core does
  * not report is an error rather than a guess.
@@ -35,14 +31,48 @@ export async function readCoreVersion(rpcClient) {
 }
 
 /**
+ * Core works out whether this node is in an upcoming DKG from the DKG's work
+ * block, so what `quorum dkginfo` says about membership holds on a chain only
+ * if that chain has the work blocks it names.
+ *
+ * @param {RpcClient} rpcClient
+ * @param {Object} dkgInfo
+ * @param {number} height chain tip
+ * @return {Promise<boolean>}
+ */
+async function hasWorkBlocksOf(rpcClient, dkgInfo, height) {
+  const upcomingDkgs = dkgInfo && Array.isArray(dkgInfo.upcoming_dkgs) ? dkgInfo.upcoming_dkgs : [];
+  const knownDkgs = upcomingDkgs.filter((dkg) => dkg && dkg.known === true);
+  const workHeights = [...new Set(knownDkgs.map(({ workBlockHeight }) => workBlockHeight))];
+
+  if (!workHeights.every((workHeight) => Number.isInteger(workHeight) && workHeight <= height)) {
+    return false;
+  }
+
+  const workHashes = new Map(await Promise.all(workHeights.map(async (workHeight) => {
+    const { result } = await rpcClient.getBlockHash(workHeight);
+
+    return [workHeight, result];
+  })));
+
+  return knownDkgs.every(({ workBlockHeight, workBlockHash }) => (
+    workHashes.get(workBlockHeight) === workBlockHash
+  ));
+}
+
+/**
  * Read Core's DKG state at one chain tip. Each RPC reads the tip on its own,
  * so the tip is read before and after the DKG calls; if a block connected in
- * between, they may describe different tips and are discarded. Core in
- * initial block download takes no part in DKGs, so that state holds however
- * the tip moves.
+ * between, they may describe different tips and are discarded.
  *
- * With `ancestorHeight`, also reads the hash of the active chain's block at
- * that height, at the same tip.
+ * Core in initial block download takes no part in DKGs, and stays in it only
+ * while it connects blocks older than its maximum tip age, 6 hours: catching
+ * up on DKGs the network ran hours ago. Its state is then kept however far the
+ * tip moved, as long as the chain read last still has the work blocks Core's
+ * answers came from.
+ *
+ * With `ancestorHeight`, also reads the hash of the chain's block at that
+ * height, after the tip, so that it describes the chain the snapshot reports.
  *
  * @param {RpcClient} rpcClient
  * @param {number} [ancestorHeight]
@@ -50,26 +80,24 @@ export async function readCoreVersion(rpcClient) {
  */
 async function readDkgSnapshot(rpcClient, ancestorHeight) {
   const { result: before } = await rpcClient.getBlockchainInfo();
-
-  let ancestorHash;
-  if (ancestorHeight !== undefined && before.blocks >= ancestorHeight) {
-    ({ result: ancestorHash } = await rpcClient.getBlockHash(ancestorHeight));
-  }
-
   const { result: dkgInfo } = await rpcClient.quorum('dkginfo');
   const { result: dkgStatus } = await rpcClient.quorum('dkgstatus');
   const { result: after } = await rpcClient.getBlockchainInfo();
 
   const isSyncing = before.initialblockdownload === true && after.initialblockdownload === true;
+  const hasTipChanged = before.bestblockhash !== after.bestblockhash;
 
-  if (!isSyncing && before.bestblockhash !== after.bestblockhash) {
+  if (!isSyncing && hasTipChanged) {
     return null;
   }
 
-  // A list read at a lower tip lacks the DKGs starting past that tip's
-  // announcement horizon, which the restart margin of the later tip may need.
-  if (after.blocks - before.blocks > DKG_ANNOUNCEMENT_BLOCKS - MIN_BLOCKS_BEFORE_DKG) {
+  if (hasTipChanged && !await hasWorkBlocksOf(rpcClient, dkgInfo, after.blocks)) {
     return null;
+  }
+
+  let ancestorHash;
+  if (ancestorHeight !== undefined && after.blocks >= ancestorHeight) {
+    ({ result: ancestorHash } = await rpcClient.getBlockHash(ancestorHeight));
   }
 
   return {
