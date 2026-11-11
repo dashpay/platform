@@ -401,6 +401,16 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun chargedShieldedIdentityCreateCode77MapsTyped() {
+        val detail = "Shielded identity create failed with a paid error"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityCreateChargedFailure)
+        assertEquals(detail, mapped.message)
+        assertFalse("its notes are spent", mapped.isRetryable)
+    }
+
+    @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =
             "Platform shield capacity exceeded: available 3623849220, required 3623849221"

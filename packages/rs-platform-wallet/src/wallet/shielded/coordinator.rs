@@ -1546,9 +1546,11 @@ impl NetworkShieldedCoordinator {
                 if cancel.is_cancelled() {
                     break;
                 }
+                let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
+                    persister.as_ref(),
                     *id,
                     &recorded,
                     cancel,

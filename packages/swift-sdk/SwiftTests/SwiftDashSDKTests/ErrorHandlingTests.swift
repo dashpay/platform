@@ -604,6 +604,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A shielded identity create proven to have failed with a paid error
+    /// keeps its own code and typed case, apart from an unconfirmed create (17).
+    func testShouldReportAChargedShieldedIdentityCreateByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_CREATE_CHARGED_FAILURE
+        )
+        XCTAssertEqual(code, .errorShieldedIdentityCreateChargedFailure)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "Shielded identity create failed with a paid error"
+        guard case .shieldedIdentityCreateChargedFailure(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed charged identity create error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
