@@ -42,11 +42,20 @@ pub(super) fn validate_max_depth_v2(
             Value::Map(map) => {
                 let new_depth = depth + 1;
                 if new_depth > max_allowed_depth {
-                    return ConsensusValidationResult::new_with_error(
-                        BasicError::DataContractMaxDepthExceedError(
+                    // Carry the size measured so far with the error: the registration helper
+                    // reads it on the rejection path to bill the schema and to return this
+                    // consensus error rather than an internal one. Correcting the pointer can
+                    // follow a reference into depth a scalar landing hid, so this path is
+                    // newly reachable here and must report cleanly.
+                    return ConsensusValidationResult::new_with_data_and_errors(
+                        MaxDepthValidationResult {
+                            depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+                            size,
+                        },
+                        vec![BasicError::DataContractMaxDepthExceedError(
                             DataContractMaxDepthExceedError::new(max_allowed_depth),
                         )
-                        .into(),
+                        .into()],
                     );
                 }
                 if max_reached_depth < new_depth {
@@ -286,6 +295,38 @@ mod tests {
         assert_eq!(
             latest.data,
             Some(MaxDepthValidationResult { depth: 5, size: 14 })
+        );
+    }
+
+    /// A schema nested past the maximum depth is refused with the depth consensus error, and
+    /// the result carries the size the registration helper reads on the rejection path to
+    /// bill the schema and return that error rather than an internal one.
+    #[test]
+    fn should_refuse_a_schema_past_the_depth_limit_with_a_consensus_error_and_size() {
+        use crate::consensus::ConsensusError;
+        let mut schema = Value::Text("leaf".to_string());
+        for _ in 0..300 {
+            schema = Value::Map(vec![(Value::Text("x".to_string()), schema)]);
+        }
+        let result = validate_max_depth(&schema, PlatformVersion::latest())
+            .expect("expected a known version");
+        assert!(
+            !result.is_valid(),
+            "expected the depth limit to be exceeded"
+        );
+        assert!(
+            matches!(
+                result.errors.first(),
+                Some(ConsensusError::BasicError(
+                    BasicError::DataContractMaxDepthExceedError(_)
+                ))
+            ),
+            "{:?}",
+            result.errors
+        );
+        assert!(
+            result.data.is_some(),
+            "the rejection must carry the measured size"
         );
     }
 }
