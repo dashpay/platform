@@ -27,6 +27,10 @@ pub struct DriveVoteYesNoMethodVersions {
     pub insert_stored_info_for_yes_no_vote_poll: OptionalFeatureVersion,
     pub fetch_yes_no_vote_poll_stored_info: OptionalFeatureVersion,
     pub fetch_identity_yes_no_vote: OptionalFeatureVersion,
+    /// Proves a masternode's answer on a yes/no poll, by the poll's id
+    /// (`MasternodeYesNoVoteDriveQuery::execute_with_proof`), as its proof verifier reads it
+    /// from the same protocol version.
+    pub prove_identity_yes_no_vote: OptionalFeatureVersion,
     pub fetch_identities_voting_in_yes_no_vote_poll: OptionalFeatureVersion,
     /// Reads a yes/no poll's state (`YesNoVotePollStateDriveQuery::execute_with_proof` and
     /// `execute_no_proof`), as its proof verifier does from the same protocol version.

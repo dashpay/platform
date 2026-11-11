@@ -34,6 +34,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::changeset::ShieldedRecipientRaw;
 use dashcore::OutPoint;
 use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
@@ -48,6 +49,8 @@ use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::AssetLockOperationContext;
+
+use super::build::{AssetLockBuildAmount, AssetLockBuiltObserver};
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -502,12 +505,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// carries the *exact* outpoint that timed out (no
     /// `find_tracked_unproven_lock` BTreeMap walk needed), so the
     /// `IsTimeout` outcome is built directly from the error payload.
+    ///
+    /// `on_built` receives the outpoint of a newly built lock; see
+    /// [`AssetLockBuiltObserver`].
     pub(crate) async fn resolve_funding_with_is_timeout_fallback<AS>(
         &self,
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<FundingResolution, PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -518,12 +526,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof(
+                    .create_funded_asset_lock_proof_observed(
                         amount_duffs,
                         account_index,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
+                        on_built,
                     )
                     .await
                 {
@@ -560,8 +570,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         minimum_lock_duffs,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
                         &operation,
+                        on_built,
                     )
                     .await
                 {
@@ -585,12 +597,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Same pipeline as `FromWalletBalance`, with drain amount
                 // semantics and the caller-picked funding account family.
                 match self
-                    .create_funded_asset_lock_proof_with_funding(
-                        super::build::AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
+                    .create_funded_asset_lock_proof_with_funding_observed(
+                        AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
                         account,
                         funding_type,
                         destination_index,
+                        shielded_recipient,
                         asset_lock_signer,
+                        on_built,
                     )
                     .await
                 {
@@ -965,6 +979,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,

@@ -35,7 +35,7 @@ pub use {
     // (`DocumentCountMode`). Available under either `server`
     // (executor input) or `verify` (proof-decode input).
     drive_document_count_query::{
-        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+        CountMode, CountProofPlan, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
     // Having-range verifier-shareable types — same split as ranked:
     // `DocumentHavingMode` + `AxisRangeBounds` to re-run the same
@@ -59,7 +59,7 @@ pub use {
     // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
     // are shape inputs the verifier needs to rebuild the path query.
     // Parallels the count-side exports above.
-    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
+    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode, SumProofPlan},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
@@ -219,6 +219,10 @@ pub mod vote_polls_by_document_type_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod yes_no_vote_poll_state_query;
 
+/// A masternode's answer on a yes/no vote poll
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod masternode_yes_no_vote_query;
+
 /// Function type for looking up a contract by identifier
 ///
 /// This function is used to look up a contract by its identifier.
@@ -275,6 +279,12 @@ pub mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
+
+/// How a `SELECT COUNT` / `SUM` / `AVG` request executes — one of the
+/// grouped modes, ranked or having-range — and the grouped modes' limit
+/// contract, decided from the request's shape alone.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod aggregate_routing;
 
 /// A query to count documents using CountTree elements
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1696,6 +1706,32 @@ pub fn refuse_a_range_total_through_a_ranked_index(
     Ok(())
 }
 
+/// Refuses more than one window selection: a transform's source must be its
+/// index's first property, so one index buckets exactly one field and no
+/// index serves two resolved windows. Serving such a query would need a join
+/// across two bucketed indexes, which the engine has no shape for.
+/// `query_kind` names the query in the refusal ("query", "ranked query",
+/// "having-range query").
+///
+/// The documents index pick, the ranked dispatcher and the having dispatcher
+/// call it before they route a request, and a client calls it before sending
+/// one, so all of them refuse two windows by one rule in one text, which
+/// differs only by the query kind it names.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_several_window_selections(
+    resolved_time_ranges: &[ResolvedTimeRange],
+    query_kind: &'static str,
+) -> Result<(), Error> {
+    if resolved_time_ranges.len() > 1 {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is supported \
+             per {query_kind}; this one resolves {resolved_time_ranges:?}, and no single \
+             index can bucket more than one field"
+        ))));
+    }
+    Ok(())
+}
+
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where
 /// clauses as exactly one `Equal` clause — the only shape
@@ -1800,6 +1836,25 @@ pub struct DriveDocumentQuery<'a> {
     /// requests are built programmatically (see
     /// [`Self::with_sub_queries`]).
     pub sub_queries: Vec<DriveSubQuery<'a>>,
+}
+
+/// Refuses a read of the documents of a private document type (protocol version 15): its key
+/// `[0]` holds the type's private document store, fixed-size encrypted entries read by their
+/// position, not documents a query could find by id, by an index (it has none) or by their
+/// history. Every document query, and the document history query, call it before building a
+/// path.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_a_private_document_type(
+    document_type: DocumentTypeRef,
+) -> Result<(), QuerySyntaxError> {
+    if document_type.is_private() {
+        return Err(QuerySyntaxError::Unsupported(format!(
+            "\"{}\" is a private document type: it holds encrypted entries, read by their \
+             position in its store, not documents a query can find",
+            document_type.name()
+        )));
+    }
+    Ok(())
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -1924,7 +1979,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// (page-only) surface, which would otherwise silently ignore them —
     /// on the verify side that would mean reporting the composition
     /// verified when only the page was.
-    pub(crate) fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
+    pub fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
         if self.sub_queries.is_empty() {
             return Ok(());
         }
@@ -2689,6 +2744,11 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect()
     }
 
+    /// Refuses a query on a private document type, as [`refuse_a_private_document_type`].
+    fn refuse_a_private_document_type(&self) -> Result<(), Error> {
+        refuse_a_private_document_type(self.document_type).map_err(Error::Query)
+    }
+
     #[cfg(feature = "server")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
@@ -2700,6 +2760,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -2940,6 +3001,7 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         self.validate_where_clause_shape(platform_version)?;
+        self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
         // addressed by document id, so a by-id query has no tree to land on.
         {
@@ -3380,19 +3442,9 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<BestIndexOutcome<'_>, Error> {
-        // A transform's source must be its index's first property, so one
-        // index buckets exactly one field and no index can carry two resolved
-        // equalities. Serving such a query would need a join across two
-        // bucketed indexes, which the engine has no shape for. This runs
-        // before any routing so the multiple-`In` path cannot bypass it.
-        if self.resolved_time_ranges.len() > 1 {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
-                 supported per query; this one resolves {:?}, and no single index can bucket \
-                 more than one field",
-                self.resolved_time_ranges
-            ))));
-        }
+        // No index can carry two resolved equalities. This runs before any
+        // routing so the multiple-`In` path cannot bypass it.
+        refuse_several_window_selections(&self.resolved_time_ranges, "query")?;
 
         // One shared source-shape guard for every selection route — see its
         // doc for the contract. Running it before routing keeps the single-
@@ -3722,13 +3774,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3779,13 +3829,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3838,13 +3886,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -4116,6 +4162,12 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
 
 #[cfg(all(test, feature = "server"))]
 pub(crate) mod unsigned_index_key_order_tests;
+
+#[cfg(all(test, feature = "server"))]
+mod window_selection_cardinality_tests;
+
+#[cfg(all(test, feature = "server"))]
+mod proof_plan_equivalence_tests;
 
 #[cfg(feature = "server")]
 #[cfg(test)]
@@ -5646,7 +5698,6 @@ mod tests {
                             true,
                             None,
                             platform_version,
-                            None,
                         )
                         .expect("expected to insert a tip");
                     tip.id()

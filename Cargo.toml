@@ -40,7 +40,10 @@ members = [
     "packages/keyword-search-contract",
     "packages/app-connect-contract",
     "packages/moderation-charters-contract",
+    "packages/decision-proposals-contract",
+    "packages/token-market-contract",
     "packages/rs-sdk-ffi",
+    "packages/rs-sdk-cxx",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
     "packages/rs-dapi",
@@ -58,23 +61,23 @@ members = [
 [workspace.dependencies]
 secp256k1 = { version = "=0.33.1", features = ["rand", "serde", "recovery"] }
 bincode = { package = "grovedb-bincode", version = "=2.1.0" }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b", default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b", default-features = false }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "2128ea18f9b1c2f9502f99967b1b1c6485c91f8b" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "aca020263990a86a15cc1d97ae2cbf965d488db5" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1", default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-merk = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1", default-features = false }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "fa92511cb7cdc19f5977d64f20f93107f62844b1" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
+dashcore-crypto = { git = "https://github.com/dashpay/rust-dashcore", rev = "c9aeac0d0dcbd4b91d780a70d61b9bb693199ca4" }
 tokio-metrics = "0.5"
 
 # Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
@@ -133,6 +136,11 @@ opt-level = 3
 # else here despite the workspace-global syntax.
 [profile.dev.package.argon2]
 opt-level = 3
+# rust-dashcore's X11 (`dash-pow`) unoptimized is slow enough to stall
+# dash-spv's header sync, and Cargo ignores the override rust-dashcore sets
+# for it in its own workspace.
+[profile.dev.package.dash-pow]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -148,8 +156,10 @@ opt-level = 3
 opt-level = 3
 [profile.test.package.argon2]
 opt-level = 3
+[profile.test.package.dash-pow]
+opt-level = 3
 
 [workspace.package]
 
-version = "5.0.1"
+version = "5.0.3"
 rust-version = "1.98"

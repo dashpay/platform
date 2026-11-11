@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-use dashcore::hashes::Hash;
 use dashcore::{PubkeyHash, ScriptBuf, TxOut};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
@@ -120,9 +119,9 @@ impl PlatformWallet {
             estimated_recipient_credits: None,
         };
         // Dash Core relays at most `max_asset_lock_transaction_inputs` (100)
-        // asset-lock inputs and Platform consensus validates the same bound —
-        // tighter than the builder's standard-transaction limit — so report
-        // it before sizing the payload.
+        // asset-lock inputs and Platform consensus holds an instant proof to
+        // the same bound — tighter than the builder's standard-transaction
+        // limit — so report it before sizing the payload.
         if candidates.len() > max_asset_lock_inputs(self.sdk.version()) {
             preview.status = WalletDrainPreviewStatus::InputLimitMayBeExceeded;
             return Ok(preview);

@@ -10,6 +10,7 @@ use crate::drive::contract_groups::paths::{
     contract_memberships_tokens_path,
 };
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
 use grovedb::batch::KeyInfoPath;
@@ -17,13 +18,12 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_insert_contract_group_memberships_v0(
         contract_id: [u8; 32],
         memberships: &[ContractGroupMembership],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         Self::add_estimation_costs_for_contract_groups_root_layers(
             estimated_costs_only_with_layer_info,

@@ -30,6 +30,7 @@
 //! sweep clean.
 
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -174,7 +175,6 @@ pub(super) fn insert_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -196,7 +196,6 @@ pub(super) fn delete_like(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -535,7 +534,7 @@ fn estimated_fees_upper_bound_actual_fees() {
 fn delete_estimate_prices_one_probe_read_per_index_entry() {
     use crate::fees::op::LowLevelDriveOperation;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use std::collections::HashMap;
+
     let (drive, contract) = setup_likes();
     let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
     insert_like(&drive, &contract, &like, true).expect("insert");
@@ -556,7 +555,7 @@ fn delete_estimate_prices_one_probe_read_per_index_entry() {
     assert!(probe_paths > 0);
     let tx = drive.grove.start_transaction();
     let priced_reads = |estimate: bool| -> usize {
-        let mut estimated_costs_only_with_layer_info = estimate.then(HashMap::new);
+        let mut estimated_costs_only_with_layer_info = estimate.then(EstimatedLayers::new);
         drive
             .delete_index_only_document_for_contract_operations(
                 like.clone(),
@@ -1908,17 +1907,12 @@ fn should_refuse_cursor_queries() {
 #[test]
 fn deletion_refunds_flow_from_terminal_item_flags() {
     use dpp::block::epoch::Epoch;
-    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use dpp::version::fee::FeeVersion;
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
 
     let (drive, contract) = setup_likes();
     let document_type = contract
         .document_type_for_name(DOCTYPE)
         .expect("like doctype exists");
-    let previous_fee_versions: CachedEpochIndexFeeVersions =
-        BTreeMap::from([(0, FeeVersion::first())]);
 
     let like = build_like(&contract, "dash", POST_A, OWNER_1, 1);
 
@@ -1943,7 +1937,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            None,
         )
         .expect("insert like with owned flags");
 
@@ -1962,7 +1955,6 @@ fn deletion_refunds_flow_from_terminal_item_flags() {
             true,
             None,
             pv,
-            Some(&previous_fee_versions),
         )
         .expect("delete like in a later epoch");
 
@@ -2023,7 +2015,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
                 true,
                 None,
                 platform_version(),
-                None,
             )
             .expect("insert mark");
     };
@@ -2045,7 +2036,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect_err("a spliced tuple must be refused");
     assert!(
@@ -2068,7 +2058,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the real row must still delete");
     drive
@@ -2080,7 +2069,6 @@ fn should_refuse_a_delete_spliced_across_two_rows() {
             true,
             None,
             platform_version(),
-            None,
         )
         .expect("the other real row must still delete");
 
@@ -2156,7 +2144,6 @@ pub(super) fn insert_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2178,7 +2165,6 @@ pub(super) fn delete_tip(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2682,7 +2668,6 @@ fn insert_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -2704,7 +2689,6 @@ fn delete_beat(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -3215,7 +3199,6 @@ fn insert_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3233,7 +3216,6 @@ fn delete_mark(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3532,7 +3514,6 @@ fn insert_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 
@@ -3550,7 +3531,6 @@ fn delete_pin(
         apply,
         None,
         platform_version(),
-        None,
     )
 }
 

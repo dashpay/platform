@@ -72,6 +72,11 @@ service Platform {
       returns (GetIdentityByNonUniquePublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
       returns (WaitForStateTransitionResultResponse);
+  // What the node answering knows of a state transition, by hash, without
+  // waiting: committed, in its mempool, or unknown to it. Unproved and per node
+  // (protocol version 15 and later)
+  rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest)
+      returns (GetRecentStateTransitionStatusResponse);
   // @sdk-ignore: Consensus params fetched via Tenderdash RPC
   rpc getConsensusParams(GetConsensusParamsRequest)
       returns (GetConsensusParamsResponse);
@@ -100,6 +105,14 @@ service Platform {
   // What vote polls will end soon?
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest)
       returns (GetVotePollsByEndDateResponse);
+  // Where is a yes/no vote poll: open, or finished with what result, and its
+  // tallies (protocol version 15 and later)
+  rpc getYesNoVotePollState(GetYesNoVotePollStateRequest)
+      returns (GetYesNoVotePollStateResponse);
+  // How did a masternode answer a yes/no vote poll? (protocol version 15 and
+  // later)
+  rpc getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest)
+      returns (GetMasternodeYesNoVoteResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest)
       returns (GetPrefundedSpecializedBalanceResponse);
   rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest)
@@ -159,6 +172,16 @@ service Platform {
       returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
+  rpc getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest)
+      returns (GetPrivateDocumentEntriesResponse);
+  // The state transitions one owner has in the Tenderdash block at a height.
+  // DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+  rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest)
+      returns (GetOwnerTransactionsInBlockResponse);
+  // Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+  // `prove` the client trusts the node. This is for looking blocks up, not for
+  // syncing a chain: the gateway allows each IP very few of these requests.
+  rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -2629,6 +2652,49 @@ message WaitForStateTransitionResultResponse {
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }
 
+// The answering node's own view of a state transition, read from its Tenderdash
+// at once, with nothing re-broadcast. Nothing in the answer is proved: mempools
+// differ between nodes, anyone who saw the signed transition can broadcast it
+// again, and a node can answer anything. Use it to decide whether waiting longer
+// makes sense, never to decide that a transition cannot execute: a client that
+// must know that reads the transition's inputs with proofs (the SDK's proven
+// transition outcome). A shielded or private document client should ask only the
+// node it broadcast to, since asking several nodes about one transition spreads
+// the link between the client's address and the transition.
+message GetRecentStateTransitionStatusRequest {
+  message GetRecentStateTransitionStatusRequestV0 {
+    bytes state_transition_hash = 1; // The 32-byte hash of the state transition
+  }
+  oneof version { GetRecentStateTransitionStatusRequestV0 v0 = 1; }
+}
+
+message GetRecentStateTransitionStatusResponse {
+  message GetRecentStateTransitionStatusResponseV0 {
+    // In a block of this node's chain, from its transaction index
+    message Committed {
+      uint64 height = 1 [ jstype = JS_STRING ]; // Height of the block that holds it
+      // Set only when its result code is not 0: the code and the error, as
+      // waitForStateTransitionResult reports a committed transition's error
+      StateTransitionBroadcastError error = 2;
+    }
+    // In this node's mempool
+    message Pending {}
+    // Neither in this node's mempool nor in its chain. It may be in another
+    // node's mempool, may have been dropped, or may never have been broadcast.
+    // Tenderdash reads no RPC from its mempool cache, so a hash it saw and
+    // dropped also answers this.
+    message Unknown {}
+    oneof status {
+      Committed committed = 1;
+      Pending pending = 2;
+      Unknown unknown = 3;
+    }
+    // The node's latest block when it answered, unproved
+    ResponseMetadata metadata = 4;
+  }
+  oneof version { GetRecentStateTransitionStatusResponseV0 v0 = 1; }
+}
+
 message GetConsensusParamsRequest {
   message GetConsensusParamsRequestV0 {
     int32 height =
@@ -2922,6 +2988,150 @@ message GetVotePollsByEndDateResponse {
   }
 
   oneof version { GetVotePollsByEndDateResponseV0 v0 = 1; }
+}
+
+// The state of a yes/no vote poll, by its id. A node refuses it before
+// protocol version 15.
+message GetYesNoVotePollStateRequest {
+  message GetYesNoVotePollStateRequestV0 {
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetYesNoVotePollStateRequestV0 v0 = 1; }
+}
+
+message GetYesNoVotePollStateResponse {
+  message GetYesNoVotePollStateResponseV0 {
+    // A block a poll opened or closed in
+    message YesNoVotePollBlock {
+      uint64 height = 1 [ jstype = JS_STRING ];
+      uint32 core_height = 2;
+      uint64 time_ms = 3 [ jstype = JS_STRING ];
+      uint32 epoch = 4;
+    }
+
+    // The result a finished poll records
+    message FinishedYesNoVotePoll {
+      bool passed = 1;
+      uint32 yes_voting_power = 2;
+      uint32 no_voting_power = 3;
+      uint32 abstain_voting_power = 4;
+      // The least yes plus no voting power the poll needed
+      uint32 required_voting_power = 5;
+      YesNoVotePollBlock start_block = 6;
+      YesNoVotePollBlock finalization_block = 7;
+    }
+
+    // The poll as it was opened: what it decides and the rule that decides it.
+    // A vote names the poll by id only, so this is where the rule is read.
+    message YesNoVotePoll {
+      // A question anyone puts to the masternodes, asked by a proposal
+      // document
+      message DecisionProposal {
+        // The proposal document's id (32 bytes)
+        bytes document_id = 1;
+      }
+
+      // How a share of the total voting power rounds to a whole voting power
+      enum VotingPowerRounding {
+        DOWN = 0;
+        UP = 1;
+        DOWN_PLUS_ONE = 2;
+        UP_MINUS_ONE = 3;
+      }
+
+      // A share of the total voting power of the masternode list in the
+      // block that closes the poll, PoSe-banned masternodes left out
+      message FractionOfTotal {
+        uint32 numerator = 1;
+        uint32 denominator = 2;
+        VotingPowerRounding rounding = 3;
+      }
+
+      // What the poll decides; its id is derived from this alone
+      oneof purpose { DecisionProposal decision_proposal = 1; }
+      // Yes must be strictly more than numerator / denominator of yes plus no
+      uint32 supermajority_numerator = 2;
+      uint32 supermajority_denominator = 3;
+      // The least yes plus no voting power for the poll to pass
+      oneof minimum_voting_power {
+        uint32 absolute = 4;
+        FractionOfTotal fraction_of_total = 5;
+      }
+    }
+
+    message YesNoVotePollState {
+      // Neither is set when no poll was ever opened with this id
+      oneof status {
+        // Open since this block
+        YesNoVotePollBlock started = 1;
+        FinishedYesNoVotePoll finished = 2;
+      }
+      // The voting power cast so far; zero once the poll is finished and its
+      // votes are removed
+      uint32 yes_voting_power = 3;
+      uint32 no_voting_power = 4;
+      uint32 abstain_voting_power = 5;
+      // The poll, set whenever a status is
+      YesNoVotePoll vote_poll = 6;
+    }
+
+    oneof result {
+      YesNoVotePollState state = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetYesNoVotePollStateResponseV0 v0 = 1; }
+}
+
+// A masternode's answer on a yes/no vote poll, by the poll's id. A node refuses
+// it before protocol version 15.
+message GetMasternodeYesNoVoteRequest {
+  message GetMasternodeYesNoVoteRequestV0 {
+    // The masternode's pro tx hash (32 bytes)
+    bytes pro_tx_hash = 1;
+    // The poll's id (32 bytes), as YesNoVotePoll::unique_id derives it from the
+    // poll
+    bytes vote_poll_id = 2;
+    bool prove = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteRequestV0 v0 = 1; }
+}
+
+message GetMasternodeYesNoVoteResponse {
+  message GetMasternodeYesNoVoteResponseV0 {
+    message MasternodeYesNoVote {
+      enum Choice {
+        YES = 0;
+        NO = 1;
+        ABSTAIN = 2;
+      }
+      Choice choice = 1;
+      // How many times the masternode has voted on the poll, its first vote
+      // included
+      uint32 times_voted = 2;
+    }
+
+    message MasternodeYesNoVoteEntry {
+      // Not set when the masternode has not voted on the poll, or its votes
+      // were removed when the poll finished
+      MasternodeYesNoVote vote = 1;
+    }
+
+    oneof result {
+      MasternodeYesNoVoteEntry entry = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetMasternodeYesNoVoteResponseV0 v0 = 1; }
 }
 
 // What's the state of a contested resource vote? (ie who is winning?)
@@ -4259,4 +4469,173 @@ message GetShieldedNullifiersResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
+}
+
+// A page of the entries of a private document type's store (protocol version 15): the type's
+// fixed-size encrypted entries in append order, each with the height and time of the block that
+// appended it. Earlier protocol versions answer that the feature is not active.
+message GetPrivateDocumentEntriesRequest {
+  message GetPrivateDocumentEntriesRequestV0 {
+    reserved 4;
+    reserved "count";
+    bytes data_contract_id = 1;
+    string document_type_name = 2;
+    // The page's first position; the page reads to the end of the store's chunk holding it
+    // (2^chunk_power entries to a chunk)
+    uint64 start_position = 3 [ jstype = JS_STRING ];
+    bool prove = 5;
+  }
+  oneof version { GetPrivateDocumentEntriesRequestV0 v0 = 1; }
+}
+
+message GetPrivateDocumentEntriesResponse {
+  message GetPrivateDocumentEntriesResponseV0 {
+    message PrivateDocumentEntry {
+      uint64 position = 1 [ jstype = JS_STRING ];      // position in the store, from 0 in append order
+      uint64 block_height = 2 [ jstype = JS_STRING ];  // height of the block that appended it
+      uint64 block_time_ms = 3 [ jstype = JS_STRING ]; // time of that block, in milliseconds
+      bytes data = 4;                                  // the entry: entrySize bytes
+    }
+    message PrivateDocumentEntries {
+      repeated PrivateDocumentEntry entries = 1;
+      uint64 total_count = 2 [ jstype = JS_STRING ];   // entries the store holds
+    }
+    oneof result {
+      PrivateDocumentEntries entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetPrivateDocumentEntriesResponseV0 v0 = 1; }
+}
+
+// Ties a Tenderdash block to the signature of the quorum that committed it. To
+// check it, recompute the block hash and the state id from `header`, compare
+// them with `block_id.hash` and `block_id.state_id`, and verify `signature`
+// over the precommit vote for `block_id`. `header.data_hash` and
+// `header.results_hash` then vouch for the block's transactions and their
+// results.
+message TenderdashBlockProof {
+  message BlockId {
+    bytes hash = 1;
+    uint32 part_set_total = 2;
+    bytes part_set_hash = 3;
+    bytes state_id = 4;
+  }
+  // The signed block header. The block hash covers every field except
+  // `core_chain_locked_height`. The state id covers that one, with
+  // `app_version`, `height`, `app_hash` and the time in milliseconds.
+  message Header {
+    uint64 block_version = 1 [ jstype = JS_STRING ];
+    uint64 app_version = 2 [ jstype = JS_STRING ];
+    string chain_id = 3;
+    uint64 height = 4 [ jstype = JS_STRING ];
+    uint32 core_chain_locked_height = 5;
+    int64 time_seconds = 6 [ jstype = JS_STRING ];
+    int32 time_nanos = 7;
+    BlockId last_block_id = 8;
+    bytes last_commit_hash = 9;
+    bytes data_hash = 10;    // Merkle root of the block's transactions
+    bytes validators_hash = 11;
+    bytes next_validators_hash = 12;
+    bytes consensus_hash = 13;
+    bytes next_consensus_hash = 14;
+    bytes app_hash = 15;     // the state after this block's transactions
+    bytes results_hash = 16; // Merkle root of the block's execution results
+    bytes evidence_hash = 17;
+    bytes proposer_pro_tx_hash = 18;
+    uint64 proposed_app_version = 19 [ jstype = JS_STRING ];
+  }
+  Header header = 1;
+  BlockId block_id = 2;
+  uint32 round = 3;       // the consensus round that committed the block
+  bytes quorum_hash = 4;  // the quorum that signed
+  uint32 quorum_type = 5; // the LLMQ type of that quorum
+  bytes signature = 6;    // its threshold signature over the block
+}
+
+// Merkle paths of one transaction in its block. Each path runs from the leaf's
+// sibling up to a child of the root.
+message TenderdashTransactionProof {
+  uint32 index = 1; // the transaction's position in the block
+  uint32 total = 2; // how many transactions the block holds
+  // Path from the SHA-256 of the transaction to `data_hash`
+  repeated bytes transaction_path = 3;
+  // Path to `results_hash`, from the protobuf encoding of the transaction's
+  // `code`, `result_data` and `gas_used` as Tenderdash's ExecTxResult
+  repeated bytes result_path = 4;
+}
+
+message GetOwnerTransactionsInBlockRequest {
+  message GetOwnerTransactionsInBlockRequestV0 {
+    uint64 height = 1 [ jstype = JS_STRING ]; // the Tenderdash block height, from 1
+    // The 32-byte id of the owner: the identity that a state transition reports
+    // as its owner. A recipient is not an owner, and transitions funded from
+    // addresses or the shielded pool have no owner, so they never match.
+    bytes owner_id = 2;
+    // Also return what proves the answer's transactions. When a block holds so
+    // many of the owner's transactions that the proved answer would pass about
+    // 4 MB, the request fails with FAILED_PRECONDITION: read the block with
+    // getBlocks instead.
+    bool prove = 3;
+  }
+  oneof version { GetOwnerTransactionsInBlockRequestV0 v0 = 1; }
+}
+
+message GetOwnerTransactionsInBlockResponse {
+  message GetOwnerTransactionsInBlockResponseV0 {
+    message OwnerTransaction {
+      bytes state_transition = 1; // the serialized state transition
+      bytes hash = 2;             // its SHA-256, the hash Tenderdash knows it by
+      uint32 code = 3;            // 0 if it executed, otherwise the code of the error it paid for
+      bytes result_data = 4;      // the data of its execution result
+      int64 gas_used = 5 [ jstype = JS_STRING ]; // the gas of its execution result
+      TenderdashTransactionProof proof = 6;      // only when asked to prove
+    }
+    repeated OwnerTransaction transactions = 1; // in block order
+    // Only when asked to prove. This proves each returned transaction is in the
+    // block. It does not prove the list is complete: to be sure of that, read the
+    // whole block with getBlocks.
+    TenderdashBlockProof proof = 2;
+  }
+  oneof version { GetOwnerTransactionsInBlockResponseV0 v0 = 1; }
+}
+
+message GetBlocksRequest {
+  message GetBlocksRequestV0 {
+    uint64 start_height = 1 [ jstype = JS_STRING ]; // the first Tenderdash height, from 1
+    uint32 count = 2; // how many blocks, from 1 to 10
+    bool prove = 3;   // also return what proves each block
+  }
+  oneof version { GetBlocksRequestV0 v0 = 1; }
+}
+
+message GetBlocksResponse {
+  message GetBlocksResponseV0 {
+    message Transaction {
+      bytes state_transition = 1; // the serialized state transition
+      bytes hash = 2;             // its SHA-256, the hash Tenderdash knows it by
+      uint32 code = 3;            // 0 if it executed, otherwise the code of the error it paid for
+      bytes result_data = 4;      // the data of its execution result
+      int64 gas_used = 5 [ jstype = JS_STRING ]; // the gas of its execution result
+    }
+    message Block {
+      uint64 height = 1 [ jstype = JS_STRING ];
+      bytes hash = 2;
+      uint64 time_ms = 3 [ jstype = JS_STRING ]; // the block time, in milliseconds since the Unix epoch
+      uint32 core_chain_locked_height = 4;
+      bytes app_hash = 5;             // the state after this block's transactions
+      bytes proposer_pro_tx_hash = 6;
+      repeated Transaction transactions = 7; // in block order
+      // Only when asked to prove. A block holds all its transactions, so recompute
+      // `data_hash` and `results_hash` from them; no Merkle paths are needed.
+      // Compare the fields above with `proof.header` too: only the header is signed.
+      TenderdashBlockProof proof = 8;
+    }
+    // Consecutive blocks from the start height. There can be fewer than the count
+    // when the node's chain ends or the response reaches its size limit; ask from
+    // the height after the last one to continue.
+    repeated Block blocks = 1;
+  }
+  oneof version { GetBlocksResponseV0 v0 = 1; }
 }

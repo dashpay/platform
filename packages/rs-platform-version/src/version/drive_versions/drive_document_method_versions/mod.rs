@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -21,6 +22,26 @@ pub struct DriveDocumentMethodVersions {
     /// from protocol version 14 only, the first version whose parser reads a rule; the slot
     /// is 0 in every table.
     pub fetch_property_constraint_aggregate: FeatureVersion,
+    /// `insert_empty_private_document_store_operation`: the operation creating the store of a
+    /// private document type at the type's key `[0]` when a contract registers the type or an
+    /// update adds it, sized from the protocol version's private document store limits
+    /// (`SystemLimits::private_document_store_target_chunk_bytes` and the two chunk power
+    /// bounds). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15),
+    /// `None` in every earlier table, which admit no private document type.
+    pub insert_empty_private_document_store_operation: OptionalFeatureVersion,
+    /// `fetch_private_document_entries`: a page of the entries of a private document type's
+    /// store, in append order, each split into Drive's header and the client's entry.
+    /// `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub fetch_private_document_entries: OptionalFeatureVersion,
+    /// `prove_private_document_entries`: the proof of such a page, which
+    /// `verify_private_document_entries` checks. `Some(0)` from
+    /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (protocol version 15), `None` before.
+    pub prove_private_document_entries: OptionalFeatureVersion,
+    /// `append_private_document_entries_operations`: the operations a
+    /// `PrivateDocumentCreateFromShieldedPool` appends its entries with, each after Drive's
+    /// header (the block's height and time). `Some(0)` from `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
+    /// (protocol version 15), `None` before.
+    pub append_private_document_entries_operations: OptionalFeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
@@ -105,6 +126,10 @@ pub struct DriveDocumentQueryMethodVersions {
     /// checks; v1 (protocol version 14) groups multiple `In` clauses
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a
+    /// documents query with several `In` clauses
+    /// (`DocumentQuery::required_protocol_version` in `dash-platform-queries`).
     pub where_clause_grouping: FeatureVersion,
     /// Reading a query's `startAt`/`startAfter` cursor document from the
     /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
@@ -112,7 +137,19 @@ pub struct DriveDocumentQueryMethodVersions {
     /// `documentsSummable` type, whose documents are stored as
     /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
     /// decodes any item element, as the proof verifier always has.
+    ///
+    /// The SDK reads it too, to know from which protocol version every node serves a cursor
+    /// on such a type (`DocumentQuery::required_protocol_version` in
+    /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, which the prover and the
+    /// verifier both do. 0 is what protocol versions 1 to 14 build. 1 (protocol version 15)
+    /// changes two lookups in a document type that keeps history: one at a block time stops
+    /// above the pointer to the latest version, so it answers with the newest version stored
+    /// at or before that time and with nothing before the first, and one of a document that
+    /// may be contested states its cap itself, which GroveDB's merge no longer derives above
+    /// a subquery, and is refused at a block time, as a contest's area keeps no history.
+    pub single_document_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

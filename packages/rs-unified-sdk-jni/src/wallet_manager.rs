@@ -56,7 +56,10 @@ use platform_wallet_ffi::error::{
 };
 use platform_wallet_ffi::event_handler::{EventHandlerCallbacks, EventHandlerCallbacksExtension};
 use platform_wallet_ffi::handle::Handle;
-use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
+use platform_wallet_ffi::manager::effective_persistence_capabilities;
+use platform_wallet_ffi::persistence::{
+    PersistenceCallbacks, PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
+};
 use platform_wallet_ffi::types::IdentifierArray;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
@@ -64,7 +67,7 @@ use std::ptr;
 
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
-use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
+use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, FFINetwork, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -109,60 +112,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             return 0;
         }
 
-        // Read the backend's explicit semantic attestation before installing
-        // any trampolines. NativePersistenceBridge defaults both methods to
-        // zero, so a no-op subclass remains fail-closed even though JNI wires a
-        // structurally complete callback table.
-        let declared_capabilities_version = match env
-            .call_method(
-                &persistence_bridge,
-                "persistenceCapabilitiesVersion",
-                "()I",
-                &[],
-            )
-            .and_then(|value| value.i())
-        {
-            Ok(value) => value as u32,
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 99, "reading persistence capability version failed");
-                return 0;
-            }
-        };
-        let declared_capabilities_bits = match env
-            .call_method(
-                &persistence_bridge,
-                "persistenceCapabilitiesBits",
-                "()J",
-                &[],
-            )
-            .and_then(|value| value.j())
-        {
-            Ok(value) => value as u64,
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 99, "reading persistence capability mask failed");
-                return 0;
-            }
-        };
-
-        // Box the persistence context (GlobalRef → boxed KotlinPersistenceCtx).
-        let persistence_global = match env.new_global_ref(&persistence_bridge) {
-            Ok(g) => g,
-            Err(_) => {
-                throw_sdk_exception(env, 99, "NewGlobalRef(persistence bridge) failed");
-                return 0;
-            }
-        };
-        let persistence_ctx =
-            Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
-        let mut persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
-        restrict_account_writers(env, &persistence_bridge, &mut persistence);
-        let persistence_extension = build_extension(env, &persistence_bridge);
-        let persistence_capabilities = PersistenceCapabilitiesFFI {
-            version: declared_capabilities_version,
-            reserved: 0,
-            bits: declared_capabilities_bits,
+        let Some(BridgePersistence {
+            context: persistence_ctx,
+            callbacks: persistence,
+            extension: persistence_extension,
+            declared: persistence_capabilities,
+        }) = bridge_persistence(env, &persistence_bridge)
+        else {
+            return 0;
         };
 
         // Box the event context.
@@ -208,6 +165,116 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
 
         let bundle = Box::new(ManagerBundle { manager_handle });
         Box::into_raw(bundle) as jlong
+    })
+}
+
+/// `WalletManagerNative.nativeEffectivePersistenceCapabilityBits`: the
+/// persistence capabilities a manager created with `persistence_bridge`
+/// would attest, without creating one. The declaration, the vtable, the
+/// account-writer restriction and the extension (with its `bridge_overrides`
+/// probes) are built exactly as `nativeCreate` builds them, so an
+/// instrumented test can check which bridge overrides keep a capability.
+/// Throws and returns 0 when the declaration cannot be read.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeEffectivePersistenceCapabilityBits(
+    mut env: JNIEnv,
+    _class: JClass,
+    persistence_bridge: JObject,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let Some(BridgePersistence {
+            callbacks,
+            extension,
+            declared,
+            ..
+        }) = bridge_persistence(env, &persistence_bridge)
+        else {
+            return 0;
+        };
+        // SAFETY: `extension` is a live, fully sized extension; the vtable's
+        // `release_fn` frees the context before this returns.
+        let effective =
+            unsafe { effective_persistence_capabilities(callbacks, &declared, &extension) };
+        effective.bits() as jlong
+    })
+}
+
+/// The persistence a manager is created with from a Kotlin
+/// `NativePersistenceBridge`: the bridge's declared capabilities, a vtable
+/// over a boxed context holding a global reference to it (with the account
+/// writers it does not override removed), and the extension its overrides
+/// wire. `nativeCreate` creates its manager from it and
+/// `nativeEffectivePersistenceCapabilityBits` asks what that manager would
+/// attest, so the two cannot drift apart.
+struct BridgePersistence {
+    /// The boxed context the vtable points at. Its `release_fn` frees it
+    /// once a manager (or `effective_persistence_capabilities`) takes the
+    /// vtable; a caller that hands it to neither frees it.
+    context: *mut KotlinPersistenceCtx,
+    callbacks: PersistenceCallbacks,
+    extension: PersistenceCallbacksExtension,
+    declared: PersistenceCapabilitiesFFI,
+}
+
+/// Build [`BridgePersistence`] for `persistence_bridge`. The backend's
+/// explicit semantic attestation is read before any trampoline is installed:
+/// `NativePersistenceBridge` defaults both methods to zero, so a no-op
+/// subclass stays fail-closed even though JNI wires a structurally complete
+/// callback table. Throws and returns `None` when the declaration cannot be
+/// read or the global reference made.
+fn bridge_persistence(env: &mut JNIEnv, persistence_bridge: &JObject) -> Option<BridgePersistence> {
+    let version = match env
+        .call_method(
+            persistence_bridge,
+            "persistenceCapabilitiesVersion",
+            "()I",
+            &[],
+        )
+        .and_then(|value| value.i())
+    {
+        Ok(value) => value as u32,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "reading persistence capability version failed");
+            return None;
+        }
+    };
+    let bits = match env
+        .call_method(
+            persistence_bridge,
+            "persistenceCapabilitiesBits",
+            "()J",
+            &[],
+        )
+        .and_then(|value| value.j())
+    {
+        Ok(value) => value as u64,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "reading persistence capability mask failed");
+            return None;
+        }
+    };
+    let global = match env.new_global_ref(persistence_bridge) {
+        Ok(global) => global,
+        Err(_) => {
+            throw_sdk_exception(env, 99, "NewGlobalRef(persistence bridge) failed");
+            return None;
+        }
+    };
+    let context = Box::into_raw(Box::new(KotlinPersistenceCtx::new(global)));
+    let mut callbacks: PersistenceCallbacks = build_vtable(context as *mut c_void);
+    restrict_account_writers(env, persistence_bridge, &mut callbacks);
+    let extension = build_extension(env, persistence_bridge);
+    Some(BridgePersistence {
+        context,
+        callbacks,
+        extension,
+        declared: PersistenceCapabilitiesFFI {
+            version,
+            reserved: 0,
+            bits,
+        },
     })
 }
 
@@ -2032,6 +2099,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
                 signer_handle as *mut rs_sdk_ffi::SignerHandle,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
                 &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+                // Kotlin hosts do not take the callback.
+                None,
+                std::ptr::null_mut(),
             )
         };
 
@@ -3175,12 +3245,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 
 /// Map the Kotlin `Network.ffiValue` int (0=Mainnet,1=Testnet,2=Devnet,
 /// 3=Regtest) to `FFINetwork`.
-fn ffi_network(value: jni::sys::jint) -> dash_network::ffi::FFINetwork {
+fn ffi_network(value: jni::sys::jint) -> FFINetwork {
     match value {
-        0 => dash_network::ffi::FFINetwork::Mainnet,
-        2 => dash_network::ffi::FFINetwork::Devnet,
-        3 => dash_network::ffi::FFINetwork::Regtest,
-        _ => dash_network::ffi::FFINetwork::Testnet,
+        0 => FFINetwork::Mainnet,
+        2 => FFINetwork::Devnet,
+        3 => FFINetwork::Regtest,
+        _ => FFINetwork::Testnet,
     }
 }
 

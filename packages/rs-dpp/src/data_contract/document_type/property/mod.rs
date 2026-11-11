@@ -51,6 +51,7 @@ pub mod reference_where;
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
     GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+    TokenFunction,
 };
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
@@ -3046,6 +3047,77 @@ impl DocumentPropertyType {
                     "serialization of variable type arrays not yet supported".to_string(),
                 ),
             )),
+        }
+    }
+
+    /// The most bytes [`Self::encode_value_ref_with_size`] writes for a value of this type, `None`
+    /// when the type sets no largest value: a string with neither `maxLength` nor `maxBytes`, a byte
+    /// array without `maxItems`, an untyped array, or a typed array that may hold an element of
+    /// such a type. `required` is the flag the encoding is called
+    /// with (an optional `Date` carries a marker byte); the presence byte a document writes before
+    /// an optional property is not counted.
+    ///
+    /// Each arm is the largest output of the matching arm of the encoder, which this must follow
+    /// when that changes.
+    pub fn max_encoded_value_size(&self, required: bool) -> Option<u32> {
+        // A varint length, then that many bytes.
+        let length_prefixed = |bytes: u32| bytes.saturating_add(bytes.required_space() as u32);
+        match self {
+            DocumentPropertyType::String(sizes) => {
+                // A character takes at most 4 bytes in UTF-8.
+                let max_bytes = match (sizes.max_length, sizes.max_bytes) {
+                    (max_length, Some(max_bytes)) => max_length
+                        .map_or(u32::from(max_bytes), |length| {
+                            (u32::from(length) * 4).min(u32::from(max_bytes))
+                        }),
+                    (Some(max_length), None) => u32::from(max_length) * 4,
+                    (None, None) => return None,
+                };
+                Some(length_prefixed(max_bytes))
+            }
+            DocumentPropertyType::Date => Some(if required { 8 } else { 9 }),
+            DocumentPropertyType::U128 | DocumentPropertyType::I128 => Some(16),
+            DocumentPropertyType::U64 | DocumentPropertyType::I64 | DocumentPropertyType::F64 => {
+                Some(8)
+            }
+            DocumentPropertyType::U32
+            | DocumentPropertyType::I32
+            | DocumentPropertyType::KeyIdWithReference(_) => Some(4),
+            DocumentPropertyType::U16 | DocumentPropertyType::I16 => Some(2),
+            DocumentPropertyType::U8 | DocumentPropertyType::I8 | DocumentPropertyType::Boolean => {
+                Some(1)
+            }
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
+                (Some(min), Some(max)) if min == max => Some(u32::from(max)),
+                (_, Some(max)) => Some(length_prefixed(u32::from(max))),
+                (_, None) => None,
+            },
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
+            DocumentPropertyType::Object(inner_fields) => {
+                let mut inner = 0u32;
+                for field in inner_fields.values() {
+                    let field_size = field.property_type.max_encoded_value_size(field.required)?;
+                    inner = inner
+                        .saturating_add(field_size)
+                        .saturating_add(u32::from(!field.required));
+                }
+                Some(length_prefixed(inner))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => {
+                // A varint count, then each element encoded as a required property of its type.
+                // Counted here rather than by `max_encoded_size`, which saturates at `u16::MAX`.
+                let max_items = u32::from(typed_array.max_items);
+                let elements = if max_items == 0 {
+                    0
+                } else {
+                    let element = typed_array.item_type.max_encoded_value_size(true)?;
+                    max_items.saturating_mul(element)
+                };
+                Some(elements.saturating_add(max_items.required_space() as u32))
+            }
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => None,
         }
     }
 

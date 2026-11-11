@@ -1875,7 +1875,6 @@ mod chain_lock_wait_tests {
     use async_trait::async_trait;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, InstantLock, Network, OutPoint, Transaction, TxIn, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -2165,6 +2164,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -2269,6 +2269,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -3454,7 +3455,9 @@ mod chain_lock_wait_tests {
                 },
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
+                None,
                 &ctx.signer,
+                None,
             ),
         )
         .await
@@ -3490,7 +3493,9 @@ mod chain_lock_wait_tests {
                 },
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
+                None,
                 &ctx.signer,
+                None,
             ),
         )
         .await
@@ -3728,7 +3733,9 @@ mod chain_lock_wait_tests {
                 },
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
+                None,
                 &ctx.signer,
+                None,
             ),
         )
         .await

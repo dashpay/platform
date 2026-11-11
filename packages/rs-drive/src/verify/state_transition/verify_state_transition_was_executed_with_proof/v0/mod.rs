@@ -12,6 +12,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -411,17 +412,9 @@ impl Drive {
                         }
 
                         let contested_status =
-                            if let DocumentTransition::Create(create_transition) =
-                                document_transition
-                            {
-                                if create_transition.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                            SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                document_transition,
+                            );
 
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition.data_contract_id().into_buffer(),
@@ -490,7 +483,7 @@ impl Drive {
                         let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
-                                let expected_document = Document::try_from_create_transition(
+                                let mut expected_document = Document::try_from_create_transition(
                                     create_transition,
                                     documents_batch_transition.owner_id(),
                                     block_info,
@@ -498,6 +491,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -516,7 +515,7 @@ impl Drive {
                             }
                             DocumentTransition::Replace(replace_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
-                                let expected_document = Document::try_from_replace_transition(
+                                let mut expected_document = Document::try_from_replace_transition(
                                     replace_transition,
                                     documents_batch_transition.owner_id(),
                                     document.created_at(), //we can trust the created at (as we don't care)
@@ -530,6 +529,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -2157,6 +2162,31 @@ impl Drive {
 
                 Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
             }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+
+                // All nullifiers must be marked as spent
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
             StateTransition::ShieldedWithdrawal(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::data_contracts::withdrawals_contract;
@@ -3249,6 +3279,10 @@ impl Drive {
             // Balance and pool snapshots at the proof's block: not bindable to one transition.
             StateTransition::TokenUnshieldWithShieldedFee(_) => false,
             StateTransition::TokenPurchaseFromShieldedPool(_) => false,
+            // Only the resulting state: the spent nullifiers name the notes paying the fee, not
+            // the entries, so a competing create spending the same notes for other entries
+            // leaves the same evidence.
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => false,
         };
 
         Ok(binds)
@@ -4569,7 +4603,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4583,7 +4616,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete document");
 
@@ -4708,7 +4740,6 @@ mod tests {
                 true,
                 None,
                 latest,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4815,7 +4846,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4947,7 +4977,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -5407,7 +5436,9 @@ mod tests {
                     pro_tx_hash: dpp::prelude::Identifier::from(voter),
                     voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
                     vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
-                        vote_poll: vote_poll.clone(),
+                        vote_poll_id: vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected the poll id"),
                         vote_choice,
                     })),
                     nonce: 1,

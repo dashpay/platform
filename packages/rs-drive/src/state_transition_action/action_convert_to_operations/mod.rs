@@ -137,6 +137,9 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::TokenPurchaseFromShieldedPoolAction(action) => {
                 action.into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::PrivateDocumentCreateFromShieldedPoolAction(action) => {
+                action.into_high_level_drive_operations(epoch, platform_version)
+            }
             StateTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
                 shielded_transfer_action.into_high_level_drive_operations(epoch, platform_version)
             }

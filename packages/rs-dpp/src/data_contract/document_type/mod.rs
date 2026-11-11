@@ -9,10 +9,19 @@ pub mod methods;
 pub use index::*;
 pub use index_only_delete_values::{missing_required_value_path, undeclared_value_path};
 mod index_level;
+mod private_document;
 pub mod property_constraints;
 pub use index_level::IndexLevel;
 pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
+pub(crate) use private_document::PRIVATE_DOCUMENT_TYPE_KEYWORDS;
+pub use private_document::{
+    decode_private_document_payload, encode_private_document_payload,
+    largest_private_document_payload_size, minimum_private_document_entry_size,
+    validate_private_document_entry_size, PrivateDocumentConfig,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_BODY_HEADER_BYTES, PRIVATE_DOCUMENT_ENVELOPE_V1_OVERHEAD_BYTES,
+    PRIVATE_DOCUMENT_ENVELOPE_V1_WRAPPER_BYTES,
+};
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
@@ -115,12 +124,17 @@ pub(crate) mod property_names {
     pub const MINIMUM: &str = "minimum";
     pub const ENUM: &str = "enum";
     pub const MAXIMUM: &str = "maximum";
+    pub const EXCLUSIVE_MINIMUM: &str = "exclusiveMinimum";
+    pub const EXCLUSIVE_MAXIMUM: &str = "exclusiveMaximum";
+    pub const MULTIPLE_OF: &str = "multipleOf";
+    pub const CONST: &str = "const";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
     pub const MIN_PROPERTIES: &str = "minProperties";
     pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const DEPENDENT_REQUIRED: &str = "dependentRequired";
     pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
@@ -364,6 +378,16 @@ pub(crate) mod property_names {
     /// contested index, and fixed when the document type is created. Meta-schema v3+
     /// (protocol version 14). See `apply_documents_ttl` in `try_from_schema::common`.
     pub const TTL: &str = "ttl";
+    /// Doctype-level object declaring a **private** document type (`{ "entrySize": n }`):
+    /// its documents are fixed-size encrypted entries of `entrySize` bytes that an anonymous
+    /// transition paid from the shielded pool appends, and the chain never reads. The type
+    /// declares no index and nothing else a document type promises about its documents; its
+    /// `properties` describe the plaintext. Admitted only by the native schema check of
+    /// protocol version 15, and fixed when the document type is created. See
+    /// `apply_private_document` in `try_from_schema::common`.
+    pub const PRIVATE: &str = "private";
+    /// The one key of the `private` object: how many bytes each entry takes.
+    pub const ENTRY_SIZE: &str = "entrySize";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

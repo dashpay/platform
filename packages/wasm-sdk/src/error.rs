@@ -38,6 +38,7 @@ pub enum WasmSdkErrorKind {
     DriveInternalError,
 
     // Local helper kinds
+    /// An argument is invalid, including a query no node can answer as the requested result.
     InvalidArgument,
     SerializationError,
     NotFound,
@@ -167,6 +168,10 @@ impl From<SdkError> for WasmSdkError {
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
             Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
+            // The request has to change: no node answers it as the requested result type.
+            InvalidRequest(msg) => {
+                Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
+            }
             Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable),
             DriveProofError(e, _proof, _block_info) => Self::new(
                 WasmSdkErrorKind::DriveProofError,
@@ -186,6 +191,12 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            StateTransitionResultUnconfirmed(source) => Self::new(
+                WasmSdkErrorKind::Generic,
+                format!("state transition result is unconfirmed; reconcile before re-submitting: {source}"),
+                None,
+                false,
+            ),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
@@ -442,6 +453,26 @@ mod tests {
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
 
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_keep_unconfirmed_submission_non_retriable_with_its_diagnostic() {
+        for depth in 0..=2 {
+            let mut source = SdkError::StateTransitionResultUnconfirmed(Box::new(
+                SdkError::InvalidProvedResponse("document result proof was invalid".into()),
+            ));
+            for _ in 0..depth {
+                source = SdkError::NoAvailableAddressesToRetry(Box::new(source));
+            }
+            let error = WasmSdkError::from(source);
+            assert!(!error.is_retriable());
+            assert!(error.message().contains("unconfirmed"));
+            assert!(error
+                .message()
+                .contains("document result proof was invalid"));
+            assert_eq!(error.code(), -1);
+        }
+    }
+
     fn property_constraint_violated() -> ConsensusError {
         DocumentPropertyConstraintViolatedError::new(
             "post".to_string(),
@@ -530,6 +561,25 @@ mod tests {
         assert_eq!(error.message(), message);
     }
 
+    /// An SDK without a context provider cannot verify any proof, and retrying cannot change
+    /// that: JS reads a context provider error that says what is missing, not a proof failure,
+    /// and is not told to retry.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_missing_context_provider_as_a_non_retriable_context_provider_error() {
+        let error = WasmSdkError::from(SdkError::from(
+            dash_sdk::ProofVerifierError::ContextProviderNotSet,
+        ));
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::ContextProviderError);
+        assert!(!error.is_retriable());
+        assert!(
+            error.message().contains("context provider is not set"),
+            "{}",
+            error.message()
+        );
+    }
+
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     #[cfg(not(target_arch = "wasm32"))]
@@ -552,6 +602,7 @@ mod tests {
             async move {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
                             expected_protocol_version: 14,
                             received_protocol_version: 13,
@@ -561,6 +612,7 @@ mod tests {
                     }
                 } else {
                     ExecutionError {
+                        possibly_accepted: false,
                         inner: SdkError::DapiClientError(DapiClientError::NoAvailableAddresses),
                         retries: 0,
                         address: None,
@@ -658,6 +710,7 @@ mod tests {
             let refused = SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 13,
                 pinned,
                 cause: None,
@@ -673,6 +726,7 @@ mod tests {
         let unconfirmed = WasmSdkError::from(SdkError::ProtocolVersionNotActive {
             method: "get_contract_fee_pots",
             required: 14,
+            feature: None,
             network: 0,
             pinned: false,
             cause: Some(Box::new(SdkError::Generic("all nodes refused".to_string()))),
@@ -692,6 +746,7 @@ mod tests {
             WasmSdkError::from(SdkError::ProtocolVersionNotActive {
                 method: "get_contract_fee_pots",
                 required: 14,
+                feature: None,
                 network: 0,
                 pinned: false,
                 cause: Some(Box::new(SdkError::Proof(
@@ -723,6 +778,19 @@ mod tests {
             "Failed to find quorum: HTTP 503".to_string(),
         ));
         assert!(unreachable.is_retriable());
+    }
+
+    /// A query no node answers as the requested result type is the app's argument to change:
+    /// JS reads it as an invalid argument, and retrying it does not help.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    fn should_report_a_query_no_node_can_answer_as_its_result_type_as_an_invalid_argument() {
+        let reason = "a documents select cannot be grouped".to_string();
+        let error = WasmSdkError::from(SdkError::InvalidRequest(reason.clone()));
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(error.name(), "InvalidArgument");
+        assert!(!error.is_retriable());
+        assert_eq!(error.message(), reason);
     }
 
     /// A node behind a protocol upgrade the network has proven answered a query that needs

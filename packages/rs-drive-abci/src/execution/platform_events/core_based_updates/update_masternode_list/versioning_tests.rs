@@ -168,3 +168,82 @@ fn should_use_nested_ports_only_after_the_protocol_upgrade() {
         );
     }
 }
+
+/// Historical freeze: protocol versions 1 to 14 executed their blocks with
+/// `update_masternode_list` 0 or 1 and `update_operator_identity` 0, which ignore the operator
+/// payouts of Core's diffs, so they must keep selecting them for those blocks to replay to the
+/// same state. The generations that apply the payouts are exercised through the dispatcher at
+/// the latest protocol version (`operator_payout_tests`).
+#[test]
+fn should_keep_the_masternode_generations_protocol_versions_1_to_14_executed_with() {
+    for protocol_version in 1..=14 {
+        let core_based_updates = &PlatformVersion::get(protocol_version)
+            .expect("expected a protocol version")
+            .drive_abci
+            .methods
+            .core_based_updates;
+        let update_masternode_list = if protocol_version == 14 { 1 } else { 0 };
+        assert_eq!(
+            (
+                core_based_updates.update_masternode_list,
+                core_based_updates
+                    .masternode_updates
+                    .update_operator_identity
+            ),
+            (update_masternode_list, 0),
+            "protocol version {protocol_version}"
+        );
+    }
+}
+
+/// `update_operator_identity` 1 adds a key whose hash another key of the identity has, which
+/// Drive's `add_new_keys_to_masternode_identity` 0 refuses on every node, failing the block. So
+/// every protocol version selecting the first selects version 1 or later of the second.
+#[test]
+fn should_pair_update_operator_identity_1_with_a_drive_that_adds_keys_repeating_a_hash() {
+    for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a protocol version");
+        if platform_version
+            .drive_abci
+            .methods
+            .core_based_updates
+            .masternode_updates
+            .update_operator_identity
+            >= 1
+        {
+            assert!(
+                platform_version
+                    .drive
+                    .methods
+                    .identity
+                    .update
+                    .add_new_keys_to_masternode_identity
+                    >= 1,
+                "protocol version {protocol_version}"
+            );
+        }
+    }
+}
+
+/// `update_masternode_list` 2 reads whether Dash Core's V24 is active from the Core fork record,
+/// which `update_core_info` 1 writes at the block's Core height before it updates the list. Under
+/// `update_core_info` 0 nothing writes the record, so an operator key Core only re-encoded would
+/// read as a key change. So every protocol version selecting the first selects version 1 or later
+/// of the second.
+#[test]
+fn should_pair_update_masternode_list_2_with_an_update_core_info_that_records_core_forks() {
+    for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+        let core_based_updates = &PlatformVersion::get(protocol_version)
+            .expect("expected a protocol version")
+            .drive_abci
+            .methods
+            .core_based_updates;
+        if core_based_updates.update_masternode_list >= 2 {
+            assert!(
+                core_based_updates.update_core_info >= 1,
+                "protocol version {protocol_version}"
+            );
+        }
+    }
+}

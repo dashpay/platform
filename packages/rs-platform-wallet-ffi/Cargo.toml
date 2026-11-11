@@ -32,7 +32,6 @@ tokio-metrics = { workspace = true, optional = true }
 # Core dependencies (for Network type)
 dashcore = { workspace = true }
 key-wallet = { workspace = true, features = ["bincode"] }
-dash-network = { workspace = true, features = ["ffi"] }
 
 # For the glue impl of platform-wallet's async `DrainCryptoProvider` trait over
 # the resolver-backed signer (deferred-crypto drain FFI).
@@ -65,6 +64,7 @@ bs58 = "0.5"
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+tempfile = "3.27.0"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 

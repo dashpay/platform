@@ -99,17 +99,13 @@ fn platform_addr_mixed_wallet_rejected() {
 
 fn p2pkh(byte: u8) -> Address {
     use dashcore::address::Payload;
-    use dashcore::hashes::Hash;
     use dashcore::PubkeyHash;
     let hash = PubkeyHash::from_byte_array([byte; 20]);
     Address::new(Network::Testnet, Payload::PubkeyHash(hash))
 }
 
 fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
-    let outpoint = OutPoint::new(
-        Txid::from_raw_hash(dashcore::hashes::Hash::all_zeros()),
-        vout,
-    );
+    let outpoint = OutPoint::new(Txid::all_zeros(), vout);
     let txout = TxOut {
         value,
         script_pubkey: addr.script_pubkey(),
@@ -367,7 +363,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
 
     // Forge a blob whose internal account_index disagrees with the
     // typed column we'll insert it under.
-    let outpoint = OutPoint::new(Txid::from_raw_hash(dashcore::hashes::Hash::all_zeros()), 7);
+    let outpoint = OutPoint::new(Txid::all_zeros(), 7);
     let entry = AssetLockEntry {
         out_point: outpoint,
         transaction: DashTx {
@@ -381,6 +377,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1,
         status: AssetLockStatus::Built,
         proof: None,

@@ -15,6 +15,7 @@ use dashcore::{OutPoint, Txid};
 use dpp::prelude::CoreBlockHeight;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -22,6 +23,7 @@ use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
+use super::super::input_cap_violation;
 use super::super::manager::AssetLockManager;
 use super::super::orchestration::UNCONFIRMED_BROADCAST_PROOF_TIMEOUT;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -106,6 +108,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let lock = TrackedAssetLock {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -153,7 +156,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
         use super::proof::record_or_persister;
-        use key_wallet::transaction_checking::TransactionContext;
 
         let record = match record_or_persister(in_memory, &self.persister, &out_point.txid) {
             Ok(opt) => opt,
@@ -1090,6 +1092,38 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .preserve_on_drop();
         }
 
+        // A row that still needs a send is judged against the asset-lock
+        // input cap before the transport is touched. Every peer drops a
+        // larger lock silently (`assetlocktx-too-many-inputs`), so
+        // re-sending it can never settle the row, and the host never learns
+        // why. Such a row predates the pre-broadcast check or came from the
+        // build-only API. The resume refuses it with the typed error and
+        // changes nothing: the row stays tracked, because a node older than
+        // the relay rule may have mined the lock and this wallet cannot
+        // always tell (a restored InstantSend record carries no finality).
+        // A row the local record already proves final is completed from
+        // that proof below, cap or no cap.
+        if local_finality.is_none() {
+            if let Some(cap_error) = match status {
+                AssetLockStatus::Built | AssetLockStatus::Broadcast => {
+                    input_cap_violation(&tx, self.sdk.version())
+                }
+                AssetLockStatus::InstantSendLocked
+                | AssetLockStatus::ChainLocked
+                | AssetLockStatus::RecoveredFromChain
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::DrainCompleted => None,
+            } {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    inputs = tx.input.len(),
+                    "resume_asset_lock: the asset lock is over the input cap and no \
+                     peer will relay it — not sending it, and leaving the row as it is"
+                );
+                return Err(cap_error);
+            }
+        }
+
         // 2. Resume from the current status.
         let proof = match (&status, local_finality) {
             // Already final locally: no send, no transport wait, no proof
@@ -1932,7 +1966,6 @@ mod tests {
     use async_trait::async_trait;
     use dashcore::bls_sig_utils::BLSSignature;
     use dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dashcore::hashes::Hash;
     use dashcore::prelude::CoreBlockHeight;
     use dashcore::{BlockHash, Network, OutPoint, Transaction, TxIn, Txid};
     use key_wallet::account::account_collection::AccountCollection;
@@ -2192,6 +2225,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2328,6 +2362,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2552,6 +2587,7 @@ mod tests {
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
             operation_id: None,
+            shielded_recipient: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2829,6 +2865,7 @@ mod tests {
                 self.out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4340,6 +4377,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4854,6 +4892,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -4978,6 +5017,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5481,6 +5521,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5586,6 +5627,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5865,6 +5907,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6010,6 +6053,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        shielded_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -6139,5 +6183,230 @@ mod tests {
             AssetLockStatus::InstantSendLocked,
             "the row is advanced exactly as a waited-for proof would advance it"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Input cap on resume (dashpay/platform#5714)
+    // -----------------------------------------------------------------
+
+    /// A tracked row whose transaction was built by the build-only API,
+    /// which applies no input cap: `coins` coins of 10 000 duffs under a
+    /// recording broadcaster and persister, with the lock tracked at
+    /// `status` the way a row from before the pre-broadcast check, or from
+    /// that API, is restored.
+    struct SmallCoinRow {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        manager: AssetLockManager<RecordingBroadcaster>,
+        broadcaster: Arc<RecordingBroadcaster>,
+        persistence: Arc<RecordingPersistence>,
+        transaction: Transaction,
+        out_point: OutPoint,
+    }
+
+    impl SmallCoinRow {
+        async fn tracked(coins: usize, amount_duffs: u64, status: AssetLockStatus) -> Self {
+            let (wallet_manager, wallet_id, _generation, signer) =
+                crate::test_support::funded_wallet_manager_with_outputs(
+                    StandardAccountType::BIP44Account,
+                    &vec![10_000; coins],
+                )
+                .await;
+            let broadcaster = Arc::new(RecordingBroadcaster::default());
+            let persistence = Arc::new(RecordingPersistence::default());
+            let sdk = Arc::new(
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_network(Network::Testnet)
+                    .build()
+                    .expect("mock sdk"),
+            );
+            let manager = AssetLockManager::new(
+                sdk,
+                Arc::clone(&wallet_manager),
+                wallet_id,
+                Arc::new(Notify::new()),
+                Arc::clone(&broadcaster),
+                WalletPersister::new(wallet_id, Arc::clone(&persistence) as Arc<_>),
+            );
+            let (transaction, _path) = manager
+                .build_asset_lock_transaction(
+                    amount_duffs,
+                    0,
+                    AssetLockFundingType::IdentityRegistration,
+                    4,
+                    &signer,
+                )
+                .await
+                .expect("the build-only API applies no input cap");
+            let out_point = OutPoint::new(transaction.txid(), 0);
+            {
+                let mut wm = wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet_id)
+                    .expect("wallet must remain registered")
+                    .tracked_asset_locks
+                    .insert(
+                        out_point,
+                        TrackedAssetLock {
+                            operation_id: None,
+                            out_point,
+                            transaction: transaction.clone(),
+                            account_index: 0,
+                            funding_type: AssetLockFundingType::IdentityRegistration,
+                            identity_index: 4,
+                            amount: amount_duffs,
+                            status,
+                            proof: None,
+                            shielded_recipient: None,
+                        },
+                    );
+            }
+            Self {
+                wallet_manager,
+                wallet_id,
+                manager,
+                broadcaster,
+                persistence,
+                transaction,
+                out_point,
+            }
+        }
+
+        /// A row over the cap: 100 coins of 10 000 duffs cover 1 000 000
+        /// only before the fee, so the lock takes more than 100 inputs.
+        async fn oversized(status: AssetLockStatus) -> Self {
+            let row = Self::tracked(120, 1_000_000, status).await;
+            assert!(
+                row.transaction.input.len() > 100,
+                "fixture must exceed the cap"
+            );
+            row
+        }
+
+        async fn file_record(&self, context: TransactionContext) {
+            let record = record_for(self.transaction.clone(), context);
+            let mut wm = self.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet must remain registered")
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("funded fixture has BIP44 account 0")
+                .transactions_mut()
+                .insert(record.txid, record);
+        }
+
+        async fn status(&self) -> Option<AssetLockStatus> {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .expect("wallet")
+                .tracked_asset_locks
+                .get(&self.out_point)
+                .map(|lock| lock.status.clone())
+        }
+
+        fn sends(&self) -> usize {
+            self.broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex")
+                .len()
+        }
+
+        fn persisted_removal(&self) -> bool {
+            self.persistence
+                .stored
+                .lock()
+                .expect("recording persistence mutex")
+                .iter()
+                .filter_map(|cs| cs.asset_locks.as_ref())
+                .any(|cs| cs.removed.contains(&self.out_point))
+        }
+    }
+
+    async fn assert_refused_on_resume(status: AssetLockStatus) {
+        let row = SmallCoinRow::oversized(status.clone()).await;
+
+        let error = row
+            .manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("an oversized lock must not resume");
+
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::AssetLockTooManyInputs { count, max: 100 } if count > 100
+            ),
+            "{error:?}"
+        );
+        assert_eq!(row.sends(), 0, "nothing may be sent: every peer drops it");
+        assert_eq!(
+            row.status().await,
+            Some(status),
+            "the row stays: an older node may have mined the lock"
+        );
+        assert!(!row.persisted_removal(), "nothing is removed");
+    }
+
+    /// A `Built` row over the cap, built before the pre-broadcast check
+    /// existed, is refused on resume: no send, the row untouched, and the
+    /// host gets the typed refusal it can act on.
+    #[tokio::test]
+    async fn should_refuse_to_resume_an_oversized_built_row_without_sending() {
+        assert_refused_on_resume(AssetLockStatus::Built).await;
+    }
+
+    /// The `Broadcast` twin: the earlier send was dropped silently, so the
+    /// defensive re-broadcast would be too.
+    #[tokio::test]
+    async fn should_refuse_to_resume_an_oversized_broadcast_row_without_sending() {
+        assert_refused_on_resume(AssetLockStatus::Broadcast).await;
+    }
+
+    /// Exactly the cap still re-sends: the check is `>`, as on the build.
+    #[tokio::test]
+    async fn should_still_re_broadcast_a_resumed_lock_of_exactly_100_inputs() {
+        let row = SmallCoinRow::tracked(100, 980_000, AssetLockStatus::Built).await;
+        assert_eq!(row.transaction.input.len(), 100);
+
+        let error = row
+            .manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof arrives");
+
+        assert!(
+            matches!(error, PlatformWalletError::FinalityTimeout(_)),
+            "{error:?}"
+        );
+        assert_eq!(row.sends(), 1, "a lock that fits is re-sent as before");
+        assert_eq!(row.status().await, Some(AssetLockStatus::Broadcast));
+    }
+
+    /// A proof outranks the cap: a node from before the relay rule may have
+    /// mined the lock, and the record then already proves it. The resume
+    /// completes from that proof.
+    #[tokio::test]
+    async fn should_complete_an_oversized_row_from_a_local_proof() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+
+        let row = SmallCoinRow::oversized(AssetLockStatus::Built).await;
+        row.file_record(TransactionContext::InstantSend(InstantLock::default()))
+            .await;
+
+        let (proof, _path) = row
+            .manager
+            .resume_asset_lock(&row.out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect("a locally final lock completes, cap or no cap");
+
+        assert!(
+            matches!(proof, dpp::prelude::AssetLockProof::Instant(_)),
+            "{proof:?}"
+        );
+        assert_eq!(row.sends(), 0);
+        assert_eq!(row.status().await, Some(AssetLockStatus::InstantSendLocked));
+        assert!(!row.persisted_removal());
     }
 }

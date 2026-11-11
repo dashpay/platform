@@ -4,13 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Provides the operations needed to add to system credits
@@ -18,7 +16,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `amount` - The amount of system credits to be added.
-    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to a HashMap which contains the estimated costs for each layer information.
+    /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to an `EstimatedLayers` which contains the estimated costs for each layer information.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used for adding to the system credits.
     /// * `drive_version` - A `DriveVersion` object specifying the version of the Drive.
     ///
@@ -32,9 +30,7 @@ impl Drive {
     pub fn add_to_system_credits_operations(
         &self,
         amount: u64,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

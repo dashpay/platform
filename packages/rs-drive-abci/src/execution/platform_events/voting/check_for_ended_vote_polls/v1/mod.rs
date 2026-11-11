@@ -321,13 +321,15 @@ where
             }
         };
         // A minimum given as a share of the total is measured against the masternode list of
-        // the closing block, each masternode weighed as its vote is. A fixed minimum reads no
-        // total.
-        let total_voting_power = match vote_poll.minimum_voting_power {
+        // the closing block, each masternode weighed as its vote is and PoSe-banned masternodes
+        // left out, so a share of the network is a share of the masternodes serving it. A fixed
+        // minimum reads no total. The rule is the one the poll opened with, in its stored info.
+        let total_voting_power = match stored_info.vote_poll().minimum_voting_power {
             YesNoMinimumVotingPower::Absolute { .. } => 0,
             YesNoMinimumVotingPower::FractionOfTotal { .. } => block_platform_state
                 .full_masternode_list()
                 .values()
+                .filter(|masternode| masternode.state.pose_ban_height.is_none())
                 .try_fold(0 as VotingPower, |total, masternode| {
                     total.checked_add(
                         masternode_vote_strength(&masternode.node_type, platform_version).into(),
@@ -337,9 +339,9 @@ where
                     "the masternode list's total voting power overflows",
                 )))?,
         };
+        let opened_vote_poll = stored_info.vote_poll().clone();
         let result = self.keep_record_of_finished_yes_no_vote_poll(
             block_info,
-            vote_poll,
             stored_info,
             &tally,
             total_voting_power,
@@ -348,7 +350,7 @@ where
         )?;
         self.on_yes_no_vote_poll_finished(
             block_info,
-            vote_poll,
+            &opened_vote_poll,
             &result,
             transaction,
             platform_version,

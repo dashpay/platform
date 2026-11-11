@@ -16,8 +16,8 @@ internal object MnemonicNative {
     external fun destroyResolver(handle: Long)
 
     /**
-     * Generate a BIP-39 mnemonic (key-wallet-ffi). wordCount ∈ {12,15,18,21,24};
-     * language is the FFILanguage ordinal (0 = English).
+     * Generate a BIP-39 mnemonic (platform-wallet-ffi). wordCount ∈ {12,15,18,21,24};
+     * language is the FFIMnemonicLanguage ordinal (0 = English).
      * @throws DashSDKException on failure
      */
     external fun generateMnemonic(wordCount: Int, language: Int): String

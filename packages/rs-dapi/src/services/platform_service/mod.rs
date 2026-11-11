@@ -1,8 +1,12 @@
 // Platform service modular implementation
 // This file contains the core PlatformServiceImpl struct and delegates to individual modules
 
+mod block_proof;
 mod broadcast_state_transition;
 mod error_mapping;
+mod get_blocks;
+mod get_owner_transactions_in_block;
+mod get_recent_state_transition_status;
 mod get_status;
 mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
@@ -13,8 +17,10 @@ mod protobuf_request_errors;
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
-    GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetBlocksRequest,
+    GetBlocksResponse, GetOwnerTransactionsInBlockRequest, GetOwnerTransactionsInBlockResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetRecentStateTransitionStatusRequest,
+    GetRecentStateTransitionStatusResponse, GetStatusRequest, GetStatusResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
@@ -25,7 +31,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
@@ -33,6 +39,34 @@ pub use error_mapping::TenderdashStatus;
 pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
+
+/// `getBlocks` requests reading from Tenderdash at once. Ten full blocks hold about 60 MiB
+/// while in flight, so this keeps the memory of the query bounded on a small node.
+const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
+
+/// `getOwnerTransactionsInBlock` requests reading and decoding blocks at once. Cheaper than
+/// `getBlocks`, since each reads one block, but no response cache can absorb them: the
+/// answer differs per owner.
+const MAX_CONCURRENT_GET_OWNER_TRANSACTIONS: usize = 16;
+
+/// Run backend work in a task of its own, which keeps `permit` until the work ends.
+///
+/// A handler is dropped when its caller goes away or its deadline passes, while the request
+/// it sent to Tenderdash carries on there. Work run here is not dropped with its handler,
+/// and what a block query asks of Tenderdash has no deadline of its own, so it counts
+/// against its limit for as long as the backend is busy with it, and what it read can still
+/// be cached.
+async fn run_holding_permit<T, F>(permit: OwnedSemaphorePermit, work: F) -> DAPIResult<T>
+where
+    T: Send + 'static,
+    F: Future<Output = DAPIResult<T>> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let _permit = permit;
+        work.await
+    })
+    .await?
+}
 
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
@@ -115,13 +149,20 @@ macro_rules! drive_method {
                         return Ok((Response::new(decoded), true));
                     }
 
-                    // Fetch from Drive
+                    // Fetch from Drive, noting the cache's generation first: a block clearing
+                    // the cache while the call is in flight leaves this answer stale
+                    let generation = cache.generation();
                     trace!(method, "Calling Drive method");
                     let drive_call = client.$method_name(request);
                     let resp = drive_call.await?;
                     // Store in cache using inner message
                     trace!(method, "Caching response");
-                    cache.put(key, resp.get_ref());
+                    cache.put_from_generation(
+                        key,
+                        resp.get_ref(),
+                        dapi_grpc::Message::encoded_len(resp.get_ref()),
+                        generation,
+                    );
                     trace!(method, "Response cached");
 
                     Ok((resp, false))
@@ -143,6 +184,7 @@ use crate::DapiError;
 use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
+use crate::error::DAPIResult;
 use crate::services::streaming_service::FilterType;
 use crate::sync::Workers;
 
@@ -156,6 +198,8 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    pub get_blocks_permits: Arc<Semaphore>,
+    pub get_owner_transactions_permits: Arc<Semaphore>,
     pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
@@ -219,6 +263,10 @@ impl PlatformServiceImpl {
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
             )),
+            get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
+            get_owner_transactions_permits: Arc::new(Semaphore::new(
+                MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+            )),
             shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,
         }
@@ -241,6 +289,50 @@ impl Platform for PlatformServiceImpl {
         let method = type_name_of_val(request.get_ref());
         trace!(method, "Received get_status request");
         let result = self.get_status_impl(request).await;
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get up to ten consecutive Tenderdash blocks
+    ///
+    /// See [`PlatformServiceImpl::get_blocks_impl`] for implementation details.
+    async fn get_blocks(
+        &self,
+        request: Request<GetBlocksRequest>,
+    ) -> Result<Response<GetBlocksResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_blocks request");
+        let result = self
+            .get_blocks_impl(request)
+            .await
+            .map_err(|error| error.to_status());
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
+    }
+
+    /// Get the state transitions one owner has in the Tenderdash block at a height
+    ///
+    /// See [`PlatformServiceImpl::get_owner_transactions_in_block_impl`] for implementation details.
+    async fn get_owner_transactions_in_block(
+        &self,
+        request: Request<GetOwnerTransactionsInBlockRequest>,
+    ) -> Result<Response<GetOwnerTransactionsInBlockResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_owner_transactions_in_block request");
+        let result = self
+            .get_owner_transactions_in_block_impl(request)
+            .await
+            .map_err(|error| error.to_status());
 
         match &result {
             Ok(_) => info!(method, "request succeeded"),
@@ -305,6 +397,32 @@ impl Platform for PlatformServiceImpl {
                     );
 
                 Ok(response)
+            }
+        }
+    }
+
+    /// Implementation of getRecentStateTransitionStatus
+    ///
+    /// This node's unproved view of a state transition by hash: committed, pending or unknown.
+    /// See [`PlatformServiceImpl::get_recent_state_transition_status_impl`].
+    async fn get_recent_state_transition_status(
+        &self,
+        request: Request<GetRecentStateTransitionStatusRequest>,
+    ) -> Result<Response<GetRecentStateTransitionStatusResponse>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(
+            method,
+            "Received get_recent_state_transition_status request"
+        );
+        match self.get_recent_state_transition_status_impl(request).await {
+            Ok(response) => {
+                info!(method, "request succeeded");
+                Ok(Response::new(response))
+            }
+            Err(error) => {
+                let status = error.to_status();
+                warn!(method, error = %status, source = %error, "get recent state transition status request failed");
+                Err(status)
             }
         }
     }
@@ -540,10 +658,16 @@ impl Platform for PlatformServiceImpl {
                 return Ok((Response::new(decoded), true));
             }
 
+            let generation = cache.generation();
             trace!(method, "Calling Drive method");
             let response = client.get_path_elements(request).await?;
             trace!(method, "Caching response");
-            cache.put(key, response.get_ref());
+            cache.put_from_generation(
+                key,
+                response.get_ref(),
+                dapi_grpc::Message::encoded_len(response.get_ref()),
+                generation,
+            );
             Ok((response, false))
         }
         .await;
@@ -604,6 +728,18 @@ impl Platform for PlatformServiceImpl {
         get_vote_polls_by_end_date,
         dapi_grpc::platform::v0::GetVotePollsByEndDateRequest,
         dapi_grpc::platform::v0::GetVotePollsByEndDateResponse
+    );
+
+    drive_method!(
+        get_yes_no_vote_poll_state,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateRequest,
+        dapi_grpc::platform::v0::GetYesNoVotePollStateResponse
+    );
+
+    drive_method!(
+        get_masternode_yes_no_vote,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteRequest,
+        dapi_grpc::platform::v0::GetMasternodeYesNoVoteResponse
     );
 
     // Token balance methods
@@ -766,6 +902,12 @@ impl Platform for PlatformServiceImpl {
         get_shielded_nullifiers,
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse
+    );
+
+    drive_method!(
+        get_private_document_entries,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesRequest,
+        dapi_grpc::platform::v0::GetPrivateDocumentEntriesResponse
     );
 }
 

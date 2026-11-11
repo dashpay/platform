@@ -7,7 +7,7 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use std::os::raw::c_char;
 
-fn classify_broadcast_result(
+pub(crate) fn classify_broadcast_result(
     result: Result<dashcore::Txid, PlatformWalletError>,
     local_txid: dashcore::Txid,
 ) -> (Option<dashcore::Txid>, PlatformWalletFFIResult) {
@@ -218,7 +218,6 @@ pub unsafe extern "C" fn core_wallet_signed_transaction_bytes(
 
 #[cfg(test)]
 mod outcome_tests {
-    use dashcore::hashes::Hash;
 
     use super::*;
 

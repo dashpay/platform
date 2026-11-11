@@ -353,10 +353,12 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 #[cfg(feature = "shielded_test_data")]
 mod snapshot_bake_main {
     use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
-    use dpp::dashcore::{Block, BlockHash, Header, InstantLock, QuorumHash, Transaction, Txid};
+    use dpp::dashcore::{
+        Block, BlockHash, Header, InstantLock, ProTxHash, QuorumHash, Transaction, Txid,
+    };
     use dpp::dashcore_rpc::dashcore_rpc_json::{
-        AssetUnlockStatusResult, ExtendedQuorumListResult, GetChainTipsResult, MasternodeListDiff,
-        MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+        AssetUnlockStatusResult, DMNState, ExtendedQuorumListResult, GetChainTipsResult,
+        MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
     };
     use dpp::dashcore_rpc::json::GetRawTransactionResult;
     use dpp::dashcore_rpc::Error;
@@ -455,6 +457,9 @@ mod snapshot_bake_main {
             unreachable!()
         }
         fn get_coinbase_payload_version(&self, _: u32) -> Result<Option<u16>, Error> {
+            unreachable!()
+        }
+        fn get_masternode_state(&self, _: &ProTxHash, _: u32) -> Result<DMNState, Error> {
             unreachable!()
         }
     }

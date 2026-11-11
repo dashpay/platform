@@ -1665,6 +1665,9 @@ fn validate_reference_target_v0(
                         document: ConsumedDocument {
                             document_id: found.id(),
                             document_type_name: document_type_name.to_string(),
+                            // Inert: the create conversion 0 that deletes it reads it by id;
+                            // only generation 1 (protocol version 15) keeps the lookup's read
+                            read: None,
                         },
                         referenced_id: Identifier::from(referenced_id),
                         reference_target: reference_target.clone(),

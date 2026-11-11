@@ -98,8 +98,10 @@ impl ResourceVoteV0 {
 mod tests {
     use super::*;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-    use crate::voting::vote_polls::yes_no_vote_poll::{YesNoMinimumVotingPower, YesNoVotePoll};
-    use platform_value::BinaryData;
+    use crate::voting::vote_polls::yes_no_vote_poll::{
+        YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+    };
+    use platform_value::Identifier;
 
     #[test]
     fn should_build_a_resource_vote_only_on_a_contested_poll() {
@@ -111,7 +113,9 @@ mod tests {
         assert_eq!(vote.vote_poll, contested_poll);
 
         let yes_no_poll = VotePoll::YesNoVotePoll(YesNoVotePoll {
-            resource_path: vec![BinaryData::new(b"challenge".to_vec())],
+            purpose: YesNoVotePollPurpose::DecisionProposal {
+                document_id: Identifier::new([0xc1; 32]),
+            },
             supermajority_numerator: 2,
             supermajority_denominator: 3,
             minimum_voting_power: YesNoMinimumVotingPower::Absolute { voting_power: 0 },

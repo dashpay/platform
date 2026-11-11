@@ -4,15 +4,15 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element::SumItem;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
@@ -40,13 +40,11 @@ impl Drive {
             platform_version,
         )?;
 
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         Ok((fees, token_amount))
@@ -64,8 +62,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<TokenAmount, Error> {
-        let mut estimated_costs_only_with_layer_info =
-            if apply { None } else { Some(HashMap::new()) };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let (batch_operations, token_amount) = self.add_to_token_total_supply_operations_v0(
             token_id,
@@ -94,9 +91,7 @@ impl Drive {
         amount: u64,
         allow_first_mint: bool,
         allow_saturation: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<LowLevelDriveOperation>, TokenAmount), Error> {

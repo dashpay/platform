@@ -8,6 +8,8 @@ use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 #[cfg(feature = "mock-versions")]
+use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
+#[cfg(feature = "mock-versions")]
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::system_data_contract_versions::SystemDataContractVersions;
 #[cfg(feature = "mock-versions")]
@@ -69,7 +71,8 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
 // We use OnceLock to be able to modify the version mocks
 pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::new();
 #[cfg(feature = "mock-versions")]
-const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
+const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] =
+    &[TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4];
 
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V15;
 
@@ -85,7 +88,7 @@ impl PlatformVersion {
 
                     // Init default set of test versions
                     let versions = PLATFORM_TEST_VERSIONS
-                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
 
                     return versions.get(test_version as usize - 2).ok_or(
                         PlatformVersionError::UnknownVersionError(format!(
@@ -113,7 +116,7 @@ impl PlatformVersion {
 
                     // Init default set of test versions
                     let versions = PLATFORM_TEST_VERSIONS
-                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
 
                     return versions.get(test_version as usize - 2);
                 }
@@ -386,6 +389,10 @@ mod yes_no_vote_poll_gating_tests {
                     drive_methods.verify.voting.verify_masternode_yes_no_vote,
                 ),
                 (
+                    "verify_identity_yes_no_vote",
+                    drive_methods.verify.voting.verify_identity_yes_no_vote,
+                ),
+                (
                     "remove_vote_poll_end_date_query_operations",
                     drive_methods
                         .vote
@@ -416,6 +423,10 @@ mod yes_no_vote_poll_gating_tests {
                 (
                     "fetch_yes_no_vote_poll_state",
                     yes_no.fetch_yes_no_vote_poll_state,
+                ),
+                (
+                    "prove_identity_yes_no_vote",
+                    yes_no.prove_identity_yes_no_vote,
                 ),
                 (
                     "remove_yes_no_vote_poll_votes_operations",

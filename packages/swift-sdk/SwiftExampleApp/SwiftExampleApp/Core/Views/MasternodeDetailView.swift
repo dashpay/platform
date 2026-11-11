@@ -433,13 +433,13 @@ struct MasternodeDetailView: View {
             // Reflect the new (reduced) balance.
             await fetchClaimableBalance()
         } catch PlatformWalletError.masternodeWithdrawalUnconfirmed(let detail) {
-            // Ambiguous: the claim may have executed and the nonce was
-            // consumed — never re-submit blindly. Confirm stays disabled
+            // Ambiguous: the claim may have executed and its nonce may have
+            // been taken, so never re-submit blindly. Confirm stays disabled
             // until the balance is refreshed.
             claiming = false
             claimOutcomeUnconfirmed = true
-            claimError = "The withdrawal was submitted but its result couldn't be confirmed — "
-                + "it may have gone through. Refresh the balance before trying again. (\(detail))"
+            claimError = "The withdrawal may have reached the network, but its result couldn't be "
+                + "confirmed: it may have gone through. Refresh the balance before trying again. (\(detail))"
         } catch {
             claiming = false
             claimError = error.localizedDescription

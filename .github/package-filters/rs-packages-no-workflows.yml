@@ -28,6 +28,16 @@ moderation-charters-contract: &moderation-charters-contract
   - packages/moderation-charters-contract/schema/**
   - packages/moderation-charters-contract/Cargo.toml
 
+decision-proposals-contract: &decision-proposals-contract
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
+token-market-contract: &token-market-contract
+  - packages/token-market-contract/src/**
+  - packages/token-market-contract/schema/**
+  - packages/token-market-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**
@@ -63,6 +73,8 @@ data-contracts: &data-contracts
   - *document-history-contract
   - *app-connect-contract
   - *moderation-charters-contract
+  - *decision-proposals-contract
+  - *token-market-contract
 
 dpp: &dpp
   - packages/rs-dpp/**
@@ -117,8 +129,13 @@ dash-context-provider: &context_provider
 
 rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
   - packages/rs-sdk-trusted-context-provider/**
+  # The refresh_checkpoints example's dev-dependencies, anchored further down.
+  - packages/rs-dapi-client/**
+  - packages/dapi-grpc/**
+  - packages/rs-drive-proof-verifier/**
   - *dash_async
   - *context_provider
+  - *core_proof
   - *dpp
 
 dapi-grpc: &dapi_grpc
@@ -134,6 +151,9 @@ rs-dapi:
   - *dapi_grpc
   - *dpp
   - packages/rs-dash-event-bus/**
+  # The block proof hashing rs-dapi shares with the clients that verify it
+  - packages/rs-drive-proof-verifier/**
+  - *context_provider
 
 rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
@@ -155,6 +175,10 @@ dash-sdk: &sdk
   - *platform_encryption
   - *dapi_client
   - *drive
+
+dash-sdk-cxx:
+  - packages/rs-sdk-cxx/**
+  - *sdk
 
 rs-sdk-ffi: &sdk_ffi
   - packages/rs-sdk-ffi/**

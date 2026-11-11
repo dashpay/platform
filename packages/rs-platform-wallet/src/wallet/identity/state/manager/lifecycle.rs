@@ -3,7 +3,8 @@
 //! Adds, removes, and looks up the HD index for managed identities.
 //! Every mutation here persists a corresponding
 //! [`IdentityChangeSet`](crate::changeset::IdentityChangeSet) via
-//! the supplied [`WalletPersister`].
+//! the supplied [`WalletPersister`], except
+//! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
 use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
@@ -41,36 +42,16 @@ impl IdentityManager {
         persister: &WalletPersister,
     ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
+        self.add_identity_unstored(identity, identity_index, wallet_id)?;
+        let managed_identity = self
+            .managed_identity_mut(&identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
 
-        if self.identity(&identity_id).is_some() {
-            return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
-        }
-
-        let mut managed_identity = ManagedIdentity::new(identity, identity_index);
-        // Denormalize the bucket keys onto the value so callers that
-        // iterate values know which wallet + slot they came from
-        // without re-threading the keys.
-        managed_identity.wallet_id = Some(wallet_id);
-
-        let entry = IdentityEntry::from_managed(&managed_identity);
+        let entry = IdentityEntry::from_managed(managed_identity);
         // No `key_storage` to snapshot here anymore — the field is
         // dropped from `ManagedIdentity`. Public keys still arrive
         // via the separate `IdentityKeysChangeSet` path.
         let keys_cs = managed_identity.keys_snapshot_changeset();
-
-        self.wallet_identities
-            .entry(wallet_id)
-            .or_default()
-            .insert(identity_index, managed_identity);
-        // Keep the side-index invariant in lockstep with the bucket
-        // insert above.
-        self.location_index_insert(
-            identity_id,
-            IdentityLocation::InWallet {
-                wallet_id,
-                registration_index: identity_index,
-            },
-        );
 
         let mut id_cs = IdentityChangeSet::default();
         id_cs.identities.insert(identity_id, entry);
@@ -90,6 +71,75 @@ impl IdentityManager {
         }
 
         Ok(())
+    }
+
+    /// [`Self::add_identity`] in memory only: the caller stores the identity
+    /// and its keys itself, as one changeset. Load and discovery use it, so
+    /// the keys they verified against the seed reach the store with the
+    /// identity, never after a breadcrumb-less snapshot of them that could
+    /// commit on its own (a disk that fills between the two writes would
+    /// otherwise leave every key row without its breadcrumb).
+    pub(crate) fn add_identity_unstored(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+        wallet_id: WalletId,
+    ) -> Result<(), PlatformWalletError> {
+        let identity_id = identity.id();
+
+        if self.identity(&identity_id).is_some() {
+            return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
+        }
+
+        let mut managed_identity = ManagedIdentity::new(identity, identity_index);
+        // Denormalize the bucket keys onto the value so callers that
+        // iterate values know which wallet + slot they came from
+        // without re-threading the keys.
+        managed_identity.wallet_id = Some(wallet_id);
+        // Held before anything can send or accept for it, when a persister
+        // kept its record marked.
+        if self.retained_private_payment_markers.remove(&identity_id) {
+            managed_identity.hold_for_retained_private_payment_marker();
+        }
+
+        self.wallet_identities
+            .entry(wallet_id)
+            .or_default()
+            .insert(identity_index, managed_identity);
+        // Keep the side-index invariant in lockstep with the bucket
+        // insert above.
+        self.location_index_insert(
+            identity_id,
+            IdentityLocation::InWallet {
+                wallet_id,
+                registration_index: identity_index,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Hold every identity in `owners`, whose private contact request scan
+    /// state record a persister kept marked
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), as a
+    /// load holds one loaded with its record marked
+    /// (`DashPayState::private_payments_unrestored`): one this manager holds
+    /// now at once, every other when it is added. Its private payment may
+    /// still execute, while the identity, added afresh, holds no reservation
+    /// or record of it. Only a restoration from the shielded store's journal
+    /// releases the hold.
+    pub(crate) fn retain_private_payment_markers(
+        &mut self,
+        owners: impl IntoIterator<Item = Identifier>,
+    ) {
+        for owner in owners {
+            match self.managed_identity_mut(&owner) {
+                Some(managed) => managed.hold_for_retained_private_payment_marker(),
+                None => {
+                    self.retained_private_payment_markers.insert(owner);
+                }
+            }
+        }
     }
 
     /// Add an identity to the out-of-wallet (observed read-only) bucket.
@@ -158,11 +208,45 @@ impl IdentityManager {
     /// Removal is terminal in storage as well as in memory: the persister
     /// deletes the identity and every row it owns, so re-adding the same
     /// id later starts from a blank identity.
+    ///
+    /// Refused, with nothing removed, while the identity's private contact
+    /// request channel is held: a contact request in flight, private or
+    /// public, or a private payment that may still execute, whether its own
+    /// state or the wallet's journal holds it
+    /// ([`PlatformWalletError::PrivateContactRequestPending`]; a public one
+    /// whose outcome is unconfirmed is
+    /// [`PlatformWalletError::PublicContactRequestUnconfirmed`]), or one from an
+    /// earlier process not restored yet
+    /// ([`PlatformWalletError::PrivateContactPaymentsNotRestored`]). Removed
+    /// and loaded again, the identity would start with none of those holds,
+    /// and its persisted marker with it, so a public request could publish a
+    /// pair a private payment still keeps off chain.
     pub fn remove_identity(
         &mut self,
         identity_id: &Identifier,
         persister: &WalletPersister,
     ) -> Result<Identity, PlatformWalletError> {
+        if let Some(managed) = self.managed_identity(identity_id) {
+            let dashpay = managed.dashpay();
+            if let Some(recipient) = dashpay
+                .unconfirmed_public_request_recipients()
+                .first()
+                .copied()
+            {
+                return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
+                    recipient,
+                ));
+            }
+            if let Some(recipient) = dashpay
+                .contact_request_in_flight()
+                .or_else(|| persister.private_sender_journaled(identity_id))
+            {
+                return Err(PlatformWalletError::PrivateContactRequestPending(recipient));
+            }
+            if dashpay.private_payments_unrestored() {
+                return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+            }
+        }
         // Drop the side-index entry first; its value tells us which
         // bucket the identity lives in so we can avoid a second scan.
         let location = self

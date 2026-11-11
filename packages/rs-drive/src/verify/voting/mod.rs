@@ -2,6 +2,7 @@
 
 mod verify_contests_proof;
 mod verify_identity_votes_given_proof;
+mod verify_identity_yes_no_vote;
 mod verify_masternode_vote;
 mod verify_masternode_yes_no_vote;
 mod verify_specialized_balance;

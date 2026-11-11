@@ -7,7 +7,7 @@ use dash_sdk::{
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
-use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+use rs_sdk_trusted_context_provider::{TrustedHttpContextProvider, VerifiedHttpContextProvider};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::error::WasmSdkError;
@@ -45,7 +45,7 @@ impl ContextProvider for WasmContext {
         _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         Err(ContextProviderError::Config(
-            "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext().".to_string()
+            "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext(), or a WasmVerifiedContext via mainnet/testnet and attach it with WasmSdkBuilder.withVerifiedContext().".to_string()
         ))
     }
 
@@ -118,7 +118,8 @@ impl ContextProvider for WasmTrustedContext {
 
     /// Forwarded to the inner known-contracts cache, so a contract the SDK registers (the
     /// DPNS contract a name registration was built against, whose confirmations decode under
-    /// it) replaces the one the cache held.
+    /// it) replaces the one the cache held, unless the held one has a higher version: that
+    /// one is kept, and later lookups resolve it.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
         self.inner.register_data_contract(contract)
     }
@@ -132,6 +133,24 @@ impl ContextProvider for WasmTrustedContext {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.inner.get_platform_activation_height()
+    }
+
+    fn network(&self) -> Option<Network> {
+        self.inner.network()
+    }
+
+    fn requires_proofs(&self) -> bool {
+        self.inner.requires_proofs()
+    }
+
+    fn core_height_verified(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) {
+        self.inner
+            .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
     }
 }
 
@@ -351,9 +370,17 @@ impl WasmTrustedContext {
         &self.discovered_addresses
     }
 
-    /// Add a data contract to the known contracts cache
+    /// Add a data contract to the known contracts cache, unless it holds a newer
+    /// one under the same id.
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Put a data contract in the known contracts cache in place of whatever it
+    /// holds under its id, of any version: an explicit seed
+    /// (`WasmSdk::add_known_contract_js`).
+    pub(crate) fn replace_known_contract(&self, contract: DataContract) {
+        self.inner.replace_known_contract(contract);
     }
 
     /// Keep the strictly newer contract, preserving the existing body on ties.
@@ -402,6 +429,87 @@ impl WasmTrustedContext {
         WasmTrustedContext {
             inner: Arc::new(inner),
             discovered_addresses,
+        }
+    }
+}
+
+/// The quorum context a `WasmSdk` serves proofs from: one of the two kinds a
+/// builder can attach. The SDK caches the contracts and token
+/// configurations it fetches in whichever is attached. A verified context is
+/// held as the provider a `WasmVerifiedContext` wraps, which is also what the
+/// builder attaches; clones share its caches.
+#[derive(Clone)]
+pub(crate) enum QuorumContext {
+    Trusted(WasmTrustedContext),
+    Verified(VerifiedHttpContextProvider),
+}
+
+impl From<WasmTrustedContext> for QuorumContext {
+    fn from(context: WasmTrustedContext) -> Self {
+        Self::Trusted(context)
+    }
+}
+
+impl QuorumContext {
+    /// Refresh the trusted context's quorum lists before proof verification.
+    /// A verified context proves each quorum key when it is first needed, so
+    /// it has nothing to refresh.
+    pub(crate) async fn refresh_quorums(&self) -> Result<(), WasmSdkError> {
+        match self {
+            Self::Trusted(context) => context.refresh_quorums().await,
+            Self::Verified(_) => Ok(()),
+        }
+    }
+
+    pub(crate) fn get_data_contract(
+        &self,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        match self {
+            Self::Trusted(context) => context.get_data_contract(id, platform_version),
+            Self::Verified(context) => context.get_data_contract(id, platform_version),
+        }
+    }
+
+    /// Put `contract` in place of whatever is held under its id, of any version:
+    /// an explicit seed (`WasmSdk::add_known_contract_js`).
+    pub(crate) fn replace_known_contract(&self, contract: DataContract) {
+        match self {
+            Self::Trusted(context) => context.replace_known_contract(contract),
+            Self::Verified(context) => context.replace_known_contract(contract),
+        }
+    }
+
+    pub(crate) fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        match self {
+            Self::Trusted(context) => context.add_known_contract_if_newer(contract),
+            Self::Verified(context) => context.add_known_contract_if_newer(contract),
+        }
+    }
+
+    pub(crate) fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        match self {
+            Self::Trusted(context) => context.get_known_contract(id),
+            Self::Verified(context) => context.get_known_contract(id),
+        }
+    }
+
+    pub(crate) fn remove_known_contract(&self, id: &Identifier) -> bool {
+        match self {
+            Self::Trusted(context) => context.remove_known_contract(id),
+            Self::Verified(context) => context.remove_known_contract(id),
+        }
+    }
+
+    pub(crate) fn add_known_token_configuration(
+        &self,
+        token_id: Identifier,
+        config: TokenConfiguration,
+    ) {
+        match self {
+            Self::Trusted(context) => context.add_known_token_configuration(token_id, config),
+            Self::Verified(context) => context.add_known_token_configuration(token_id, config),
         }
     }
 }
@@ -703,6 +811,93 @@ mod tests {
 
         assert_eq!(key, Some(quorum_key(0x43)));
         server.join().expect("the endpoint served both refreshes");
+    }
+
+    /// Without a trusted context, the default context gives no quorum key, so no answer can
+    /// be verified, whichever node sent it. A proved fetch fails on its first answer with a
+    /// context provider error that says what to attach, is not sent to another node, bans no
+    /// node, and is not reported to JS as retriable.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_fail_a_proved_fetch_once_and_ban_no_node_without_a_trusted_context() {
+        use crate::error::WasmSdkErrorKind;
+        use dapi_grpc::platform::v0::{
+            get_epochs_info_request, GetEpochsInfoRequest, GetEpochsInfoResponse,
+        };
+        use dapi_grpc::Message;
+        use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
+        use dash_sdk::platform::Fetch;
+        use dash_sdk::SdkBuilder;
+        use rs_dapi_client::mock::MockResult;
+        use rs_dapi_client::{Address, DumpData, ExecutionResponse};
+
+        // The genesis epoch, signed at protocol version 13 by drive-abci's test quorum.
+        let vector = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-drive-proof-verifier/tests/vectors/protocol-gate/epoch-probe-pv13.bin"
+        ))
+        .expect("signed genesis epoch");
+        let response = GetEpochsInfoResponse::decode(vector.as_slice()).expect("epochs response");
+        let request = GetEpochsInfoRequest {
+            version: Some(get_epochs_info_request::Version::V0(
+                get_epochs_info_request::GetEpochsInfoRequestV0 {
+                    start_epoch: Some(0),
+                    count: 1,
+                    ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let node: Address = "http://127.0.0.1:9000".parse().expect("node address");
+
+        let mut sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_context_provider(WasmContext {})
+            .with_initial_version(PlatformVersion::get(13).expect("protocol version 13"))
+            // The vector is signed at height 10, mock answers start at 0.
+            .with_height_tolerance(None)
+            .build()
+            .expect("mock SDK");
+        let mut addresses = sdk.address_list().clone();
+        addresses.add(node.clone());
+        let directory = tempfile::TempDir::new().expect("transport fixture directory");
+        let answer: MockResult<GetEpochsInfoRequest> = Ok(ExecutionResponse {
+            inner: response,
+            retries: 0,
+            address: node.clone(),
+        });
+        let dump = DumpData::new(&request, &answer);
+        dump.save(
+            &directory
+                .path()
+                .join(dump.filename().expect("dump filename")),
+        )
+        .expect("raw transport answer");
+        sdk.mock()
+            .load_expectations_sync(directory.path())
+            .expect("load the node's answer");
+
+        let error = ExtendedEpochInfo::fetch_with_metadata(&sdk, request, None)
+            .await
+            .expect_err("no answer verifies without quorum keys");
+        let sent = sdk.mock().request_count(&request).await;
+        let banned = sdk.address_list().is_banned(&node);
+        let error = WasmSdkError::from(error);
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::ContextProviderError,
+            "{}, sent {sent} times, node banned: {banned}",
+            error.message()
+        );
+        assert!(
+            error.message().contains("WasmTrustedContext"),
+            "{}",
+            error.message()
+        );
+        assert!(!error.is_retriable());
+        assert_eq!(sent, 1, "sent once, never retried");
+        assert!(!banned);
     }
 }
 

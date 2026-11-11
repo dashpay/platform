@@ -24,7 +24,7 @@
 //!
 //! `m/9'/coin'/16'/timestamp'` (all segments hardened)
 
-use dashcore::hashes::{sha256, Hash, HashEngine};
+use dashcore::hashes::{sha256, HashEngine};
 use dpp::prelude::Identifier;
 use dpp::secp256k1::{ecdsa::Signature, Message, SecretKey};
 use key_wallet::bip32::{ChildNumber, DerivationPath};

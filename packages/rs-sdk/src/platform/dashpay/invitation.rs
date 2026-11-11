@@ -1392,7 +1392,7 @@ mod tests {
             assert_eq!(decoded.network, network, "network preserved");
             assert_eq!(*decoded.inner.to_bytes(), voucher().to_secret_bytes());
             // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
-            let raw = dpp::dashcore::base58::decode(&wif).unwrap();
+            let raw = dpp::dashcore::base58::decode_check(&wif).unwrap();
             assert_eq!(raw[0], first_byte);
         }
     }
@@ -2092,7 +2092,6 @@ mod tests {
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
-        use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::{OutPoint, Txid};
         use dpp::identity::{Identity, IdentityPublicKey, KeyID};
         use std::collections::BTreeMap;

@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 use versioned_feature_core::FeatureVersion;
@@ -84,6 +85,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_shielded_transfer_with_shielded_fee_transition: FeatureVersion,
     pub token_unshield_with_shielded_fee_transition: FeatureVersion,
     pub token_purchase_from_shielded_pool_transition: FeatureVersion,
+    pub private_document_create_from_shielded_pool_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

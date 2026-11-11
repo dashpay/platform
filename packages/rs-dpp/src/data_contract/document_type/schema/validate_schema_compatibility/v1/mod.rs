@@ -313,6 +313,8 @@ pub(super) fn validate_schema_compatibility_v1(
 mod tests {
     use super::super::validate_schema_compatibility;
     use super::{OPTIONS, TOP_LEVEL_VALIDATED_KEYS};
+    use crate::data_contract::document_type::class_methods::DOCUMENT_SCHEMA_ROOT_KEYS;
+    use crate::data_contract::document_type::property_names::PRIVATE;
     use crate::data_contract::errors::{DataContractError, JsonSchemaError};
     use crate::ProtocolError;
     use assert_matches::assert_matches;
@@ -917,6 +919,26 @@ mod tests {
                     assert!(
                         has_rule(&keyword),
                         "{definition} keyword {keyword} has no rule"
+                    );
+                }
+            }
+            // The native schema check replacing the meta-schema at registration admits keys
+            // no meta-schema lists. `private` needs no rule: `validate_update` v1 compares the
+            // parsed declaration first and refuses any change to it, and the parse reads the
+            // key one to one, so no diff reaching this generation changes it; a rule added
+            // here would change what shipped protocol version 14 reports for a contract's
+            // `$defs`, which may carry the name
+            if schema_versions.check_document_type_schema == 1 {
+                for keyword in DOCUMENT_SCHEMA_ROOT_KEYS {
+                    if keyword == "$schema"
+                        || keyword == PRIVATE
+                        || TOP_LEVEL_VALIDATED_KEYS.contains(&keyword)
+                    {
+                        continue;
+                    }
+                    assert!(
+                        has_rule(keyword),
+                        "top-level keyword {keyword} of the native schema check has no rule"
                     );
                 }
             }

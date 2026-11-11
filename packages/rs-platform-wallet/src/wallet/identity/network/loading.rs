@@ -6,7 +6,11 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::bip32::ExtendedPrivKey;
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
+use crate::BlockTime;
+use dash_sdk::platform::Fetch;
 
 use super::*;
 
@@ -206,16 +210,19 @@ impl IdentityWallet {
         };
 
         // Query Platform for an identity registered with this key hash.
-        let identity = match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
-            Ok(Some(identity)) => identity,
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to fetch identity at index {}: {}",
-                    identity_index, e
-                )));
-            }
-        };
+        let (mut identity, block_time) =
+            match Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash_array), None)
+                .await
+            {
+                Ok((Some(identity), metadata)) => (identity, BlockTime::from(metadata)),
+                Ok((None, _)) => return Ok(None),
+                Err(e) => {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to fetch identity at index {}: {}",
+                        identity_index, e
+                    )));
+                }
+            };
 
         let identity_id = identity.id();
 
@@ -243,11 +250,11 @@ impl IdentityWallet {
                 )
             })?;
             if info.identity_manager.identity(&identity_id).is_none() {
-                info.identity_manager.add_identity(
+                // Stored below, with its verified keys, as one changeset.
+                info.identity_manager.add_identity_unstored(
                     identity.clone(),
                     identity_index,
                     wallet_id,
-                    &self.persister,
                 )?;
             }
 
@@ -257,22 +264,31 @@ impl IdentityWallet {
                 // new ones, and without this a re-load kept serving the
                 // stale key set (keys added from another device never
                 // appeared, and contact requests referencing them failed
-                // key-index validation). Same replace `refresh_identity`
-                // does; the `set_status` below persists the full snapshot
-                // changeset, so the updated keys reach the store.
-                managed.identity = identity.clone();
-                managed.set_status(IdentityStatus::Active, &self.persister);
+                // key-index validation). Same fold `refresh_identity`
+                // does: a fetch older than the cache (a node behind the
+                // block an update landed in) keeps the cache's revision, key
+                // set and every disable, and the balance follows the proof's
+                // block, not the revision. The keys and the folded scalar
+                // snapshot reach the store together.
+                managed.status = IdentityStatus::Active;
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
                 // failed persist would silently leave the identity watch-only
                 // after restart, so surface it rather than swallow.
                 managed
-                    .add_keys(key_decisions, &self.persister)
+                    .store_fetched_identity_keys(
+                        &identity,
+                        key_decisions,
+                        block_time,
+                        &self.persister,
+                    )
                     .map_err(|e| {
                         PlatformWalletError::Persistence(format!(
                             "identity keys not persisted during load: {e}"
                         ))
                     })?;
+                // The cache as folded.
+                identity = managed.identity.clone();
             }
         }
 
@@ -305,10 +321,22 @@ impl IdentityWallet {
     /// re-fetching it from Platform.
     ///
     /// The identity must already exist in the [`IdentityManager`]. Its
-    /// on-chain state (keys, balance, revision) is replaced with the latest
-    /// version from Platform and the status is set to `Active`.
+    /// on-chain state (keys, revision) is replaced with the latest version
+    /// from Platform and the status is set to `Active`, key states included
+    /// (Core re-enables a masternode identity's keys at revision 0); a key
+    /// limit the cache holds higher stays. The
+    /// balance, at any revision, is taken only when the fetch's proof is at a
+    /// block above the cache's balance watermark. A fetch at a lower revision
+    /// than the cache's was answered before an update the cache already
+    /// holds (a node behind the block it landed in): the cache keeps its
+    /// revision, key set and every disable, and takes only a disable the
+    /// fetch shows on a key it holds enabled, or a raised limit
+    /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
+    /// fold adds or changes is stored with the scalar snapshot, without a
+    /// derivation breadcrumb (the persisters keep the one they hold); a
+    /// failed store is logged, as the status write it replaces was.
     ///
-    /// Returns the refreshed identity.
+    /// Returns the identity the cache holds afterwards.
     ///
     /// # Errors
     ///
@@ -320,53 +348,16 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use dash_sdk::platform::Fetch;
-
-        // Verify identity exists in the manager.
-        {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if info.identity_manager.identity(identity_id).is_none() {
-                return Err(PlatformWalletError::IdentityNotFound(*identity_id));
-            }
-        }
-
-        // Fetch the latest state from Platform.
-        let identity = Identity::fetch(&self.sdk, *identity_id)
+        self.fetch_and_fold_identity(identity_id)
             .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+            .map(|(identity, _)| identity)
+            .map_err(|error| match error {
+                PlatformWalletError::Sdk(e) => PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch identity {} from Platform: {}",
                     identity_id, e
-                ))
-            })?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Identity {} not found on Platform",
-                    identity_id
-                ))
-            })?;
-
-        // Update the managed identity.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.identity = identity.clone();
-                managed.set_status(IdentityStatus::Active, &self.persister);
-            }
-        }
-
-        Ok(identity)
+                )),
+                other => other,
+            })
     }
 
     /// Refresh an identity using an externally-provided identity ID.
@@ -499,17 +490,86 @@ impl IdentityWallet {
     }
 }
 
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// [`IdentityWallet::refresh_identity`]'s fetch and fold, generic over the
+    /// broadcaster, with a fetch that fails coming back as the SDK reported it
+    /// ([`PlatformWalletError::Sdk`]): the fetch is proved, a stale node
+    /// included (`dash_sdk::Error::StaleNode`). Applied only while the wallet
+    /// is still this handle's generation (`current_wallet_info_mut`). Returns
+    /// the identity the cache holds afterwards, and the height the fetch was
+    /// proved at.
+    pub(crate) async fn fetch_and_fold_identity(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<(Identity, u64), PlatformWalletError> {
+        // Verify identity exists in the manager.
+        {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            if info.identity_manager.identity(identity_id).is_none() {
+                return Err(PlatformWalletError::IdentityNotFound(*identity_id));
+            }
+        }
+
+        // Fetch the latest state from Platform.
+        let (identity, metadata) =
+            Identity::fetch_with_metadata(&self.sdk, *identity_id, None).await?;
+        let mut identity = identity.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Identity {} not found on Platform",
+                identity_id
+            ))
+        })?;
+        let proved_at = metadata.height;
+        let block_time = BlockTime::from(metadata);
+
+        // Update the managed identity.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let info = self.current_wallet_info_mut(&mut wm)?;
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                managed.status = IdentityStatus::Active;
+                if let Err(e) =
+                    managed.store_fetched_identity(&identity, block_time, &self.persister)
+                {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                }
+                // The cache as folded.
+                identity = managed.identity.clone();
+            }
+        }
+
+        Ok((identity, proved_at))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::identity_handle::{
-        derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
+        derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash,
+        derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
+    use super::super::signing_key::tests::CapturingStore;
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
+    use crate::changeset::IdentityKeyDerivationIndices;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::PlatformWalletManager;
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+    use std::sync::Arc;
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture the
     /// FFI-side derive tests and the `identity_handle` tests use, so the
@@ -534,7 +594,7 @@ mod tests {
     fn master_for(network: Network) -> ExtendedPrivKey {
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
-        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+        ExtendedPrivKey::new_master(network, &*seed).expect("master xpriv from test seed")
     }
 
     /// The loading probe's resident-wallet and master derive sources
@@ -666,6 +726,121 @@ mod tests {
                     "load master probe must equal the discovery master probe at the same slot"
                 );
             }
+        }
+    }
+
+    /// A load that finds an identity the wallet does not hold yet stores it
+    /// and its keys, each with the breadcrumb verified against the seed, as
+    /// one changeset. No snapshot of the identity or its keys reaches the
+    /// store ahead of the breadcrumbs, so a store that fails between two
+    /// writes cannot leave watch-only key rows behind.
+    #[tokio::test]
+    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let identity_id = Identifier::from([0x5A; 32]);
+        // Registered at index 0 the way registration does it: MASTER, HIGH
+        // and CRITICAL auth keys at key ids 0..=2, all from the seed.
+        let levels = [
+            SecurityLevel::MASTER,
+            SecurityLevel::HIGH,
+            SecurityLevel::CRITICAL,
+        ];
+        let public_keys = (0u32..)
+            .zip(levels)
+            .map(|(key_id, security_level)| {
+                let derived =
+                    derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, key_id)
+                        .unwrap();
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                    id: key_id,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(derived.public_key.to_vec()),
+                    disabled_at: None,
+                }
+                .into();
+                (key_id, key)
+            })
+            .collect();
+        let on_chain = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys,
+            balance: 1_000_000,
+            revision: 1,
+        });
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        let probe =
+            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(on_chain))
+            .await
+            .unwrap();
+        let store = Arc::new(CapturingStore::default());
+        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let wallet_id = wallet.wallet_id();
+        store.take();
+
+        wallet
+            .identity()
+            .load_identity_by_index_from_master(0, &master)
+            .await
+            .unwrap()
+            .expect("the identity at index 0 is found");
+
+        let stored = store.take();
+        let identity_changesets: Vec<_> = stored
+            .iter()
+            .filter(|changeset| changeset.identities.is_some() || changeset.identity_keys.is_some())
+            .collect();
+        assert_eq!(
+            identity_changesets.len(),
+            1,
+            "the identity and its keys go out together: {identity_changesets:?}"
+        );
+        let changeset = identity_changesets[0];
+        assert!(
+            changeset
+                .identities
+                .as_ref()
+                .is_some_and(|identities| identities.identities.contains_key(&identity_id)),
+            "the changeset carries the identity"
+        );
+        let upserts = &changeset
+            .identity_keys
+            .as_ref()
+            .expect("the changeset carries the keys")
+            .upserts;
+        assert_eq!(upserts.len(), 3);
+        for key_id in 0..3 {
+            let row = &upserts[&(identity_id, key_id)];
+            assert_eq!(row.wallet_id, Some(wallet_id));
+            assert_eq!(
+                row.derivation_indices,
+                Some(IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: key_id,
+                }),
+                "key {key_id} carries its breadcrumb"
+            );
         }
     }
 }

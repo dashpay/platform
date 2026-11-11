@@ -22,6 +22,8 @@ use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::yes_no_vote::accessors::v0::YesNoVoteGettersV0;
 use dpp::voting::votes::Vote;
+use drive::error::drive::DriveError;
+use drive::error::Error as DriveCrateError;
 use drive::grovedb::TransactionArg;
 
 pub(in crate::execution::validation::state_transition::state_transitions::masternode_vote) trait MasternodeVoteStateTransitionTransformIntoActionValidationV1
@@ -36,11 +38,12 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 }
 
 impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for MasternodeVoteTransition {
-    /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll, with the rule
-    /// of a resource vote ([`previous_vote_to_replace_v0`]): the same answer cannot be given twice,
-    /// and a masternode may vote on a poll at most `votes_allowed_per_masternode` times, its
-    /// first vote included. A resource vote on a contested poll transforms through version 0,
-    /// unchanged.
+    /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll, which names the
+    /// poll by id, with the rule of a resource vote ([`previous_vote_to_replace_v0`]): the same
+    /// answer cannot be given twice, and a masternode may vote on a poll at most
+    /// `votes_allowed_per_masternode` times, its first vote included. Whether the poll is open is
+    /// checked by state validation. A resource vote on a contested poll transforms through
+    /// version 0, unchanged.
     fn transform_into_action_v1<C>(
         &self,
         platform: &PlatformRef<C>,
@@ -70,27 +73,43 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
             }
         };
 
+        let vote_poll_id = yes_no_vote.vote_poll_id();
         let mut previous_vote_choice_to_remove = None;
         if validation_mode != ValidationMode::NoValidation {
             // Before we transform into action we want to make sure that we have not yet voted
-            let vote_poll = yes_no_vote.vote_poll();
-            let vote_id = vote_poll.unique_id(platform_version)?;
             let maybe_existing_vote_choice = platform.drive.fetch_identity_yes_no_vote(
                 self.pro_tx_hash(),
-                vote_id,
+                vote_poll_id,
                 tx,
                 &mut vec![],
                 platform_version,
             )?;
-            match previous_vote_to_replace_v0(
-                self.pro_tx_hash(),
-                maybe_existing_vote_choice,
-                &yes_no_vote.vote_choice(),
-                || VotePoll::YesNoVotePoll(vote_poll.clone()),
-                platform_version,
-            ) {
-                Ok(previous_vote) => previous_vote_choice_to_remove = previous_vote,
-                Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
+            if let Some(existing_vote) = maybe_existing_vote_choice {
+                // The errors refusing a repeated answer, or one too many, name the poll, which
+                // the vote names by id only: it is read from the poll's stored info, which a
+                // poll a masternode has answered always has (an opening writes it, and it is
+                // never removed).
+                let vote_poll = platform
+                    .drive
+                    .fetch_yes_no_vote_poll_stored_info(vote_poll_id, tx, platform_version)?
+                    .ok_or(Error::Drive(DriveCrateError::Drive(
+                        DriveError::CorruptedDriveState(
+                            "a masternode answered a yes/no vote poll that has no stored info"
+                                .to_string(),
+                        ),
+                    )))?
+                    .vote_poll()
+                    .clone();
+                match previous_vote_to_replace_v0(
+                    self.pro_tx_hash(),
+                    Some(existing_vote),
+                    &yes_no_vote.vote_choice(),
+                    || VotePoll::YesNoVotePoll(vote_poll),
+                    platform_version,
+                ) {
+                    Ok(previous_vote) => previous_vote_choice_to_remove = previous_vote,
+                    Err(error) => return Ok(ConsensusValidationResult::new_with_error(error)),
+                }
             }
         }
 
@@ -102,7 +121,7 @@ impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for Masternode
         // A yes/no vote needs nothing from the state to be resolved; the previous answer found
         // above rides with it.
         let resolved_vote = ResolvedYesNoVote {
-            vote_poll: yes_no_vote.vote_poll().clone(),
+            vote_poll_id,
             vote_choice: yes_no_vote.vote_choice(),
             previous_vote_choice_to_remove,
         };

@@ -16,6 +16,8 @@ default = [
   "token-history-contract",
   "keywords-contract",
   "moderation-charters-contract",
+  "decision-proposals-contract",
+  "token-market-contract",
   "mocks",
 ]
 
@@ -55,6 +57,14 @@ keywords-contract = [
 moderation-charters-contract = [
   "dash-sdk/moderation-charters-contract",
   "rs-sdk-trusted-context-provider/moderation-charters-contract",
+]
+decision-proposals-contract = [
+  "dash-sdk/decision-proposals-contract",
+  "rs-sdk-trusted-context-provider/decision-proposals-contract",
+]
+token-market-contract = [
+  "dash-sdk/token-market-contract",
+  "rs-sdk-trusted-context-provider/token-market-contract",
 ]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
@@ -114,6 +124,8 @@ wasm-dpp2 = { path = "../wasm-dpp2" }
 # and silently defeat the tests that assert an uncompiled one is fetched.
 wasm-sdk = { path = ".", features = ["mocks"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+# The verified context's tests verify fixture proofs and build checkpoints.
+dash-core-proof = { path = "../rs-core-proof" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3.3.0"

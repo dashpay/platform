@@ -49,3 +49,44 @@ created tradeable becomes tradeable only if its issuer kept the right to change 
 A non-transferable token cannot be tradeable because filling a listing or an offer moves the token
 from the seller to the buyer, which is the transfer the token refuses. `transferable` is fixed
 when the token is created, so the trade mode is the only half of the rule an update can change.
+
+## Where orders and escrow live
+
+Open orders are documents of the token market system contract
+(`AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e`), registered at genesis from protocol version 15
+and inserted by the upgrade to 15. It has two document types, `ask` (a listing) and `bid` (an
+offer), each with three indexes:
+
+| Index | Properties | Serves |
+|---|---|---|
+| `book` | `tokenId`, `decimals`, `price`, `$createdAt` | A token's order book, by price and then by age |
+| `depth` | `tokenId`, `decimals`, `price`, summed | The total open at each price, or over a price range, in one proven sum query: the base units of the asks (`remaining`) and the credits of the bids (`escrow`) |
+| `byOwner` | `$ownerId`, `tokenId`, `$createdAt` | An identity's open orders |
+
+Each side sums what it holds in escrow, so the sums cannot overflow: the tokens listed never exceed
+the token's supply, and the credits offered never exceed the credits on Platform. Every integer of
+an order is a signed 8-byte value, so a partial fill rewrites an order without changing its stored
+size.
+
+An order's price is in credits per whole token, and each order records the token's decimals when
+it was placed (`decimals`). Every fill prices the order at that scale, so a later change to the
+token's decimals (a `Conventions` update) changes neither what an open listing costs nor what an
+open offer pays. The `book` and `depth` indexes keep each scale apart (`tokenId`, then `decimals`,
+then `price`), so a book query and a depth sum name the token's decimals and never mix prices of
+different scales. After a token changes its decimals, the orders placed before the change stay
+under the old decimals until they close; a client showing them alongside the new ones queries both
+and scales each by its `decimals`.
+
+Only the marketplace transitions write orders. A document transition cannot create one
+(`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
+types stay mutable and deletable so the documents carry a revision and storage flags: the order's
+owner pays its storage and gets it back when the order closes.
+
+What an order holds is kept outside the contract:
+
+- The tokens of a listing sit in `[Tokens, TOKEN_ORDER_ESCROW_KEY]`, a BigSumTree with one SumTree
+  per token, keyed by order id. The token conservation check counts it beside the identity
+  balances and the shielded pools.
+- The credits of an offer sit in `[PreFundedSpecializedBalances, PREFUNDED_BALANCES_FOR_TOKEN_ORDERS]`,
+  a SumTree keyed by order id, which the credit conservation check already counts.
+

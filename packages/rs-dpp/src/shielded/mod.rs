@@ -2,11 +2,13 @@
 pub mod builder;
 
 mod compute_minimum_shielded_fee;
+mod identity_create_denomination;
 pub mod memo;
 #[cfg(feature = "state-transitions")]
 mod sighash;
 
 use crate::util::hash::hash_single;
+pub use identity_create_denomination::is_allowed_identity_create_denomination;
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -16,11 +18,11 @@ use serde::{Deserialize, Serialize};
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
-    compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
-    compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee, compute_token_pool_paid_shielded_fee,
-    compute_token_purchase_from_shielded_pool_fee,
+    compute_minimum_shielded_fee, compute_private_document_create_from_shielded_pool_fee,
+    compute_shielded_identity_balance_write_fee, compute_shielded_identity_create_fee,
+    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
+    compute_shielded_verification_fee, compute_shielded_withdrawal_fee,
+    compute_token_pool_paid_shielded_fee, compute_token_purchase_from_shielded_pool_fee,
     compute_token_shielded_transfer_with_shielded_fee_fee,
     compute_token_unshield_with_shielded_fee_fee,
 };
@@ -68,7 +70,9 @@ pub use sighash::{
     identity_create_from_shielded_extra_sighash_data,
     identity_create_from_shielded_extra_sighash_data_v0,
     identity_top_up_from_shielded_extra_sighash_data,
-    identity_top_up_from_shielded_extra_sighash_data_v0, shield_extra_sighash_data,
+    identity_top_up_from_shielded_extra_sighash_data_v0,
+    private_document_create_from_shielded_pool_extra_sighash_data,
+    private_document_create_from_shielded_pool_extra_sighash_data_v0, shield_extra_sighash_data,
     shield_from_asset_lock_extra_sighash_data, shield_from_identity_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data, shielded_withdrawal_extra_sighash_data_v0,
     token_burn_from_pool_extra_sighash_data, token_burn_from_pool_extra_sighash_data_v0,
@@ -82,11 +86,12 @@ pub use sighash::{
     token_unshield_extra_sighash_data, token_unshield_extra_sighash_data_v0,
     token_unshield_with_shielded_fee_extra_sighash_data,
     token_unshield_with_shielded_fee_extra_sighash_data_v0, unshield_extra_sighash_data,
-    unshield_extra_sighash_data_v0, SHIELD_BUNDLE_TAG, SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
-    SHIELD_FROM_IDENTITY_BUNDLE_TAG, TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
-    TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG, TOKEN_MINT_TO_POOL_BUNDLE_TAG,
-    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
-    TOKEN_SHIELD_BUNDLE_TAG, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
+    unshield_extra_sighash_data_v0, PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_TYPE,
+    SHIELD_BUNDLE_TAG, SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG, SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+    TOKEN_CLAIM_TO_POOL_BUNDLE_TAG, TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG,
+    TOKEN_MINT_TO_POOL_BUNDLE_TAG, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
+    TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_SHIELD_BUNDLE_TAG,
+    TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a

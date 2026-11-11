@@ -9,12 +9,15 @@ pub(crate) mod finalize_task;
 mod group;
 mod identity;
 mod prefunded_specialized_balance;
+mod private_document;
 mod shielded;
 mod system;
 mod token;
+mod vote_poll;
 mod withdrawals;
 
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::document::preallocation_bindings_targeting;
@@ -36,17 +39,19 @@ pub use document::UpdateOperationInfo;
 pub use group::GroupOperationType;
 pub use identity::IdentityOperationType;
 pub use prefunded_specialized_balance::PrefundedSpecializedBalanceOperationType;
+pub use private_document::PrivateDocumentOperationType;
 pub use shielded::ShieldedPoolOperationType;
 pub use system::SystemOperationType;
 pub use token::TokenOperationType;
+pub use vote_poll::VotePollOperationType;
 pub use withdrawals::WithdrawalOperationType;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::QualifiedGroveDbOp;
 
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
@@ -60,7 +65,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -68,9 +73,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -116,6 +119,10 @@ pub enum DriveOperation<'a> {
     AddressFundsOperation(AddressFundsOperationType),
     /// A shielded pool operation
     ShieldedPoolOperation(ShieldedPoolOperationType),
+    /// An operation on the store of a private document type
+    PrivateDocumentOperation(PrivateDocumentOperationType),
+    /// A vote poll operation: the opening of a yes/no vote poll
+    VotePollOperation(VotePollOperationType),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -128,9 +135,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -196,6 +201,23 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     platform_version,
                 )
             }
+            DriveOperation::PrivateDocumentOperation(private_document_operation_type) => {
+                private_document_operation_type.into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DriveOperation::VotePollOperation(vote_poll_operation_type) => vote_poll_operation_type
+                .into_low_level_drive_operations(
+                    drive,
+                    estimated_costs_only_with_layer_info,
+                    block_info,
+                    transaction,
+                    platform_version,
+                ),
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
                 .operations
@@ -260,6 +282,29 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
+    /// The batch's owner handover (protocol version 15): `None` for a batch that updates no
+    /// document, and otherwise the owners of the contracts offering gas sponsorship on the
+    /// documents it updates, for whom an owner change is a full handover.
+    pub(crate) fn owner_handover(
+        operations: &[DriveOperation],
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
+        let mut owner_handover = None;
+        for operation in operations {
+            if let DriveOperation::DocumentOperation(document_operation) = operation {
+                document_operation.add_to_owner_handover(
+                    &mut owner_handover,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+        Ok(owner_handover)
+    }
+
     /// Whether the batch this operation is in refunds nobody for the storage its document
     /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
@@ -300,9 +345,7 @@ impl DriveOperation<'_> {
     pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
         self,
         drive: &Drive,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -360,7 +403,7 @@ impl Drive {
     /// (`max_transitions_in_documents_batch`) and only transitions write
     /// indexOnly documents, so no consensus batch moves a counter twice; this
     /// keeps it so for every caller of the batch methods, estimation
-    /// included. Only protocol version 14's batch methods call it.
+    /// included. `apply_drive_operations` 1 and 2 (protocol versions 14 and 15) call it.
     pub(crate) fn refuse_repeated_counter_moves(
         &self,
         operations: &[DriveOperation],
@@ -853,7 +896,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert contract and document");
 
@@ -973,7 +1015,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1084,7 +1125,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1219,7 +1259,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1330,7 +1369,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1390,7 +1428,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -1547,7 +1584,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1601,7 +1637,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -2060,7 +2095,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("add token balance");
         }
@@ -2114,7 +2148,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2155,7 +2188,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(

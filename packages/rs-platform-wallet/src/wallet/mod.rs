@@ -4,6 +4,7 @@ pub mod core;
 pub mod core_address_key;
 pub mod identity;
 pub mod masternode_withdrawal;
+pub mod mnemonic;
 pub mod persister;
 pub mod platform_addresses;
 pub mod platform_wallet;
@@ -25,11 +26,11 @@ pub use platform_addresses::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
     PlatformAddressWallet,
 };
-#[cfg(feature = "shielded")]
-pub use platform_wallet::ShieldedShieldPreflight;
 pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };
+#[cfg(feature = "shielded")]
+pub use platform_wallet::{PrivateReplyPayment, ShieldedShieldPreflight};
 pub use provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
 #[cfg(feature = "shielded")]
 pub use shielded::operations::shield_fee_reserve_credits;

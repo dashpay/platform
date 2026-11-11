@@ -44,7 +44,7 @@ use crate::types::{FFINetwork, Network};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use platform_wallet::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     // ---- Derive seed + derivation path --------------------------------------
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+    let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed("");
     drop(mnemonic);
 
     let path_str = match CStr::from_ptr(derivation_path_cstr).to_str() {
@@ -492,7 +492,7 @@ mod tests {
         // same mnemonic the resolver returns.
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master");
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");
@@ -587,7 +587,7 @@ mod tests {
 
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master");
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");

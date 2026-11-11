@@ -37,6 +37,8 @@ pub trait InnerInto<T> {
 #[derive(Debug, Clone, thiserror::Error, Eq)]
 #[error("{inner}")]
 pub struct ExecutionError<E> {
+    /// Some attempt may have delivered this request; not evidence of execution.
+    pub possibly_accepted: bool,
     /// The cause of error
     pub inner: E,
     /// How many times the request was retried
@@ -45,9 +47,19 @@ pub struct ExecutionError<E> {
     pub address: Option<Address>,
 }
 
+impl<E> ExecutionError<E> {
+    /// Whether any attempt may have delivered the request.
+    pub fn is_possibly_accepted(&self) -> bool {
+        self.possibly_accepted
+    }
+}
+
 impl<E: PartialEq> PartialEq for ExecutionError<E> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.retries == other.retries && self.address == other.address
+        self.inner == other.inner
+            && self.retries == other.retries
+            && self.address == other.address
+            && self.possibly_accepted == other.possibly_accepted
     }
 }
 
@@ -58,6 +70,7 @@ where
     /// Convert inner error type without losing retries and address
     fn inner_into(self) -> ExecutionError<T> {
         ExecutionError {
+            possibly_accepted: self.possibly_accepted,
             inner: self.inner.into(),
             retries: self.retries,
             address: self.address,
@@ -86,6 +99,10 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
 
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         self.inner.rate_limit_ban_duration()
+    }
+
+    fn is_node_busy(&self) -> bool {
+        self.inner.is_node_busy()
     }
 }
 
@@ -225,6 +242,7 @@ where
                 address: result.address.clone(),
             }),
             Err(e) => ExecutionResult::Err(ExecutionError {
+                possibly_accepted: false,
                 inner: e.into(),
                 retries: result.retries,
                 address: Some(result.address.clone()),
@@ -251,6 +269,7 @@ mod tests {
 
     fn mock_error() -> ExecutionError<String> {
         ExecutionError {
+            possibly_accepted: false,
             inner: "test error".to_string(),
             retries: 2,
             address: Some(mock_address()),
@@ -264,6 +283,7 @@ mod tests {
         assert_eq!(err1, err2);
 
         let err3 = ExecutionError {
+            possibly_accepted: false,
             inner: "different".to_string(),
             retries: 2,
             address: Some(mock_address()),
@@ -271,6 +291,7 @@ mod tests {
         assert_ne!(err1, err3);
 
         let err4 = ExecutionError {
+            possibly_accepted: false,
             inner: "test error".to_string(),
             retries: 5,
             address: Some(mock_address()),
@@ -388,6 +409,7 @@ mod tests {
 
         let inner = DapiClientError::NoAvailableAddresses;
         let error = ExecutionError {
+            possibly_accepted: false,
             inner,
             retries: 0,
             address: None,
@@ -403,5 +425,26 @@ mod tests {
         let response: ExecutionResponse<i32> = ExecutionResponse::default();
         assert_eq!(response.inner, 0);
         assert_eq!(response.retries, 0);
+    }
+}
+
+#[cfg(test)]
+mod submission_history_tests {
+    use super::*;
+    #[test]
+    fn should_preserve_delivery_metadata_when_converting_inner_errors() {
+        let error = ExecutionError {
+            possibly_accepted: true,
+            inner: "lost",
+            retries: 2,
+            address: None,
+        };
+        let converted: ExecutionError<String> = error.inner_into();
+        assert!(converted.is_possibly_accepted());
+        assert_eq!(converted.inner, "lost");
+        assert_eq!(converted.retries, 2);
+        let mut other = converted.clone();
+        other.possibly_accepted = false;
+        assert_ne!(other, converted);
     }
 }
