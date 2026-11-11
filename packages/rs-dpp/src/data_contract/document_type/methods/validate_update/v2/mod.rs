@@ -19,7 +19,7 @@
 
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV3Getters,
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::validation::SimpleConsensusValidationResult;

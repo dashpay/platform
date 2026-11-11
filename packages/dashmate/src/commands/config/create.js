@@ -6,6 +6,7 @@ import resolveConfigDirectory, {
   getPortableConfigName,
 } from '../../config/resolve-config-directory.js';
 import ConfigAlreadyPresentError from '../../config/errors/ConfigAlreadyPresentError.js';
+import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 export default class ConfigCreateCommand extends BaseCommand {
   static description = 'Create new config';
@@ -68,6 +69,10 @@ export default class ConfigCreateCommand extends BaseCommand {
       }
 
       updatedConfigFile.createConfig(configName, fromConfigName);
+
+      // A config cloned from a fullnode without an identity needs one saved
+      // before its service files are rendered.
+      ensureTenderdashNodeKey(updatedConfigFile.getConfig(configName));
     }, {
       // Keep the lock through rendering so another writer cannot save and
       // render newer state in between this save and its service files.

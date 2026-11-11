@@ -1,18 +1,13 @@
+const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
+
 /**
  * @param {string} seedsString
- * @returns {{host: string, port: string}[]}
+ * @returns {RawDAPIAddress[]}
  */
 function parseDAPISeedsString(seedsString) {
   return seedsString
     .split(',')
-    .map((seed) => {
-      const [host, port] = seed.split(':');
-
-      return {
-        host,
-        port,
-      };
-    });
+    .map((seed) => new DAPIAddress(seed).toJSON());
 }
 
 module.exports = parseDAPISeedsString;

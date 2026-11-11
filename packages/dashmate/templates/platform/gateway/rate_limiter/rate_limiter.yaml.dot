@@ -5,6 +5,30 @@ descriptors:
       unit: {{= it.platform.gateway.rateLimiter.unit }}
       requests_per_unit: {{= it.platform.gateway.rateLimiter.requestsPerUnit }}
 
+  # getBlocks is for looking blocks up, not for syncing a chain from DAPI: at most
+  # 300 blocks per hour from one IP. It replaces the limit above for this method, so
+  # the blacklist and whitelist have to be repeated.
+  - key: method
+    value: getBlocks
+    descriptors:
+      - key: remote_address
+        rate_limit:
+          unit: hour
+          requests_per_unit: 30
+      {{~ it.platform.gateway.rateLimiter.blacklist :ip }}
+      - key: remote_address
+        value: {{= ip }}
+        rate_limit:
+          unit: second
+          requests_per_unit: 0
+      {{~}}
+      {{~ it.platform.gateway.rateLimiter.whitelist :ip }}
+      - key: remote_address
+        value: {{= ip }}
+        rate_limit:
+          unlimited: true
+      {{~}}
+
   # Blacklisted IPs
   {{~ it.platform.gateway.rateLimiter.blacklist :ip }}
   - key: remote_address

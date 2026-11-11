@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_token_method_versions::{
     DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions,
-    DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
+    DriveTokenOrderEscrowMethodVersions, DriveTokenProveMethodVersions,
+    DriveTokenUpdateMethodVersions,
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
@@ -18,6 +19,7 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         pre_programmed_distributions: 0,
         perpetual_distribution_last_paid_time: 0,
         pre_programmed_distribution_last_paid_time: 0,
+        once_per_identity_distribution_claim: 0,
         token_direct_purchase_price: 0,
         token_direct_purchase_prices: 0,
         token_contract_info: 0,
@@ -51,6 +53,12 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
+        create_token_shielded_pool_trees: 0,
+        shield: 0,
+        unshield: 0,
+        shielded_transfer: 0,
+        mint_to_pool: 0,
+        burn_from_pool: 0,
     },
     calculate_total_tokens_balance: 0,
     distribution: DriveTokenDistributionMethodVersions {
@@ -58,5 +66,22 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_pre_programmed_distributions: 0,
         mark_perpetual_release_as_distributed: 0,
         mark_pre_programmed_release_as_distributed: 0,
+        add_once_per_identity_distribution: 0,
+        mark_once_per_identity_release_as_distributed: 0,
+        evonode_participation_rewards: 0,
+    },
+    // The token marketplace's escrow is active from protocol version 15
+    // (`DRIVE_TOKEN_METHOD_VERSIONS_V3`).
+    order_escrow: DriveTokenOrderEscrowMethodVersions {
+        add_tokens: None,
+        set_tokens: None,
+        remove_tokens: None,
+        fetch_tokens: None,
+        add_credits: None,
+        set_credits: None,
+        remove_credits: None,
+        fetch_credits: None,
+        estimated_costs_for_tokens: None,
+        estimated_costs_for_credits: None,
     },
 };

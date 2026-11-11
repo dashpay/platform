@@ -102,8 +102,10 @@ enum TokenDirectPurchasePricing: Equatable {
     /// `JSONSerialization`), or `nil` when the token has no usable price (a
     /// `null`/missing entry, an empty tier list) or the entry can't be read.
     ///
-    /// `price`/`amount` values are `u64` and can exceed `Int64.max`, so they
-    /// are read through `NSNumber.uint64Value` rather than as `Int`.
+    /// `price`/`amount` values are `u64`: they can exceed `Int64.max`, and DPP
+    /// writes one above 2^53 - 1 as a decimal string rather than a number, so
+    /// they are read through `UInt64(jsonValue:)`, which takes both shapes.
+    /// A bare numeric cast reported such a token as not for direct sale.
     static func parse(
         _ response: [String: Any],
         canonicalTokenId: String
@@ -116,7 +118,7 @@ enum TokenDirectPurchasePricing: Equatable {
 
         switch entry["type"] as? String {
         case "single_price":
-            guard let price = (entry["price"] as? NSNumber)?.uint64Value else {
+            guard let price = UInt64(jsonValue: entry["price"]) else {
                 return nil
             }
             return .singlePrice(price)
@@ -126,8 +128,8 @@ enum TokenDirectPurchasePricing: Equatable {
                 return nil
             }
             let tiers: [Tier] = rawTiers.compactMap { tier in
-                guard let amount = (tier["amount"] as? NSNumber)?.uint64Value,
-                      let price = (tier["price"] as? NSNumber)?.uint64Value
+                guard let amount = UInt64(jsonValue: tier["amount"]),
+                      let price = UInt64(jsonValue: tier["price"])
                 else { return nil }
                 return Tier(amount: amount, price: price)
             }

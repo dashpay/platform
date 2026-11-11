@@ -7,7 +7,9 @@ pub mod set_price;
 pub mod transfer;
 
 pub use create::{DocumentCreateResult, DocumentCreateTransitionBuilder};
-pub use delete::{DocumentDeleteResult, DocumentDeleteTransitionBuilder};
+pub use delete::{
+    index_only_delete_document, DocumentDeleteResult, DocumentDeleteTransitionBuilder,
+};
 pub use erase::{DocumentEraseResult, DocumentEraseTransitionBuilder};
 pub use purchase::{DocumentPurchaseResult, DocumentPurchaseTransitionBuilder};
 pub use replace::{DocumentReplaceResult, DocumentReplaceTransitionBuilder};

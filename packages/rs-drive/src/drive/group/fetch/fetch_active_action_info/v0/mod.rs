@@ -37,7 +37,12 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let group_action = GroupAction::deserialize_from_bytes_trusted(&value)?;
+        // Drive wrote this action itself, so it is read without the budget
+        // `GroupAction` sets for proofs. That budget counts memory claimed from
+        // length prefixes, not bytes, and refused valid stored actions. Every
+        // v4.1 binary reads it this way at protocol versions up to 13, the
+        // shipped ones; 14 is unreleased.
+        let group_action = GroupAction::deserialize_from_bytes_trusted_no_limit(&value)?;
 
         Ok(group_action)
     }
@@ -81,7 +86,9 @@ impl Drive {
         )?;
 
         if !approximate_without_state_for_costs {
-            let group_action = GroupAction::deserialize_from_bytes_trusted(&value)?;
+            // Without the proof budget, as in `fetch_active_action_info_v0`:
+            // every co-signer of a group action loads it here.
+            let group_action = GroupAction::deserialize_from_bytes_trusted_no_limit(&value)?;
 
             Ok(Some(group_action))
         } else {
@@ -97,6 +104,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::group::v0::GroupV0;
@@ -109,11 +117,22 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::tests::fixtures::get_token_conventions_with_localizations_fixture;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     fn setup_with_action() -> (crate::drive::Drive, Identifier, Identifier) {
+        let (drive, contract_id, action_id, _) =
+            setup_with_action_event(|proposer_id| TokenEvent::Mint(1, proposer_id, None));
+        (drive, contract_id, action_id)
+    }
+
+    /// A drive holding one active action whose event `event` builds from the
+    /// proposer's id.
+    fn setup_with_action_event(
+        event: impl FnOnce(Identifier) -> TokenEvent,
+    ) -> (crate::drive::Drive, Identifier, Identifier, GroupAction) {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -175,13 +194,13 @@ mod tests {
             contract_id,
             proposer_id: id_1,
             token_contract_position: 0,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(1, id_1, None)),
+            event: GroupActionEvent::TokenEvent(event(id_1)),
         });
         drive
             .add_group_action(
                 contract_id,
                 0,
-                Some(action),
+                Some(action.clone()),
                 false,
                 action_id,
                 id_1,
@@ -193,7 +212,7 @@ mod tests {
             )
             .unwrap();
 
-        (drive, contract_id, action_id)
+        (drive, contract_id, action_id, action)
     }
 
     #[test]
@@ -265,5 +284,45 @@ mod tests {
             .expect("stateful fetch must succeed");
 
         assert!(result.is_some());
+    }
+
+    /// Drive reads the actions it stored without the budget proofs decode
+    /// under. A conventions change with 1,250 valid localizations claims
+    /// 100,000 bytes for its map at the length prefix; that budget refused
+    /// it, so no co-signer could load the action. Protocol version 13, the
+    /// last one v4.1 runs, reads it as v4.1 does: without a budget.
+    #[test]
+    fn should_fetch_a_stored_conventions_change_with_1250_localizations() {
+        let (drive, contract_id, action_id, action) = setup_with_action_event(|_| {
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::Conventions(
+                    get_token_conventions_with_localizations_fixture(1_250),
+                ),
+                None,
+            )
+        });
+
+        for platform_version in [
+            PlatformVersion::get(13).expect("expected protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let fetched = drive
+                .fetch_active_action_info(contract_id, 0, action_id, None, platform_version)
+                .expect("expected to fetch the stored action");
+            assert_eq!(fetched, action);
+
+            let fetched = drive
+                .fetch_active_action_info_and_add_operations(
+                    contract_id,
+                    0,
+                    action_id,
+                    false,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to fetch the stored action");
+            assert_eq!(fetched.as_ref(), Some(&action));
+        }
     }
 }

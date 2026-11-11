@@ -99,6 +99,33 @@ abstract class NativePersistenceBridge {
          * it, so the declaration and the mirror can never drift apart.
          */
         const val CAPABILITY_CORE_SWEEP_REMOVAL: Long = 0x800
+
+        /**
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`
+         * (bit 15, `0x8000`; bit 14 is `ASSET_LOCK_SHIELDED_RECIPIENTS`): the
+         * private contact request sync's scan state is stored on its round
+         * and restored at load. A store declaring it keeps a position record
+         * marked unresolved through its wallet's removal, until a record
+         * stored cleared for the same wallet and identity replaces it, and
+         * lists that wallet ([onLoadPrivateContactScanStateWallets]). The
+         * one Kotlin home of this bit, aliased by the public diagnostic
+         * mirror.
+         */
+        const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
+
+        /**
+         * Packed row widths of [onPersistPrivateContactScanState] and
+         * [onLoadPrivateContactScanState]: a read position is the identity
+         * id (32), the position (u64, little-endian), the key fingerprint
+         * (32) and the unresolved private payment marker (1: 0 or 1); a
+         * shielded address the owner id (32), the contact id (32) and the
+         * address (43); an address removal the owner and contact ids; a
+         * cleared identity its id.
+         */
+        const val PRIVATE_POSITION_ENTRY_SIZE: Int = 32 + 8 + 32 + 1
+        const val PRIVATE_ADDRESS_ENTRY_SIZE: Int = 32 + 32 + 43
+        const val PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE: Int = 32 + 32
+        const val PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE: Int = 32
     }
 
     /**
@@ -437,6 +464,64 @@ abstract class NativePersistenceBridge {
      */
     open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
+    /**
+     * The wallet's DashPay coreHeight backfill record — the durable half of
+     * the contact rescan guard (dashpay/platform#4302). Fired inside the
+     * round, after the wallet changeset header, on every round whose
+     * changeset carries a record; the rescan sweep writes it on the SAME
+     * round as the lowered `syncedHeight` it belongs with, so a handler that
+     * stores both holds a record that only ever vouches for a cursor it also
+     * stored. Descriptor `([BII[BI)I`.
+     *
+     * Whole-record semantics: replace what the wallet row holds, never
+     * merge. [covered] is ONE flat `byte[]` of `72 * coveredCount` bytes —
+     * per receival account the owner identity id (32), the contact identity
+     * id (32), the account index (u32) and the height it is covered from
+     * (u32), both little-endian — the same
+     * packing the sweep slot uses for its txids. Store it as an opaque blob
+     * and hand it back unchanged on [WalletRestoreData.dashPayBackfillCovered];
+     * only native reads it.
+     *
+     * Purely additive: an implementation that ignores it keeps today's
+     * behaviour — the backfill re-fires on every launch, re-walking every
+     * filter from the earliest contact's core height. Slow, never lossy.
+     *
+     * Delivered only to a bridge that also overrides [onWalletChangesetHeader]:
+     * the record vouches for the cursor that callback stores, so a bridge
+     * keeping the inherited no-op header never receives it.
+     */
+    open fun onWalletChangesetDashPayBackfill(
+        walletId: ByteArray,
+        floor: Int,
+        rewoundFrom: Int,
+        covered: ByteArray,
+        coveredCount: Int,
+    ): Int = 0
+
+    /**
+     * The private contact request sync's scan state a round writes, inside
+     * the round after its contacts. Descriptor `([B[B[B[B[B)I`. Each array
+     * packs whole rows (see [PRIVATE_POSITION_ENTRY_SIZE] and its siblings):
+     *
+     * - [positions]: replace the identity's stored read position.
+     * - [addresses]: replace the stored address for `(owner, contact)`.
+     * - [removedAddresses]: delete the stored address for `(owner, contact)`.
+     * - [clearedIdentities]: identities the round removed from the wallet;
+     *   delete each one's position and every address it owns.
+     *
+     * Delivered only to a bridge that overrides both this and
+     * [onLoadPrivateContactScanState]: an inherited no-op would acknowledge
+     * a read position it never kept. Without them each launch reads the
+     * private store from its start.
+     */
+    open fun onPersistPrivateContactScanState(
+        walletId: ByteArray,
+        positions: ByteArray,
+        addresses: ByteArray,
+        removedAddresses: ByteArray,
+        clearedIdentities: ByteArray,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
@@ -502,7 +587,16 @@ abstract class NativePersistenceBridge {
 
     // ── Identity keys ─────────────────────────────────────────────────
 
-    /** One `IdentityKeyEntryFFI` upsert. Descriptor `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I`. */
+    /**
+     * One `IdentityKeyEntryFFI` upsert. Descriptor
+     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`.
+     * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
+     * 3 ContractGroup (`contractBoundsId` is then the contract group id and
+     * `contractBoundsDocumentType` is null). The last four arguments are the
+     * key's usage limits (protocol version 14): the credits it may spend over
+     * its lifetime when [totalBudgetIsSome], and the block time in milliseconds
+     * from which it can no longer sign when [expiresAtIsSome].
+     */
     @Suppress("LongParameterList")
     open fun onPersistIdentityKeyUpsert(
         walletId: ByteArray,
@@ -524,6 +618,10 @@ abstract class NativePersistenceBridge {
         contractBoundsKind: Byte,
         contractBoundsId: ByteArray,
         contractBoundsDocumentType: String?,
+        totalBudgetIsSome: Boolean = false,
+        totalBudget: Long = 0L,
+        expiresAtIsSome: Boolean = false,
+        expiresAt: Long = 0L,
     ): Int = 0
 
     /** One `(identityId, keyId)` removal. Descriptor `([B[BI)I`. */
@@ -549,14 +647,25 @@ abstract class NativePersistenceBridge {
     // ── Contacts ──────────────────────────────────────────────────────
 
     /**
-     * One `ContactRequestFFI` upsert. Descriptor
-     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I`.
+     * One `ContactRequestFFI` upsert, marker-less form (the signature this
+     * API had before the outbound-account marker). Native calls the
+     * overload below; this one stays so existing implementations keep
+     * compiling and keep receiving rows through the delegating default.
      *
      * The tail block ([paymentChannelBroken] / [alias] / [note] /
      * [isHidden] / [contactAccountLabel] / [acceptedAccounts]) is
      * established-row relationship metadata (contactInfo + DIP-15
      * accepted accounts) — null / false / empty on pending rows.
      * [acceptedAccounts] is never null (empty when absent).
+     *
+     * [hasExternalAccountReference] / [externalAccountReference] mirror
+     * `EstablishedContact::external_account_reference`: the incoming
+     * `accountReference` the registered outbound (sending) account was
+     * built from. Store it and hand it back on
+     * [ContactRequestRestoreData]; a cold start that restores `None`
+     * treats the account as rotated and rebuilds it on every launch
+     * (dashpay/platform#4302). Replicated onto both established rows;
+     * `false` / 0 on pending rows.
      */
     @Suppress("LongParameterList")
     open fun onPersistContactUpsert(
@@ -579,6 +688,45 @@ abstract class NativePersistenceBridge {
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
     ): Int = 0
+
+    /**
+     * The overload native calls (descriptor
+     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I`):
+     * the row above plus `EstablishedContact::external_account_reference` as
+     * `(hasExternalAccountReference, externalAccountReference)`. The default
+     * body delegates to the marker-less overload, so an implementation that
+     * overrides only that one keeps persisting every other field and merely
+     * loses the marker (native then rebuilds the outbound account once per
+     * launch, the pre-marker behaviour). Override this one to store it.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean,
+        externalAccountReference: Int,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+    )
 
     /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
     open fun onPersistContactRemovalSent(
@@ -811,6 +959,27 @@ abstract class NativePersistenceBridge {
     open fun onLoadShieldedViewingKeys(): Array<ShieldedViewingKeyData> = emptyArray()
 
     /**
+     * `on_load_private_contact_scan_state_fn`: the stored scan state of
+     * [walletId] as two packed arrays, `[positions, addresses]`, in the
+     * layout [onPersistPrivateContactScanState] stores. Descriptor
+     * `([B)[[B`. Throw on a store that cannot be read: an empty answer
+     * would read the store from its start without saying why.
+     */
+    open fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+        arrayOf(ByteArray(0), ByteArray(0))
+
+    /**
+     * `on_load_private_contact_scan_state_wallets_fn`: the ids of every
+     * wallet the store keeps scan state for, 32 bytes each, packed back to
+     * back, a removed wallet whose position records were kept marked
+     * included. Rust reads each one its wallet-list load does not return
+     * through [onLoadPrivateContactScanState] and hands its marked records to
+     * the wallet as retained. Descriptor `()[B`. Throw on a store that cannot
+     * be read.
+     */
+    open fun onLoadPrivateContactScanStateWallets(): ByteArray = ByteArray(0)
+
+    /**
      * `on_get_core_tx_record_fn`. Returns the record for `txid` or `null`
      * if no row exists. Descriptor
      * `([B[B)Lorg/dashfoundation/dashsdk/ffi/CoreTxRecordData;`.
@@ -955,7 +1124,41 @@ class WalletRestoreData(
      * `loadWalletList`.
      */
     @JvmField val lastAppliedChainLockBytes: ByteArray,
-)
+) {
+    // The DashPay backfill record rides as body properties, not constructor
+    // parameters, so this class keeps exactly the JVM constructors it had
+    // before the record existed: a bridge compiled against the older SDK —
+    // Java, or Kotlin using the defaulted `providerSpecialTxs` — still links
+    // (dashpay/platform#4302 review). Set them with `apply { … }`; native
+    // reads them by field name either way.
+
+    /**
+     * Whether the wallet row holds a DashPay coreHeight backfill record
+     * (dashpay/platform#4302). `false` for a wallet that never rewound for a
+     * contact or a row persisted before the record existed; native then
+     * ignores the three fields below, and the first rescan sweep behaves as
+     * it always did and writes one. Mirror of
+     * `WalletRestoreEntryFFI.has_dashpay_backfill`.
+     */
+    @JvmField var hasDashPayBackfill: Boolean = false
+
+    /** Lowest height the backfill rewound the cursor to. */
+    @JvmField var dashPayBackfillFloor: Int = 0
+
+    /**
+     * Highest cursor the backfill rewound from — the height the scan climbs
+     * back to for the backfill to be complete.
+     */
+    @JvmField var dashPayBackfillRewoundFrom: Int = 0
+
+    /**
+     * The record's cover set, exactly as [NativePersistenceBridge.onWalletChangesetDashPayBackfill]
+     * delivered it: `72` bytes per covered receival account. Native re-packs it into
+     * a `DashPayBackfillCoveredContactFFI` array; a blob that is not a whole
+     * number of entries is read as no record.
+     */
+    @JvmField var dashPayBackfillCovered: ByteArray = ByteArray(0)
+}
 
 /**
  * Kotlin staging row for the unchanged `ProviderSpecialTxRestoreEntryFFI`.
@@ -986,7 +1189,9 @@ class ProviderSpecialTxRestoreData(
  * `onWalletChangesetUtxoAdded`); [scriptPubKey] is the output script —
  * the Rust side reconstructs the address from `(script, network)`, so
  * no address string crosses the FFI. `isTrusted` is runtime-only and
- * recomputed on the next SPV pass (not carried).
+ * recomputed on the next SPV pass (not carried). [parentContext] /
+ * [parentBlockHeight] carry the creating transaction's row so the loader
+ * can raise a coin that lags its own transaction's confirmation.
  */
 class UtxoRestoreData(
     @JvmField val typeTag: Byte,
@@ -1005,6 +1210,14 @@ class UtxoRestoreData(
     @JvmField val isConfirmed: Boolean,
     @JvmField val isInstantLocked: Boolean,
     @JvmField val isLocked: Boolean,
+    /**
+     * The stored context of the coin's creating transaction, copied as-is
+     * (0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock; 0 when
+     * there is no row). The Rust loader decides what it means for the coin.
+     */
+    @JvmField val parentContext: Int,
+    /** The stored block height of the coin's creating transaction; 0 when none. */
+    @JvmField val parentBlockHeight: Int,
 )
 
 /**
@@ -1245,7 +1458,21 @@ class ContactRequestRestoreData(
     @JvmField val isHidden: Boolean,
     @JvmField val contactAccountLabel: String?,
     @JvmField val acceptedAccounts: IntArray,
-)
+) {
+    // Body properties, not constructor parameters, for the same reason as
+    // [WalletRestoreData]'s backfill fields: the class keeps the JVM
+    // constructor it had before the marker existed.
+
+    /**
+     * `EstablishedContact::external_account_reference` as a `(present,
+     * value)` pair, exactly as [NativePersistenceBridge.onPersistContactUpsert]
+     * delivered it. `false` restores `None`, which makes native rebuild the
+     * outbound account once on the next sweep.
+     */
+    @JvmField var hasExternalAccountReference: Boolean = false
+
+    @JvmField var externalAccountReference: Int = 0
+}
 
 /**
  * One flat identity-public-key row — mirror of `IdentityKeyRestoreFFI`.
@@ -1253,9 +1480,14 @@ class ContactRequestRestoreData(
  * `keyType` / `purpose` / `securityLevel` are DPP `repr(u8)` discriminants
  * (out-of-range = 255 sentinel → Rust drops the row rather than coercing to
  * MASTER/AUTHENTICATION, matching the Swift loader's `UInt8.max` fallback).
- * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType;
- * `contractBoundsId` is 32 bytes (or empty for kind 0);
+ * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
+ * 3 ContractGroup;
+ * `contractBoundsId` is 32 bytes (or empty for kind 0): the contract id, or
+ * the contract group id for kind 3;
  * `contractBoundsDocumentType` is non-null only for kind 2.
+ * `totalBudget` / `expiresAt` are the key's usage limits (protocol version 14),
+ * meaningful only when the matching `*IsSome` flag is set; a limited key must
+ * restore as limited, or it would come back unlimited on cold restart.
  */
 class IdentityKeyRestoreData(
     @JvmField val keyId: Int,
@@ -1267,6 +1499,10 @@ class IdentityKeyRestoreData(
     @JvmField val contractBoundsKind: Byte,
     @JvmField val contractBoundsId: ByteArray,
     @JvmField val contractBoundsDocumentType: String?,
+    @JvmField val totalBudgetIsSome: Boolean = false,
+    @JvmField val totalBudget: Long = 0L,
+    @JvmField val expiresAtIsSome: Boolean = false,
+    @JvmField val expiresAt: Long = 0L,
 )
 
 /** Mirror of `ShieldedNoteRestoreFFI`. */

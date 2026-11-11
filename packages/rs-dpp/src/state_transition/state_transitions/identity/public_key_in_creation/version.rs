@@ -6,6 +6,7 @@ impl FeatureVersioned for IdentityPublicKeyInCreation {
     fn feature_version(&self) -> FeatureVersion {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.feature_version(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.feature_version(),
         }
     }
 }

@@ -12,17 +12,17 @@
 //!   "Which groups' aggregate falls in this range?" Value is the answer,
 //!   so there is no rank and no offset.
 //!
-//! The grammar for both is not restated here. [`detect_ranked_mode`] and
-//! [`detect_having_mode`] are rs-drive's own versioned classifiers — the
-//! same functions the server's query table and the proof verifier call —
-//! and they are `pub` under the `verify` feature this crate already
-//! enables. Calling them client-side means a malformed query fails
-//! locally with rs-drive's own message and cannot drift from what the
-//! network enforces.
+//! The grammar for both is not restated here: this module only translates
+//! the JS input into a [`DocumentQuery`]. The Rust SDK checks the query
+//! before sending it, once the network is proven to serve ranked and
+//! having-range queries, with rs-drive's own versioned classifiers, the
+//! same functions the server and the proof verifier call; a malformed
+//! query fails locally with their message, as an invalid argument.
 
 use crate::error::WasmSdkError;
 use crate::queries::document::{
-    json_to_platform_value, parse_time_range_clause, parse_where_clause,
+    apply_integer_range_selections, json_to_platform_value, parse_time_range_clause,
+    parse_where_clause,
 };
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
@@ -33,13 +33,12 @@ use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::documents::document_query::{DocumentQuery, RankingDirection};
+use dash_sdk::platform::proto::{Proof, ResponseMetadata};
 use dash_sdk::platform::{DataContract, Fetch};
-use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
-use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
+use dash_sdk::Sdk;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    RankedAxis, RankedEntry, RankedEntryValue, RankedPaginationInputs, SelectFunction,
-    SelectProjection, RANKED_AVG_SCALE,
+    RankedAxis, RankedEntry, RankedEntryValue, SelectFunction, SelectProjection, RANKED_AVG_SCALE,
 };
 use drive_proof_verifier::{DocumentHavingEntries, DocumentRankedEntries};
 use js_sys::{Array, Object, Reflect};
@@ -73,8 +72,8 @@ export type DocumentsAggregateSelect =
 
 /**
  * One pin on a compound ranked index's leading property, spelled like a
- * `DocumentsQuery` where clause: `[property, '==', value]`, or
- * `[property, 'in', values]`.
+ * `DocumentsQuery` where clause: `[property, '==', value]`,
+ * `[property, 'contains', element]`, or `[property, 'in', values]`.
  *
  * A compound ranked index keeps one ordered secondary per prefix value,
  * with no global ordering across prefixes — so a ranked read has to name
@@ -97,11 +96,17 @@ export type DocumentsAggregateSelect =
  * A `null` value is legal and addresses the subtree the write path
  * creates for an *absent* optional value.
  *
+ * `contains` pins a typed array property (protocol version 14+) whose
+ * index keys each element: it names the one element's prefix, as `==`
+ * names one value. `containsAny` is rejected: a ranking over several
+ * elements would count a document once per element it holds.
+ *
  * `>` / `<` / `between` / `startsWith` are all rejected: a range cannot
  * pin one prefix.
  */
 export type DocumentsIndexPin =
   | [string, '==' | '=', unknown]
+  | [string, 'contains' | 'Contains', unknown]
   | [string, 'in' | 'In', unknown[]];
 
 /** How a ranked / having-range walk runs along the aggregate axis. */
@@ -198,8 +203,9 @@ export interface DocumentsRankedQuery {
   offset?: number;
 
   /**
-   * Pins on the covering compound index's leading properties — `==`, or
-   * one bounded `in`. Omit entirely for a single-property ranked index.
+   * Pins on the covering compound index's leading properties — `==`
+   * (`contains` on a typed array), or one bounded `in`. Omit entirely
+   * for a single-property ranked index.
    * @default []
    */
   where?: DocumentsIndexPin[];
@@ -216,6 +222,18 @@ export interface DocumentsRankedQuery {
     field: string;
     selector: "newest" | "oldest" | "byStart";
     startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
     grid?: { range: number; step: number; phase?: number };
   }[];
 }
@@ -305,9 +323,10 @@ export interface DocumentsHavingQuery {
   direction?: DocumentsRankDirection;
 
   /**
-   * Pins on the covering compound index's leading properties — `==`, or
-   * one bounded `in`. A having-range query has no `offset`, so the
-   * ranked surface's offset-versus-`in` exclusion does not arise here.
+   * Pins on the covering compound index's leading properties — `==`
+   * (`contains` on a typed array), or one bounded `in`. A having-range
+   * query has no `offset`, so the ranked surface's offset-versus-`in`
+   * exclusion does not arise here.
    * @default []
    */
   where?: DocumentsIndexPin[];
@@ -324,6 +343,18 @@ export interface DocumentsHavingQuery {
     field: string;
     selector: "newest" | "oldest" | "byStart";
     startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
     grid?: { range: number; step: number; phase?: number };
   }[];
 }
@@ -535,6 +566,10 @@ struct DocumentsRankedQueryInput {
     /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
     #[serde(rename = "timeRange", default)]
     time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -554,6 +589,10 @@ struct DocumentsHavingQueryInput {
     /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
     #[serde(rename = "timeRange", default)]
     time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 /// Translate the JS aggregate union into rs-drive's `SELECT` projection.
@@ -595,14 +634,13 @@ fn ranking_direction(
 
 /// Having operators, spelled the way `DocumentWhereOperator` spells the
 /// same comparisons so a caller who learned `'>='` for `where` writes
-/// `'>='` here too.
-///
-/// `!=` and `in` are absent on purpose rather than mapped and then
-/// rejected downstream: neither describes one contiguous range, and a
-/// having-range read is exactly one contiguous slice of one axis.
+/// `'>='` here too. Which of them a node serves is the SDK's check to
+/// decide, not this mapping's.
 fn having_operator_from_str(operator: &str) -> Result<HavingOperator, WasmSdkError> {
     match operator {
         "==" | "=" => Ok(HavingOperator::Equal),
+        "!=" => Ok(HavingOperator::NotEqual),
+        "in" | "In" => Ok(HavingOperator::In),
         ">" => Ok(HavingOperator::GreaterThan),
         ">=" => Ok(HavingOperator::GreaterThanOrEquals),
         "<" => Ok(HavingOperator::LessThan),
@@ -612,24 +650,11 @@ fn having_operator_from_str(operator: &str) -> Result<HavingOperator, WasmSdkErr
         "BetweenExcludeLeft" => Ok(HavingOperator::BetweenExcludeLeft),
         "BetweenExcludeRight" => Ok(HavingOperator::BetweenExcludeRight),
         other => Err(WasmSdkError::invalid_argument(format!(
-            "unsupported having operator `{other}`; expected one of '==', '>', '>=', '<', '<=', \
-             'Between', 'BetweenExcludeBounds', 'BetweenExcludeLeft', 'BetweenExcludeRight'. \
-             '!=' and 'in' describe non-contiguous ranges and cannot be served as a having-range \
-             read."
+            "unsupported having operator `{other}`; a having-range query takes one of '==', \
+             '>', '>=', '<', '<=', 'Between', 'BetweenExcludeBounds', 'BetweenExcludeLeft', \
+             'BetweenExcludeRight'"
         ))),
     }
-}
-
-/// True for the operators whose right-hand operand is a `[lower, upper]`
-/// pair rather than a scalar.
-fn is_between_operator(operator: HavingOperator) -> bool {
-    matches!(
-        operator,
-        HavingOperator::Between
-            | HavingOperator::BetweenExcludeBounds
-            | HavingOperator::BetweenExcludeLeft
-            | HavingOperator::BetweenExcludeRight
-    )
 }
 
 /// Build the one having clause from the JS bound.
@@ -653,21 +678,6 @@ fn having_clause_from_input(
     };
 
     let operator = having_operator_from_str(&bound.operator)?;
-
-    // rs-drive rejects a wrong operand shape too, but naming the JS
-    // field is a better message than a bounds-translation failure.
-    if is_between_operator(operator)
-        && !bound
-            .value
-            .as_array()
-            .map(|operands| operands.len() == 2)
-            .unwrap_or(false)
-    {
-        return Err(WasmSdkError::invalid_argument(format!(
-            "having operator `{}` needs `value: [lower, upper]` (exactly two operands)",
-            bound.operator
-        )));
-    }
 
     Ok(HavingClause {
         aggregate: HavingAggregate {
@@ -713,70 +723,6 @@ fn value_scale(axis: RankedAxis) -> i128 {
     }
 }
 
-/// The pagination triple both classifiers take, read off a built query.
-fn pagination_inputs(query: &DocumentQuery) -> RankedPaginationInputs {
-    RankedPaginationInputs {
-        // `DocumentQuery::limit` uses `0` as the "unset" sentinel.
-        limit: (query.limit != 0).then_some(query.limit),
-        offset: query.offset,
-        has_start_at: query.start.is_some(),
-    }
-}
-
-/// Re-run rs-drive's own versioned ranked grammar client-side.
-///
-/// This is the same function the server's query table and the proof
-/// verifier call — not a copy — so it cannot drift from either, and it
-/// is versioned by `platform_version`, so an SDK built against one
-/// protocol version cannot quietly accept a shape that version rejects.
-fn assert_ranked_shape(
-    query: &DocumentQuery,
-    platform_version: &PlatformVersion,
-) -> Result<(), WasmSdkError> {
-    detect_ranked_mode(
-        &query.select,
-        &query.group_by,
-        &query.having,
-        &query.order_by_clauses,
-        &query.where_clauses,
-        pagination_inputs(query),
-        platform_version,
-    )
-    .map(|_| ())
-    .map_err(|e| {
-        WasmSdkError::invalid_argument(format!(
-            "not a well-formed ranked query: {e}. A ranked query is \
-             {{ groupBy, aggregate, limit }} plus optional {{ direction, offset, where }}; \
-             `where` entries must be `==` pins on the covering compound index's leading \
-             properties."
-        ))
-    })
-}
-
-/// Having-range counterpart of [`assert_ranked_shape`].
-fn assert_having_shape(
-    query: &DocumentQuery,
-    platform_version: &PlatformVersion,
-) -> Result<(), WasmSdkError> {
-    detect_having_mode(
-        &query.select,
-        &query.group_by,
-        &query.having,
-        &query.order_by_clauses,
-        &query.where_clauses,
-        pagination_inputs(query),
-        platform_version,
-    )
-    .map(|_| ())
-    .map_err(|e| {
-        WasmSdkError::invalid_argument(format!(
-            "not a well-formed having-range query: {e}. A having-range query is \
-             {{ groupBy, aggregate, having, limit }} plus optional {{ direction, where }}; \
-             the bound must describe one contiguous range over the selected aggregate."
-        ))
-    })
-}
-
 /// Attach the (at most one) time-range selection to an already-built
 /// query. The selection stays pending — the server resolves it from
 /// committed block time, the proof verifier from the signed metadata
@@ -816,15 +762,8 @@ fn apply_index_pins(
 fn apply_ranked_shape(
     base: DocumentQuery,
     input: &DocumentsRankedQueryInput,
-    platform_version: &PlatformVersion,
 ) -> Result<DocumentQuery, WasmSdkError> {
     let group_by = input.group_by.as_str();
-    if group_by.is_empty() {
-        return Err(WasmSdkError::invalid_argument(
-            "groupBy must name the covering ranked index's trailing property",
-        ));
-    }
-
     let select = select_from_input(&input.aggregate)?;
     let direction = ranking_direction(input.direction.as_deref(), RankingDirection::Descending)?;
 
@@ -847,9 +786,7 @@ fn apply_ranked_shape(
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
     let query = apply_time_range_selections(query, input.time_range.as_deref())?;
-
-    assert_ranked_shape(&query, platform_version)?;
-    Ok(query)
+    apply_integer_range_selections(query, input.integer_range.as_deref())
 }
 
 /// Having-range counterpart of [`apply_ranked_shape`].
@@ -861,15 +798,8 @@ fn apply_ranked_shape(
 fn apply_having_shape(
     base: DocumentQuery,
     input: &DocumentsHavingQueryInput,
-    platform_version: &PlatformVersion,
 ) -> Result<DocumentQuery, WasmSdkError> {
     let group_by = input.group_by.as_str();
-    if group_by.is_empty() {
-        return Err(WasmSdkError::invalid_argument(
-            "groupBy must name the covering ranked index's trailing property",
-        ));
-    }
-
     let select = select_from_input(&input.aggregate)?;
     let having = having_clause_from_input(&select, &input.having)?;
 
@@ -886,9 +816,7 @@ fn apply_having_shape(
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
     let query = apply_time_range_selections(query, input.time_range.as_deref())?;
-
-    assert_having_shape(&query, platform_version)?;
-    Ok(query)
+    apply_integer_range_selections(query, input.integer_range.as_deref())
 }
 
 async fn parse_documents_ranked_query(
@@ -903,7 +831,7 @@ async fn parse_documents_ranked_query(
         .await?;
     let base = DocumentQuery::new(contract, &input.document_type_name)?;
 
-    apply_ranked_shape(base, &input, sdk.inner_sdk().version())
+    apply_ranked_shape(base, &input)
 }
 
 async fn parse_documents_having_query(
@@ -921,7 +849,7 @@ async fn parse_documents_having_query(
         .await?;
     let base = DocumentQuery::new(contract, &input.document_type_name)?;
 
-    apply_having_shape(base, &input, sdk.inner_sdk().version())
+    apply_having_shape(base, &input)
 }
 
 /// One entry decoded as far as it can be without touching a JS type, so
@@ -1185,7 +1113,7 @@ impl ResultContext {
     fn from_query(query: &DocumentQuery) -> Result<Self, WasmSdkError> {
         Ok(Self {
             axis: axis_from_select(&query.select)?,
-            // Shape assertion already established there is exactly one.
+            // Read after the fetch: the SDK's check before sending allows exactly one.
             group_by: query
                 .group_by
                 .first()
@@ -1213,6 +1141,26 @@ impl ResultContext {
             platform_version,
         ))
     }
+}
+
+/// A page of `T` for `query`, with the block metadata and proof it was verified against, and
+/// the context to decode its entries with.
+///
+/// The context is read from the query only after the fetch. The SDK gates the query on the
+/// network's protocol version and refuses, with its own error, a query the context cannot be
+/// read from (no grouping, or a projection that is not an aggregate); the decoder decides
+/// nothing about the query's shape.
+async fn fetch_grouped_page<T>(
+    sdk: &Sdk,
+    query: DocumentQuery,
+) -> Result<(T, ResponseMetadata, Proof, ResultContext), WasmSdkError>
+where
+    T: Fetch<Query = DocumentQuery> + Default + Send,
+{
+    let decoding = query.clone();
+    let (page, metadata, proof) = T::fetch_with_metadata_and_proof(sdk, query, None).await?;
+    let context = ResultContext::from_query(&decoding)?;
+    Ok((page.unwrap_or_default(), metadata, proof, context))
 }
 
 #[wasm_bindgen]
@@ -1250,9 +1198,10 @@ impl WasmSdk {
     /// `SELECT <aggregate> GROUP BY <property> ORDER BY <that aggregate>
     /// LIMIT n [OFFSET m]`, served from protocol version 14 against a
     /// contract index that declares the matching `rankedCountable` /
-    /// `rankedSummable` / `rankedAverageable` keyword. A node on an
-    /// earlier protocol version, or a contract whose index does not opt
-    /// in, rejects the query and names what is missing.
+    /// `rankedSummable` / `rankedAverageable` keyword. On a network not yet
+    /// proven to run protocol version 14 the SDK refuses the query without
+    /// sending it (`ProtocolVersionNotActive`); a contract whose index does
+    /// not opt in gets the query rejected, naming what is missing.
     ///
     /// Entries come back in ranking order and must not be re-sorted;
     /// `startingRank` plus the entry's position is its absolute rank.
@@ -1265,13 +1214,10 @@ impl WasmSdk {
         query: DocumentsRankedQueryJs,
     ) -> Result<Object, WasmSdkError> {
         let query = parse_documents_ranked_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
         // An empty ranking proves, so `None` is an empty page rather
         // than an absent answer.
-        let page = DocumentRankedEntries::fetch(self.as_ref(), query)
-            .await?
-            .unwrap_or_default();
+        let (page, _, _, context) =
+            fetch_grouped_page::<DocumentRankedEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         ranked_result_to_js(&parts, page.starting_rank, context.axis, &context.group_by)
@@ -1288,12 +1234,8 @@ impl WasmSdk {
         query: DocumentsRankedQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_documents_ranked_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let (page, metadata, proof) =
-            DocumentRankedEntries::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
-        let page = page.unwrap_or_default();
+        let (page, metadata, proof, context) =
+            fetch_grouped_page::<DocumentRankedEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         let result =
@@ -1324,11 +1266,8 @@ impl WasmSdk {
         query: DocumentsHavingQueryJs,
     ) -> Result<Object, WasmSdkError> {
         let query = parse_documents_having_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let page = DocumentHavingEntries::fetch(self.as_ref(), query)
-            .await?
-            .unwrap_or_default();
+        let (page, _, _, context) =
+            fetch_grouped_page::<DocumentHavingEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         having_result_to_js(&parts, context.axis, &context.group_by)
@@ -1345,12 +1284,8 @@ impl WasmSdk {
         query: DocumentsHavingQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_documents_having_query(self, query).await?;
-        let context = ResultContext::from_query(&query)?;
-
-        let (page, metadata, proof) =
-            DocumentHavingEntries::fetch_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
-        let page = page.unwrap_or_default();
+        let (page, metadata, proof, context) =
+            fetch_grouped_page::<DocumentHavingEntries>(self.as_ref(), query).await?;
 
         let parts = context.decode(&page.entries, self.inner_sdk().version())?;
         let result = having_result_to_js(&parts, context.axis, &context.group_by)?;
@@ -1498,10 +1433,15 @@ mod wasm_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dash_platform_queries::documents::array_element_clauses::key_element_clauses;
     use dash_sdk::dpp::prelude::DataContract;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use drive::query::drive_document_having_query::mode_detection::detect_having_mode;
+    use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
     use drive::query::drive_document_ranked_query::MAX_PREFIX_IN_BRANCHES;
+    use drive::query::RankedPaginationInputs;
     use drive::query::{WhereOperator, MAX_HAVING_LIMIT, MAX_RANKED_LIMIT, RANKED_COUNT_ORDER_KEY};
+    use drive_proof_verifier::FromProof;
     use serde_json::json;
 
     /// DPNS stands in for any contract here. Every function under test is
@@ -1561,6 +1501,7 @@ mod tests {
     ) -> DocumentsRankedQueryInput {
         DocumentsRankedQueryInput {
             time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: group_by.to_string(),
@@ -1580,6 +1521,7 @@ mod tests {
     ) -> DocumentsHavingQueryInput {
         DocumentsHavingQueryInput {
             time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: GROUP_BY.to_string(),
@@ -1591,16 +1533,63 @@ mod tests {
         }
     }
 
-    fn build_ranked(input: DocumentsRankedQueryInput) -> Result<DocumentQuery, WasmSdkError> {
-        apply_ranked_shape(base_query(), &input, platform_version())
+    /// The pagination triple the grammar reads, off a built query.
+    fn pagination(query: &DocumentQuery) -> RankedPaginationInputs {
+        RankedPaginationInputs {
+            limit: (query.limit != 0).then_some(query.limit),
+            offset: query.offset,
+            has_start_at: query.start.is_some(),
+        }
     }
 
-    fn build_having(input: DocumentsHavingQueryInput) -> Result<DocumentQuery, WasmSdkError> {
-        apply_having_shape(base_query(), &input, platform_version())
+    /// The where clauses as the grammar reads them: a typed array's `contains` pin keyed.
+    fn keyed(query: &DocumentQuery) -> Result<Vec<drive::query::WhereClause>, String> {
+        key_element_clauses(
+            &query.data_contract,
+            &query.document_type_name,
+            query.where_clauses.clone(),
+            false,
+            platform_version(),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    /// The query the JS input builds, checked against the ranked grammar the SDK checks it
+    /// against before sending (rs-drive's own classifier). Whether an index serves it is the
+    /// SDK's other check, tested there: this fixture declares no ranked index.
+    fn build_ranked(input: DocumentsRankedQueryInput) -> Result<DocumentQuery, String> {
+        let query = apply_ranked_shape(base_query(), &input).map_err(|e| e.to_string())?;
+        detect_ranked_mode(
+            &query.select,
+            &query.group_by,
+            &query.having,
+            &query.order_by_clauses,
+            &keyed(&query)?,
+            pagination(&query),
+            platform_version(),
+        )
+        .map_err(|e| format!("not a well-formed ranked query: {e}"))?;
+        Ok(query)
+    }
+
+    /// The having-range counterpart of [`build_ranked`].
+    fn build_having(input: DocumentsHavingQueryInput) -> Result<DocumentQuery, String> {
+        let query = apply_having_shape(base_query(), &input).map_err(|e| e.to_string())?;
+        detect_having_mode(
+            &query.select,
+            &query.group_by,
+            &query.having,
+            &query.order_by_clauses,
+            &keyed(&query)?,
+            pagination(&query),
+            platform_version(),
+        )
+        .map_err(|e| format!("not a well-formed having-range query: {e}"))?;
+        Ok(query)
     }
 
     /// A ranked query with everything optional left unset.
-    fn ranked(aggregate: AggregateSelectInput, limit: u32) -> Result<DocumentQuery, WasmSdkError> {
+    fn ranked(aggregate: AggregateSelectInput, limit: u32) -> Result<DocumentQuery, String> {
         build_ranked(ranked_input(GROUP_BY, aggregate, limit, None, None, None))
     }
 
@@ -1609,7 +1598,7 @@ mod tests {
         aggregate: AggregateSelectInput,
         bound: HavingBoundInput,
         limit: u32,
-    ) -> Result<DocumentQuery, WasmSdkError> {
+    ) -> Result<DocumentQuery, String> {
         build_having(having_input(aggregate, bound, limit, None))
     }
 
@@ -1740,7 +1729,7 @@ mod tests {
         let error = build_ranked(ranked_input("", count(), 3, None, None, None))
             .expect_err("a ranking without a grouping ranks nothing");
 
-        assert!(error.to_string().contains("groupBy"));
+        assert!(error.contains("not a well-formed ranked query"), "{error}");
     }
 
     // ---- ranked index pins ---------------------------------------------
@@ -1987,21 +1976,24 @@ mod tests {
         );
     }
 
-    /// Neither describes one contiguous range, and a having-range read is
-    /// exactly one contiguous slice of one axis secondary.
+    /// `!=` and `in` map to their operators, and the SDK's check refuses them: neither
+    /// describes one contiguous range, and a having-range read is exactly one contiguous
+    /// slice of one axis secondary. A spelling with no operator is refused while parsing.
     #[test]
     fn having_rejects_non_contiguous_operators() {
-        for operator in ["!=", "in", "startsWith"] {
+        for operator in ["!=", "in"] {
             let error = match having(count(), bound(operator, json!(1)), 10) {
                 Ok(_) => panic!("`{operator}` should have been rejected"),
-                Err(error) => error.to_string(),
+                Err(error) => error,
             };
-
             assert!(
-                error.contains("unsupported having operator"),
-                "`{operator}` should name the supported set; got: {error}"
+                error.contains("not a well-formed having-range query"),
+                "`{operator}`: {error}"
             );
         }
+        let error = having(count(), bound("startsWith", json!(1)), 10)
+            .expect_err("no having operator is spelled this way");
+        assert!(error.contains("unsupported having operator"), "{error}");
     }
 
     #[test]
@@ -2329,6 +2321,29 @@ mod tests {
         }
     }
 
+    /// The ranked and having grammars key a typed array's `contains` pin as
+    /// an equality and refuse `containsAny`. The pin union has to say the
+    /// same, or TypeScript callers cast a working pin past it.
+    #[test]
+    fn index_pin_union_takes_contains_but_not_contains_any() {
+        const DECLARATION: &str = "export type DocumentsIndexPin =";
+        let source = typescript_source();
+        let start = source
+            .find(DECLARATION)
+            .expect("this module declares the pin union");
+        let union = &source[start..];
+        let union = &union[..union.find(';').expect("the pin union ends")];
+
+        assert!(
+            union.contains("'contains'"),
+            "a `contains` pin is answered but absent from DocumentsIndexPin"
+        );
+        assert!(
+            !union.contains("containsAny") && !union.contains("ContainsAny"),
+            "a `containsAny` pin is refused but present in DocumentsIndexPin"
+        );
+    }
+
     /// `#[wasm_bindgen(typescript_custom_section)]` consumes the const it
     /// is attached to on non-wasm targets, so the declaration text is the
     /// only readable form — and it is the thing under test anyway.
@@ -2356,6 +2371,66 @@ mod tests {
         assert_eq!(
             MAX_RANKED_LIMIT, MAX_HAVING_LIMIT,
             "the docs state one ceiling for both surfaces; split the prose if these diverge"
+        );
+    }
+
+    /// The SDK reads a ranked or having-range query first: it gates it on the network's
+    /// protocol version, and refuses one it cannot serve with its own error. The context its
+    /// entries are decoded with is read only after that, so a query without a grouping gets the
+    /// SDK's refusal.
+    #[tokio::test]
+    async fn should_leave_a_grouped_query_without_a_grouping_to_the_sdk() {
+        let sdk = Sdk::new_mock();
+        let ranked = base_query()
+            .with_select(SelectProjection::count_star())
+            .order_by_selected_aggregate(RankingDirection::Descending)
+            .with_limit(5);
+        let having = base_query()
+            .with_select(SelectProjection::count_star())
+            .with_having(vec![HavingClause {
+                aggregate: HavingAggregate {
+                    function: HavingAggregateFunction::Count,
+                    field: String::new(),
+                },
+                operator: HavingOperator::GreaterThan,
+                right: HavingRightOperand::Value(Value::U64(1)),
+            }])
+            .with_limit(5);
+        let sdk_refusal = |refusal: Result<(), drive_proof_verifier::Error>| match refusal {
+            Err(drive_proof_verifier::Error::RequestError { error }) => error,
+            other => panic!("the SDK refuses a query without a grouping, got {other:?}"),
+        };
+
+        let expected = sdk_refusal(
+            <DocumentRankedEntries as FromProof<DocumentQuery>>::check_request(
+                &ranked,
+                sdk.version(),
+            ),
+        );
+        let error = fetch_grouped_page::<DocumentRankedEntries>(&sdk, ranked)
+            .await
+            .err()
+            .expect("a ranked query without a grouping is refused");
+        assert!(
+            error.message().contains(&expected),
+            "ranked: {}",
+            error.message()
+        );
+
+        let expected = sdk_refusal(
+            <DocumentHavingEntries as FromProof<DocumentQuery>>::check_request(
+                &having,
+                sdk.version(),
+            ),
+        );
+        let error = fetch_grouped_page::<DocumentHavingEntries>(&sdk, having)
+            .await
+            .err()
+            .expect("a having query without a grouping is refused");
+        assert!(
+            error.message().contains(&expected),
+            "having: {}",
+            error.message()
         );
     }
 }

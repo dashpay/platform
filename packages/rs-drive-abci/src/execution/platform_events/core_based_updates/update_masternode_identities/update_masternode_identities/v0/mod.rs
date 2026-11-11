@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -13,9 +14,6 @@ use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddNewIdentity;
 
-use crate::platform_types::platform_state::PlatformStateV0Methods;
-
-use dpp::dashcore::hashes::Hash;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 use tracing::Level;
@@ -54,7 +52,13 @@ where
         let mut drive_operations = vec![];
 
         for masternode in added_mns {
-            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
+            // Protocol versions 1 to 13, the ones that select this generation, select
+            // create_owner_identity 0 or 1, which create an identity or fail, and never return
+            // `None`.
+            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "create_owner_identity 0 and 1 always create an owner identity",
+                )))?;
 
             tracing::trace!(
                 identity = ?owner_identity,
@@ -150,14 +154,12 @@ where
             }
         }
 
-        let previous_fee_versions = platform_state.map(|state| state.previous_fee_versions());
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             block_info,
             Some(transaction),
             platform_version,
-            previous_fee_versions,
         )?;
 
         let height = block_info.height;

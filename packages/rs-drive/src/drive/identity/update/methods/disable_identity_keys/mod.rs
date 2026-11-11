@@ -1,20 +1,20 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::KeyID;
 use dpp::prelude::TimestampMillis;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
 use dpp::block::epoch::Epoch;
-use std::collections::HashMap;
 
 impl Drive {
     /// Disables identity keys. This function is version controlled.
@@ -59,9 +59,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.disable_identity_keys_v1(
+                identity_id,
+                keys_ids,
+                disable_at,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -88,9 +97,7 @@ impl Drive {
         key_ids: Vec<KeyID>,
         disable_at: TimestampMillis,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -110,9 +117,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.disable_identity_keys_operations_v1(
+                identity_id,
+                key_ids,
+                disable_at,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

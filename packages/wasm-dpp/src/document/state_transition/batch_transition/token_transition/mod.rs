@@ -44,6 +44,13 @@ pub enum TokenTransitionType {
     ConfigUpdate,
     DirectPurchase,
     SetPriceForDirectPurchase,
+    Shield,
+    Unshield,
+    ShieldedTransfer,
+    MintToPool,
+    BurnFromPool,
+    ClaimToPool,
+    DirectPurchaseToPool,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -62,6 +69,13 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::SetPriceForDirectPurchase(_) => {
                 TokenTransitionType::SetPriceForDirectPurchase
             }
+            TokenTransition::Shield(_) => TokenTransitionType::Shield,
+            TokenTransition::Unshield(_) => TokenTransitionType::Unshield,
+            TokenTransition::ShieldedTransfer(_) => TokenTransitionType::ShieldedTransfer,
+            TokenTransition::MintToPool(_) => TokenTransitionType::MintToPool,
+            TokenTransition::BurnFromPool(_) => TokenTransitionType::BurnFromPool,
+            TokenTransition::ClaimToPool(_) => TokenTransitionType::ClaimToPool,
+            TokenTransition::DirectPurchaseToPool(_) => TokenTransitionType::DirectPurchaseToPool,
         }
     }
 }
@@ -120,35 +134,48 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toTransition)]
-    pub fn to_transition(&self) -> JsValue {
+    pub fn to_transition(&self) -> Result<JsValue, JsValue> {
         match &self.0 {
-            TokenTransition::Burn(burn) => TokenBurnTransitionWasm::from(burn.clone()).into(),
-            TokenTransition::Mint(mint) => TokenMintTransitionWasm::from(mint.clone()).into(),
+            TokenTransition::Burn(burn) => Ok(TokenBurnTransitionWasm::from(burn.clone()).into()),
+            TokenTransition::Mint(mint) => Ok(TokenMintTransitionWasm::from(mint.clone()).into()),
             TokenTransition::Transfer(transfer) => {
-                TokenTransferTransitionWasm::from(transfer.clone()).into()
+                Ok(TokenTransferTransitionWasm::from(transfer.clone()).into())
             }
             TokenTransition::Freeze(freeze) => {
-                TokenFreezeTransitionWasm::from(freeze.clone()).into()
+                Ok(TokenFreezeTransitionWasm::from(freeze.clone()).into())
             }
             TokenTransition::Unfreeze(unfreeze) => {
-                TokenUnfreezeTransitionWasm::from(unfreeze.clone()).into()
+                Ok(TokenUnfreezeTransitionWasm::from(unfreeze.clone()).into())
             }
-            TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => {
-                TokenDestroyFrozenFundsTransitionWasm::from(destroy_frozen_funds.clone()).into()
-            }
+            TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => Ok(
+                TokenDestroyFrozenFundsTransitionWasm::from(destroy_frozen_funds.clone()).into(),
+            ),
             TokenTransition::EmergencyAction(emergency_action) => {
-                TokenEmergencyActionTransitionWasm::from(emergency_action.clone()).into()
+                Ok(TokenEmergencyActionTransitionWasm::from(emergency_action.clone()).into())
             }
             TokenTransition::ConfigUpdate(config_update) => {
-                TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
+                Ok(TokenConfigUpdateTransitionWasm::from(config_update.clone()).into())
             }
-            TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
+            TokenTransition::Claim(claim) => {
+                Ok(TokenClaimTransitionWasm::from(claim.clone()).into())
+            }
             TokenTransition::DirectPurchase(direct_purchase) => {
-                TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into()
+                Ok(TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into())
             }
             TokenTransition::SetPriceForDirectPurchase(set_price) => {
-                TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into()
+                Ok(TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into())
             }
+            // The shielded-pool token transition kinds have no wrapper class here, so there is
+            // nothing to hand back; wasm-dpp2 is the binding that exposes them.
+            TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::MintToPool(_)
+            | TokenTransition::BurnFromPool(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => Err(JsValue::from_str(
+                "shielded and pool-backed token transitions are not supported in wasm-dpp TokenTransition; use wasm-dpp2",
+            )),
         }
     }
 }

@@ -112,6 +112,10 @@ fun DocumentActionsScreen(
     // non-blank and is blank at submit is an explicit REMOVE; a field that
     // was never seeded and stays blank is ABSENT (preserved by the merge).
     val seededTexts = remember { mutableStateMapOf<String, String>() }
+    // Typed array rows, and what the prefill seeded for each: a list seeded
+    // with elements and emptied at submit is an explicit REMOVE, like a text.
+    val listValues = remember { mutableStateMapOf<String, List<String>>() }
+    val seededLists = remember { mutableStateMapOf<String, List<String>>() }
     var seededForId by remember { mutableStateOf<String?>(null) }
 
     var recipient by remember { mutableStateOf<RecipientSelection?>(null) }
@@ -142,6 +146,7 @@ fun DocumentActionsScreen(
     }
     val capabilities = documentTypeCapabilities(schema, contractConfig)
     val documentsMutable = capabilities.documentsMutable
+    val immutability = remember(schema) { documentTypeImmutability(schema) }
     val canBeDeleted = capabilities.canBeDeleted
 
     // Default acting identity to the on-chain owner when it's one of ours,
@@ -194,9 +199,12 @@ fun DocumentActionsScreen(
         textValues.clear()
         boolValues.clear()
         touchedBools.clear()
-        seedReplaceFields(doc.fields, properties, textValues, boolValues, touchedBools)
+        listValues.clear()
+        seedReplaceFields(doc.fields, properties, textValues, boolValues, touchedBools, listValues)
         seededTexts.clear()
         seededTexts.putAll(textValues)
+        seededLists.clear()
+        seededLists.putAll(listValues)
         seededForId = trimmed
     }
 
@@ -315,16 +323,43 @@ fun DocumentActionsScreen(
                     )
                 } else {
                     sortedProps.forEach { (name, propEl) ->
+                        // Frozen properties are locked up front: consensus
+                        // rejects a change, addition or removal of one as a
+                        // PAID invalid transition (code 40128). A settable-once
+                        // property stays open only while the stored document
+                        // has no value for it.
+                        val lock = immutablePropertyLock(
+                            property = name,
+                            immutability = immutability,
+                            hasStoredValue = probedDoc?.fields?.containsKey(name) == true,
+                        )
                         DocumentPropertyField(
                             name = name,
                             prop = propEl as? JsonObject ?: JsonObject(emptyMap()),
                             isRequired = name in required,
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && lock != ImmutablePropertyLock.FROZEN,
                             textValues = textValues,
                             boolValues = boolValues,
                             touchedBools = touchedBools,
+                            listValues = listValues,
                             tagPrefix = "replaceDocument.field",
                         )
+                        when (lock) {
+                            ImmutablePropertyLock.FROZEN -> Text(
+                                "Immutable: frozen at creation, a replace cannot change it.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("replaceDocument.immutable.$name"),
+                            )
+                            ImmutablePropertyLock.SETTABLE_ONCE -> Text(
+                                "Immutable once set: this document has no value yet, so it " +
+                                    "can be set exactly once.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.testTag("replaceDocument.settableOnce.$name"),
+                            )
+                            ImmutablePropertyLock.EDITABLE -> Unit
+                        }
                     }
                 }
                 replaceSuccess?.let {
@@ -357,7 +392,8 @@ fun DocumentActionsScreen(
                     val propertiesJson = try {
                         // Rust-side replace is a FULL overwrite
                         // (`set_properties`), and the form can neither
-                        // render composite (object/array) values nor
+                        // render composite values (objects, and arrays
+                        // other than typed arrays) nor
                         // distinguish "left blank" from "clear": overlay
                         // the form's values on the document's current
                         // fields so everything not re-entered keeps its
@@ -367,7 +403,14 @@ fun DocumentActionsScreen(
                             val clearedKeys = seededTexts.keys.filter { key ->
                                 seededTexts[key].orEmpty().isNotBlank() &&
                                     textValues[key].orEmpty().isBlank()
-                            }.toSet()
+                            }.toSet() + seededLists.keys.filter { key ->
+                                // A required typed array is sent even when
+                                // emptied (minItems is judged on the form),
+                                // so only an optional one counts as removed.
+                                key !in required &&
+                                    seededLists[key].orEmpty().isNotEmpty() &&
+                                    listValues[key].orEmpty().isEmpty()
+                            }
                             // Drive validates required properties AFTER
                             // broadcast and treats their absence as a
                             // paid-invalid transition — reject here so the
@@ -382,6 +425,7 @@ fun DocumentActionsScreen(
                                 probed?.fields,
                                 buildPropertiesJson(
                                     properties, required, textValues, boolValues, touchedBools,
+                                    listValues,
                                 ),
                                 clearedKeys = clearedKeys,
                             )
@@ -617,9 +661,11 @@ private fun mergeReplaceProperties(
 
 /**
  * Prefill the replace form's field state from the document's current scalar
- * values, so a replace starts from the existing content. Only JSON-primitive
- * values are seeded (objects / arrays are left blank for the user to re-enter,
- * since their canonical encoding may not round-trip through the string form).
+ * values, so a replace starts from the existing content. JSON-primitive
+ * values are seeded, and typed arrays get one row per stored element (see
+ * [typedArraySeedRows]). Objects and other arrays are left blank for the user
+ * to re-enter, since their canonical encoding may not round-trip through the
+ * string form.
  */
 private fun seedReplaceFields(
     fields: JsonObject,
@@ -627,9 +673,15 @@ private fun seedReplaceFields(
     textValues: MutableMap<String, String>,
     boolValues: MutableMap<String, Boolean>,
     touchedBools: MutableSet<String>,
+    listValues: MutableMap<String, List<String>>,
 ) {
     for ((name, propEl) in properties) {
         val prop = propEl as? JsonObject ?: continue
+        val typedArray = documentTypedArray(name, prop)
+        if (typedArray != null) {
+            typedArraySeedRows(typedArray.items, fields[name])?.let { listValues[name] = it }
+            continue
+        }
         val value = fields[name] as? JsonPrimitive ?: continue
         if (prop.stringField("type") == "boolean") {
             value.content.toBooleanStrictOrNull()?.let {

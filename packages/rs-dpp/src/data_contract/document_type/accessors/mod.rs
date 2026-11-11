@@ -1,15 +1,20 @@
 mod v0;
 mod v1;
 mod v2;
-mod v3;
 
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::config::moderation::SettledDeletionRule;
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::index::{DerivedIndexProperty, Index};
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::private_document::PrivateDocumentConfig;
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyReferenceTarget, DocumentReferenceKind, GeneratedFrom,
+};
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -24,15 +29,14 @@ use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 pub use v1::*;
 pub use v2::*;
-pub use v3::*;
 
+#[cfg(any(test, feature = "fixtures-and-mocks"))]
 impl DocumentTypeV0MutGetters for DocumentType {
     fn schema_mut(&mut self) -> &mut Value {
         match self {
             DocumentType::V0(v0) => v0.schema_mut(),
             DocumentType::V1(v1) => v1.schema_mut(),
             DocumentType::V2(v2) => v2.schema_mut(),
-            DocumentType::V3(v3) => v3.schema_mut(),
         }
     }
 }
@@ -43,7 +47,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.name(),
             DocumentType::V1(v1) => v1.name(),
             DocumentType::V2(v2) => v2.name(),
-            DocumentType::V3(v3) => v3.name(),
         }
     }
 
@@ -52,7 +55,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.schema(),
             DocumentType::V1(v1) => v1.schema(),
             DocumentType::V2(v2) => v2.schema(),
-            DocumentType::V3(v3) => v3.schema(),
         }
     }
 
@@ -61,7 +63,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.schema_owned(),
             DocumentType::V1(v1) => v1.schema_owned(),
             DocumentType::V2(v2) => v2.schema_owned(),
-            DocumentType::V3(v3) => v3.schema_owned(),
         }
     }
 
@@ -70,7 +71,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.indexes(),
             DocumentType::V1(v1) => v1.indexes(),
             DocumentType::V2(v2) => v2.indexes(),
-            DocumentType::V3(v3) => v3.indexes(),
         }
     }
 
@@ -79,7 +79,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.find_contested_index(),
             DocumentType::V1(v1) => v1.find_contested_index(),
             DocumentType::V2(v2) => v2.find_contested_index(),
-            DocumentType::V3(v3) => v3.find_contested_index(),
         }
     }
 
@@ -88,7 +87,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.index_structure(),
             DocumentType::V1(v1) => v1.index_structure(),
             DocumentType::V2(v2) => v2.index_structure(),
-            DocumentType::V3(v3) => v3.index_structure(),
         }
     }
 
@@ -97,7 +95,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.flattened_properties(),
             DocumentType::V1(v1) => v1.flattened_properties(),
             DocumentType::V2(v2) => v2.flattened_properties(),
-            DocumentType::V3(v3) => v3.flattened_properties(),
         }
     }
 
@@ -106,7 +103,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.properties(),
             DocumentType::V1(v1) => v1.properties(),
             DocumentType::V2(v2) => v2.properties(),
-            DocumentType::V3(v3) => v3.properties(),
         }
     }
 
@@ -115,7 +111,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.identifier_paths(),
             DocumentType::V1(v1) => v1.identifier_paths(),
             DocumentType::V2(v2) => v2.identifier_paths(),
-            DocumentType::V3(v3) => v3.identifier_paths(),
         }
     }
 
@@ -124,7 +119,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.binary_paths(),
             DocumentType::V1(v1) => v1.binary_paths(),
             DocumentType::V2(v2) => v2.binary_paths(),
-            DocumentType::V3(v3) => v3.binary_paths(),
         }
     }
 
@@ -133,7 +127,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.required_fields(),
             DocumentType::V1(v1) => v1.required_fields(),
             DocumentType::V2(v2) => v2.required_fields(),
-            DocumentType::V3(v3) => v3.required_fields(),
         }
     }
 
@@ -142,7 +135,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.transient_fields(),
             DocumentType::V1(v1) => v1.transient_fields(),
             DocumentType::V2(v2) => v2.transient_fields(),
-            DocumentType::V3(v3) => v3.transient_fields(),
         }
     }
 
@@ -151,7 +143,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_keep_history(),
             DocumentType::V1(v1) => v1.documents_keep_history(),
             DocumentType::V2(v2) => v2.documents_keep_history(),
-            DocumentType::V3(v3) => v3.documents_keep_history(),
         }
     }
 
@@ -160,7 +151,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_keep_transfer_history(),
             DocumentType::V1(v1) => v1.documents_keep_transfer_history(),
             DocumentType::V2(v2) => v2.documents_keep_transfer_history(),
-            DocumentType::V3(v3) => v3.documents_keep_transfer_history(),
         }
     }
 
@@ -169,7 +159,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_keep_purchase_history(),
             DocumentType::V1(v1) => v1.documents_keep_purchase_history(),
             DocumentType::V2(v2) => v2.documents_keep_purchase_history(),
-            DocumentType::V3(v3) => v3.documents_keep_purchase_history(),
         }
     }
 
@@ -178,7 +167,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_keep_pricing_history(),
             DocumentType::V1(v1) => v1.documents_keep_pricing_history(),
             DocumentType::V2(v2) => v2.documents_keep_pricing_history(),
-            DocumentType::V3(v3) => v3.documents_keep_pricing_history(),
         }
     }
 
@@ -187,7 +175,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_mutable(),
             DocumentType::V1(v1) => v1.documents_mutable(),
             DocumentType::V2(v2) => v2.documents_mutable(),
-            DocumentType::V3(v3) => v3.documents_mutable(),
         }
     }
 
@@ -196,7 +183,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_can_be_deleted(),
             DocumentType::V1(v1) => v1.documents_can_be_deleted(),
             DocumentType::V2(v2) => v2.documents_can_be_deleted(),
-            DocumentType::V3(v3) => v3.documents_can_be_deleted(),
         }
     }
 
@@ -205,7 +191,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.documents_transferable(),
             DocumentType::V1(v1) => v1.documents_transferable(),
             DocumentType::V2(v2) => v2.documents_transferable(),
-            DocumentType::V3(v3) => v3.documents_transferable(),
         }
     }
 
@@ -214,7 +199,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.trade_mode(),
             DocumentType::V1(v1) => v1.trade_mode(),
             DocumentType::V2(v2) => v2.trade_mode(),
-            DocumentType::V3(v3) => v3.trade_mode(),
         }
     }
 
@@ -223,7 +207,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.creation_restriction_mode(),
             DocumentType::V1(v1) => v1.creation_restriction_mode(),
             DocumentType::V2(v2) => v2.creation_restriction_mode(),
-            DocumentType::V3(v3) => v3.creation_restriction_mode(),
         }
     }
 
@@ -232,7 +215,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.data_contract_id(),
             DocumentType::V1(v1) => v1.data_contract_id(),
             DocumentType::V2(v2) => v2.data_contract_id(),
-            DocumentType::V3(v3) => v3.data_contract_id(),
         }
     }
 
@@ -241,7 +223,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentType::V1(v1) => v1.requires_identity_encryption_bounded_key(),
             DocumentType::V2(v2) => v2.requires_identity_encryption_bounded_key(),
-            DocumentType::V3(v3) => v3.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -250,7 +231,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentType::V1(v1) => v1.requires_identity_decryption_bounded_key(),
             DocumentType::V2(v2) => v2.requires_identity_decryption_bounded_key(),
-            DocumentType::V3(v3) => v3.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -259,7 +239,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.security_level_requirement(),
             DocumentType::V1(v1) => v1.security_level_requirement(),
             DocumentType::V2(v2) => v2.security_level_requirement(),
-            DocumentType::V3(v3) => v3.security_level_requirement(),
         }
     }
 
@@ -269,7 +248,6 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.json_schema_validator_ref(),
             DocumentType::V1(v1) => v1.json_schema_validator_ref(),
             DocumentType::V2(v2) => v2.json_schema_validator_ref(),
-            DocumentType::V3(v3) => v3.json_schema_validator_ref(),
         }
     }
 }
@@ -280,7 +258,6 @@ impl DocumentTypeV0Setters for DocumentType {
             DocumentType::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentType::V1(v1) => v1.set_data_contract_id(data_contract_id),
             DocumentType::V2(v2) => v2.set_data_contract_id(data_contract_id),
-            DocumentType::V3(v3) => v3.set_data_contract_id(data_contract_id),
         }
     }
 }
@@ -291,7 +268,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_creation_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_creation_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_creation_token_cost(cost),
         }
     }
 
@@ -300,7 +276,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_replacement_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_replacement_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_replacement_token_cost(cost),
         }
     }
 
@@ -309,7 +284,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_deletion_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_deletion_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_deletion_token_cost(cost),
         }
     }
 
@@ -318,7 +292,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_transfer_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_transfer_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_transfer_token_cost(cost),
         }
     }
 
@@ -327,7 +300,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_price_update_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_price_update_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_price_update_token_cost(cost),
         }
     }
 
@@ -336,7 +308,6 @@ impl DocumentTypeV1Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_purchase_token_cost(cost),
             DocumentType::V2(v2) => v2.set_document_purchase_token_cost(cost),
-            DocumentType::V3(v3) => v3.set_document_purchase_token_cost(cost),
         }
     }
 }
@@ -347,7 +318,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.name(),
             DocumentTypeRef::V1(v1) => v1.name(),
             DocumentTypeRef::V2(v2) => v2.name(),
-            DocumentTypeRef::V3(v3) => v3.name(),
         }
     }
 
@@ -356,7 +326,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.schema(),
             DocumentTypeRef::V1(v1) => v1.schema(),
             DocumentTypeRef::V2(v2) => v2.schema(),
-            DocumentTypeRef::V3(v3) => v3.schema(),
         }
     }
 
@@ -365,7 +334,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.clone().schema_owned(),
             DocumentTypeRef::V1(v1) => v1.clone().schema_owned(),
             DocumentTypeRef::V2(v2) => v2.clone().schema_owned(),
-            DocumentTypeRef::V3(v3) => v3.clone().schema_owned(),
         }
     }
 
@@ -374,7 +342,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.indexes(),
             DocumentTypeRef::V1(v1) => v1.indexes(),
             DocumentTypeRef::V2(v2) => v2.indexes(),
-            DocumentTypeRef::V3(v3) => v3.indexes(),
         }
     }
 
@@ -383,7 +350,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.find_contested_index(),
             DocumentTypeRef::V1(v1) => v1.find_contested_index(),
             DocumentTypeRef::V2(v2) => v2.find_contested_index(),
-            DocumentTypeRef::V3(v3) => v3.find_contested_index(),
         }
     }
 
@@ -392,7 +358,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.index_structure(),
             DocumentTypeRef::V1(v1) => v1.index_structure(),
             DocumentTypeRef::V2(v2) => v2.index_structure(),
-            DocumentTypeRef::V3(v3) => v3.index_structure(),
         }
     }
 
@@ -401,7 +366,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.flattened_properties(),
             DocumentTypeRef::V1(v1) => v1.flattened_properties(),
             DocumentTypeRef::V2(v2) => v2.flattened_properties(),
-            DocumentTypeRef::V3(v3) => v3.flattened_properties(),
         }
     }
 
@@ -410,7 +374,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.properties(),
             DocumentTypeRef::V1(v1) => v1.properties(),
             DocumentTypeRef::V2(v2) => v2.properties(),
-            DocumentTypeRef::V3(v3) => v3.properties(),
         }
     }
 
@@ -419,7 +382,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.identifier_paths(),
             DocumentTypeRef::V1(v1) => v1.identifier_paths(),
             DocumentTypeRef::V2(v2) => v2.identifier_paths(),
-            DocumentTypeRef::V3(v3) => v3.identifier_paths(),
         }
     }
 
@@ -428,7 +390,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.binary_paths(),
             DocumentTypeRef::V1(v1) => v1.binary_paths(),
             DocumentTypeRef::V2(v2) => v2.binary_paths(),
-            DocumentTypeRef::V3(v3) => v3.binary_paths(),
         }
     }
 
@@ -437,7 +398,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.required_fields(),
             DocumentTypeRef::V1(v1) => v1.required_fields(),
             DocumentTypeRef::V2(v2) => v2.required_fields(),
-            DocumentTypeRef::V3(v3) => v3.required_fields(),
         }
     }
 
@@ -446,7 +406,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.transient_fields(),
             DocumentTypeRef::V1(v1) => v1.transient_fields(),
             DocumentTypeRef::V2(v2) => v2.transient_fields(),
-            DocumentTypeRef::V3(v3) => v3.transient_fields(),
         }
     }
 
@@ -455,7 +414,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_keep_history(),
             DocumentTypeRef::V1(v1) => v1.documents_keep_history(),
             DocumentTypeRef::V2(v2) => v2.documents_keep_history(),
-            DocumentTypeRef::V3(v3) => v3.documents_keep_history(),
         }
     }
 
@@ -464,7 +422,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_keep_transfer_history(),
             DocumentTypeRef::V1(v1) => v1.documents_keep_transfer_history(),
             DocumentTypeRef::V2(v2) => v2.documents_keep_transfer_history(),
-            DocumentTypeRef::V3(v3) => v3.documents_keep_transfer_history(),
         }
     }
 
@@ -473,7 +430,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_keep_purchase_history(),
             DocumentTypeRef::V1(v1) => v1.documents_keep_purchase_history(),
             DocumentTypeRef::V2(v2) => v2.documents_keep_purchase_history(),
-            DocumentTypeRef::V3(v3) => v3.documents_keep_purchase_history(),
         }
     }
 
@@ -482,7 +438,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_keep_pricing_history(),
             DocumentTypeRef::V1(v1) => v1.documents_keep_pricing_history(),
             DocumentTypeRef::V2(v2) => v2.documents_keep_pricing_history(),
-            DocumentTypeRef::V3(v3) => v3.documents_keep_pricing_history(),
         }
     }
 
@@ -491,7 +446,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_mutable(),
             DocumentTypeRef::V1(v1) => v1.documents_mutable(),
             DocumentTypeRef::V2(v2) => v2.documents_mutable(),
-            DocumentTypeRef::V3(v3) => v3.documents_mutable(),
         }
     }
 
@@ -500,7 +454,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_can_be_deleted(),
             DocumentTypeRef::V1(v1) => v1.documents_can_be_deleted(),
             DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted(),
-            DocumentTypeRef::V3(v3) => v3.documents_can_be_deleted(),
         }
     }
 
@@ -509,7 +462,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.documents_transferable(),
             DocumentTypeRef::V1(v1) => v1.documents_transferable(),
             DocumentTypeRef::V2(v2) => v2.documents_transferable(),
-            DocumentTypeRef::V3(v3) => v3.documents_transferable(),
         }
     }
 
@@ -518,7 +470,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.trade_mode(),
             DocumentTypeRef::V1(v1) => v1.trade_mode(),
             DocumentTypeRef::V2(v2) => v2.trade_mode(),
-            DocumentTypeRef::V3(v3) => v3.trade_mode(),
         }
     }
 
@@ -527,7 +478,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.creation_restriction_mode(),
             DocumentTypeRef::V1(v1) => v1.creation_restriction_mode(),
             DocumentTypeRef::V2(v2) => v2.creation_restriction_mode(),
-            DocumentTypeRef::V3(v3) => v3.creation_restriction_mode(),
         }
     }
 
@@ -536,7 +486,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
             DocumentTypeRef::V1(v1) => v1.data_contract_id(),
             DocumentTypeRef::V2(v2) => v2.data_contract_id(),
-            DocumentTypeRef::V3(v3) => v3.data_contract_id(),
         }
     }
 
@@ -545,7 +494,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentTypeRef::V1(v1) => v1.requires_identity_encryption_bounded_key(),
             DocumentTypeRef::V2(v2) => v2.requires_identity_encryption_bounded_key(),
-            DocumentTypeRef::V3(v3) => v3.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -554,7 +502,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentTypeRef::V1(v1) => v1.requires_identity_decryption_bounded_key(),
             DocumentTypeRef::V2(v2) => v2.requires_identity_decryption_bounded_key(),
-            DocumentTypeRef::V3(v3) => v3.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -563,7 +510,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
             DocumentTypeRef::V1(v1) => v1.security_level_requirement(),
             DocumentTypeRef::V2(v2) => v2.security_level_requirement(),
-            DocumentTypeRef::V3(v3) => v3.security_level_requirement(),
         }
     }
 
@@ -573,7 +519,6 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(v0) => v0.json_schema_validator_ref(),
             DocumentTypeRef::V1(v1) => v1.json_schema_validator_ref(),
             DocumentTypeRef::V2(v2) => v2.json_schema_validator_ref(),
-            DocumentTypeRef::V3(v3) => v3.json_schema_validator_ref(),
         }
     }
 }
@@ -583,7 +528,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.name(),
             DocumentTypeMutRef::V1(v1) => v1.name(),
             DocumentTypeMutRef::V2(v2) => v2.name(),
-            DocumentTypeMutRef::V3(v3) => v3.name(),
         }
     }
 
@@ -592,7 +536,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.schema(),
             DocumentTypeMutRef::V1(v1) => v1.schema(),
             DocumentTypeMutRef::V2(v2) => v2.schema(),
-            DocumentTypeMutRef::V3(v3) => v3.schema(),
         }
     }
 
@@ -601,7 +544,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.clone().schema_owned(),
             DocumentTypeMutRef::V1(v1) => v1.clone().schema_owned(),
             DocumentTypeMutRef::V2(v2) => v2.clone().schema_owned(),
-            DocumentTypeMutRef::V3(v3) => v3.clone().schema_owned(),
         }
     }
 
@@ -610,7 +552,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.indexes(),
             DocumentTypeMutRef::V1(v1) => v1.indexes(),
             DocumentTypeMutRef::V2(v2) => v2.indexes(),
-            DocumentTypeMutRef::V3(v3) => v3.indexes(),
         }
     }
 
@@ -619,7 +560,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
             DocumentTypeMutRef::V1(v1) => v1.find_contested_index(),
             DocumentTypeMutRef::V2(v2) => v2.find_contested_index(),
-            DocumentTypeMutRef::V3(v3) => v3.find_contested_index(),
         }
     }
 
@@ -628,7 +568,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.index_structure(),
             DocumentTypeMutRef::V1(v1) => v1.index_structure(),
             DocumentTypeMutRef::V2(v2) => v2.index_structure(),
-            DocumentTypeMutRef::V3(v3) => v3.index_structure(),
         }
     }
 
@@ -637,7 +576,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.flattened_properties(),
             DocumentTypeMutRef::V1(v1) => v1.flattened_properties(),
             DocumentTypeMutRef::V2(v2) => v2.flattened_properties(),
-            DocumentTypeMutRef::V3(v3) => v3.flattened_properties(),
         }
     }
 
@@ -646,7 +584,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.properties(),
             DocumentTypeMutRef::V1(v1) => v1.properties(),
             DocumentTypeMutRef::V2(v2) => v2.properties(),
-            DocumentTypeMutRef::V3(v3) => v3.properties(),
         }
     }
 
@@ -655,7 +592,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.identifier_paths(),
             DocumentTypeMutRef::V1(v1) => v1.identifier_paths(),
             DocumentTypeMutRef::V2(v2) => v2.identifier_paths(),
-            DocumentTypeMutRef::V3(v3) => v3.identifier_paths(),
         }
     }
 
@@ -664,7 +600,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.binary_paths(),
             DocumentTypeMutRef::V1(v1) => v1.binary_paths(),
             DocumentTypeMutRef::V2(v2) => v2.binary_paths(),
-            DocumentTypeMutRef::V3(v3) => v3.binary_paths(),
         }
     }
 
@@ -673,7 +608,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.required_fields(),
             DocumentTypeMutRef::V1(v1) => v1.required_fields(),
             DocumentTypeMutRef::V2(v2) => v2.required_fields(),
-            DocumentTypeMutRef::V3(v3) => v3.required_fields(),
         }
     }
 
@@ -682,7 +616,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.transient_fields(),
             DocumentTypeMutRef::V1(v1) => v1.transient_fields(),
             DocumentTypeMutRef::V2(v2) => v2.transient_fields(),
-            DocumentTypeMutRef::V3(v3) => v3.transient_fields(),
         }
     }
 
@@ -691,7 +624,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_history(),
             DocumentTypeMutRef::V2(v2) => v2.documents_keep_history(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_keep_history(),
         }
     }
 
@@ -700,7 +632,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_transfer_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_transfer_history(),
             DocumentTypeMutRef::V2(v2) => v2.documents_keep_transfer_history(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_keep_transfer_history(),
         }
     }
 
@@ -709,7 +640,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_purchase_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_purchase_history(),
             DocumentTypeMutRef::V2(v2) => v2.documents_keep_purchase_history(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_keep_purchase_history(),
         }
     }
 
@@ -718,7 +648,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_pricing_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_pricing_history(),
             DocumentTypeMutRef::V2(v2) => v2.documents_keep_pricing_history(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_keep_pricing_history(),
         }
     }
 
@@ -727,7 +656,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_mutable(),
             DocumentTypeMutRef::V1(v1) => v1.documents_mutable(),
             DocumentTypeMutRef::V2(v2) => v2.documents_mutable(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_mutable(),
         }
     }
 
@@ -736,7 +664,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_can_be_deleted(),
             DocumentTypeMutRef::V1(v1) => v1.documents_can_be_deleted(),
             DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_can_be_deleted(),
         }
     }
 
@@ -745,7 +672,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.documents_transferable(),
             DocumentTypeMutRef::V1(v1) => v1.documents_transferable(),
             DocumentTypeMutRef::V2(v2) => v2.documents_transferable(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_transferable(),
         }
     }
 
@@ -754,7 +680,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
             DocumentTypeMutRef::V1(v1) => v1.trade_mode(),
             DocumentTypeMutRef::V2(v2) => v2.trade_mode(),
-            DocumentTypeMutRef::V3(v3) => v3.trade_mode(),
         }
     }
 
@@ -763,7 +688,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.creation_restriction_mode(),
             DocumentTypeMutRef::V1(v1) => v1.creation_restriction_mode(),
             DocumentTypeMutRef::V2(v2) => v2.creation_restriction_mode(),
-            DocumentTypeMutRef::V3(v3) => v3.creation_restriction_mode(),
         }
     }
 
@@ -772,7 +696,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.data_contract_id(),
             DocumentTypeMutRef::V1(v1) => v1.data_contract_id(),
             DocumentTypeMutRef::V2(v2) => v2.data_contract_id(),
-            DocumentTypeMutRef::V3(v3) => v3.data_contract_id(),
         }
     }
 
@@ -781,7 +704,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentTypeMutRef::V1(v1) => v1.requires_identity_encryption_bounded_key(),
             DocumentTypeMutRef::V2(v2) => v2.requires_identity_encryption_bounded_key(),
-            DocumentTypeMutRef::V3(v3) => v3.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -790,7 +712,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentTypeMutRef::V1(v1) => v1.requires_identity_decryption_bounded_key(),
             DocumentTypeMutRef::V2(v2) => v2.requires_identity_decryption_bounded_key(),
-            DocumentTypeMutRef::V3(v3) => v3.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -799,7 +720,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
             DocumentTypeMutRef::V1(v1) => v1.security_level_requirement(),
             DocumentTypeMutRef::V2(v2) => v2.security_level_requirement(),
-            DocumentTypeMutRef::V3(v3) => v3.security_level_requirement(),
         }
     }
 
@@ -809,7 +729,6 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.json_schema_validator_ref(),
             DocumentTypeMutRef::V1(v1) => v1.json_schema_validator_ref(),
             DocumentTypeMutRef::V2(v2) => v2.json_schema_validator_ref(),
-            DocumentTypeMutRef::V3(v3) => v3.json_schema_validator_ref(),
         }
     }
 }
@@ -820,7 +739,6 @@ impl DocumentTypeV0Setters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentTypeMutRef::V1(v1) => v1.set_data_contract_id(data_contract_id),
             DocumentTypeMutRef::V2(v2) => v2.set_data_contract_id(data_contract_id),
-            DocumentTypeMutRef::V3(v3) => v3.set_data_contract_id(data_contract_id),
         }
     }
 }
@@ -831,7 +749,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_creation_token_cost(),
             DocumentType::V2(v2) => v2.document_creation_token_cost(),
-            DocumentType::V3(v3) => v3.document_creation_token_cost(),
         }
     }
 
@@ -840,7 +757,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_replacement_token_cost(),
             DocumentType::V2(v2) => v2.document_replacement_token_cost(),
-            DocumentType::V3(v3) => v3.document_replacement_token_cost(),
         }
     }
 
@@ -849,7 +765,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_deletion_token_cost(),
             DocumentType::V2(v2) => v2.document_deletion_token_cost(),
-            DocumentType::V3(v3) => v3.document_deletion_token_cost(),
         }
     }
 
@@ -858,7 +773,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_transfer_token_cost(),
             DocumentType::V2(v2) => v2.document_transfer_token_cost(),
-            DocumentType::V3(v3) => v3.document_transfer_token_cost(),
         }
     }
 
@@ -867,7 +781,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_update_price_token_cost(),
             DocumentType::V2(v2) => v2.document_update_price_token_cost(),
-            DocumentType::V3(v3) => v3.document_update_price_token_cost(),
         }
     }
 
@@ -876,7 +789,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_purchase_token_cost(),
             DocumentType::V2(v2) => v2.document_purchase_token_cost(),
-            DocumentType::V3(v3) => v3.document_purchase_token_cost(),
         }
     }
 
@@ -885,7 +797,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => vec![],
             DocumentType::V1(v1) => v1.all_document_token_costs(),
             DocumentType::V2(v2) => v2.all_document_token_costs(),
-            DocumentType::V3(v3) => v3.all_document_token_costs(),
         }
     }
 
@@ -896,7 +807,6 @@ impl DocumentTypeV1Getters for DocumentType {
             DocumentType::V0(_) => BTreeMap::new(),
             DocumentType::V1(v1) => v1.all_external_token_costs_contract_tokens(),
             DocumentType::V2(v2) => v2.all_external_token_costs_contract_tokens(),
-            DocumentType::V3(v3) => v3.all_external_token_costs_contract_tokens(),
         }
     }
 }
@@ -907,7 +817,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_creation_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_creation_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_creation_token_cost(),
         }
     }
 
@@ -916,7 +825,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_replacement_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_replacement_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_replacement_token_cost(),
         }
     }
 
@@ -925,7 +833,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_deletion_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_deletion_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_deletion_token_cost(),
         }
     }
 
@@ -934,7 +841,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_transfer_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_transfer_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_transfer_token_cost(),
         }
     }
 
@@ -943,7 +849,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_update_price_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_update_price_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_update_price_token_cost(),
         }
     }
 
@@ -952,7 +857,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_purchase_token_cost(),
             DocumentTypeRef::V2(v2) => v2.document_purchase_token_cost(),
-            DocumentTypeRef::V3(v3) => v3.document_purchase_token_cost(),
         }
     }
 
@@ -961,7 +865,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => vec![],
             DocumentTypeRef::V1(v1) => v1.all_document_token_costs(),
             DocumentTypeRef::V2(v2) => v2.all_document_token_costs(),
-            DocumentTypeRef::V3(v3) => v3.all_document_token_costs(),
         }
     }
 
@@ -972,7 +875,6 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => BTreeMap::new(),
             DocumentTypeRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
             DocumentTypeRef::V2(v2) => v2.all_external_token_costs_contract_tokens(),
-            DocumentTypeRef::V3(v3) => v3.all_external_token_costs_contract_tokens(),
         }
     }
 }
@@ -983,7 +885,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_creation_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_creation_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_creation_token_cost(),
         }
     }
 
@@ -992,7 +893,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_replacement_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_replacement_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_replacement_token_cost(),
         }
     }
 
@@ -1001,7 +901,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_deletion_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_deletion_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_deletion_token_cost(),
         }
     }
 
@@ -1010,7 +909,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_transfer_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_transfer_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_transfer_token_cost(),
         }
     }
 
@@ -1019,7 +917,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_update_price_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_update_price_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_update_price_token_cost(),
         }
     }
 
@@ -1028,7 +925,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_purchase_token_cost(),
             DocumentTypeMutRef::V2(v2) => v2.document_purchase_token_cost(),
-            DocumentTypeMutRef::V3(v3) => v3.document_purchase_token_cost(),
         }
     }
 
@@ -1037,7 +933,6 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => vec![],
             DocumentTypeMutRef::V1(v1) => v1.all_document_token_costs(),
             DocumentTypeMutRef::V2(v2) => v2.all_document_token_costs(),
-            DocumentTypeMutRef::V3(v3) => v3.all_document_token_costs(),
         }
     }
 
@@ -1048,18 +943,38 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => BTreeMap::new(),
             DocumentTypeMutRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
             DocumentTypeMutRef::V2(v2) => v2.all_external_token_costs_contract_tokens(),
-            DocumentTypeMutRef::V3(v3) => v3.all_external_token_costs_contract_tokens(),
         }
     }
 }
 
+/// What `immutable_fields` returns for the document type generations that
+/// predate the keyword: V0 and V1 have no field to borrow from, and the
+/// getter hands out a reference.
+static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+/// What `immutable_field_conditions` returns for the same generations.
+static NO_IMMUTABLE_FIELD_CONDITIONS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
+static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
+static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+static NO_MODERATOR_DELETION_KEPT_FIELDS: BTreeSet<String> = BTreeSet::new();
+/// What `property_constraints` returns for the generations that predate the
+/// keyword, for the same reason.
+static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
+/// What `derived_index_properties` returns for the generations that predate
+/// them, for the same reason.
+static NO_DERIVED_INDEX_PROPERTIES: BTreeMap<String, DerivedIndexProperty> = BTreeMap::new();
+
 impl DocumentTypeV2Getters for DocumentType {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentType::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.documents_countable(),
-            DocumentType::V3(v3) => v3.documents_countable(),
         }
     }
 
@@ -1068,7 +983,6 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.range_countable(),
-            DocumentType::V3(v3) => v3.range_countable(),
         }
     }
 
@@ -1077,7 +991,6 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => None,
             DocumentType::V1(_) => None,
             DocumentType::V2(v2) => v2.documents_summable(),
-            DocumentType::V3(v3) => v3.documents_summable(),
         }
     }
 
@@ -1086,7 +999,6 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.range_summable(),
-            DocumentType::V3(v3) => v3.range_summable(),
         }
     }
 
@@ -1095,7 +1007,206 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.index_only(),
-            DocumentType::V3(v3) => v3.index_only(),
+        }
+    }
+
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentType::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentType::V2(v2) => v2.moderator_deletion_kept_fields(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentType::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentType::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
+    fn documents_ttl_seconds(&self) -> Option<u32> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.private_document(),
+        }
+    }
+
+    fn documents_can_disappear(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_can_be_deleted(),
+            DocumentType::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentType::V2(v2) => v2.documents_can_disappear(),
+        }
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentType::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentType::V0(_) | DocumentType::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentType::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentType::V0(_) => &[],
+            DocumentType::V1(_) => &[],
+            DocumentType::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentType::V0(_) => &[],
+            DocumentType::V1(_) => &[],
+            DocumentType::V2(v2) => v2.generated_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentType::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.retracted_when(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentType::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentType::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentType::V2(v2) => v2.derived_index_properties(),
         }
     }
 }
@@ -1106,7 +1217,6 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_documents_countable(countable),
-            DocumentType::V3(v3) => v3.set_documents_countable(countable),
         }
     }
 
@@ -1115,7 +1225,6 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_range_countable(range_countable),
-            DocumentType::V3(v3) => v3.set_range_countable(range_countable),
         }
     }
 
@@ -1124,7 +1233,6 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_documents_summable(property),
-            DocumentType::V3(v3) => v3.set_documents_summable(property),
         }
     }
 
@@ -1133,18 +1241,22 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_range_summable(range_summable),
-            DocumentType::V3(v3) => v3.set_range_summable(range_summable),
         }
     }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeRef::V0(_) => false,
             DocumentTypeRef::V1(_) => false,
             DocumentTypeRef::V2(v2) => v2.documents_countable(),
-            DocumentTypeRef::V3(v3) => v3.documents_countable(),
         }
     }
 
@@ -1153,7 +1265,6 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => false,
             DocumentTypeRef::V1(_) => false,
             DocumentTypeRef::V2(v2) => v2.range_countable(),
-            DocumentTypeRef::V3(v3) => v3.range_countable(),
         }
     }
 
@@ -1162,7 +1273,6 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(_) => None,
             DocumentTypeRef::V2(v2) => v2.documents_summable(),
-            DocumentTypeRef::V3(v3) => v3.documents_summable(),
         }
     }
 
@@ -1171,7 +1281,6 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => false,
             DocumentTypeRef::V1(_) => false,
             DocumentTypeRef::V2(v2) => v2.range_summable(),
-            DocumentTypeRef::V3(v3) => v3.range_summable(),
         }
     }
 
@@ -1180,18 +1289,222 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => false,
             DocumentTypeRef::V1(_) => false,
             DocumentTypeRef::V2(v2) => v2.index_only(),
-            DocumentTypeRef::V3(v3) => v3.index_only(),
+        }
+    }
+
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletion_kept_fields(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
+    fn documents_ttl_seconds(&self) -> Option<u32> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.private_document(),
+        }
+    }
+
+    fn documents_can_disappear(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_can_be_deleted(),
+            DocumentTypeRef::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentTypeRef::V2(v2) => v2.documents_can_disappear(),
+        }
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeRef::V0(_) | DocumentTypeRef::V1(_) => DocumentReferenceKind::Permanent,
+            DocumentTypeRef::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeRef::V0(_) => &[],
+            DocumentTypeRef::V1(_) => &[],
+            DocumentTypeRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentTypeRef::V0(_) => &[],
+            DocumentTypeRef::V1(_) => &[],
+            DocumentTypeRef::V2(v2) => v2.generated_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeRef::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.retracted_when(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeRef::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeRef::V2(v2) => v2.derived_index_properties(),
         }
     }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
+    fn documents_can_be_erased(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_erased(),
+            _ => false,
+        }
+    }
     fn documents_countable(&self) -> bool {
         match self {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.documents_countable(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_countable(),
         }
     }
 
@@ -1200,7 +1513,6 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_countable(),
-            DocumentTypeMutRef::V3(v3) => v3.range_countable(),
         }
     }
 
@@ -1209,7 +1521,6 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.documents_summable(),
-            DocumentTypeMutRef::V3(v3) => v3.documents_summable(),
         }
     }
 
@@ -1218,7 +1529,6 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_summable(),
-            DocumentTypeMutRef::V3(v3) => v3.range_summable(),
         }
     }
 
@@ -1227,40 +1537,208 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.index_only(),
-            DocumentTypeMutRef::V3(v3) => v3.index_only(),
         }
     }
-}
 
-impl DocumentTypeV3Getters for DocumentType {
-    fn documents_can_be_erased(&self) -> bool {
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
         match self {
-            DocumentType::V0(_) => false,
-            DocumentType::V1(_) => false,
-            DocumentType::V2(_) => false,
-            DocumentType::V3(v3) => v3.documents_can_be_erased(),
+            DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V2(v2) => v2.entry_payload(),
         }
     }
-}
 
-impl DocumentTypeV3Getters for DocumentTypeRef<'_> {
-    fn documents_can_be_erased(&self) -> bool {
-        match self {
-            DocumentTypeRef::V0(_) => false,
-            DocumentTypeRef::V1(_) => false,
-            DocumentTypeRef::V2(_) => false,
-            DocumentTypeRef::V3(v3) => v3.documents_can_be_erased(),
-        }
-    }
-}
-
-impl DocumentTypeV3Getters for DocumentTypeMutRef<'_> {
-    fn documents_can_be_erased(&self) -> bool {
+    fn documents_deleted_only_when_consumed(&self) -> bool {
         match self {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
-            DocumentTypeMutRef::V2(_) => false,
-            DocumentTypeMutRef::V3(v3) => v3.documents_can_be_erased(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_settled_deletion(&self) -> Option<SettledDeletionRule> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_settled_deletion(),
+        }
+    }
+
+    fn moderator_deletion_kept_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_MODERATOR_DELETION_KEPT_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletion_kept_fields(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
+    fn documents_ttl_seconds(&self) -> Option<u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_ttl_seconds(),
+        }
+    }
+
+    fn private_document(&self) -> Option<PrivateDocumentConfig> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.private_document(),
+        }
+    }
+
+    fn documents_can_disappear(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_can_be_deleted(),
+            DocumentTypeMutRef::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_disappear(),
+        }
+    }
+
+    fn document_reference_kind(&self) -> DocumentReferenceKind {
+        // Generations 0 and 1 know no moderators and no `ttl`: a document type
+        // of theirs is permanent or deletable by its `canBeDeleted` alone
+        match self {
+            DocumentTypeMutRef::V0(v0) if v0.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V1(v1) if v1.documents_can_be_deleted() => {
+                DocumentReferenceKind::Deletable
+            }
+            DocumentTypeMutRef::V0(_) | DocumentTypeMutRef::V1(_) => {
+                DocumentReferenceKind::Permanent
+            }
+            DocumentTypeMutRef::V2(v2) => v2.document_reference_kind(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeMutRef::V0(_) => &[],
+            DocumentTypeMutRef::V1(_) => &[],
+            DocumentTypeMutRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentTypeMutRef::V0(_) => &[],
+            DocumentTypeMutRef::V1(_) => &[],
+            DocumentTypeMutRef::V2(v2) => v2.generated_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_field_conditions(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELD_CONDITIONS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_field_conditions(),
+        }
+    }
+
+    fn retracted_when(&self) -> Option<&PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.retracted_when(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
+    fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeMutRef::V1(_) => &NO_DERIVED_INDEX_PROPERTIES,
+            DocumentTypeMutRef::V2(v2) => v2.derived_index_properties(),
         }
     }
 }

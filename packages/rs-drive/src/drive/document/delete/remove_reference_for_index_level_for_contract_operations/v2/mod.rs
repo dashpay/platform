@@ -1,21 +1,20 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllItems;
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
-use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_estimated_layer_sizes_v1;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
+use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
+use crate::drive::document::{index_only_entry_payload_max_size, INDEX_ONLY_ROW_COMMITMENT_SIZE};
 use crate::error::drive::DriveError;
 use crate::util::storage_flags::StorageFlags;
-use dpp::document::document_methods::DocumentMethodsV0;
 
 use crate::drive::Drive;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
@@ -27,37 +26,21 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Removes the terminal reference.
-    ///
-    /// v2 (protocol version 15) is v1 with the reference shape written by
-    /// the protocol 15 document writers: estimated costs describe a
-    /// reference to the primary-key entry, with a sum item on summable
-    /// indexes. The pruning behaviour below is unchanged from v1.
-    ///
-    /// v1 (protocol version 14) differs from v0 in exactly one place: on a
-    /// `preallocated` indexOnly index, the empty-tree pruning climb stops at
-    /// the member level, keeping the preallocated apparatus the referenced
-    /// document's creator paid for — see
-    /// `add_preallocated_index_tree_operations`. Every other index prunes
-    /// drained groups exactly as v0 does.
+    /// Removes an index reference with the same pruning as v1. Estimates describe the
+    /// entries layer and each deleted reference as the insert walker writes them,
+    /// including primary-pointer and summable reference shapes.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        // Borrow rather than owned — see the parallel change on the
-        // insert path (`add_reference_for_index_level_for_contract_operations`)
-        // for the rationale (`IndexLevelTypeInfo` dropped `Copy` when
-        // `summable: Option<String>` was added in v3).
         index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         skip_missing_expired_entry: bool,
         event_id: [u8; 32],
         transaction: TransactionArg,
@@ -82,11 +65,9 @@ impl Drive {
                 .iter()
                 .map(|key_info| match key_info {
                     KnownKey(key) => Ok(key.clone()),
-                    _ => Err(Error::Drive(
-                        crate::error::drive::DriveError::CorruptedCodeExecution(
-                            "expired-entry skip is stateful-only; its path must be known",
-                        ),
-                    )),
+                    _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "expired-entry skip is stateful-only; its path must be known",
+                    ))),
                 })
                 .collect::<Result<_, _>>()?;
             // The layouts that store the reference inside a `[0]` subtree
@@ -129,10 +110,17 @@ impl Drive {
         // `add_reference_for_index_level_for_contract_operations_v0`.
         // `terminal` can only be `Some` on a PV14+ indexOnly contract, so
         // this branch is unreachable for every historical document.
-        if let Some(terminal_property) = index_type.terminal.as_deref() {
+        if let Some(terminal) = index_type.terminal.as_deref() {
             key_info_path.push(KnownKey(vec![0]));
 
             let member_tree_type = terminal_member_tree_type(index_type);
+            // The member key's estimated width follows the terminal property,
+            // mirroring the insert side.
+            let member_key_max_size =
+                index_only_terminal_max_key_size(document_type, terminal, platform_version)?;
+            // The stored item: the commitment plus the type's entry payload.
+            let entry_value_size = INDEX_ONLY_ROW_COMMITMENT_SIZE
+                + index_only_entry_payload_max_size(document_type, platform_version)?;
 
             // Sum-bearing entries (`ItemWithSumItem`) carry the i64 sum
             // item alongside the commitment payload; mirror the insert
@@ -141,9 +129,9 @@ impl Drive {
             // and propagates the subtraction — same as stored-type
             // `ReferenceWithSumItem` entries below.
             let estimated_value_size = if index_type.summable.is_some() {
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE + 10
+                entry_value_size + 10
             } else {
-                crate::drive::document::INDEX_ONLY_ROW_COMMITMENT_SIZE
+                entry_value_size
             };
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
@@ -154,7 +142,7 @@ impl Drive {
                         tree_type: member_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllItems(
-                            DEFAULT_HASH_SIZE_U8,
+                            member_key_max_size,
                             estimated_value_size,
                             storage_flags.map(|s| s.serialized_size()),
                         ),
@@ -170,23 +158,19 @@ impl Drive {
                 .document_info
                 .get_borrowed_document_and_storage_flags()
             {
-                Some((document, _)) => document
-                    .get_raw_for_document_type(
-                        terminal_property,
-                        document_type,
-                        document_and_contract_info.owned_document_info.owner_id,
-                        platform_version,
-                    )?
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "indexOnly terminal value must be present on delete: the \
-                         delete transition carries every property and the owner",
-                    )))?,
+                Some((document, _)) => index_only_member_key(
+                    document,
+                    document_type,
+                    terminal,
+                    document_and_contract_info.owned_document_info.owner_id,
+                    platform_version,
+                )?,
                 None => event_id.to_vec(),
             };
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
                 AllItems(
-                    DEFAULT_HASH_SIZE_U8,
+                    member_key_max_size,
                     estimated_value_size,
                     storage_flags.map(|s| s.serialized_size()),
                 ),
@@ -207,7 +191,12 @@ impl Drive {
             // keeps every tree, so a later entry costs the same as this one
             // did. Trees a pre-flag fallback created are kept the same way
             // — if-not-exists inserts make the two histories converge.
-            let stop_path_height = if index_type.preallocated {
+            // A FLAT index's entries sit at `[…doctype, <flat level>, 0]`:
+            // the flat level tree is registration-time structure (like a
+            // property-name tree), so the climb stops at its `0` bucket
+            // exactly as it does on a preallocated index. The level info
+            // carries the flag from the index that terminates there.
+            let stop_path_height = if index_type.preallocated || index_type.flat {
                 u16::try_from(key_info_path.len() - 1).map_err(|_| {
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "index path height must fit in u16",
@@ -248,7 +237,7 @@ impl Drive {
 
             // Delete-side sum-decrement is implicit: under a summable
             // index, the existing reference at `[..., 0, doc_id]` is an
-            // `Element::ReferenceWithSumItem(path, max_hops, amount_i64, flags)`
+            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
             // (written by the insert path). The contribution is
             // recovered from the reference element itself — Drive
             // never re-reads the source document at delete time
@@ -260,16 +249,16 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
+                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
                             DEFAULT_HASH_SIZE_U8,
-                            NoSumTrees,
                             storage_flags.map(|s| s.serialized_size()),
+                            index_type.summable.is_some(),
                         ),
                     },
                 );

@@ -7,6 +7,7 @@
 //! |--------------|-----------------|
 //! | `0`          | `PreProgrammed` |
 //! | `1`          | `Perpetual`     |
+//! | `2`          | `OncePerIdentity` |
 //!
 //! Any other value is rejected with `ErrorInvalidParameter`.
 
@@ -45,10 +46,11 @@ pub unsafe extern "C" fn platform_wallet_token_claim(
     let dist_type = match distribution_type {
         0 => TokenDistributionType::PreProgrammed,
         1 => TokenDistributionType::Perpetual,
+        2 => TokenDistributionType::OncePerIdentity,
         other => {
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("Invalid distribution_type: {other} (expected 0 or 1)"),
+                format!("Invalid distribution_type: {other} (expected 0, 1 or 2)"),
             );
         }
     };

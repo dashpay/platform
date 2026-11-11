@@ -13,14 +13,17 @@ mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod state_transition_validation;
 pub mod v0;
+pub mod v1;
 mod version;
 
 use crate::state_transition::shield_from_asset_lock_transition::fields::{PROOF, SIGNATURE};
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0Signable;
+use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
-pub type ShieldFromAssetLockTransitionLatest = ShieldFromAssetLockTransitionV0;
+pub type ShieldFromAssetLockTransitionLatest = ShieldFromAssetLockTransitionV1;
 
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
@@ -67,6 +70,10 @@ use serde::{Deserialize, Serialize};
 pub enum ShieldFromAssetLockTransition {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(ShieldFromAssetLockTransitionV0),
+    /// The bundle binds its kind and its asset lock. The only version protocol version 14
+    /// admits; see [`ShieldFromAssetLockTransitionV1`].
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
+    V1(ShieldFromAssetLockTransitionV1),
 }
 
 impl StateTransitionFieldTypes for ShieldFromAssetLockTransition {
@@ -224,5 +231,53 @@ pub(crate) mod json_convertible_tests {
         assert!(pget("transaction").is_some_and(|v| matches!(v, platform_value::Value::Bytes(_))));
         let recovered = ShieldFromAssetLockTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+
+    /// Version 1 has the same fields as version 0; only the `$formatVersion` tag tells them
+    /// apart in JSON and Value form, and it must survive the round trip.
+    #[test]
+    fn version_1_round_trips_as_format_version_1() {
+        use crate::serialization::ValueConvertible;
+        use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+        let ShieldFromAssetLockTransition::V0(v0) = fixture() else {
+            panic!("the fixture is version 0");
+        };
+        let original = ShieldFromAssetLockTransition::V1(ShieldFromAssetLockTransitionV1 {
+            asset_lock_proof: v0.asset_lock_proof,
+            actions: v0.actions,
+            value_balance: v0.value_balance,
+            anchor: v0.anchor,
+            proof: v0.proof,
+            binding_signature: v0.binding_signature,
+            surplus_output: v0.surplus_output,
+            signature: v0.signature,
+        });
+
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json.as_object()
+                .expect("json is an object")
+                .get("$formatVersion"),
+            Some(&serde_json::json!("1"))
+        );
+        assert_eq!(
+            ShieldFromAssetLockTransition::from_json(json).expect("from_json"),
+            original
+        );
+
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value
+                .as_map()
+                .expect("value is a map")
+                .iter()
+                .find(|(k, _)| k.as_text() == Some("$formatVersion"))
+                .map(|(_, v)| v),
+            Some(&platform_value::Value::Text("1".to_string()))
+        );
+        assert_eq!(
+            ShieldFromAssetLockTransition::from_object(value).expect("from_object"),
+            original
+        );
     }
 }

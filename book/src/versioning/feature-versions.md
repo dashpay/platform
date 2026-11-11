@@ -239,6 +239,8 @@ And those go deeper. For example, `DPPContractVersions` contains not just
 pub struct DPPContractVersions {
     pub max_serialized_size: u32,
     pub contract_serialization_version: FeatureVersionBounds,
+    pub contract_storage_serialization_version: FeatureVersion,
+    pub contract_storage_document_type_version: FeatureVersion,
     pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
     pub config: FeatureVersionBounds,
@@ -252,6 +254,16 @@ Notice `max_serialized_size: u32`. Not every field is a `FeatureVersion`. Some
 are configuration values -- limits, thresholds, constants -- that change between
 protocol versions. The version struct is flexible enough to hold both "which
 implementation to use" and "what parameters to use."
+
+Notice also that a contract has two serialization selectors.
+`contract_serialization_version` is the format state transitions carry and
+clients are sent; `contract_storage_serialization_version` is the format Drive
+writes to state. They are separate because a stored format need not be one a
+transition may carry: format version 2 holds the contract's compiled document
+types, which only state holds, and is written only from the protocol version
+whose table selects it. `contract_storage_document_type_version` picks the
+generation each compiled document type is stored in; the stored form carries
+its generation, so a reader never needs the table to decode it.
 
 ## The Drive ABCI Branch
 
@@ -332,7 +344,10 @@ pub struct SystemLimits {
     pub max_withdrawal_amount: u64,
     /// `None` for the protocol versions that predate the relative rule.
     pub daily_withdrawal_limit_percent: Option<u8>,
-    pub max_daily_withdrawal_amount: Option<u64>,
+    pub core_credit_pool_unlock_limit_percent: Option<u8>,
+    pub core_credit_pool_unlock_limit_floor: Option<u64>,
+    pub core_credit_pool_window_blocks: Option<u32>,
+    pub regtest_core_credit_pool_window_blocks: Option<u32>,
     pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     pub max_token_redemption_cycles: u32,
@@ -355,6 +370,7 @@ pub struct DriveAbciWithdrawalConstants {
     pub core_expiration_blocks: u32,
     pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
     pub total_credits_history_prune_limit: u16,
+    pub core_blocks_scanned_per_block_limit: u16,
 }
 
 // drive_abci_versions/drive_abci_validation_versions/mod.rs
@@ -405,9 +421,8 @@ the situation the tables exist to prevent, and it leaves a dead module behind
 every time the number moves. A new method version is warranted only when the
 *logic* changes. `daily_withdrawal_limit` in `rs-dpp` is the reference case:
 `v0` derives the limit from the current total credits, `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`. Raising the percentage later is a `SYSTEM_LIMITS_V5`, not a
-`v3`.
+`daily_withdrawal_limit_percent` from `SystemLimits`. Raising the percentage
+later is a `SYSTEM_LIMITS_V5`, not a `v3`.
 
 ## How Subsystem Version Constants Compose
 
@@ -485,16 +500,27 @@ slots edited. Newer ones use struct update syntax, so that the file *is* the
 diff:
 
 ```rust
-// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v3.rs
+// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v2.rs
 
-/// Differs from v2 in exactly one slot:
+/// Differs from v1 in three slots.
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
-/// rather than 1. That is the boolean-`HAVING` routing gate. ...
-pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
+/// rather than 0: the ranked and boolean-`HAVING` routing gate. ...
+pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryVersions {
+    identity_based_queries: DriveAbciQueryIdentityVersions {
+        identity_by_non_unique_public_key_hash: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 1,
+            default_current_version: 1,
+        },
+        ..DRIVE_ABCI_QUERY_VERSIONS_V1.identity_based_queries
+    },
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },
-    ..DRIVE_ABCI_QUERY_VERSIONS_V2
+    data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+        latest_versions_read: 1,
+    },
+    ..DRIVE_ABCI_QUERY_VERSIONS_V1
 };
 ```
 
@@ -564,7 +590,7 @@ version/
       v1.rs .. v10.rs
     drive_abci_query_versions/
       mod.rs
-      v0.rs .. v3.rs
+      v0.rs .. v2.rs
     drive_abci_withdrawal_constants/
       mod.rs                    # DriveAbciWithdrawalConstants (parameters, not method versions)
       v1.rs .. v3.rs

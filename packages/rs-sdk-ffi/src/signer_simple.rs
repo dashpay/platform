@@ -311,7 +311,6 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     out_signature_len: *mut usize,
     out_error: *mut u8,
 ) -> i32 {
-    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
     use dash_sdk::dpp::identity::KeyType;
     use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
     use std::ffi::CStr;
@@ -378,10 +377,9 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_MNEMONIC),
     };
-    // `to_seed` returns `[u8; 64]` by value; wrap immediately so the
-    // 64 bytes get zeroed when this function returns (success or fail).
-    let seed: zeroize::Zeroizing<[u8; 64]> =
-        zeroize::Zeroizing::new(mnemonic.to_seed(passphrase_str));
+    // `to_seed` returns a `Zeroizing` buffer, so the 64 bytes get zeroed
+    // when this function returns (success or fail).
+    let seed: zeroize::Zeroizing<[u8; 64]> = mnemonic.to_seed(passphrase_str);
 
     // ---- Derivation path -----------------------------------------------------
     let path = match DerivationPath::from_str(path_str) {
@@ -396,8 +394,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
-    let secp = Secp256k1::new();
-    let derived = match master.derive_priv(&secp, &path) {
+    let derived = match master.derive_priv(&path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
@@ -405,8 +402,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     // which has no `Drop` of its own — is scrubbed when the function
     // returns. `derived` self-wipes separately: `ExtendedPrivKey`
     // zeroizes on `Drop`.
-    let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
-        zeroize::Zeroizing::new(derived.private_key.secret_bytes());
+    let secret_bytes: zeroize::Zeroizing<[u8; 32]> = derived.private_key.to_bytes();
 
     // ---- Sign ---------------------------------------------------------------
     // `dashcore::signer::sign` returns a 65-byte compact recoverable

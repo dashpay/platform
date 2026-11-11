@@ -4,7 +4,7 @@ edition = "2021"
 version.workspace = true
 rust-version.workspace = true
 license = "MIT"
-description = "JNI bindings for the Dash Platform SDK — Android/Kotlin shim over rs-sdk-ffi, platform-wallet-ffi and key-wallet-ffi"
+description = "JNI bindings for the Dash Platform SDK — Android/Kotlin shim over rs-sdk-ffi and platform-wallet-ffi"
 
 [lib]
 # Kotlin loads this as System.loadLibrary("dash_sdk_jni").
@@ -15,8 +15,6 @@ crate-type = ["cdylib"]
 jni = "0.21"
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
-key-wallet-ffi = { workspace = true }
-dash-network = { workspace = true, features = ["ffi"] }
 log = "0.4"
 zeroize = "1"
 
@@ -28,6 +26,9 @@ dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }
+# Builds the state-transition fixtures whose parsed blobs are the goldens
+# shared with the Kotlin `StateTransitionParserTest`.
+dpp = { path = "../rs-dpp" }
 
 [features]
 default = ["shielded"]

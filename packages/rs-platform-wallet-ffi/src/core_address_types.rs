@@ -76,14 +76,14 @@ pub struct CoreAddressEntryFFI {
     pub pool_type_tag: u8,
     /// Derivation index within this pool.
     pub address_index: u32,
-    /// Whether funds had been seen at this address at emit time, i.e.
-    /// `AddressInfo.state == AddressState::Used`.
+    /// Whether the address must not be handed out again: funds were seen
+    /// at it (`AddressState::Used`), or it is reserved
+    /// (`AddressState::Reserved`).
     ///
-    /// This schema has no slot for a reservation, so an
-    /// `AddressState::Reserved` entry necessarily flattens to `false`
-    /// and reloads as `Available`. Nothing in platform reserves
-    /// addresses today, so that lossy case is unreachable; adding a
-    /// reserving caller requires a schema decision here first (see
+    /// This schema has no slot for a reservation, and the row is a reuse
+    /// guard, so a reservation is stored as `true` and reloads as `Used`.
+    /// Releasing it stores `false` again. The one reserving caller is the
+    /// two-step DashPay contact payment (see
     /// `persistence::build_core_address_entry_ffi`).
     pub is_used: bool,
     /// Cached balance in duffs from `AddressInfo.balance`.

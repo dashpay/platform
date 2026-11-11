@@ -8,8 +8,8 @@ use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
     TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
-    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
-    TokenStatusRoot, TokenTimedDistributionRoot,
+    TokenIdentityInfoRoot, TokenOncePerIdentityDistributionRoot, TokenPerpetualDistributionRoot,
+    TokenPreProgrammedDistributionRoot, TokenStatusRoot, TokenTimedDistributionRoot,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
@@ -22,7 +22,9 @@ use grovedb::batch::{
 };
 use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::{Element, TreeType};
+use grovedb_version::version::GroveVersion;
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::fmt;
 
 /// A batch of GroveDB operations as a vector.
@@ -31,6 +33,12 @@ use std::fmt;
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<QualifiedGroveDbOp>,
+    /// How the batch's flags update treats a new owner, set on a batch that updates documents
+    /// from protocol version 15. `None` merges flags as they always were. Otherwise the owner
+    /// a write names owns the element afterwards, and an owner change involving one of these
+    /// identities, the owners of contracts offering gas sponsorship on what the batch
+    /// updates, is a full handover.
+    pub(crate) owner_handover: Option<BTreeSet<[u8; 32]>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -48,6 +56,7 @@ enum KnownPath {
     IdentityTreeKeyReferencesInSecurityLevel(Purpose, SecurityLevel), //Level 4
     IdentityTreeNegativeCreditRoot,                                   //Level 2
     IdentityContractInfoRoot,                                         //Level 2
+    IdentityTreeKeyBudgetsRoot,                                       //Level 2
     UniquePublicKeyHashesToIdentitiesRoot,                            //Level 1
     NonUniquePublicKeyKeyHashesToIdentitiesRoot,                      //Level 1
     PoolsRoot,                                                        //Level 1
@@ -65,6 +74,7 @@ enum KnownPath {
     TokenTimedDistributionRoot,                                       //Level 3
     TokenPreProgrammedDistributionRoot,                               //Level 3
     TokenPerpetualDistributionRoot,                                   //Level 3
+    TokenOncePerIdentityDistributionRoot,                             //Level 3
     TokenIdentityInfoRoot,                                            //Level 2
     TokenContractInfoRoot,                                            //Level 2
     TokenStatusRoot,                                                  //Level 2
@@ -73,6 +83,7 @@ enum KnownPath {
     GroupActionsRoot,                                                 //Level 1
     SingleUseKeyBalancesRoot,                                         //Level 1
     ShieldedBalancesRoot,                                             //Level 1
+    ContractGroupsRoot,                                               //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -99,6 +110,7 @@ impl From<RootTree> for KnownPath {
             RootTree::GroupActions => KnownPath::GroupActionsRoot,
             RootTree::AddressBalances => KnownPath::SingleUseKeyBalancesRoot,
             RootTree::ShieldedBalances => KnownPath::ShieldedBalancesRoot,
+            RootTree::ContractGroups => KnownPath::ContractGroupsRoot,
         }
     }
 }
@@ -116,6 +128,7 @@ impl From<IdentityRootStructure> for KnownPath {
                 KnownPath::IdentityTreeNegativeCreditRoot
             }
             IdentityRootStructure::IdentityContractInfo => KnownPath::IdentityContractInfoRoot,
+            IdentityRootStructure::IdentityTreeKeyBudgets => KnownPath::IdentityTreeKeyBudgetsRoot,
         }
     }
 }
@@ -276,6 +289,9 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     }
                     tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY => {
                         (format!("PreProgrammedDistribution({})", tokens::paths::TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY), Some(TokenPreProgrammedDistributionRoot))
+                    }
+                    tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY => {
+                        (format!("OncePerIdentityDistribution({})", tokens::paths::TOKEN_ONCE_PER_IDENTITY_DISTRIBUTIONS_KEY), Some(TokenOncePerIdentityDistributionRoot))
                     }
                     _ => (hex_to_ascii(key), None),
                 },
@@ -449,8 +465,11 @@ pub trait GroveDbOpBatchV0Methods {
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
     fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
 
-    /// Verify consistency of operations
-    fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults;
+    /// Verify consistency of operations, by the rules of `grove_version`
+    fn verify_consistency_of_operations(
+        &self,
+        grove_version: &GroveVersion,
+    ) -> Result<GroveDbOpConsistencyResults, grovedb::Error>;
 
     /// Check if the batch contains a specific path and key.
     ///
@@ -500,9 +519,7 @@ pub trait GroveDbOpBatchV0Methods {
 impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// Creates a new empty batch of GroveDB operations.
     fn new() -> Self {
-        GroveDbOpBatch {
-            operations: Vec::new(),
-        }
+        GroveDbOpBatch::default()
     }
 
     /// Gets the number of operations from a list of GroveDB ops.
@@ -532,7 +549,10 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
 
     /// Puts a list of GroveDB operations into a batch.
     fn from_operations(operations: Vec<QualifiedGroveDbOp>) -> Self {
-        GroveDbOpBatch { operations }
+        GroveDbOpBatch {
+            operations,
+            ..Default::default()
+        }
     }
 
     /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
@@ -618,9 +638,12 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         )
     }
 
-    /// Verify consistency of operations
-    fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
-        QualifiedGroveDbOp::verify_consistency_of_operations(&self.operations)
+    /// Verify consistency of operations, by the rules of `grove_version`
+    fn verify_consistency_of_operations(
+        &self,
+        grove_version: &GroveVersion,
+    ) -> Result<GroveDbOpConsistencyResults, grovedb::Error> {
+        QualifiedGroveDbOp::verify_consistency_of_operations(&self.operations, grove_version)
     }
 
     /// Check if the batch contains a specific path and key.

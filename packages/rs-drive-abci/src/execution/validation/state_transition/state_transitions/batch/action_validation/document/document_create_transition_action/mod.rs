@@ -14,10 +14,13 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v3::DocumentCreateTransitionActionStateValidationV3;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v2::DocumentCreateTransitionActionStructureValidationV2;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
 mod advanced_structure_v1;
+mod advanced_structure_v2;
 mod state_v0;
 mod state_v1;
 mod state_v2;
@@ -32,11 +35,19 @@ pub trait DocumentCreateTransitionActionValidation {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+    /// Validates the create against state. From version 2 it also settles what a contested
+    /// create pays into its contest: the fund to join it, which may be less than the most the
+    /// contender stated. From version 2 (protocol version 14) too, the commitments the create
+    /// reveals through a `refersTo` lookup whose reference declares `consume` are pushed onto
+    /// `consumed_documents`, for the caller to delete with the create once it accepts it;
+    /// earlier versions push nothing.
+    #[allow(clippy::too_many_arguments)]
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -62,19 +73,23 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
             // V1 introduces the cross-check that the prefunded voting balance names the same
             // contested vote poll that the document itself resolves to
             1 => self.validate_structure_v1(owner_id, block_info, network, platform_version),
+            // V2 holds a decision proposal (protocol version 15) to the decision proposal fund,
+            // a rule within the system limits and an end date one to four weeks away
+            2 => self.validate_structure_v2(owner_id, block_info, network, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
     }
 
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -109,15 +124,18 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
                 platform,
                 owner_id,
                 block_info,
+                consumed_documents,
                 execution_context,
                 transaction,
                 platform_version,
             ),
-            // V3 refuses the id of a deleted or erasing keep-history document on top of V2
+            // V3 keeps a non-contested create from taking the index values of a live contest
+            //  its index values do not decide, on top of V2
             3 => self.validate_state_v3(
                 platform,
                 owner_id,
                 block_info,
+                consumed_documents,
                 execution_context,
                 transaction,
                 platform_version,

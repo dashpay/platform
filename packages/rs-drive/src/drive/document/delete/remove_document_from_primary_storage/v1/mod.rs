@@ -1,17 +1,16 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
+use grovedb::{MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::collections::HashMap;
 
 use crate::util::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
 
 use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::Drive;
 
 use crate::error::drive::DriveError;
@@ -40,28 +39,16 @@ impl Drive {
         document_id: Identifier,
         document_type: DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let keeps_history = document_type.documents_keep_history();
-        if keeps_history
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 0
-        {
-            // Under the layout that writer produces, a keep-history document's
-            // primary entry is the subtree holding its revisions, and removing
-            // it as a leaf would unlink that subtree's storage without
-            // reclaiming it. This version exists only alongside the writer that
-            // stores a pointer there instead.
+        if keeps_history && !uses_current_document_history_layout(platform_version)? {
+            // The legacy primary entry is the subtree holding its revisions.
+            // Only the composite layout stores a leaf pointer that can be
+            // removed without unlinking retained revisions.
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "a keep-history primary entry can only be removed where the current pointer \
                  layout is in use",

@@ -1,4 +1,5 @@
 mod v1;
+mod v2;
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
@@ -23,6 +24,7 @@ impl DataContract {
     /// # Version Behavior
     /// - Version 0: Always returns `0` (used before protocol version 9, ie before 2.0, where registration cost was not charged).
     /// - Version 1: Uses a detailed cost model based on document types, indexes, tokens, and keyword count.
+    /// - Version 2: Version 1 plus the surcharge for tokens with a once-per-identity distribution (protocol version 14).
     pub fn registration_cost(
         &self,
         platform_version: &PlatformVersion,
@@ -35,9 +37,10 @@ impl DataContract {
         {
             0 => Ok(0), // Before 2.0 it's just 0 (There was some validation cost)
             1 => Ok(self.registration_cost_v1(platform_version)),
+            2 => Ok(self.registration_cost_v2(platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::registration_cost".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }
@@ -62,6 +65,7 @@ impl DataContractInSerializationFormat {
     /// # Version Behavior
     /// - Version 0: Always returns `0` (used before protocol version 9, ie before 2.0, where registration cost was not charged).
     /// - Version 1: Uses a detailed cost model based on document types, indexes, tokens, and keyword count.
+    /// - Version 2: Version 1 plus the surcharge for tokens with a once-per-identity distribution (protocol version 14).
     pub fn registration_cost(
         &self,
         platform_version: &PlatformVersion,
@@ -74,9 +78,10 @@ impl DataContractInSerializationFormat {
         {
             0 => Ok(0), // Before 2.0 it's just 0 (There was some validation cost)
             1 => Ok(self.registration_cost_v1(platform_version)),
+            2 => Ok(self.registration_cost_v2(platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::registration_cost".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

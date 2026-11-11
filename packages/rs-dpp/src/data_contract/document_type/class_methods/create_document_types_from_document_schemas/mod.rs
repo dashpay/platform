@@ -68,7 +68,9 @@ impl DocumentType {
                 validation_operations,
                 platform_version,
             ),
-            // in v1 we add the ability to have contracts without documents and just tokens
+            // in v1 we add the ability to have contracts without documents and just tokens;
+            // from protocol version 14 it also checks an identity key reference's
+            // keyRequirements.boundTo, inert before (see v1)
             1 => DocumentType::create_document_types_from_document_schemas_v1(
                 data_contract_id,
                 data_contract_system_version,

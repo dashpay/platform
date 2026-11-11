@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod accessors;
+mod methods;
 
 pub mod v0;
 

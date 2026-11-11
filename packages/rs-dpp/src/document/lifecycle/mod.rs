@@ -131,6 +131,22 @@ impl DocumentLifecycleRecord {
         self.erasing_from_revision() != 0
     }
 
+    /// Whether the record describes a possible deletion and erase start. The
+    /// remaining count belongs to the authenticated history tree and is checked
+    /// by history-page decoders rather than inferred from this record.
+    pub fn is_coherent(&self) -> bool {
+        if self.revision_count() == 0 || self.latest_revision() < self.revision_count() {
+            return false;
+        }
+        if self.is_erasing() {
+            self.erasing_from_revision() == self.latest_revision()
+                && self.erasing_started_at_ms() >= self.deleted_at_ms()
+                && self.erasing_from_time_ms() <= self.deleted_at_ms()
+        } else {
+            self.erasing_started_at_ms() == 0 && self.erasing_from_time_ms() == 0
+        }
+    }
+
     /// Returns the record an erase start writes over this one, keeping the
     /// deletion time and recording the erasure it authorizes.
     pub fn starting_erase_at(

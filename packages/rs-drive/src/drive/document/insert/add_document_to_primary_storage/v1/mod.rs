@@ -19,6 +19,7 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::common::encode::encode_u64;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType, QueryTarget};
 use crate::util::object_size_info::DocumentInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
@@ -36,8 +37,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{key_info::KeyInfo, KeyInfoPath};
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Stores immutable revisions separately from the current primary-key entry.
@@ -47,7 +47,7 @@ impl Drive {
         info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        estimated: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -135,6 +135,9 @@ impl Drive {
             );
         }
 
+        // Creates start at revision one and accepted edits advance it by one; migration
+        // preserves those revisions. Crossing the encoding's sign bit requires over
+        // 2^63-2 writes to one document, so time-and-revision keys order reachable edits.
         let mut revision_key = encode_u64(block_info.time_ms);
         revision_key.extend(encode_u64(document.and_then(|d| d.revision()).unwrap_or(1)));
         let summable = info.document_type.documents_summable();

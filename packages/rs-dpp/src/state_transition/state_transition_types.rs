@@ -44,6 +44,13 @@ pub enum StateTransitionType {
     IdentityCreateFromShieldedPool = 20,
     ShieldFromIdentity = 21,
     IdentityTopUpFromShieldedPool = 22,
+    IdentityKeyLimitsUpdate = 23,
+    ContractUserModeration = 24,
+    ContractFeeClaim = 25,
+    TokenShieldedTransferWithShieldedFee = 26,
+    TokenUnshieldWithShieldedFee = 27,
+    TokenPurchaseFromShieldedPool = 28,
+    PrivateDocumentCreateFromShieldedPool = 29,
 }
 
 impl std::fmt::Display for StateTransitionType {
@@ -134,6 +141,31 @@ mod tests {
                 StateTransitionType::IdentityTopUpFromShieldedPool,
                 "IdentityTopUpFromShieldedPool",
             ),
+            (
+                StateTransitionType::IdentityKeyLimitsUpdate,
+                "IdentityKeyLimitsUpdate",
+            ),
+            (
+                StateTransitionType::ContractUserModeration,
+                "ContractUserModeration",
+            ),
+            (StateTransitionType::ContractFeeClaim, "ContractFeeClaim"),
+            (
+                StateTransitionType::TokenShieldedTransferWithShieldedFee,
+                "TokenShieldedTransferWithShieldedFee",
+            ),
+            (
+                StateTransitionType::TokenUnshieldWithShieldedFee,
+                "TokenUnshieldWithShieldedFee",
+            ),
+            (
+                StateTransitionType::TokenPurchaseFromShieldedPool,
+                "TokenPurchaseFromShieldedPool",
+            ),
+            (
+                StateTransitionType::PrivateDocumentCreateFromShieldedPool,
+                "PrivateDocumentCreateFromShieldedPool",
+            ),
         ];
         for (variant, expected) in cases {
             assert_eq!(
@@ -171,6 +203,19 @@ mod tests {
             (20, StateTransitionType::IdentityCreateFromShieldedPool),
             (21, StateTransitionType::ShieldFromIdentity),
             (22, StateTransitionType::IdentityTopUpFromShieldedPool),
+            (23, StateTransitionType::IdentityKeyLimitsUpdate),
+            (24, StateTransitionType::ContractUserModeration),
+            (25, StateTransitionType::ContractFeeClaim),
+            (
+                26,
+                StateTransitionType::TokenShieldedTransferWithShieldedFee,
+            ),
+            (27, StateTransitionType::TokenUnshieldWithShieldedFee),
+            (28, StateTransitionType::TokenPurchaseFromShieldedPool),
+            (
+                29,
+                StateTransitionType::PrivateDocumentCreateFromShieldedPool,
+            ),
         ];
         for (val, expected) in pairs {
             let result = StateTransitionType::try_from(val).unwrap();
@@ -180,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_invalid() {
-        assert!(StateTransitionType::try_from(23u8).is_err());
+        assert!(StateTransitionType::try_from(30u8).is_err());
         assert!(StateTransitionType::try_from(255u8).is_err());
     }
 
@@ -210,6 +255,13 @@ mod tests {
             StateTransitionType::IdentityCreateFromShieldedPool,
             StateTransitionType::ShieldFromIdentity,
             StateTransitionType::IdentityTopUpFromShieldedPool,
+            StateTransitionType::IdentityKeyLimitsUpdate,
+            StateTransitionType::ContractUserModeration,
+            StateTransitionType::ContractFeeClaim,
+            StateTransitionType::TokenShieldedTransferWithShieldedFee,
+            StateTransitionType::TokenUnshieldWithShieldedFee,
+            StateTransitionType::TokenPurchaseFromShieldedPool,
+            StateTransitionType::PrivateDocumentCreateFromShieldedPool,
         ];
         for variant in all_variants {
             let val: u8 = variant.into();

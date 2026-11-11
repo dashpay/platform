@@ -577,7 +577,8 @@ public struct TransitionDefinitions {
                     required: true,
                     options: [
                         SelectOption(value: "perpetual", label: "Perpetual"),
-                        SelectOption(value: "preprogrammed", label: "Pre-programmed")
+                        SelectOption(value: "preprogrammed", label: "Pre-programmed"),
+                        SelectOption(value: "onceperidentity", label: "Once per identity")
                     ]
                 ),
                 TransitionInput(

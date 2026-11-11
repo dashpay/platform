@@ -26,8 +26,13 @@
 //! [`crate::query::drive_document_count_and_sum_query`] for the
 //! no-prove perf / atomicity contract.
 
+use crate::query::CountMode;
+
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
+// The request-only plan of a proved average, shared by the server's
+// dispatcher and the SDK's verifier.
+pub mod proof_plan;
 
 #[cfg(feature = "server")]
 use crate::query::{OrderClause, ResolvedTimeRange, WhereClause};
@@ -62,6 +67,19 @@ pub enum AverageMode {
     GroupByCompound,
 }
 
+/// The routing ([`crate::query::aggregate_routing`]) decides one SQL-shape
+/// mode for counts, sums and averages; an average reads it as its own.
+impl From<CountMode> for AverageMode {
+    fn from(mode: CountMode) -> Self {
+        match mode {
+            CountMode::Aggregate => AverageMode::Aggregate,
+            CountMode::GroupByIn => AverageMode::GroupByIn,
+            CountMode::GroupByRange => AverageMode::GroupByRange,
+            CountMode::GroupByCompound => AverageMode::GroupByCompound,
+        }
+    }
+}
+
 /// A single per-key average entry. Carries BOTH count and sum so the
 /// client can divide; the server intentionally doesn't pre-divide
 /// (see the module docstring).
@@ -86,8 +104,9 @@ pub struct AverageEntry {
     /// The terminator key value (the value of the index's last covered
     /// property within the query).
     pub key: Vec<u8>,
-    /// Matched-document count for this key. `Some(n)` for matched
-    /// keys; `None` for keys proven absent.
+    /// Matched-document count for this key (over a
+    /// `summableOffCountIndex` index, matched groups). `Some(n)` for
+    /// matched keys; `None` for keys proven absent.
     pub count: Option<u64>,
     /// Aggregated `sum_property` value for this key. `Some(n)` for
     /// matched keys; `None` for keys proven absent.
@@ -145,11 +164,10 @@ pub struct DocumentAverageRequest<'a> {
     ///   rather than clamped, so a tuned operator default or an
     ///   over-max request can't byte-differ the
     ///   `SizedQuery::limit` the SDK reconstructs for merk-root
-    ///   verification. See the
-    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
-    ///   `RangeAggregateCarrierProof` arms for the
-    ///   validate-don't-clamp policy, mirrored from count's
-    ///   prove-path arms.
+    ///   verification. See
+    ///   [`DriveDocumentSumQuery::average_proof_plan`](crate::query::drive_document_sum_query::DriveDocumentSumQuery::average_proof_plan)
+    ///   for the validate-don't-clamp policy, mirrored from count's
+    ///   proof plan.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the (count, sum) pairs server-side.
@@ -168,7 +186,9 @@ pub enum DocumentAverageResponse {
     /// A single `(count, sum)` pair across all matched documents.
     /// Client computes `avg = sum / count`.
     Aggregate {
-        /// Total matched-document count.
+        /// Total matched-document count; over a `summableOffCountIndex`
+        /// index, the number of matched groups (its average is the source's
+        /// entries per group).
         count: u64,
         /// Total aggregated value of `sum_property`.
         sum: i64,

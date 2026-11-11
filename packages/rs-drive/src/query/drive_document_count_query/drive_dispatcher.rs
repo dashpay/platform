@@ -18,7 +18,7 @@
 use super::super::conditions::WhereClause;
 use super::super::ordering::OrderClause;
 use super::execute_range_count::RangeCountOptions;
-use super::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
+use super::{CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -26,7 +26,8 @@ use crate::query::ResolvedTimeRange;
 // Shared with the sum / average / joint dispatchers and the SDK proof
 // verifiers — see `crate::query::canonicalize` for the shape contract.
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -251,8 +252,11 @@ impl Drive {
     /// Owns the whole pipeline:
     /// 1. [`DriveDocumentCountQuery::detect_mode`] classifies the
     ///    query shape from the where clauses + flags.
-    /// 2. The matching `Drive::execute_document_count_*` per-mode
-    ///    method picks an index and runs the executor.
+    /// 2. A no-proof mode's `Drive::execute_document_count_*` method
+    ///    picks an index and runs the executor; a proof mode's
+    ///    [`DriveDocumentCountQuery::proof_plan`] picks the primary-key
+    ///    route or the index, and `execute_document_count_proof`
+    ///    proves it.
     /// 3. The result is wrapped in [`DocumentCountResponse`] —
     ///    `Counts(...)` for no-proof modes, `Proof(...)` for proof
     ///    modes.
@@ -283,8 +287,16 @@ impl Drive {
         // shaped legacy path or the v1 typed-proto path. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring
         // for the catalog of rejections / canonicalization rules.
+        // A typed array's elements are keyed first: several only when the
+        // request answers per element (see [`key_array_element_clauses`]).
+        let where_clauses = key_array_element_clauses(
+            request.where_clauses,
+            request.document_type,
+            matches!(request.mode, CountMode::GroupByIn),
+            platform_version,
+        )?;
         let where_clauses =
-            validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
+            validate_and_canonicalize_where_clauses(where_clauses, platform_version)?;
         let resolved_time_ranges = request.resolved_time_ranges;
         validate_resolved_time_range_clause_shapes(&where_clauses, &resolved_time_ranges)?;
         let order_clauses = request.order_clauses;
@@ -397,177 +409,46 @@ impl Drive {
                     Ok(DocumentCountResponse::Entries(entries))
                 }
             }
-            DocumentCountMode::RangeProof => Ok(DocumentCountResponse::Proof(
-                self.execute_document_count_range_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
-                    &resolved_time_ranges,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
-            DocumentCountMode::RangeDistinctProof => {
-                // Validate-don't-clamp limit policy on the prove
-                // path: client-side proof reconstruction needs the
-                // exact same limit value the server applied to the
-                // path query (so the merk-root recomputation
-                // matches). Silent clamping would invisibly break
-                // verification on any request with `limit >
-                // max_query_limit`.
+            DocumentCountMode::RangeProof
+            | DocumentCountMode::RangeDistinctProof
+            | DocumentCountMode::PointLookupProof
+            | DocumentCountMode::RangeAggregateCarrierProof => {
+                // The request-only plan the SDK's verifier makes too: the
+                // primary-key route or the covering index, and the limit
+                // the path query carries (see `CountProofPlan`).
                 //
-                // **Limit fallback uses `crate::config::DEFAULT_QUERY_LIMIT`
-                // (the compile-time constant), NOT
-                // `drive_config.default_query_limit` (the
-                // operator-tunable runtime value).** The SDK verifier
-                // can't know an operator's tuned config, so any
-                // operator who tuned `default_query_limit` away from
-                // `DEFAULT_QUERY_LIMIT` would produce proofs whose
-                // `SizedQuery::limit` byte-differs from the
-                // verifier's reconstruction — silent verify failure
-                // on a consensus-adjacent path. Anchoring the
-                // fallback to the shared compile-time constant
-                // removes that operator-tunable degree of freedom
-                // from proof bytes entirely; the runtime
-                // `default_query_limit` continues to govern no-proof
-                // dispatch paths where there's no verifier to match.
-                // `max_query_limit` still gates the request as a
-                // DoS-protection knob (proofs never cross the
-                // operator-set ceiling, but the ceiling itself doesn't
-                // affect proof bytes — it only decides whether the
-                // request gets served).
-                let effective_limit = request
-                    .limit
-                    .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
-                if effective_limit > request.drive_config.max_query_limit as u32 {
-                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                        "limit {} exceeds max_query_limit {} on the prove + \
-                         distinct-walk path (GROUP BY a range field); reduce the \
-                         requested limit or use prove = false",
-                        effective_limit, request.drive_config.max_query_limit
-                    ))));
-                }
-                let limit_u16 = effective_limit as u16;
-                // Default to ascending if the request didn't specify
-                // — matches the no-proof default. The verifier reads
-                // the same field to reconstruct the matching path
-                // query (see SDK's `FromProof<DocumentQuery>` impl
-                // for `DocumentSplitCounts`); both sides MUST land
-                // on the same `left_to_right` value or the merk-root
-                // recomputation fails.
-                let left_to_right = order_by_ascending;
+                // Validate-don't-clamp limit policy on the prove path:
+                // client-side proof reconstruction needs the exact limit
+                // the server applied to the path query, so a limit above
+                // `max_query_limit` is refused rather than clamped. The
+                // distinct walk's unset limit falls back to the compile-time
+                // `DEFAULT_QUERY_LIMIT`, never the operator-tunable
+                // `default_query_limit` a verifier cannot know;
+                // `max_query_limit` only decides whether the request is
+                // served, never the proof bytes. A carrier's limit follows
+                // `DriveDocumentCountQuery::carrier_aggregate_count_limit`:
+                // none for an `In` outer, which its values bound, and at
+                // most `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` for a range
+                // outer. The distinct and carrier walks run in the first
+                // `order_by` clause's direction, ascending by default, carried
+                // byte for byte through `Query::left_to_right` so the verifier
+                // rebuilds the same `PathQuery`.
+                let plan = DriveDocumentCountQuery::proof_plan(
+                    &request.document_type,
+                    &where_clauses,
+                    &resolved_time_ranges,
+                    mode,
+                    &order_clauses,
+                    request.limit,
+                    Some(request.drive_config.max_query_limit),
+                )?;
                 Ok(DocumentCountResponse::Proof(
-                    self.execute_document_count_range_distinct_proof(
+                    self.execute_document_count_proof(
                         contract_id,
                         request.document_type,
                         document_type_name,
                         where_clauses,
-                        &resolved_time_ranges,
-                        limit_u16,
-                        left_to_right,
-                        transaction,
-                        platform_version,
-                    )?,
-                ))
-            }
-            DocumentCountMode::PointLookupProof => Ok(DocumentCountResponse::Proof(
-                self.execute_document_count_point_lookup_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
-                    &resolved_time_ranges,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
-            DocumentCountMode::RangeAggregateCarrierProof => {
-                // Validate-don't-clamp limit policy on the prove path
-                // (same rationale as `RangeDistinctProof` above): the
-                // verifier reconstructs the SizedQuery's `limit` byte-
-                // identically, so silent clamping would invisibly
-                // break verification.
-                //
-                // Two shape-dependent rules apply here:
-                //
-                // - **In-outer carrier (G7):** the caller's `|In|`
-                //   already bounds the result. `SizedQuery::limit`
-                //   stays `None`; if the caller passed a non-`None`
-                //   `limit`, reject — there's no use case for a sub-
-                //   `|In|` limit on this path, and accepting it would
-                //   silently change which In-branches appear in the
-                //   proof.
-                //
-                // - **Range-outer carrier (G8):** the platform
-                //   enforces a max outer-walk cap of
-                //   [`super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]
-                //   on how many outer-range matches the carrier walks.
-                //   Caller may pass a smaller `limit` to truncate the
-                //   walk further; passing a larger one is rejected.
-                //   If the caller passes `None`, the platform default
-                //   (the cap itself) is used.
-                let has_outer_range = where_clauses
-                    .iter()
-                    .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-                    .count()
-                    == 2;
-                let effective_limit = if has_outer_range {
-                    match request.limit {
-                        None => Some(super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT),
-                        Some(n) => {
-                            if n > super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 {
-                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                                    "carrier-aggregate range-outer queries (e.g. \
-                                         `outer_range_field > X AND inner_acor_field > \
-                                         Y` with `group_by = [outer_range_field]`) cap \
-                                         the outer walk at {} entries (compile-time \
-                                         constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
-                                         got limit = {}. Pass a value ≤ {} or omit \
-                                         `limit` to use the default.",
-                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
-                                    n,
-                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
-                                ))));
-                            }
-                            if n == 0 {
-                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(
-                                    "carrier-aggregate range-outer queries require limit \
-                                     ≥ 1; got limit = 0"
-                                        .to_string(),
-                                )));
-                            }
-                            Some(n as u16)
-                        }
-                    }
-                } else {
-                    if let Some(n) = request.limit {
-                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                            "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
-                             [...] AND inner_acor_field > Y` with `group_by = \
-                             [outer_in_field]`) don't accept `limit` — the In array's \
-                             length already bounds the result. Got limit = {n}.",
-                        ))));
-                    }
-                    None
-                };
-                // Outer-walk direction: ascending by default (the
-                // grovedb invariant for serialized-key carriers), or
-                // descending when the caller's `order_by` first
-                // clause is `desc`. Carried byte-identically through
-                // `Query::left_to_right` so the verifier rebuilds the
-                // exact same `PathQuery` — same load-bearing pattern
-                // as the `RangeDistinctProof` arm above.
-                let left_to_right = order_by_ascending;
-                Ok(DocumentCountResponse::Proof(
-                    self.execute_document_count_range_aggregate_carrier_proof(
-                        contract_id,
-                        request.document_type,
-                        document_type_name,
-                        where_clauses,
-                        &resolved_time_ranges,
-                        effective_limit,
-                        left_to_right,
+                        plan,
                         transaction,
                         platform_version,
                     )?,

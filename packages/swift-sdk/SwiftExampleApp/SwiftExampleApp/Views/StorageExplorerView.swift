@@ -27,6 +27,13 @@ struct StorageExplorerView: View {
             modelRow("Identities", icon: "person.crop.circle", type: PersistentIdentity.self) {
                 IdentityStorageListView(network: network)
             }
+            modelRow(
+                "Identity Balance Metadata",
+                icon: "clock.badge.checkmark",
+                type: PersistentIdentityBalanceMetadata.self
+            ) {
+                IdentityBalanceMetadataStorageListView(network: network)
+            }
             // Identity-relationship caches: cascade-owned by
             // `PersistentIdentity`, surfaced as their own explorer
             // sections so the row counts and per-row drill-downs
@@ -68,6 +75,20 @@ struct StorageExplorerView: View {
                 type: PersistentDashpayIgnoredSender.self
             ) {
                 DashpayIgnoredSenderStorageListView(network: network)
+            }
+            modelRow(
+                "Private Request Positions",
+                icon: "bookmark",
+                type: PersistentPrivateContactRequestsPosition.self
+            ) {
+                PrivateContactRequestsPositionStorageListView(network: network)
+            }
+            modelRow(
+                "Private Shielded Addresses",
+                icon: "lock.rectangle",
+                type: PersistentPrivateShieldedAddress.self
+            ) {
+                PrivateShieldedAddressStorageListView(network: network)
             }
             modelRow(
                 "Sent Invitations",
@@ -277,12 +298,15 @@ struct StorageExplorerView: View {
         // Models with a direct `networkRaw` column — predicate-friendly,
         // no in-memory pass needed.
         directCount(PersistentIdentity.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentIdentityBalanceMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDPNSName.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactRequest.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayPayment.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayIgnoredSender.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateContactRequestsPosition.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateShieldedAddress.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDataContract.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })

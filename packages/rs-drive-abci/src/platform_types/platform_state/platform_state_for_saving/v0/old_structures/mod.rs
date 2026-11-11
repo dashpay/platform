@@ -1,5 +1,5 @@
 #[cfg(feature = "bls-signatures")]
-use dpp::bls_signatures::PublicKey;
+use dpp::bls::PublicKey;
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

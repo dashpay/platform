@@ -132,6 +132,12 @@ null
 Setting one pins it, and dashmate will not change it again — including across
 upgrades. That is deliberate: an image you chose is yours to manage.
 
+The one exception is a tag dashmate itself used to write into every config:
+`dashpay/drive:4`, `dashpay/drive:4-rc`, `dashpay/drive:5-rc` and the other
+`4`, `4-<prerelease>` and `5-<prerelease>` tags of the Drive and rs-dapi images.
+Upgrading to dashmate 5.0 unsets these, because a config cannot tell them apart
+from the default. To keep one, set it again after upgrading.
+
 ```
 $ dashmate config set platform.drive.abci.docker.image registry.example.com/drive:patched
 $ dashmate config get --raw platform.drive.abci.docker.image

@@ -14,13 +14,14 @@ use crate::config::DriveConfig;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::drive_document_count_query::drive_dispatcher as count_dispatcher;
 use crate::query::drive_document_sum_query::{
-    DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
-    SumMode,
+    DocumentSumMode, DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery,
+    RangeSumOptions, RangeSumWalkMode, SumMode,
 };
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
-    OrderClause, WhereClause,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes, OrderClause, WhereClause,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -64,6 +65,14 @@ impl Drive {
         // shared step in [`crate::query::canonicalize`]), so callers can
         // pass either the bounded pair form (`[f > A, f < B]`) or the
         // pre-merged `between*` form and get equivalent mode detection.
+        // A typed array's elements are keyed first: several only when the
+        // request answers per element (see [`key_array_element_clauses`]).
+        request.where_clauses = key_array_element_clauses(
+            std::mem::take(&mut request.where_clauses),
+            request.document_type,
+            matches!(request.mode, SumMode::GroupByIn),
+            platform_version,
+        )?;
         request.where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
         // Same provenance-vs-shape contract as the count and joint
@@ -158,128 +167,46 @@ impl Drive {
                     Ok(DocumentSumResponse::Entries(entries))
                 }
             }
-            DocumentSumMode::RangeProof => Ok(DocumentSumResponse::Proof(
-                self.execute_document_sum_range_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
-                    &resolved_time_ranges,
-                    sum_property,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
-            DocumentSumMode::RangeDistinctProof => {
+            DocumentSumMode::RangeProof
+            | DocumentSumMode::RangeDistinctProof
+            | DocumentSumMode::PointLookupProof
+            | DocumentSumMode::RangeAggregateCarrierProof => {
+                // The request-only plan the SDK's verifier makes too: the
+                // primary-key route or the covering index, and the limit the
+                // path query carries (see `SumProofPlan`).
+                //
                 // Validate-don't-clamp limit policy on the prove path:
-                // client-side proof reconstruction needs the EXACT
-                // limit value the server applied to the path query
-                // (the SDK rebuilds the same `SizedQuery::limit` for
-                // merk-root recomputation). Silent clamping or a
-                // tuned `default_query_limit` would byte-differ the
-                // reconstructed path query and break verification.
-                //
-                // Limit fallback uses [`crate::config::DEFAULT_QUERY_LIMIT`]
-                // (compile-time constant), NOT
-                // `drive_config.default_query_limit` (operator-tunable
-                // runtime value). `max_query_limit` still gates the
-                // request as a DoS-protection knob — proofs never
-                // cross the operator-set ceiling, but the ceiling
-                // itself doesn't shape proof bytes; it only decides
-                // whether the request gets served.
-                //
-                // Mirrors count's policy at
-                // `drive_document_count_query::drive_dispatcher`
-                // `DocumentCountMode::RangeDistinctProof`.
-                let effective_limit = request
-                    .limit
-                    .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
-                if effective_limit > request.drive_config.max_query_limit as u32 {
-                    return Err(Error::Query(
-                        crate::error::query::QuerySyntaxError::InvalidLimit(format!(
-                            "limit {} exceeds max_query_limit {} on the prove + \
-                             distinct-walk path (GROUP BY a range field, SUM); \
-                             reduce the requested limit or use prove = false",
-                            effective_limit, request.drive_config.max_query_limit
-                        )),
-                    ));
-                }
-                let limit_u16 = u16::try_from(effective_limit).map_err(|_| {
-                    Error::Query(crate::error::query::QuerySyntaxError::Unsupported(format!(
-                        "limit {} exceeds u16::MAX for range-distinct sum proof",
-                        effective_limit
-                    )))
-                })?;
-                Ok(DocumentSumResponse::Proof(
-                    self.execute_document_sum_range_distinct_proof(
-                        contract_id,
-                        request.document_type,
-                        document_type_name,
-                        where_clauses,
-                        &resolved_time_ranges,
-                        sum_property,
-                        limit_u16,
-                        order_by_ascending,
-                        transaction,
-                        platform_version,
-                    )?,
-                ))
-            }
-            DocumentSumMode::PointLookupProof => Ok(DocumentSumResponse::Proof(
-                self.execute_document_sum_point_lookup_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
+                // client-side proof reconstruction needs the EXACT limit the
+                // server applied to the path query (the SDK rebuilds the same
+                // `SizedQuery::limit` for merk-root recomputation), so a limit
+                // above `max_query_limit` is refused rather than clamped. The
+                // distinct walk's unset limit falls back to the compile-time
+                // `DEFAULT_QUERY_LIMIT`, NOT the operator-tunable
+                // `default_query_limit`; the carrier's stays unset (an
+                // unbounded outer walk). `max_query_limit` still gates the
+                // request as a DoS-protection knob, but never shapes proof
+                // bytes. The distinct and carrier walks run in the first
+                // `order_by` clause's direction, ascending by default.
+                // Mirrors count's prove-path policy.
+                let plan = DriveDocumentSumQuery::proof_plan(
+                    &request.document_type,
+                    &where_clauses,
                     &resolved_time_ranges,
-                    sum_property,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
-            DocumentSumMode::RangeAggregateCarrierProof => {
-                // Validate-don't-clamp limit policy on the prove path
-                // — same contract as RangeDistinctProof above. The
-                // carrier proof's outer-walk cap is `SizedQuery::limit`
-                // bytes-of-proof material; a silent clamp would
-                // byte-differ the SDK's reconstruction and break
-                // verification. Unlike the distinct arm, the carrier
-                // arm passes `Option<u16>` (None = unbounded outer
-                // walk), so the request's `None` stays `None` instead
-                // of falling back to a default.
-                let limit_u16 = request
-                    .limit
-                    .map(|l| {
-                        if l > request.drive_config.max_query_limit as u32 {
-                            return Err(Error::Query(
-                                crate::error::query::QuerySyntaxError::InvalidLimit(format!(
-                                    "limit {} exceeds max_query_limit {} on the prove + \
-                                     carrier-aggregate path (GROUP BY In + range, SUM); \
-                                     reduce the requested limit or use prove = false",
-                                    l, request.drive_config.max_query_limit
-                                )),
-                            ));
-                        }
-                        u16::try_from(l).map_err(|_| {
-                            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
-                                format!(
-                                    "limit {} exceeds u16::MAX for carrier-aggregate sum proof",
-                                    l
-                                ),
-                            ))
-                        })
-                    })
-                    .transpose()?;
+                    &sum_property,
+                    resolved_mode,
+                    &request.order_clauses,
+                    request.limit,
+                    Some(request.drive_config.max_query_limit),
+                )?;
                 Ok(DocumentSumResponse::Proof(
-                    self.execute_document_sum_range_aggregate_carrier_proof(
+                    self.execute_document_sum_proof(
                         contract_id,
                         request.document_type,
                         document_type_name,
                         where_clauses,
-                        &resolved_time_ranges,
                         sum_property,
-                        limit_u16,
-                        order_by_ascending,
+                        plan,
+                        false,
                         transaction,
                         platform_version,
                     )?,
@@ -300,10 +227,7 @@ pub fn where_clauses_from_value(
     value: &Value,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<WhereClause>, Error> {
-    crate::query::drive_document_count_query::drive_dispatcher::where_clauses_from_value(
-        value,
-        platform_version,
-    )
+    count_dispatcher::where_clauses_from_value(value, platform_version)
 }
 
 /// Parse the wire-CBOR `Value::Array` shape into structured

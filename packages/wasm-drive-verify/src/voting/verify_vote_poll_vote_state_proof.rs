@@ -98,10 +98,7 @@ pub fn verify_vote_poll_vote_state_proof(
         .map_err(|e| JsValue::from_str(&format!("Failed to resolve query: {:?}", e)))?;
 
     let (root_hash, execution_result) = resolved_query
-        .verify_vote_poll_vote_state_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
-            platform_version,
-        )
+        .verify_vote_poll_vote_state_proof(supported_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert execution result to JS object

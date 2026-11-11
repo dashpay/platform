@@ -50,10 +50,10 @@ struct IdentityRow: View {
                         HStack(spacing: 4) {
                             Text(identity.displayName)
                                 .font(.headline)
-                                .foregroundColor(identity.mainDpnsName != nil || identity.dpnsName != nil ? .blue : .primary)
+                                .foregroundColor(identity.ownedMainDpnsName != nil || identity.dpnsName != nil ? .blue : .primary)
 
                             // Show star icon if this is the selected main name
-                            if identity.mainDpnsName != nil {
+                            if identity.ownedMainDpnsName != nil {
                                 Image(systemName: "star.fill")
                                     .font(.caption)
                                     .foregroundColor(.yellow)
@@ -61,7 +61,7 @@ struct IdentityRow: View {
                         }
 
                         // Show alias as subtitle if we're displaying a DPNS name
-                        if (identity.mainDpnsName != nil || identity.dpnsName != nil),
+                        if (identity.ownedMainDpnsName != nil || identity.dpnsName != nil),
                            let alias = identity.alias {
                             Text(alias)
                                 .font(.caption)
@@ -167,7 +167,7 @@ struct IdentityRow: View {
             // Fetch a DPNS name if we don't already have one — but
             // only once (silent failure), since not every identity
             // has a DPNS name and the request can 404.
-            if identity.dpnsName == nil && identity.mainDpnsName == nil {
+            if identity.dpnsName == nil && identity.ownedMainDpnsName == nil {
                 if let usernames = try? await sdk.dpnsGetUsername(
                     identityId: identity.identityIdBase58,
                     limit: 1

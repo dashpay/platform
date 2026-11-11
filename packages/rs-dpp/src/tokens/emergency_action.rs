@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::status::TokenStatus;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -20,10 +24,10 @@ pub enum TokenEmergencyAction {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenEmergencyAction {}
+impl JsonConvertible for TokenEmergencyAction {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenEmergencyAction {}
+impl ValueConvertible for TokenEmergencyAction {}
 
 impl TokenEmergencyAction {
     pub fn paused(&self) -> bool {

@@ -9,7 +9,6 @@ use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorums
 use dapi_grpc::platform::v0::get_current_quorums_info_response::{
     GetCurrentQuorumsInfoResponseV0, ValidatorSetV0, ValidatorV0,
 };
-use dpp::dashcore::hashes::Hash;
 
 impl<C> Platform<C> {
     pub(super) fn query_current_quorums_info_v0(
@@ -41,11 +40,7 @@ impl<C> Platform<C> {
                     quorum_hash: validator_set.quorum_hash().as_byte_array().to_vec(),
                     core_height: validator_set.core_height(),
                     members,
-                    threshold_public_key: validator_set
-                        .threshold_public_key()
-                        .0
-                        .to_compressed()
-                        .to_vec(),
+                    threshold_public_key: validator_set.threshold_public_key().to_bytes().to_vec(),
                 }
             })
             .collect();

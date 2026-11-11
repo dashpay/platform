@@ -15,7 +15,15 @@ mod deletion_tests {
             PlatformVersion::latest().protocol_version,
             // v14: the deleted document carries the contract-version stamp
             // (one stored byte, five estimated), shifting processing costs
-            1700360, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // Protocol version 14 adds +740 per document write (the contract's version
+            // item is one more node to rehash) and the larger DashPay v2 schema
+            // increases byte-billed contract-tree reads.
+            // The app-connect and moderation charters contracts each add one sibling to the
+            // genesis contracts tree, increasing the bytes billed when reading that tree
+            // (protocol 14 only). The decision proposals and token market contracts add two more
+            // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
+            // DashPay v3's privateContactRequest type makes its sibling node larger (+2_860).
+            1773020,
         )
         .await;
     }
@@ -100,6 +108,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -283,6 +294,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -503,7 +522,7 @@ mod deletion_tests {
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        let document = note_document_type
+        let mut document = note_document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity.id(),
@@ -513,6 +532,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(note_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut altered_document = document.clone();
         altered_document.set_revision(Some(1));
@@ -750,6 +772,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -924,6 +954,14 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(
+                contact_request_document_type,
+                &entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document.set(
             "toUserId",
@@ -932,6 +970,9 @@ mod deletion_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
+        // an IV plus whole AES blocks, as the label's `encryptedFor` requires from protocol
+        // version 15
+        document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
 
         let mut altered_document = document.clone();
 
@@ -1203,6 +1244,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1382,6 +1426,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1556,7 +1603,7 @@ mod deletion_tests {
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        let document = preorder_document_type
+        let mut document = preorder_document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity.id(),
@@ -1566,6 +1613,9 @@ mod deletion_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(preorder_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut altered_document = document.clone();
 

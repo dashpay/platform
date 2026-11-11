@@ -27,11 +27,20 @@
 //!   `key` (each entry's `key` is `serialize_value_for_key(in_field, v)`).
 //! - `group_by = [range_field]` / `[in_field, range_field]`
 //!   (distinct walk): one entry per distinct value in the range
-//!   (compound queries: per `(in_key, key)` pair). Zero-count
-//!   ranges are simply absent — the range itself is unbounded so
-//!   there's no enumerable key set to ever-emit.
+//!   (compound queries: per `(in_key, key)` pair). A value with no
+//!   documents is absent, except on an index that can hold an empty
+//!   group (Drive's `index_keeps_empty_groups`: one a preallocated or
+//!   an `outlivesDelete` index shares its levels with, a
+//!   `summableOffCountIndex` counter at zero included): there it comes
+//!   back with `count: Some(0)`, counted in the page's limit. A short
+//!   page is not proof the range ended: across an `IN`, grovedb also
+//!   charges the limit for an `IN` value whose range holds nothing, and
+//!   a `nullSearchable: false` index's empty null-key group is counted
+//!   and left out when the range includes the empty key.
 
-use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
+use crate::documents::count_proof_helpers::{
+    assert_select_is_count, check_count_request, verify_count_query,
+};
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dash_context_provider::ContextProvider;
@@ -42,6 +51,13 @@ use drive_proof_verifier::{DocumentSplitCounts, FromProof};
 impl FromProof<DocumentQuery> for DocumentSplitCounts {
     type Request = DocumentQuery;
     type Response = GetDocumentsResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        check_count_request(request, false, platform_version)
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -57,7 +73,7 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
         assert_select_is_count(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_count_query(request, response, platform_version, provider)?;
+            verify_count_query(request, response, false, platform_version, provider)?;
         Ok((entries.map(DocumentSplitCounts::from_verified), mtd, proof))
     }
 }

@@ -14,8 +14,70 @@
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_count_query::DriveDocumentCountQuery;
-use crate::query::WhereClause;
+use crate::query::{WhereClause, WhereOperator};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
+
+/// Key the clauses of a count, sum, average, ranked or having request that read
+/// the elements of a typed array (protocol version 14) as the index levels of
+/// the array are keyed: `contains` as an equality on one element's key,
+/// `containsAny` as an `in` over several. The aggregate surfaces then serve
+/// them as any equality or `in`, each element a group of its own. Every other
+/// clause passes through unchanged.
+///
+/// A clause on a typed array must be one of the two, with values that key as
+/// its elements, and a clause reading elements must name a typed array
+/// ([`WhereClause::validate_array_element_clause`]): the marker is gone once a
+/// clause is keyed, so this is where the field's type is judged.
+/// `grouped_by_in` says whether the request is grouped by its `In` field
+/// alone (a `containsAny` routes as one): only then, and without a range
+/// clause, does it answer per element when it reads several
+/// ([`answers_per_element`]). A total over several elements would count a
+/// document once per element it holds, so it is refused. The ranked and
+/// having surfaces and a count sub-query read one element at most, and pass
+/// `false`.
+pub fn key_array_element_clauses(
+    clauses: Vec<WhereClause>,
+    document_type: DocumentTypeRef,
+    grouped_by_in: bool,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<WhereClause>, Error> {
+    let several_elements_allowed = answers_per_element(grouped_by_in, &clauses);
+    clauses
+        .into_iter()
+        .map(|mut clause| {
+            clause.validate_array_element_clause(document_type, platform_version)?;
+            if !clause.operator.reads_array_elements() {
+                return Ok(clause);
+            }
+            if clause.operator == WhereOperator::ContainsAny && !several_elements_allowed {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "containsAny on \"{}\" is only answered grouped by \"{}\" alone, one total \
+                     per element, and without a range clause: a total over several elements \
+                     would count a document once per element it holds; read each element \
+                     with contains otherwise",
+                    clause.field, clause.field
+                ))));
+            }
+            clause.operator = clause.operator.as_key_operator();
+            Ok(clause)
+        })
+        .collect()
+}
+
+/// Whether a count, sum or average request reading several elements of a
+/// typed array (`containsAny`) answers one total per element: grouped by the
+/// `In` field alone (`containsAny` routes as one, so it is grouped by the
+/// array), with no range clause, over which the surfaces fold a group's
+/// totals. Applied by [`key_array_element_clauses`] to the clauses it keys,
+/// for the aggregate dispatchers and the SDK proof verifiers alike, so a
+/// verifier refuses exactly the totals the server refuses.
+fn answers_per_element(grouped_by_in: bool, where_clauses: &[WhereClause]) -> bool {
+    grouped_by_in
+        && !where_clauses
+            .iter()
+            .any(|clause| DriveDocumentCountQuery::is_range_operator(clause.operator))
+}
 
 /// Run the system-wide where-clause validator on a structured
 /// `Vec<WhereClause>` and canonicalize same-field range pairs into

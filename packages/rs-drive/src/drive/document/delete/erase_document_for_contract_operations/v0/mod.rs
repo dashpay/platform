@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -11,12 +11,13 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{
-    Element, EstimatedLayerInformation, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg,
-    TreeType,
-};
+use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg, TreeType};
 
-use crate::drive::document::paths::{document_history_path, document_lifecycle_path};
+use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
+use crate::drive::document::paths::{
+    contract_documents_primary_key_path, document_history_path, document_lifecycle_path,
+};
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -39,8 +40,8 @@ impl Drive {
     /// revisions of an already deleted document.
     ///
     /// Revisions go newest first, so the remnant a partial erasure leaves behind
-    /// is the document's oldest content and the retained sequence stays
-    /// contiguous from one. The chunk is bounded by
+    /// is the document's oldest content, preserving any existing revision gaps.
+    /// The chunk is bounded by
     /// `max_document_revisions_erased_per_transition`, and the enumeration asks
     /// for one revision more than it may remove so that it knows, before
     /// emitting anything, whether this chunk is the last one.
@@ -60,9 +61,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -78,6 +77,12 @@ impl Drive {
                 "erasing retained revisions is not available at this protocol version",
             )))?;
 
+        if chunk == 0 || chunk == u16::MAX {
+            return Err(Error::Drive(DriveError::InvalidInput(
+                "an erase chunk must allow at least one revision and a following probe".to_string(),
+            )));
+        }
+
         let history_path = document_history_path(
             contract.id_ref().as_bytes(),
             document_type.name().as_str(),
@@ -85,6 +90,10 @@ impl Drive {
         );
         let lifecycle_path =
             document_lifecycle_path(contract.id_ref().as_bytes(), document_type.name().as_str());
+        let primary_path = contract_documents_primary_key_path(
+            contract.id_ref().as_bytes(),
+            document_type.name().as_str(),
+        );
         // Worst-case sizing: a chunk may hold the type's largest documents, and
         // the admission estimate has to cover that whatever this document
         // actually stores.
@@ -104,6 +113,8 @@ impl Drive {
                 document_id,
                 &history_path,
                 &lifecycle_path,
+                primary_path,
+                document_type.primary_key_tree_type(platform_version)?,
                 chunk,
                 revision_size,
                 block_info,
@@ -125,6 +136,21 @@ impl Drive {
             transaction,
             platform_version,
         )?;
+        if self
+            .grove_get_raw_optional(
+                (&primary_path).into(),
+                document_id.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut batch_operations,
+                &platform_version.drive,
+            )?
+            .is_some()
+        {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a document has both a current pointer and a lifecycle record".to_string(),
+            )));
+        }
 
         let removable = self.enumerate_newest_revision_keys(
             &history_path,
@@ -200,20 +226,20 @@ impl Drive {
                 return Ok(batch_operations);
             }
             let (time_ms, revision) = Self::decode_revision_key(&removable[0])?;
-            // Written with the flags of the record it replaces, so the deleter
-            // stays the beneficiary of the bytes it paid for; any bytes the new
-            // fields add are charged to this erase and flagged as such by the
-            // batch apply.
+            let record = record.starting_erase_at(block_info.time_ms, time_ms, revision);
+            if !record.is_coherent() {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "a lifecycle record is incoherent".to_string(),
+                )));
+            }
+            // Preserve the record's refund beneficiary. The eraser pays for
+            // rewriting the record, including any encoded-size growth, while
+            // the retained flags still name the beneficiary of its later removal.
             self.batch_insert::<0>(
                 PathKeyElement((
                     lifecycle_path,
                     document_id.to_vec(),
-                    Element::Item(
-                        record
-                            .starting_erase_at(block_info.time_ms, time_ms, revision)
-                            .serialize_to_bytes()?,
-                        flags,
-                    ),
+                    Element::Item(record.serialize_to_bytes()?, flags),
                 )),
                 &mut batch_operations,
                 &platform_version.drive,
@@ -244,10 +270,10 @@ impl Drive {
         let mut query = Query::new_with_direction(false);
         // Exactly the revision key space: the current pointer lives in the
         // primary-key tree and is not in this subtree at all.
-        query.insert_range_from(encode_u64(0)..);
+        query.insert_all();
         let path_query = PathQuery::new(
             history_path.to_vec(),
-            SizedQuery::new(query, Some(chunk.saturating_add(1)), None),
+            SizedQuery::new(query, Some(chunk + 1), None),
         );
         let (results, _) = self.grove_get_raw_path_query(
             &path_query,
@@ -292,10 +318,13 @@ impl Drive {
                 "a lifecycle record is not an item",
             )));
         };
-        Ok((
-            DocumentLifecycleRecord::deserialize_from_bytes_trusted(&bytes)?,
-            flags,
-        ))
+        let record = DocumentLifecycleRecord::deserialize_from_bytes_trusted(&bytes)?;
+        if !record.is_coherent() {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a lifecycle record is incoherent".to_string(),
+            )));
+        }
+        Ok((record, flags))
     }
 
     /// Splits a revision key into the block time and history sequence it
@@ -334,6 +363,8 @@ impl Drive {
         document_id: Identifier,
         history_path: &[Vec<u8>],
         lifecycle_path: &[Vec<u8>],
+        primary_path: [&[u8]; 5],
+        primary_tree_type: TreeType,
         chunk: u16,
         revision_size: u32,
         block_info: &BlockInfo,
@@ -341,6 +372,19 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.grove_get_raw(
+            (&primary_path).into(),
+            document_id.as_slice(),
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: primary_tree_type,
+                query_target: QueryTarget::QueryTargetValue(
+                    DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                ),
+            },
+            transaction,
+            &mut batch_operations,
+            &platform_version.drive,
+        )?;
         // The enumeration reads one revision more than the chunk removes, and
         // reads each of them whole.
         for sequence in 1..=chunk as u64 + 1 {

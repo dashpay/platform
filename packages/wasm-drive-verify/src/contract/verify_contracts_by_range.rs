@@ -59,7 +59,7 @@ pub fn verify_contracts_by_range(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, page) = Drive::verify_contracts_by_range(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         start_at,
         limit,
         ids_only,

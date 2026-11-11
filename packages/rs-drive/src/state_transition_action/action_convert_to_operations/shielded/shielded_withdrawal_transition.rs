@@ -134,6 +134,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 
@@ -561,7 +563,6 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&tx),
                     platform_version,
-                    None,
                 )
                 .expect("apply write ops");
             let actual_cost = fee_result.total_base_fee();

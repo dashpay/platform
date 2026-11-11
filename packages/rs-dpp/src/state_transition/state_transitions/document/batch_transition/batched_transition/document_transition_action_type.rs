@@ -29,6 +29,8 @@ impl DocumentTransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
             DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
             DocumentTransition::IndexOnlyDelete(_) => DocumentTransitionActionType::IndexOnlyDelete,
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => DocumentTransitionActionType::Erase,
         }
     }

@@ -140,9 +140,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         }
 
         // Distribute storage fees accumulated during previous epoch
+        // The previous epoch index is read only by add_distribute_storage_fee_to_epochs_operations
+        // v1 (protocol version 14 on); v0, selected up to protocol version 13, ignores it
         let storage_fee_distribution_outcome = self
             .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
+                epoch_info.previous_epoch_index(),
                 transaction,
                 &mut inner_batch,
                 platform_version,
@@ -221,7 +224,6 @@ mod tests {
                         &BlockInfo::default(),
                         Some(transaction),
                         platform_version,
-                        None,
                     )
                     .expect("should apply batch");
             }
@@ -257,6 +259,7 @@ mod tests {
                 storage_fee: 1000000000,
                 processing_fee: 10000,
                 refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 10000)]),
+                ..Default::default()
             }
             .into();
 
@@ -296,7 +299,6 @@ mod tests {
                     &BlockInfo::default(),
                     Some(transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should apply batch");
 

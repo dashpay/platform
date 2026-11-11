@@ -1,12 +1,11 @@
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
+use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllReference, Mix};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::collections::HashMap;
 
 use crate::drive::constants::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
@@ -32,7 +31,7 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v1(
         primary_key_path: [&[u8]; 5],
         document_type: DocumentTypeRef,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if !document_type.documents_keep_history() {

@@ -34,7 +34,7 @@
 #![allow(unused_variables)]
 
 extern crate core;
-use dpp::bls_signatures::SecretKey as BlsPrivateKey;
+use dpp::bls::SecretKey as BlsPrivateKey;
 mod addresses_with_balance;
 mod execution;
 mod failures;

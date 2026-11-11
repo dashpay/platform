@@ -138,6 +138,7 @@ pub trait TransactionalApplication<'a> {
 
 pub trait BlockExecutionApplication {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>>;
+    fn unsigned_withdrawal_txs_by_round(&self) -> &RwLock<UnsignedWithdrawalTxsByRound>;
 }
 ```
 

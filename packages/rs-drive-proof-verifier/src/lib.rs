@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::result_large_err)]
 
+pub mod block_proof;
 /// Errors that can occur during proof verification
 pub mod error;
 /// Implementation of proof verification
@@ -95,7 +96,9 @@ pub use proof::{FromProof, Length};
 // Re-export context provider types from dash-context-provider
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
-pub use dash_context_provider::{ContextProvider, ContextProviderError, DataContractProvider};
+pub use dash_context_provider::{
+    ContextProvider, ContextProviderError, DataContractProvider, QuorumKeyFuture,
+};
 
 /// From Request
 pub mod from_request;

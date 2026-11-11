@@ -45,7 +45,7 @@ pub fn verify_contract(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, contract_option) = Drive::verify_contract(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         contract_known_keeps_history,
         is_proof_subset,
         in_multiple_contract_proof_form,

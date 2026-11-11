@@ -103,7 +103,15 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
             FunctionOp::new_with_byte_count(HashFunction::Sha256_2, preimage_size),
         )];
         let mut missing_entry = false;
-        for index in document_type.indexes().values() {
+        // A delete leaves the entries of an index that outlives it, and
+        // carries no value only such an index is keyed by: it neither
+        // checks nor clears them. A summableOffCountIndex index keeps no entry to
+        // check: it yields no paths.
+        for index in document_type
+            .indexes()
+            .values()
+            .filter(|index| !index.outlives_delete)
+        {
             let entry_exists = platform
                 .drive
                 .index_only_entry_commitment_matches(
@@ -128,15 +136,15 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
         // Every probe is a stateful grove read (plus the row-commitment
         // hash) validators actually perform — bill them all, on the
         // not-found path included.
-        let fee_result = drive::drive::Drive::calculate_fee(
-            None,
-            Some(probe_operations),
-            &block_info.epoch,
-            platform.drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )
-        .map_err(Error::Drive)?;
+        let fee_result = platform
+            .drive
+            .calculate_fee(
+                None,
+                Some(probe_operations),
+                &block_info.epoch,
+                platform_version,
+            )
+            .map_err(Error::Drive)?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
         if missing_entry {

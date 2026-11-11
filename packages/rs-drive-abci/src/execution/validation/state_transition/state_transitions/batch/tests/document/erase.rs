@@ -9,7 +9,7 @@ use super::*;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::document_type::accessors::DocumentTypeV3Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -120,7 +120,7 @@ impl Fixture {
             .document_type_for_name(document_type_name)
             .expect("expected the document type");
         let entropy = Bytes32::random_with_rng(&mut rng);
-        let document = document_type
+        let mut document = document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 owner.id(),
@@ -130,6 +130,10 @@ impl Fixture {
                 platform_version,
             )
             .expect("expected a random note");
+
+        document
+            .set_id_for_creation(document_type, &entropy.0, 1, platform_version)
+            .expect("expected the nonce-derived document id");
 
         let mut fixture = Fixture {
             platform,
@@ -416,6 +420,39 @@ impl Fixture {
     }
 }
 
+/// Signs a create that deliberately claims a previously assigned id.
+async fn rewrite_create_id(
+    transition: StateTransition,
+    id: Identifier,
+    key: &IdentityPublicKey,
+    signer: &SimpleSigner,
+    security_level: SecurityLevel,
+) -> StateTransition {
+    use dpp::state_transition::batch_transition::batched_transition::{BatchedTransition, DocumentTransition};
+    use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+    use dpp::state_transition::batch_transition::BatchTransition;
+
+    let StateTransition::Batch(BatchTransition::V1(mut batch)) = transition else {
+        panic!("expected a format 1 batch transition");
+    };
+    let BatchedTransition::Document(DocumentTransition::Create(create)) = &mut batch.transitions[0]
+    else {
+        panic!("expected a document create");
+    };
+    create.base_mut().set_id(id);
+    let mut rebuilt: StateTransition = BatchTransition::V1(batch).into();
+    rebuilt
+        .sign_external(
+            key,
+            signer,
+            Some(|_: Identifier, _: String| Ok(security_level)),
+        )
+        .await
+        .expect("expected to sign the create with its claimed id");
+    rebuilt
+}
+
 /// Rebuilds a signed batch, swapping its single delete transition for an erase
 /// carrying the same base — including the token payment information an erase
 /// must refuse.
@@ -497,8 +534,7 @@ async fn should_reject_a_second_delete_of_the_same_document() {
     );
 }
 
-/// The id stays taken while the revisions are retained, even though nothing in
-/// the primary-key tree says so.
+/// The nonce-derived id cannot be reused while retained revisions survive.
 #[tokio::test]
 async fn should_reject_a_create_over_a_deleted_documents_id() {
     let mut fixture = Fixture::new("note").await;
@@ -506,9 +542,8 @@ async fn should_reject_a_create_over_a_deleted_documents_id() {
 
     let platform_version = PlatformVersion::latest();
     let document = fixture.document.clone();
-    // The same id the deleted document had: a document id is derived from its
-    // creator, contract, type and entropy, so re-creating with the same inputs
-    // targets exactly the reserved id.
+    // A fresh nonce derives a different id. Force the retained id into the
+    // signed transition to verify consensus rejects an attempt to reuse it.
     let entropy = fixture.entropy;
     let transition = BatchTransition::new_document_creation_transition_from_document(
         document,
@@ -524,6 +559,14 @@ async fn should_reject_a_create_over_a_deleted_documents_id() {
     )
     .await
     .expect("expected a create transition");
+    let transition = rewrite_create_id(
+        transition,
+        fixture.document.id(),
+        &fixture.owner_key,
+        &fixture.owner_signer,
+        fixture.document_type("note").security_level_requirement(),
+    )
+    .await;
     let result = process(
         &mut fixture.platform,
         transition.serialize_to_bytes().expect("serialized"),
@@ -531,7 +574,7 @@ async fn should_reject_a_create_over_a_deleted_documents_id() {
     assert_matches!(
         result,
         StateTransitionExecutionResult::PaidConsensusError {
-            error: ConsensusError::StateError(StateError::DocumentAlreadyPresentError(_)),
+            error: ConsensusError::BasicError(BasicError::InvalidDocumentTransitionIdError(_)),
             ..
         }
     );
@@ -973,7 +1016,15 @@ async fn should_reject_a_create_that_follows_a_delete_of_the_same_id_in_one_bloc
         None,
     )
     .await
-    .expect("expected a create transition")
+    .expect("expected a create transition");
+    let create = rewrite_create_id(
+        create,
+        fixture.document.id(),
+        &fixture.owner_key,
+        &fixture.owner_signer,
+        fixture.document_type("note").security_level_requirement(),
+    )
+    .await
     .serialize_to_bytes()
     .expect("serialized");
     fixture.nonce += 1;
@@ -1143,5 +1194,56 @@ async fn should_refuse_an_erase_at_protocol_14_as_an_unsupported_version() {
             dpp::consensus::ConsensusError::BasicError(BasicError::UnsupportedVersionError(_))
         ),
         "protocol 14 must refuse the erase kind by its version bounds"
+    );
+}
+
+#[tokio::test]
+async fn should_allow_the_new_owner_to_delete_and_erase_a_transferred_history() {
+    let mut fixture = Fixture::new("transferableNote").await;
+    let version = PlatformVersion::latest();
+    let mut transferred = fixture.document.clone();
+    transferred.set_revision(Some(2));
+    let transition = BatchTransition::new_document_transfer_transition_from_document(
+        transferred,
+        fixture.document_type("transferableNote"),
+        fixture.stranger.id(),
+        &fixture.owner_key,
+        fixture.nonce,
+        0,
+        None,
+        &fixture.owner_signer,
+        version,
+        None,
+    )
+    .await
+    .unwrap();
+    fixture.nonce += 1;
+    assert_successful(
+        &process(
+            &mut fixture.platform,
+            transition.serialize_to_bytes().unwrap(),
+        ),
+        "transfer to the new owner",
+    );
+    assert_matches!(
+        fixture.delete_as_owner("transferableNote").await,
+        StateTransitionExecutionResult::PaidConsensusError { .. }
+    );
+    std::mem::swap(&mut fixture.owner, &mut fixture.stranger);
+    std::mem::swap(&mut fixture.owner_key, &mut fixture.stranger_key);
+    std::mem::swap(&mut fixture.owner_signer, &mut fixture.stranger_signer);
+    std::mem::swap(&mut fixture.nonce, &mut fixture.stranger_nonce);
+    fixture.document.set_owner_id(fixture.owner.id());
+    assert_successful(
+        &fixture.delete_as_owner("transferableNote").await,
+        "the current owner deletes",
+    );
+    assert_successful(
+        &fixture.erase("transferableNote", true, None).await,
+        "the current owner erases",
+    );
+    assert_matches!(
+        fixture.lifecycle("transferableNote"),
+        DocumentLifecycleState::Absent
     );
 }

@@ -82,9 +82,14 @@ pub struct EstablishedContact {
     /// lets the sweep detect a stale account and tear it down + rebuild.
     ///
     /// Reset to `None` on (re-)establish and on rotation (the account must be
-    /// rebuilt from the new key material). A cold restart that does not
-    /// restore this field leaves it `None`, which conservatively forces one
-    /// rebuild on the next sweep — self-healing either way.
+    /// rebuilt from the new key material). Persisted on the contact's
+    /// established rows (`ContactRequestFFI::external_account_reference`, the
+    /// Kotlin `dashpay_contact_requests.externalAccountReference` column) so
+    /// a cold restart restores it and a healthy account is NOT rebuilt. A
+    /// host that does not carry it leaves it `None`, which conservatively
+    /// forces one rebuild on the next sweep — self-healing, but on every
+    /// launch; the rebuild used to also rewind the filter-scan cursor, which
+    /// is the per-launch re-walk of dashpay/platform#4302.
     #[cfg_attr(feature = "serde", serde(default))]
     pub external_account_reference: Option<u32>,
 }

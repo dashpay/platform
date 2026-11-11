@@ -28,11 +28,14 @@ stores nothing in primary storage. The index entries ARE the rows:
       → Item(<row commitment>, flags)
 ```
 
-The **terminal** — a per-index keyword defaulting to `$ownerId`, or any
-refersTo-typed identifier property (identity, contract, token, permanent
-document) — is the member key, sitting exactly where a normal non-unique
-index keys by document id; the element is an `Item` instead of a
-`Reference` because there is nothing to point at. The `0` storage marker,
+The **terminal** is the member key, sitting exactly where a normal
+non-unique index keys by document id; the element is an `Item` instead of
+a `Reference` because there is nothing to point at. It is a per-index
+keyword defaulting to `$ownerId`. It may name any schema property a prefix
+position could carry (an identifier with or without a `refersTo`, a
+bounded byte array or string, an integer, a boolean, a date), or an
+ordered **list** of such properties (a *composite* terminal, whose member
+key is their encoded values concatenated). The `0` storage marker,
 value-tree types, and the count/sum/ranked tree derivation are
 byte-identical to the ordinary non-unique layout, which is what lets the
 protocol v14 ranked machinery (see
@@ -40,6 +43,87 @@ protocol v14 ranked machinery (see
 types unchanged: "the five most-liked posts in `#dash`" is an
 O(log n + k) read with an O(log n + k) proof, and Items count in
 count/ranked trees exactly as References do.
+
+The member key is the terminal value's **tree-key encoding**, produced by
+the same functions the prefix levels use (the walkers and probes through
+`get_raw_for_document_type`, queries and executed proofs through
+`serialize_value_for_key`, synthesis through `deserialize_value_for_key`),
+so nothing about it is specific to a 32-byte identifier: a 33-byte public
+key, a short string or an integer keys the `0` bucket exactly as it would
+key a prefix level, and fee estimation sizes the member key by the
+terminal property's declared bound (`index_only_terminal_max_key_size`)
+rather than by a fixed 32. Structural uniqueness spans the terminal value:
+one entry per (prefix values, terminal value), so two documents by one
+owner that differ only in a scalar terminal are two entries under the
+same prefix.
+
+**Composite terminals.** `"terminal": ["kind", "$ownerId"]` keys the
+member by `encode(kind) ‖ owner`. Every component but the last must be
+fixed width (a byte array with `minItems == maxItems`, an identifier, an
+integer, a boolean, a date), so equality on the leading components is a
+clean key range and synthesis can split the key back; a string can only
+be the last component; the whole key is capped at 255 bytes. Uniqueness
+spans the whole key. Queries bind the components in order: equality
+clauses on the leading ones, then at most one range or `in` clause on the
+next (ordered by it), nothing on the rest. The lowering pads the bound
+prefix with `0xFF` to the key cap for the upper bound of "every key under
+this prefix", and addresses the key itself when the bound component is
+the last one. After equality-bound components are ignored, `orderBy` must
+start at the first remaining component and follow component order without
+gaps, with the same direction for every listed component. A single member-key
+walk cannot sort by a later component alone or mix ascending and descending
+components.
+
+**Flat indexes.** An index with no `properties` at all is *flat*: its
+entries live directly under a level of their own, keyed by a zero byte
+followed by each terminal component name preceded by a zero byte
+(`"\0appEphemeralPubKeyHash\0$ownerId"`), which no property-name tree can
+collide with since property names never contain a zero byte. This level key,
+including its separators, must also fit within 255 bytes:
+
+```text
+[DataContractDocuments, contract_id, 1, <doctype>, "\0<c1>\0<c2>…", 0, <c1 ‖ c2 ‖ …>]
+      → Item(<row commitment> [‖ <entry payload>], flags)
+```
+
+The flat level is registration-time structure, created with the
+property-name trees and kept when the last entry goes (the prune stops at
+its `0` bucket, as on a preallocated index), so every entry costs the same.
+There is no prefix level for an aggregate, a ranking, a time grid, a skip
+set or a preallocation to apply to, so a flat index admits none of
+those keywords. A clause-free query on a type with a flat index scans the
+flat level (every other indexOnly type refuses the by-id shape). Non-proof
+responses require this index to cover every property, including optional
+ones, just as filtered queries do; otherwise use a proved projection.
+
+**The entry payload.** `entryPayload: ["walletEphemeralPubKey",
+"encryptedPayload"]` on the document type names top-level properties that
+live in no index: every entry's item carries them after the 32-byte row
+commitment, each length-framed (`u16` big-endian), in property-name order:
+the type's value slot. Byte arrays store their raw bytes and strings store
+UTF-8; other scalars use their tree-key encoding. The length frame preserves
+empty byte arrays and strings without null sentinels, and distinguishes an
+empty string from a NUL string. A payload
+property must be required, scalar and bounded (the sum of the bounds is
+capped by the field value limit), and appears in no index as a property
+or a terminal component. It is still committed (the commitment hashes
+every present property, a payload value through the uncapped payload
+encoding), so the delete probes and the executed-transition verifier keep
+comparing the item's first 32 bytes only, and synthesis decodes the rest
+of the proved element. With more than one index the payload rides in
+every entry; fee estimation sizes the item by the commitment plus the
+payload bound. Together, a flat composite terminal and an entry payload
+make a key-value table:
+
+```json
+"indices": [{ "name": "byRequest", "terminal": ["appEphemeralPubKeyHash", "$ownerId"] }],
+"entryPayload": ["walletEphemeralPubKey", "encryptedPayload"]
+```
+
+lands at `[…, "\0appEphemeralPubKeyHash\0$ownerId", 0, hash ‖ owner] →
+Item(commitment ‖ len ‖ ciphertext ‖ len ‖ wallet key)`, and a query on
+the hash returns every responder's owner id with the payload decoded off
+the item, as one proof.
 
 **`timeRange` buckets** compose too: a bucketed indexOnly index writes
 one commitment entry per containing bucket under the grid-qualified
@@ -54,6 +138,32 @@ the proof index; and document synthesis over bucketed entries is refused
 with guidance — the bucket level carries bucket-start granularity, not
 the document's timestamp, and the raw entries are served by the type's
 non-bucketed indexes.
+
+**Typed arrays** compose as well: an index naming a typed array writes
+one commitment entry per distinct element of the document's list (times
+its windows when it also buckets), and none for an empty, `null` or absent
+list, through the same `level_keys` the stored types' walkers use;
+`index_only_entry_paths_and_key` fans the probe paths out the same way
+(`get_raw_array_elements_for_document_type`), so the delete probe, the
+batch entry tracker and the fee estimates see every element. The create's
+state probe skips such an index: the covering index below is probed and
+refuses any collision first. Such an index is no uniqueness rule of its own: registration
+wants another index that keeps one entry per document to have its whole
+key inside the array index's key without the array, so two documents could
+only share an element's entry by sharing that index's entry first. Its
+array declares `uniqueItems`, and it is never the proof index or a
+`summableOffCountIndex` source. It is `preallocated` or a
+`summableOffCountIndex` index only when a `where` equality binds the array
+to a typed array of the referenced document (see
+[Preallocated index paths](#preallocated-index-paths) and
+[Counters](#counters-summableoffcountindex)); a counter index keeps no
+entries, so it needs no other index to keep its documents apart.
+Each entry's commitment is a double-SHA256 the insert bills by its
+preimage (`Sha256_2` function operation; the dry run bills the widest
+preimage the type allows, `index_only_row_commitment_max_preimage_size`),
+so the list's length and the fan-out are paid for.
+Synthesis rebuilds an entry under an element as a document listing that
+element alone.
 
 The **sum axes** compose the same way: a `summable: "<prop>"` index
 stores `ItemWithSumItem(<row commitment>, <amount>)` terminals — the same
@@ -70,16 +180,25 @@ amount is one of the committed properties.
 **Governing principle: only what is in the indexes exists and is
 recoverable.** Prefix property values live in the path, the terminal id in
 the member key, `$ownerId` and `$createdAt` wherever an index carries them.
-There is no document beyond that.
+There is no document beyond that. One kind of property may sit in no
+entry-keeping index: one a `summableOffCountIndex` index's source fixes
+through a reference's `where` (a like's `postAuthor`, kept only by
+`byAuthorPost`'s counters). Such a property, when no entry-keeping index
+holds it, is lacking from a document read back, and its value is the
+referenced document's, so a client rebuilding the row for a delete reads it
+from there.
 
 ## The row commitment
 
 Each entry's 32-byte payload is
 `hash_double(owner ‖ (name ‖ length ‖ raw index bytes)* ‖ [$createdAt])`
 over the document's PRESENT properties in sorted-name order
-(`index_only_row_commitment`) — every required property must be present,
-and an optional property (a `skipIfAbsent` trigger, the only optional
-kind) contributes nothing when absent, not even its name. It binds the
+(`index_only_row_commitment`), `$createdAt` included unless only indexes
+whose entries outlive a delete involve it
+(`index_only_row_commits_created_at`, see
+[below](#entries-that-outlive-a-delete-outlivesdelete)) — every required property must be present,
+and an optional property (a skip property of a `skipIfAbsent` index, the
+only optional kind) contributes nothing when absent, not even its name. It binds the
 independently stored index projections of one document back into one
 logical row: a delete recomputes the commitment from its submitted
 values, and every probed entry must carry it. A values tuple spliced from
@@ -91,6 +210,13 @@ present-but-empty (`name ‖ 00000000`) hash differently, and the variable
 present-set stays unambiguous because property names never contain a
 zero byte while every length prefix starts with one.
 
+A typed array's raw bytes are its whole list in the document's order,
+`(u32 length ‖ element key)*`, each element keyed as its entries are, so
+a delete carrying the list reordered, shortened or changed fails every
+probe, the probes of indexes not naming the array included. An empty,
+`null` and absent list write the same entries (none under the array's
+indexes) and are committed alike, as absent.
+
 ## Constraint matrix (parse-time, `apply_index_only`)
 
 The on-disk layout depends on every one of these, so they run regardless
@@ -99,65 +225,84 @@ aggregate keywords follow:
 
 | Constraint | Why |
 |---|---|
-| every property in `required` — except a `skipIfAbsent` index's trigger; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
-| every non-trigger property appears in ≥ 1 **non-skip** index (prefix or terminal) | only indexed values exist, and a skip index carries no value for trigger-absent documents — covered only there, a property would be validated and committed yet written nowhere |
+| every property in `required` — except a skip property of a `skipIfAbsent` index; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
+| every index holding an optional property skips on it (its skip set is all of its optional properties) | an absent value that did not skip would need the null layout this mode has no equivalent of |
+| every required property appears in ≥ 1 **non-skip** index (prefix or terminal) naming no typed array but, for a required array, itself; every optional property appears in a skip index whose skip set is that property alone | only indexed values exist, and a skip index (or an array index, for an empty list) carries no value for a document it skips: covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
-| ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
-| terminal is `$ownerId` or a single-id refersTo property | the member key must alone be a referable entity id (`identityPublicKey` is compound and rejected) |
+| ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` AND names no typed array: the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
+| an index naming a typed array: another index keeping one entry per document (no `$createdAt`, skip, `outlivesDelete` or typed array) has its whole key inside this index's key without the array (not asked of a `summableOffCountIndex` index, which keeps no entries); the array declares `uniqueItems`; a `preallocated` or `summableOffCountIndex` index has the array bound by a `where` equality with a typed array of the referenced document | the array index writes an entry per element and is no uniqueness rule of its own: the other index keeps two documents from ever sharing one of its entries, and each element has an entry of its own; only an equality puts every document referencing one document under the same elements (`index_only_array_index_error`) |
+| every terminal component is `$ownerId` or a schema property passing the indexed-shape limits (no arrays or objects; byte arrays ≤ 255 bytes, strings ≤ 63 characters); every component but the last is fixed width; the whole key ≤ 255 bytes | the member key is the components' tree-key encodings concatenated, derived by the same functions the prefix levels use; a leading component must be splittable back and rangeable; grovedb caps keys at 255 bytes; other system properties are refused because the `$createdAt` rules walk the prefix properties |
+| no index declares `integerRange` | an entry is keyed by the index's values and terminal, and a bucketed level holds window starts: rows differing only in the bucketed integer would claim the same entry in every window they share |
+| a flat index (no `properties`) admits no countable / summable / ranked / `timeRange` / `integerRange` / `skipIfAbsent` / `preallocated` keyword | there is no prefix level for them to apply to |
+| every `entryPayload` property is a required, bounded, top-level scalar in no index | the entry value has no representation for an absent property, estimation sizes the item by the bounds, and a property is either a key or a value |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
-| `skipIfAbsent` requires its first property to be an optional, top-level schema property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a skip property is an optional, top-level schema property; no ranking sits above the index's deepest skip property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a `summableOffCountIndex` index sums a source holding every document once, holds every source property, and fixes its other properties through unchanging `where` values | see [Counters (summableOffCountIndex)](#counters-summableoffcountindex) |
 
 `indexOnly` and the index set (terminals included, `preallocated` and
 `skipIfAbsent` flags included) are immutable across contract updates — a
 later-added index could never be backfilled, and the walkers derive the
-skip from `required` membership, which therefore cannot drift from
-historical entries either.
+skip from each index's skip set, which therefore cannot drift from
+historical entries either. (Respelling `skipIfAbsent: true` as the array of
+the same properties is no change: both parse to the same skip set.)
 
 ## Conditional participation (skipIfAbsent)
 
-An index may declare `skipIfAbsent: true`: a document that omits the
-index's FIRST property — the **skip trigger** — writes no entry into that
-index at all, and a delete recomputes the same skip from its carried
-values. The trigger is the one property that may leave `required`, and
-the rules keep three views provably equivalent: the write walkers skip a
-top-level branch keyed by an unrequired property (every index through
-such a branch is a skip index — the parser admits an optional property
-only at position 0 of skip indexes, never as a terminal), the probes
-derive zero entry paths from the parsed flag, and the row commitment
-pins the exact present-set so a delete with a different absence pattern
-fails every probe — a skip index can neither be force-pruned nor left
-with an orphan entry.
+An index may declare `skipIfAbsent`: a document that omits a property of
+the index's **skip set** writes no entry into that index at all, and a
+delete recomputes the same skip from its carried values. `true` makes the
+skip set every optional property of the index (on an indexOnly type it
+must be that set anyway, so the array spelling, naming it, parses to the
+same index); a skip property may sit at any position, a `timeRange` window
+included. The skip properties are the only properties that may leave
+`required`, and the rules keep three views provably equivalent: the write
+walkers write an index's entry only for a document carrying its skip set
+(`document_takes_part_in_index`), the probes derive zero entry paths for
+the same documents, and the row commitment pins the exact present-set so
+a delete with a different absence pattern fails every probe — a skip
+index can neither be force-pruned nor left with an orphan entry.
 
-Why the FIRST property: the merged index structure shares prefix levels
-across indexes and prunes empty trees only upward from a terminal. A
-deeper skip would leave the prefix levels above the absent property
-inserted but unterminated — silently charged, never reclaimed. At the
-top of the branch, absence writes nothing at all. (This also makes
-`skipIfAbsent` + `timeRange` structurally impossible: a bucketed source
-is `$createdAt`, which is required whenever indexed.)
+**No stranded trees.** The merged index structure shares levels across
+indexes and prunes empty trees only upward from an entry, so the walkers
+build a level only when an index the document takes part in ends at or
+below it (`level_reaches_entry`). An untagged like under
+`[$createdAt window, hashtag, postId]` still builds the day window shared
+with `byDayPost`, but no `hashtag` branch under it; under a grid that only
+a skip index uses, it builds no window at all. On an indexOnly type every
+index holding an optional property skips on it, so a level keyed by an
+absent value is never reached.
 
 The semantics are a **sparse projection**: the index holds exactly the
-documents carrying its trigger. Counts, ranked reads and absence proofs
-over it answer "among documents with this property" — a proved empty
+documents carrying its skip set. Counts, ranked reads and absence proofs
+over it answer "among documents with these properties" — a proved empty
 position means "no *tagged* like", not "no like". The query router makes
-that opt-in: a skip index is admissible only when the query binds its
-trigger (equality, `in`, range or order-by); the generic matcher alone
-would admit a trigger-unbound query within its difference budget and
-silently omit every trigger-absent row. Structural uniqueness still
-spans the skip boundary — a trigger-absent and a trigger-present
-document colliding on any shared non-skip entry cannot coexist. An
-absent trigger is distinct from a present-but-empty value, which indexes
-normally under its (possibly empty) encoded key.
+that opt-in (`index_admissible_for_skip_if_absent`, in every index picker,
+compiled into the verifier too): a skip index is admissible only when the
+query binds every skip property (equality, `in`, range, order-by, or the
+ranked property); the generic matcher alone would admit an unbound query
+within its difference budget, and an aggregate picker's prefix match could
+stop above a deep skip property, silently omitting every skipped row. A
+ranking never sits above a skip property (refused at registration: no
+query could read it). Structural uniqueness still spans the skip boundary
+— a skipped and a taking-part document colliding on any shared non-skip
+entry cannot coexist. An absent skip property is distinct from a
+present-but-empty value, which indexes normally under its encoded key.
+
+**Coverage.** A document carrying one optional property but missing
+another skips every index holding both, so each optional property needs a
+skip index whose skip set is that property alone: its value is then
+written whenever the document carries it, and the document stays
+deletable by values.
 
 The economics are the point: each ranked index costs roughly the same on
 every write, so a per-hashtag ranked index on a like doctype used to tax
 every like — tagged or not — and forced a `''` sentinel onto the
 referenced post's hashtag. With `byHashtagPost` as a skip index, an
 untagged like pays only for the indexes it actually appears in, and the
-sentinel disappears (see the absence-aware `propertyAgreement` below).
+sentinel disappears (see the absence-aware `where` below).
 
 ## Lifecycle
 
@@ -167,21 +312,39 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   uniqueness constraint over its value projection plus owner — for likes,
   the `[postId]` index is the one-like-per-(post, owner) rule. `refersTo`
   validation runs unchanged (it reads transition values, not storage), so a
-  like on a nonexistent post is rejected — and a `propertyAgreement`
-  declaration on the reference (`{ "hashtag": "hashtag" }`) binds the
-  like's own property to the referenced post's: the referenced document is
+  like on a nonexistent post is rejected, and a `where` declaration on the
+  reference (`{ "hashtag": "hashtag" }`) binds the referenced post's
+  property to the like's own: the referenced document is
   already fetched for the existence check, so the equality comparison adds
   no reads, and a like whose hashtag disagrees with its post's is refused.
-  Absence is part of the agreement, strictly: both sides absent agree, one
+  Absence is part of the comparison, strictly: both sides absent agree, one
   side absent is the same mismatch a differing value would be — a like may
   omit its hashtag exactly when its post has none (anything laxer would
   let likes on tagged posts silently deflate per-tag aggregates), which is
-  what lets an agreement key double as a `skipIfAbsent` trigger with both
-  sides of the reference optional.
+  what lets a compared property double as a `skipIfAbsent` skip property
+  with both sides of the reference optional. The key of an entry, the
+  referenced side, may also name the referenced document's `$ownerId` or
+  `$creatorId` (the referring side must then be an identifier property):
+  `{ "$ownerId": "authorId" }` binds a like to its post's current owner, so an `[authorId, postId]`
+  index can be preallocated and ranked per author. `$ownerId` follows the
+  post through transfers and `$creatorId` never changes; either is checked
+  when the like is written, not when the post later moves. `$creatorId` is
+  only recorded by transferable or tradeable types of a format-1 contract,
+  which contract registration checks before accepting the declaration.
+  The referring side, an entry's value, may in turn be the like's own
+  `$ownerId`, the writer: `{ "$ownerId": "$ownerId" }` lets only the post's
+  current owner create or replace a like on it, `{ "$creatorId": "$ownerId" }`
+  only its original creator. That is a write gate, checked on create and on every
+  replace of the like, not only when its reference changes, since the post
+  may have been transferred in between; a transfer itself is not
+  re-checked, so on a transferable referring type it governs writing, not
+  holding. A writer gate does not make an owner-prefixed index
+  preallocatable.
 - **Delete** is its own transition kind,
   `DocumentIndexOnlyDeleteTransition { base, data }` (`$action:
   "indexOnlyDelete"`), carrying the full value tuple (`$createdAt` under
-  its system key exactly when the type requires it). Delete-by-id and
+  its system key exactly when the row commits to it:
+  `index_only_row_commits_created_at`). Delete-by-id and
   delete-by-values are different operations — different payload,
   authorization model and validation pipeline — so the factory picks the
   KIND from the doctype's storage mode. Validation and the storage layer
@@ -192,6 +355,50 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   software.
 - **Replace / transfer / purchase / price** are structurally impossible.
 
+## Entries that outlive a delete (outlivesDelete)
+
+A delete-by-values recomputes every entry of the document from its values,
+and a time-window entry is keyed by the bucket starts of `$createdAt`, which
+only the block that included the create assigned. A client that did not keep
+that timestamp could not delete the document. `outlivesDelete: true` on a
+`timeRange` index with a `ttl` takes the window out of the delete:
+
+- **Delete.** Neither the state validation probes nor Drive's
+  row-integrity gate check the index, and the delete walkers do not descend
+  into it: `level_removes_entry` skips a level whose indexes all outlive the
+  delete (`IndexLevel::outlives_delete_at_or_below` keeps every other
+  contract on the old path), and the terminating level of such an index
+  removes nothing. Its entries stay until their window is dropped by the TTL
+  cleanup, which drops whole buckets.
+- **Commitment.** When every index involving `$createdAt` outlives deletes,
+  the row commitment leaves the timestamp out, and a delete carries none
+  (structure validation refuses one that does). The executed-transition
+  proof verifier computes the same commitment, so it no longer needs the
+  block time for such a type.
+- **Create.** State validation does not probe the index for a duplicate,
+  and the terminal insert writes over an entry already standing at the same
+  key (left by a deleted document with the same key) without reading it: the
+  count does not move, and the entry carries the commitment of the row
+  writing it. Registration makes the index's key hold the key of an index a
+  delete clears that skips nothing, so no two documents in state share an
+  entry, and the within-batch collision tracker leaves these entries to that
+  index.
+- **Proofs.** `index_only_proof_index` never picks such an index, and the
+  parser requires another one to exist.
+
+Registration admits the keyword only on an indexOnly `timeRange` index with
+a `ttl`, without a sum and on a type without `entryPayload` (a kept entry
+holds the first document's amount or payload), and requires every schema
+property to sit in an index that neither skips nor outlives deletes, and the
+index's key to hold the key of such an index. The flag is fixed with the
+index (`find_first_outlives_delete_change`). The index structure caches the
+decisions a delete reads (`IndexLevel::cleared_on_delete_at_or_below`, and at
+its root `created_at_indexed_only_by_outliving`), and Drive's delete refuses a
+document carrying a `$createdAt` its row does not commit to.
+
+The cost is on the aggregates: a deleted document still counts in the
+windows it wrote until they move past it.
+
 ## Preallocated index paths
 
 The first entry under a fresh value tuple pays for every tree on its path
@@ -201,12 +408,30 @@ entry pays for one item insert. When the index path is a pure function of
 a refersTo-referenced document, that lopsidedness is avoidable: an index
 may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
-or a key of that reference's `propertyAgreement` (consensus-equal to a
-referenced-document property), and the reference targets a document type
-of the **same contract**. `byHashtagPost` (`[hashtag, postId]`) qualifies
-— `hashtag` through the agreement, `postId` as the reference;
+or a referring value of that reference's `where` (consensus-equal to a
+referenced-document property, its `$ownerId` and `$creatorId` included),
+and the reference is a `permanentDocument` or `moderatedDocument` one
+targeting a document type of the **same contract**. A `deletableDocument`
+reference shapes the path the same way but does not qualify: its target can
+be deleted without a record, and the trees created alongside it would
+outlive it with other owners' entries inside and nothing left to say what
+they were keyed by. A `moderatedDocument` target leaves state only through a
+moderator's removal, whose record is never deleted, so its trees outlive it
+the way the record does, and a restore (which puts the document back through
+the create path) finds them in place. Through such a reference a binding
+counts only when the record keeps every key it binds: the referenced
+`$id` or `$ownerId`, or a property the referenced type lists under
+`moderatorAbilities.deleteKeepsFields` (`PreallocationBinding::is_kept_on_removal`).
+Registration refuses a preallocated index with no such binding
+(`validate_preallocated_indexes_kept_on_removal`, once every document type
+of the contract is parsed), and the insert path preallocates only through
+one (`Index::preallocation_bindings_for_target`, given the referenced
+type). `byHashtagPost` (`[hashtag, postId]`) qualifies:
+`hashtag` through `where`, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
-the liker.
+the liker. An `[authorId, postId]` index whose `authorId` agrees with the
+post's `$ownerId` qualifies too: the poster is the one owner a referenced
+post does determine.
 
 Three things change, all bit-compatible with the fallback layout:
 
@@ -232,6 +457,24 @@ Three things change, all bit-compatible with the fallback layout:
   hand the first entry the old price, and their trees — created by the
   fallback — are retained on delete exactly like preallocated ones.
 
+A typed array is bound too when the reference's `where` makes it equal to
+a typed array of the referenced document (`"tags": "tags"`, key source
+`PreallocatedKeySource::ReferencedDocumentListElements`): every entry
+referencing the document holds that list, and the index enters it under
+each element, so the level takes one key per distinct element of the
+referenced list, keyed as the referring type keys its elements
+(`referenced_list_tree_keys_for_referring_property`). The walk continues
+under each element's value tree, every tree queued once, and a list no
+referring document can hold preallocates nothing: empty, absent or no list
+at all, longer than the referring array's `maxItems` or shorter than its
+`minItems`, repeating an element where it declares `uniqueItems`, or holding
+an element keyed as empty or wider than the referring elements can be. The
+estimate walks `maxItems` distinct worst-case elements. `contains` and
+`containsAll` fix no element and bind nothing. A plain tree under one the
+same walk created is inserted without an existence read, and the dry run of
+a change of the referenced document preallocates nothing, since an applied
+change never does.
+
 `preallocated` composes with `skipIfAbsent`: every bound key is resolved
 before any operation is emitted, and an absent bound value (an untagged
 post's hashtag, under the absence-aware agreement) bails without emitting
@@ -249,7 +492,7 @@ absent tree.
 An entry's proved `(path, key)` position IS the document, so queries and
 proofs **synthesize** documents through one shared builder
 (`query/index_only_synthesis.rs`, compiled for server and verify): prefix
-properties decoded from the path via `decode_value_for_tree_keys` (the
+properties decoded from the path via `deserialize_value_for_key` (the
 inverse of the write path's key encoding), the terminal from the member
 key. A query through a subset index yields a documented *projection*. The
 synthesized `$id` is deterministic over the proved position (a
@@ -275,16 +518,105 @@ the terminal (`terminal > <last seen>`, with a limit) walks the entries
 page by page — **keyset pagination**, the indexOnly replacement for
 id-shaped `startAt` cursors, which cannot address a position whose
 synthesized id is a one-way hash. Mixed shapes are served through a
-**prefix pivot**: one range or `in` clause may sit on a prefix property
-instead of the terminal (`hashtag == h AND postId > p AND $ownerId ==
-me`), with everything above the pivot equality-bound, everything below
-it unconstrained, and the terminal clause an equality. All shapes prove
-and verify through the same shared path-query builder.
+**prefix pivot**: one `in` clause may sit on the index's last prefix
+property instead of the terminal (`hashtag == h AND postId IN [p, q] AND
+$ownerId == me`), with everything above it equality-bound, the terminal
+clause an equality, and a limit of at least the number of `in` values.
+
+A range pivot (`postId > p` in the same query), or an `in` pivot with
+prefix properties below it, is refused, and the error names the index
+shape that serves the query: one that lists the equality-bound
+properties, the terminal's included, before the ranged property. A
+pivot walk opens one branch per pivot value, and grovedb charges a
+branch that holds no row one slot of the limit, so a page of such a
+query could hold fewer rows than exist, and the response carries no
+cursor to say where it stopped. These shapes stay refused until the
+storage layer can report where a page stopped. An `in` pivot on the last
+prefix property opens at most one branch per value, so a limit that
+covers its values is never used up early. When another index serves the
+same query without an incomplete pivot, index selection prefers it over
+a pivot index that would win the name-order tie-break.
+
+All shapes prove and verify through the same shared path-query builder.
 
 Not supported on the read surface: by-`$id` fetches (no primary tree —
 rejected with guidance) and `startAt` cursors (rejected with the keyset
 guidance above); ranked / count / range-aggregate queries work unchanged
 since they never open value trees.
+
+## Counters (summableOffCountIndex)
+
+A `summableOffCountIndex` index keeps no entry per document. At the value
+position of its last property, where another index grows a value tree, a
+`0` bucket and one entry per document, it keeps one `Element::SumItem`
+holding the number of entries its source index keeps for that group:
+
+```text
+before: byAuthorPost → postAuthor → <author> → postId → <post> → 0 → <liker> = Item(commitment)
+after:  byAuthorPost → postAuthor → <author> → postId → <post> = SumItem(likes)
+```
+
+The tree of the last property is a count-and-sum tree (`rangeSummable`,
+plus `rangeCountable` for the group count an average divides by), so each
+counter counts one group and adds its value to the sum. A level a `{ "at": ... }` ranking
+names, and every level between it and the counters, carries those totals
+up: its value trees are `CountSumTree`s from the shallowest average
+ranking down and `SumTree`s above it (a `rankedCountable` on such an index
+is its sum ranking, so no count-only chain arises). The property-name tree
+of a level a ranking names is the indexed tree for the axes ranked at it,
+`ProvableCountProvableSumIndexedTree` for `[Sum, Avg]`; a level between two
+ranked levels keeps a plain count-and-sum or sum tree. Grovedb admits a bare
+`SumItem` under that indexed tree from grove version 4.
+
+The write path (`add_summable_off_count_counter_operations`):
+
+- **Create**: reads the counter and writes it back one higher, or inserts
+  it at one for the first document of the group. The create is refused
+  before it gets here when the source already holds the entry, so the
+  counter equals the source group's entry count.
+- **Delete**: writes it back one lower once the entries of the indexes
+  that keep them matched the row commitment. A preallocated index keeps
+  the counter at zero; any other removes it with its last document and
+  prunes the trees it leaves empty, up to the document type.
+- **Once per batch**: a counter is written at most once per batch, because
+  a documents batch carries one transition. A source keyed by more than its
+  owner (a terminal such as `["$ownerId", "emoji"]`) holds several entries
+  of one owner in one group, and each document is converted on its own, so
+  raising that cap needs the counter moves folded across documents first.
+  A second write within one conversion is refused as corrupted code
+  execution.
+- **Storage**: a `SumItem` is charged a fixed 11 bytes plus flags whatever
+  its value, so a rewrite stores nothing new, and it keeps the flags of the
+  first document that paid for it.
+- **Preallocation**: creating the referenced document creates the counter
+  at zero, in place of the value tree and its empty `0` bucket.
+- **Per element**: a typed array the source fixes through a `where`
+  equality with a referenced typed array (`byTagPost`, `[tags, postId]`)
+  puts every document of a source group under the same elements, so each
+  element's group holds the whole source group. The walkers fan the levels
+  of the array out per element, so a create or delete moves one counter
+  per element, a preallocation creates one per element of the referenced
+  list, and a counter level that is the array itself (`[postId, tags]`)
+  keeps one counter per element side by side.
+
+The state probes and the duplicate check skip the index (it decides
+nothing about a create), it is never the proof index, and document
+queries never read it. The count, sum, average and ranked queries do: a
+sum query names the source index (`sum(byPost)`), a count query takes a
+counter's sum (its group's documents) where another index's read takes a
+count (a ranked or `HAVING` count walks the Sum secondaries, and its
+entries come back as counts), and a point query may stop at a level
+carrying the sums, reading that value tree's element. A range count reads
+the range sums (`DriveDocumentCountQuery::counter_sums_query`): every range
+count executor and verifier hands the same index and clauses to the sum
+surface's counterpart, summing the source index, and reads the sums back as
+counts, since grovedb's range count over the counters would count them, one
+per group. A range total over an index whose path passes through a ranked
+level (its own, or one another index ranks at a shared level) is refused with
+a hint to group by the last property, as everywhere: a ranked level's tree is
+indexed, and grovedb neither totals a range over an indexed tree nor proves a
+range total through one, so the unproven read refuses it too and the two
+agree.
 
 ## What it costs and what it saves
 

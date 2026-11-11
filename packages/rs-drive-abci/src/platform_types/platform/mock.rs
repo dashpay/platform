@@ -34,6 +34,23 @@ impl Platform<MockCoreRPCLike> {
                 "tx": [],
             }))
         });
+
+        // A credit pool of 10 million Dash at every height, so the Core-anchored withdrawal limit
+        // never binds. Registered first: mockall uses the first matching expectation, so an
+        // answer a test adds later on this platform is never reached. To bind the Core side,
+        // call `core_rpc.checkpoint()` (which also drops the answers above) and set every
+        // answer the test needs, or replace `core_rpc` with a new `MockCoreRPCLike`.
+        core_rpc_mock
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(1_000_000_000_000_000));
+
+        // A coinbase of payload version 3 at every height, a Core where V24 is not active, so
+        // no block records V24's activation and withdrawals keep asset unlock payload version 1.
+        // The same rule as above applies to an answer a test needs instead.
+        core_rpc_mock
+            .expect_get_coinbase_payload_version()
+            .returning(|_| Ok(Some(3)));
+
         Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }
 

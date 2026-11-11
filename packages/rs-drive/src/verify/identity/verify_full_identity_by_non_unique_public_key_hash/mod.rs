@@ -10,7 +10,6 @@ use crate::verify::RootHash;
 
 pub use dpp::prelude::Identity;
 
-use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -21,13 +20,13 @@ impl Drive {
     ///
     /// # Parameters
     ///
-    /// - `proof`: A proof containing both the identity proof (if applicable) and the
-    ///   proof linking the public key hash to an identity ID.
+    /// - `proof`: One complete proof of first-after index selection and the full identity.
     /// - `public_key_hash`: A 20-byte array representing the hash of the user's public key.
     /// - `after`: An optional 32-byte array specifying an identity after which
     ///   the search should begin when retrieving the identity.
+    /// - `query_platform_version`: The producer's signed query construction version.
     /// - `platform_version`: A reference to the platform version, ensuring that
-    ///   the correct verification method is used.
+    ///   the verification security table is used independently of query construction.
     ///
     /// # Returns
     ///
@@ -51,9 +50,10 @@ impl Drive {
     ///   is implemented. If an unsupported version is provided, an `UnknownVersionMismatch`
     ///   error is returned.
     pub fn verify_full_identity_by_non_unique_public_key_hash(
-        proof: &IdentityAndNonUniquePublicKeyHashDoubleProof,
+        proof: &[u8],
         public_key_hash: [u8; 20],
         after: Option<[u8; 32]>,
+        query_platform_version: &PlatformVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
         match platform_version
@@ -67,6 +67,7 @@ impl Drive {
                 proof,
                 public_key_hash,
                 after,
+                query_platform_version,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -81,7 +82,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
     use crate::error::drive::DriveError;
 
     #[test]
@@ -94,15 +94,13 @@ mod tests {
             .identity
             .verify_full_identity_by_non_unique_public_key_hash = 255;
 
-        let proof = IdentityAndNonUniquePublicKeyHashDoubleProof {
-            identity_proof: None,
-            identity_id_public_key_hash_proof: vec![],
-        };
+        let proof = vec![];
 
         let result = Drive::verify_full_identity_by_non_unique_public_key_hash(
             &proof,
             [0u8; 20],
             None,
+            &platform_version,
             &platform_version,
         );
 

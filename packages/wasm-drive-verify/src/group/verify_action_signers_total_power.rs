@@ -73,7 +73,7 @@ pub fn verify_action_signers_total_power(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, status, total_power) = Drive::verify_action_signer_and_total_power(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         Identifier::from(contract_id_bytes),
         group_contract_position,
         action_status_enum,

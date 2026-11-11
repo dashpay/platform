@@ -149,6 +149,23 @@ pub struct ContactRequestFFI {
     /// Number of `u32` entries in [`Self::accepted_accounts`]; `0` when the
     /// pointer is null.
     pub accepted_accounts_len: usize,
+    /// Whether [`Self::external_account_reference`] is set — the mirror of
+    /// `EstablishedContact::external_account_reference` being `Some`.
+    /// Relationship-level, replicated onto BOTH established rows like
+    /// [`Self::payment_channel_broken`]; always `false` on pending rows.
+    ///
+    /// Without this the marker died with the process: every cold start saw
+    /// `None`, treated it as a rotation, tore the outbound
+    /// `DashpayExternalAccount` down and rebuilt it — and the rebuild rewound
+    /// the filter-scan cursor to the earliest contact's request height on
+    /// every launch (dashpay/platform#4302). A host that leaves it `false`
+    /// keeps that rebuild (the cursor no longer moves for it, but the
+    /// account churn remains).
+    pub has_external_account_reference: bool,
+    /// The `incoming_request.account_reference` the registered outbound
+    /// account was built from; meaningful only when
+    /// [`Self::has_external_account_reference`].
+    pub external_account_reference: u32,
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -197,6 +214,51 @@ pub struct ContactIgnoredSenderFFI {
     pub is_ignored: bool,
 }
 
+/// One identity's read position in DashPay's private contact request store
+/// ([`ContactChangeSet::private_contact_requests_positions`]), for the
+/// private contact request scan state callbacks on
+/// [`PersistenceCallbacksExtension`](crate::persistence::PersistenceCallbacksExtension).
+///
+/// Flat POD. The host stores one row per `(wallet_id, identity_id)`,
+/// replacing the previous one, and hands it back unchanged at load: a lower
+/// `position` than the stored one is a rewind, not a stale write.
+///
+/// [`ContactChangeSet::private_contact_requests_positions`]: platform_wallet::changeset::ContactChangeSet::private_contact_requests_positions
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateContactRequestsPositionFFI {
+    /// The wallet-owned identity reading the store.
+    pub identity_id: [u8; 32],
+    /// The store position the identity reads from next.
+    pub position: u64,
+    /// The fingerprint of the scanning keys `position` holds for. Opaque
+    /// to the host: store it and return it as it came.
+    pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request the identity paid for may still
+    /// be unresolved. Store it and return it as it came: loaded set, it
+    /// holds the identity's public contact requests until its private
+    /// payments are restored from the shielded store.
+    pub private_payments_unresolved: bool,
+}
+
+/// The shielded address `contact_id`'s tracked private request to
+/// `owner_id` carries ([`ContactChangeSet::private_shielded_addresses`]).
+///
+/// Flat POD. The host stores one row per `(wallet_id, owner_id,
+/// contact_id)`, replacing the previous one.
+///
+/// [`ContactChangeSet::private_shielded_addresses`]: platform_wallet::changeset::ContactChangeSet::private_shielded_addresses
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateShieldedAddressFFI {
+    /// The wallet-owned identity the request is to.
+    pub owner_id: [u8; 32],
+    /// The contact who sent the request.
+    pub contact_id: [u8; 32],
+    /// The raw 43-byte Orchard payment address.
+    pub address: [u8; 43],
+}
+
 // Compile-time guards. Pin the expected layouts so any reshape on
 // the Rust side fails the cargo build before it can ship a dylib
 // the Swift side will mis-parse at runtime.
@@ -228,9 +290,12 @@ pub struct ContactIgnoredSenderFFI {
 //   176..=183 contact_account_label          *const c_char
 //   184..=191 accepted_accounts              *const u32
 //   192..=199 accepted_accounts_len          usize
+//   200       has_external_account_reference bool
+//   201..=203 (padding to 4)
+//   204..=207 external_account_reference     u32
 //
-// Total size = 200, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 200] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 208, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 208] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
@@ -247,6 +312,39 @@ const _: [u8; 1] = [0u8; std::mem::align_of::<ContactRequestRemovalFFI>()];
 // Total size = 65, alignment = 1 (all-byte fields).
 const _: [u8; 65] = [0u8; std::mem::size_of::<ContactIgnoredSenderFFI>()];
 const _: [u8; 1] = [0u8; std::mem::align_of::<ContactIgnoredSenderFFI>()];
+
+// Expected `PrivateContactRequestsPositionFFI` layout on 64-bit targets:
+//
+//   0..=31    identity_id                  [u8; 32]
+//   32..=39   position                     u64
+//   40..=71   key_fingerprint              [u8; 32]
+//   72        private_payments_unresolved  bool
+//   73..=79   (tail padding to 8)
+//
+// Total size = 80, alignment = 8 (from the u64).
+const _: [u8; 80] = [0u8; std::mem::size_of::<PrivateContactRequestsPositionFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateContactRequestsPositionFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, position) == 32);
+const _: () =
+    assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, key_fingerprint) == 40);
+const _: () = assert!(
+    std::mem::offset_of!(
+        PrivateContactRequestsPositionFFI,
+        private_payments_unresolved
+    ) == 72
+);
+
+// Expected `PrivateShieldedAddressFFI` layout on all targets:
+//
+//   0..=31    owner_id    [u8; 32]
+//   32..=63   contact_id  [u8; 32]
+//   64..=106  address     [u8; 43]
+//
+// Total size = 107, alignment = 1 (all-byte fields).
+const _: [u8; 107] = [0u8; std::mem::size_of::<PrivateShieldedAddressFFI>()];
+const _: [u8; 1] = [0u8; std::mem::align_of::<PrivateShieldedAddressFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, contact_id) == 32);
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, address) == 64);
 
 impl ContactIgnoredSenderFFI {
     /// Project an `(owner, sender)` ignore key onto its flat C mirror.
@@ -297,6 +395,7 @@ impl ContactRequestFFI {
             false,
             None,
             &[],
+            None,
         )
     }
 
@@ -318,6 +417,7 @@ impl ContactRequestFFI {
             false,
             None,
             &[],
+            None,
         )
     }
 
@@ -339,6 +439,7 @@ impl ContactRequestFFI {
         note: Option<&str>,
         is_hidden: bool,
         accepted_accounts: &[u32],
+        external_account_reference: Option<u32>,
     ) -> Self {
         Self::from_parts(
             owner_id,
@@ -353,6 +454,7 @@ impl ContactRequestFFI {
             // it is direction-specific (incoming-only).
             None,
             accepted_accounts,
+            external_account_reference,
         )
     }
 
@@ -371,6 +473,7 @@ impl ContactRequestFFI {
         is_hidden: bool,
         contact_account_label: Option<&str>,
         accepted_accounts: &[u32],
+        external_account_reference: Option<u32>,
     ) -> Self {
         Self::from_parts(
             owner_id,
@@ -383,6 +486,7 @@ impl ContactRequestFFI {
             is_hidden,
             contact_account_label,
             accepted_accounts,
+            external_account_reference,
         )
     }
 
@@ -398,6 +502,7 @@ impl ContactRequestFFI {
         is_hidden: bool,
         contact_account_label: Option<&str>,
         accepted_accounts: &[u32],
+        external_account_reference: Option<u32>,
     ) -> Self {
         let (encrypted_public_key, encrypted_public_key_len) =
             allocate_byte_buffer(&request.encrypted_public_key);
@@ -434,6 +539,8 @@ impl ContactRequestFFI {
             contact_account_label: allocate_c_string(contact_account_label),
             accepted_accounts,
             accepted_accounts_len,
+            has_external_account_reference: external_account_reference.is_some(),
+            external_account_reference: external_account_reference.unwrap_or(0),
         }
     }
 }
@@ -692,6 +799,7 @@ mod tests {
             Some("a note"),
             true,
             &[],
+            None,
         );
         let mut inc = ContactRequestFFI::from_established_incoming(
             owner,
@@ -703,6 +811,7 @@ mod tests {
             true,
             None,
             &[],
+            None,
         );
         assert!(out.is_outgoing);
         assert!(!inc.is_outgoing);
@@ -726,6 +835,7 @@ mod tests {
             None,
             false,
             &[],
+            None,
         );
         assert!(!healthy.payment_channel_broken);
         assert!(healthy.alias.is_null());
@@ -762,6 +872,7 @@ mod tests {
             None,
             false,
             &[],
+            None,
         );
         let mut inc = ContactRequestFFI::from_established_incoming(
             owner,
@@ -773,6 +884,7 @@ mod tests {
             false,
             Some("Main wallet"),
             &[],
+            None,
         );
 
         assert!(
@@ -794,6 +906,71 @@ mod tests {
             inc.contact_account_label.is_null(),
             "free must reclaim + null the account label"
         );
+    }
+
+    /// `EstablishedContact::external_account_reference` crosses as a
+    /// `(has, value)` pair on BOTH established rows (it is relationship-level,
+    /// like the broken-channel flag) and is absent on pending rows. Losing it
+    /// across a restart is what rebuilt every outbound account per launch
+    /// (dashpay/platform#4302).
+    #[test]
+    fn established_rows_carry_the_external_account_reference_pending_rows_do_not() {
+        let request = sample_request();
+        let owner = [5u8; 32];
+        let contact = [6u8; 32];
+
+        let mut out = ContactRequestFFI::from_established_outgoing(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            &[],
+            Some(4),
+        );
+        let mut inc = ContactRequestFFI::from_established_incoming(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            None,
+            &[],
+            Some(4),
+        );
+        for row in [&out, &inc] {
+            assert!(row.has_external_account_reference);
+            assert_eq!(row.external_account_reference, 4);
+        }
+
+        let mut unstamped = ContactRequestFFI::from_established_incoming(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            None,
+            &[],
+            None,
+        );
+        assert!(!unstamped.has_external_account_reference);
+        assert_eq!(unstamped.external_account_reference, 0);
+
+        let mut pending = ContactRequestFFI::from_incoming(owner, contact, &request);
+        assert!(!pending.has_external_account_reference);
+
+        unsafe {
+            free_contact_requests_ffi(&mut out as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut inc as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut unstamped as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut pending as *mut ContactRequestFFI, 1);
+        }
     }
 
     /// `ContactIgnoredSenderFFI::new` must carry the `(owner, sender)`

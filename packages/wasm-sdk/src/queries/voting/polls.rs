@@ -20,10 +20,11 @@ const VOTE_POLLS_BY_END_DATE_QUERY_TS: &'static str = r#"
  */
 export interface VotePollsByEndDateQuery {
   /**
-   * Starting timestamp (milliseconds) to filter polls.
+   * Starting timestamp (milliseconds) to filter polls. Accepts the
+   * `timestampMs` bigint of a returned entry, for paging.
    * @default undefined
    */
-  startTimeMs?: number;
+  startTimeMs?: number | bigint;
 
   /**
    * Include the `startTimeMs` boundary when true.
@@ -35,7 +36,7 @@ export interface VotePollsByEndDateQuery {
    * Ending timestamp (milliseconds) to filter polls.
    * @default undefined
    */
-  endTimeMs?: number;
+  endTimeMs?: number | bigint;
 
   /**
    * Include the `endTimeMs` boundary when true.
@@ -69,42 +70,19 @@ extern "C" {
     pub type VotePollsByEndDateQueryJs;
 }
 
-fn timestamp_from_option(
-    value: Option<f64>,
-    field: &str,
-) -> Result<Option<TimestampMillis>, WasmSdkError> {
-    match value {
-        Some(raw) => {
-            if !raw.is_finite() || raw < 0.0 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "{} must be a non-negative finite number",
-                    field
-                )));
-            }
-
-            if raw.fract() != 0.0 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "{} must be an integer value",
-                    field
-                )));
-            }
-
-            let timestamp = raw as u64;
-            Ok(Some(timestamp))
-        }
-        None => Ok(None),
-    }
-}
-
+/// Timestamps are integers here, not `f64`: the query reaches serde through
+/// `platform_value`, which turns a whole JS number (or a bigint) into an
+/// integer `Value` and refuses to read one as `f64`. Negative and fractional
+/// values are refused by the same conversion.
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VotePollsByEndDateQueryInput {
     #[serde(default)]
-    start_time_ms: Option<f64>,
+    start_time_ms: Option<TimestampMillis>,
     #[serde(default)]
     start_time_included: Option<bool>,
     #[serde(default)]
-    end_time_ms: Option<f64>,
+    end_time_ms: Option<TimestampMillis>,
     #[serde(default)]
     end_time_included: Option<bool>,
     #[serde(default)]
@@ -140,11 +118,10 @@ fn build_vote_polls_by_end_date_drive_query(
         ));
     }
 
-    let start_time = timestamp_from_option(start_time_ms, "startTimeMs")?
-        .map(|timestamp| (timestamp, start_time_included.unwrap_or(true)));
+    let start_time =
+        start_time_ms.map(|timestamp| (timestamp, start_time_included.unwrap_or(true)));
 
-    let end_time = timestamp_from_option(end_time_ms, "endTimeMs")?
-        .map(|timestamp| (timestamp, end_time_included.unwrap_or(true)));
+    let end_time = end_time_ms.map(|timestamp| (timestamp, end_time_included.unwrap_or(true)));
 
     let limit = convert_optional_limit(limit, "limit")?;
     let offset = convert_optional_limit(offset, "offset")?;
@@ -243,5 +220,50 @@ impl WasmSdk {
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             entries, metadata, proof,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::platform_value::{self, Value};
+
+    /// The step `from_object` runs after `serde_wasm_bindgen` has turned the
+    /// JS query into a `Value`: a whole JS number arrives as `Value::I64`, a
+    /// bigint as `Value::I64` or `Value::U64`, a fractional number as
+    /// `Value::Float`.
+    fn parse(entries: Vec<(&str, Value)>) -> Result<VotePollsByEndDateDriveQuery, WasmSdkError> {
+        let map = entries
+            .into_iter()
+            .map(|(key, value)| (Value::Text(key.to_string()), value))
+            .collect();
+        let input: VotePollsByEndDateQueryInput = platform_value::from_value(Value::Map(map))
+            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+        build_vote_polls_by_end_date_drive_query(input)
+    }
+
+    #[test]
+    fn whole_number_and_bigint_timestamps_are_read() {
+        let query = parse(vec![
+            ("startTimeMs", Value::I64(1_727_500_000_000)),
+            ("startTimeIncluded", Value::Bool(false)),
+            ("endTimeMs", Value::U64(1_727_600_000_000)),
+        ])
+        .expect("integer timestamps should be accepted");
+
+        assert_eq!(query.start_time, Some((1_727_500_000_000, false)));
+        assert_eq!(query.end_time, Some((1_727_600_000_000, true)));
+    }
+
+    #[test]
+    fn negative_and_fractional_timestamps_are_refused() {
+        assert!(parse(vec![("startTimeMs", Value::I64(-1))]).is_err());
+        assert!(parse(vec![("endTimeMs", Value::Float(1.5))]).is_err());
+    }
+
+    #[test]
+    fn inclusion_flag_without_its_timestamp_is_refused() {
+        assert!(parse(vec![("startTimeIncluded", Value::Bool(true))]).is_err());
+        assert!(parse(vec![("endTimeIncluded", Value::Bool(false))]).is_err());
     }
 }

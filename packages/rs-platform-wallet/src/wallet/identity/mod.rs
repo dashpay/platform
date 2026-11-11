@@ -31,11 +31,12 @@ pub use crypto::{
 };
 pub use network::{DashPayView, IdentityWallet};
 pub use state::{
-    BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex,
+    BlockTime, DashPayState, IdentityLocation, IdentityManager, ManagedIdentity, PrivateContact,
+    RegistrationIndex,
 };
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{
-    ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, DpnsNameInfo,
-    EstablishedContact, IdentityStatus, KeyStorage, PaymentDirection, PaymentEntry, PaymentStatus,
-    PrivateKeyData, ProfileUpdate,
+    ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, DpnsFetch,
+    DpnsNameInfo, EstablishedContact, IdentityStatus, KeyStorage, PaymentDirection, PaymentEntry,
+    PaymentStatus, PrivateKeyData, ProfileUpdate,
 };

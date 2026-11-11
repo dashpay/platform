@@ -4,8 +4,8 @@ pub mod accessors;
 
 use crate::abci::AbciError;
 use crate::platform_types::cleaned_abci_messages::{cleaned_block_id, cleaned_commit_info};
-use dpp::bls_signatures;
-use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
+use dpp::bls;
+use dpp::bls::{BlsError, Signature};
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto;
@@ -82,7 +82,7 @@ impl CommitV0 {
     pub(super) fn verify_signature(
         &self,
         signature: &[u8; 96],
-        public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
+        public_key: &bls::PublicKey,
     ) -> SimpleValidationResult<AbciError> {
         if signature == &[0; 96] {
             return ValidationResult::new_with_error(AbciError::BadRequest(
@@ -91,17 +91,15 @@ impl CommitV0 {
         }
 
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let g2_element = match <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
-            .into_option()
-            .ok_or(AbciError::BlsErrorOfTenderdashThresholdMechanism(
+        let signature = match Signature::from_compressed(signature).ok_or(
+            AbciError::BlsErrorOfTenderdashThresholdMechanism(
                 BlsError::InvalidSignature,
                 "verification of a commit signature".to_string(),
-            )) {
+            ),
+        ) {
             Ok(signature) => signature,
             Err(e) => return ValidationResult::new_with_error(e),
         };
-
-        let signature = Signature::Basic(g2_element);
 
         //todo: maybe cache this to lower the chance of a hashing based attack (forcing the
         // same calculation each time)
@@ -139,7 +137,7 @@ mod test {
 
     use super::CommitV0;
     use crate::platform_types::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
-    use dpp::bls_signatures::PublicKey;
+    use dpp::bls::PublicKey;
     use dpp::dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };

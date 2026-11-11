@@ -12,8 +12,30 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
+        // Every protocol version selects this generation, so splitting the body out behind a
+        // path parameter has to leave the credit pool alone, and it does: this entry point passes
+        // the same path the body used to build inline, so an existing credit pool proof is checked
+        // by the same PathQuery and yields the same root hash and the same result. A token pool
+        // path reaches the shared body only from a caller that cannot exist below the version
+        // that admits token pools.
+        Self::verify_pool_anchors_v0(
+            proof,
+            shielded_credit_pool_anchors_path_vec(),
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
+
+    /// Verifies the anchors tree at `anchors_path`, whichever shielded pool (credit or token)
+    /// it belongs to.
+    pub(super) fn verify_pool_anchors_v0(
+        proof: &[u8],
+        anchors_path: Vec<Vec<u8>>,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
         let path_query = PathQuery {
-            path: shielded_credit_pool_anchors_path_vec(),
+            path: anchors_path,
             query: SizedQuery {
                 query: Query::new_range_full(),
                 limit: None,

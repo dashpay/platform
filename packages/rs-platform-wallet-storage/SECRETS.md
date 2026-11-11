@@ -400,13 +400,24 @@ unwrapped copy is allocated.
   symlink cannot hide an unsafe ancestor behind a safe-looking one. An
   ancestor is refused at `open` with `SecretStoreError::InsecureParentDir`
   when it is group/other writable (`mode & 0o022`) WITHOUT the sticky bit,
-  or when it is owned by neither the effective user nor a root identity:
+  or when it is owned by neither the effective user nor a root identity
+  (both rules make exceptions for the Android identities trusted below):
   directory write access governs rename/replace of the vault, and an
   untrusted owner can grant itself that access at will (the A1 guarantee
   depends on both). A sticky writable directory such as `/tmp` (`0o1777`)
   is accepted — the sticky bit is what stops one user replacing another's
   entries. A read-only group-accessible ancestor (`0o750`) is accepted too
-  — it only leaks filenames, never the 0600-protected vault contents. The
+  — it only leaks filenames, never the 0600-protected vault contents. On
+  Android, `system` (`AID_SYSTEM`, 1000) is trusted as well, both as an
+  owner and as the group of a group-writable ancestor: Android creates every
+  app's private storage beneath `system:system` `0771` directories (`/data`,
+  `/data/user/0`, `/data/data`), and no app can run as or join `system`.
+  The app's own per-app group (gid equal to its uid) is trusted as the group
+  of a group-writable ancestor too, because Android creates the app's
+  `files` and `databases` directories `0771` in that group. Other-writable
+  ancestors and ancestors writable by any other group are still refused
+  there. The trusted sets are `PLATFORM_IDS` and `trusted_groups` in
+  `src/parent_permissions.rs`, empty on every other target. The
   walk is Unix-only; Windows ACLs are not inspected (issue #3754).
   Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
   boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
@@ -536,7 +547,7 @@ respectively (`Io`'s inner OS error boxed as the source).
 `keyring_core::Error` is safe to `Display` (`{ }`-format), but
 `{:?}`-format embeds `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)`
 payloads — those variants are NEVER constructed by our backends with
-secret bytes, and `tests/secrets_guard.rs` enforces that no debug-format
+secret bytes, and `tests/integration/secrets_guard.rs` enforces that no debug-format
 pairs with `keyring_core::Error` inside `src/secrets/`.
 
 ## What the SQLite backend WILL refuse to store
@@ -549,21 +560,21 @@ secret-free.
 
 ## Audit hooks
 
-- **`tests/secrets_scan.rs`**: greps every file under
+- **`tests/integration/secrets_scan.rs`**: greps every file under
   `src/sqlite/schema/` and `migrations/` for the substrings `private`,
   `mnemonic`, `seed`, `xpriv`, `secret`. A new column, blob field, or
   comment that uses any of those words breaks the test — forcing the
   author to either rename, or add their phrase to the file's
   allow-list with a rationale. The `src/secrets/` directory is exempt
   by design (its own positive guard below covers it).
-- **`tests/secrets_guard.rs`**: positive secret-leak guard for
+- **`tests/integration/secrets_guard.rs`**: positive secret-leak guard for
   `src/secrets/`. Forbids logging/formatting sinks that pair with
   `expose_secret(...)` on the same logical statement, AND forbids
   `{:?}`-debug-format paired with `keyring_core::Error`.
-- **`tests/secrets_api.rs`**: shape guards — `CredentialApi::get_secret`
+- **`tests/integration/secrets_api.rs`**: shape guards — `CredentialApi::get_secret`
   re-wraps through `SecretBytes::new`, redacting `Debug` on
   `SecretBytes`/`SecretString`, no `Box<dyn Error>` in `src/secrets/`.
-- **`tests/secrets_default_on_compiles.rs`**: build-time guard
+- **`tests/integration/secrets_default_on_compiles.rs`**: build-time guard
   (gated `#![cfg(feature = "secrets")]`) that the default feature set
   exposes the secrets surface as public re-exports. It names
   `EncryptedFileStore`, `SecretBytes`, `SecretString`,
@@ -575,7 +586,7 @@ secret-free.
   alone. No test file and **no CI job** cover it: that invocation is a
   local/manual check, so a regression in the off-state build reaches
   `main` unnoticed.
-- **`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
+- **`tests/integration/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
   all public method signatures use concrete error types
   (`WalletStorageError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.

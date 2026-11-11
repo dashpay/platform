@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use crate::execution::validation::state_transition::identity_create_from_addresses::basic_structure::v0::IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::state::v0::IdentityCreateFromAddressesStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::state::v1::IdentityCreateFromAddressesStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
@@ -29,8 +30,32 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
 use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v1::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV1;
+
+/// The action of an identity create from addresses that failed after its inputs were checked:
+/// the transition only bumps its input nonces, its inputs keep their whole balances, and the
+/// penalty is charged with its fee, which takes it from those balances and books it to the fee
+/// pools. The penalty is flat: the user fee increase does not scale it.
+///
+/// Changed in place in the shipped `advanced_structure` v0 and `state` v0, which set the inputs
+/// to the amounts the transition asked to spend (or to the balances left after that spend) minus
+/// a penalty that was not booked. No committed block holds a transition that took those paths,
+/// so every committed block keeps its results.
+fn bump_input_nonces_with_penalty(
+    transition: &IdentityCreateFromAddressesTransition,
+    action: &IdentityCreateFromAddressesTransitionAction,
+    penalty: Credits,
+) -> Result<StateTransitionAction, Error> {
+    Ok(
+        BumpAddressInputNoncesAction::from_failed_identity_create_from_addresses_transition(
+            transition, action, penalty,
+        )?
+        .into(),
+    )
+}
 
 /// A trait for transforming into an action for the identity create from addresses transition
 pub trait StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0 {
@@ -106,6 +131,7 @@ pub trait StateTransitionStructureKnownInStateValidationForIdentityCreateFromAdd
     /// Validation of the advanced structure
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
+        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -117,6 +143,7 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
 {
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
+        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -129,6 +156,13 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
             .advanced_structure
         {
             Some(0) => self.validate_advanced_structure_v0(
+                action,
+                signable_bytes,
+                execution_context,
+                platform_version,
+            ),
+            Some(1) => self.validate_advanced_structure_v1(
+                action,
                 signable_bytes,
                 execution_context,
                 platform_version,
@@ -136,13 +170,13 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from addresses transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "identity create from addresses transition: validate_advanced_structure_from_state"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }
@@ -155,6 +189,7 @@ pub trait StateTransitionStateValidationForIdentityCreateFromAddressesTransition
         &self,
         action: IdentityCreateFromAddressesTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -167,6 +202,7 @@ impl StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0
         &self,
         action: IdentityCreateFromAddressesTransitionAction,
         platform: &PlatformRef<C>,
+        block_info: &dpp::block::block_info::BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -179,9 +215,17 @@ impl StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0
             .state
         {
             0 => self.validate_state_v0(platform, action, execution_context, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                action,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from addresses transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -1,6 +1,7 @@
 use super::*;
 
 mod creation_tests {
+    use crate::platform_types::platform_state::PlatformState;
     use super::*;
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
@@ -16,20 +17,30 @@ mod creation_tests {
     use dpp::fee::fee_result::refunds::FeeRefunds;
     use dpp::fee::fee_result::FeeResult;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::util::hash::hash_double;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
+    use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund;
     use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
     use drive::util::test_helpers::setup_contract;
-    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, perform_votes_multi};
+    use crate::test::helpers::setup::TempPlatform;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, add_contender_to_dpns_name_contest_paying, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, dpns_name_vote_poll, fill_contest_with_bare_contenders, perform_votes_multi, DpnsContenderJoin};
+    use drive::drive::votes::paths::VotePollPaths;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+    use drive::fees::op::LowLevelDriveOperation;
+    use drive::grovedb::Element;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use std::sync::Arc;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::consensus::state::state_error::StateError;
@@ -54,6 +65,13 @@ mod creation_tests {
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    /// The block after the one holding the preorders: from protocol version 15 a domain
+    /// reveals a preorder made in an earlier block.
+    fn block_after_the_preorders() -> BlockInfo {
+        BlockInfo::default_with_height(1)
+    }
 
     #[tokio::test]
     async fn test_document_creation() {
@@ -95,6 +113,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -148,14 +169,25 @@ mod creation_tests {
             .expect("expected to commit transaction");
     }
 
+    /// Up to protocol version 14 the profile data trigger checks the type byte of
+    /// both DIP-33 payment addresses; from 15 the DashPay v3 rules
+    /// `corePaymentAddressType` and `platformPaymentAddressType` do.
     #[tokio::test]
     async fn should_enforce_profile_payment_address_type_bytes() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            enforce_profile_payment_address_type_bytes_at(protocol_version).await;
+        }
+    }
+
+    async fn enforce_profile_payment_address_type_bytes_at(protocol_version: u32) {
+        use dpp::consensus::basic::BasicError;
         use dpp::consensus::state::data_trigger::DataTriggerError;
         use dpp::consensus::state::state_error::StateError;
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a known protocol version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -177,7 +209,7 @@ mod creation_tests {
             .document_type_for_name("profile")
             .expect("expected a profile document type");
 
-        // (field under test, leading type byte, accepted by the data trigger)
+        // (field under test, leading type byte, accepted)
         let cases = [
             ("corePaymentAddress", 0x00u8, true),
             ("corePaymentAddress", 0x01, true),
@@ -202,6 +234,9 @@ mod creation_tests {
                     platform_version,
                 )
                 .expect("expected a random document");
+            document
+                .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
 
             // start from valid values for both fields, then set the case under test
             set_valid_profile_payment_addresses(&mut document, profile);
@@ -252,9 +287,10 @@ mod creation_tests {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                    "{field} with type byte 0x{leading_byte:02x} must be accepted"
+                    "{field} with type byte 0x{leading_byte:02x} must be accepted at protocol \
+                     version {protocol_version}"
                 );
-            } else {
+            } else if protocol_version <= 14 {
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
                     [StateTransitionExecutionResult::PaidConsensusError {
@@ -263,7 +299,21 @@ mod creation_tests {
                         )),
                         ..
                     }],
-                    "{field} with type byte 0x{leading_byte:02x} must be rejected"
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the data \
+                     trigger at protocol version {protocol_version}"
+                );
+            } else {
+                let rule = format!("{field}Type");
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::DocumentPropertyConstraintViolatedError(e)
+                        ),
+                        ..
+                    }] if e.constraint() == rule,
+                    "{field} with type byte 0x{leading_byte:02x} must be rejected by the \
+                     {rule} rule at protocol version {protocol_version}"
                 );
             }
         }
@@ -299,6 +349,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -368,11 +421,32 @@ mod creation_tests {
         );
     }
 
+    /// From protocol version 14 the id commits to the identity contract
+    /// nonce, so the same entropy no longer derives the id of the first
+    /// profile: the second create is refused because an identity may only
+    /// have one profile, not because its id is taken.
     #[tokio::test]
     async fn test_document_creation_should_fail_if_reusing_entropy() {
-        let platform_version = PlatformVersion::latest();
+        run_document_creation_reusing_entropy_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: the entropy alone derives the id, so reusing it
+    /// asks for a document that is already present.
+    #[tokio::test]
+    async fn test_document_creation_should_fail_if_reusing_entropy_protocol_version_13() {
+        run_document_creation_reusing_entropy_at_protocol_version(13).await;
+    }
+
+    async fn run_document_creation_reusing_entropy_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -408,6 +482,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -472,6 +549,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -512,13 +592,25 @@ mod creation_tests {
             )
             .expect("expected to process state transition");
 
-        assert_matches!(
-            processing_result.execution_results().as_slice(),
-            [PaidConsensusError {
-                error: ConsensusError::StateError(StateError::DocumentAlreadyPresentError { .. }),
-                ..
-            }]
-        );
+        if Document::document_id_depends_on_nonce(platform_version).expect("expected a version") {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DuplicateUniqueIndexError { .. }),
+                    ..
+                }]
+            );
+        } else {
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::DocumentAlreadyPresentError { .. }
+                    ),
+                    ..
+                }]
+            );
+        }
 
         platform
             .drive
@@ -572,6 +664,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         set_valid_profile_payment_addresses(&mut document, profile);
 
@@ -633,9 +728,11 @@ mod creation_tests {
                 )),
                 actual_fees: FeeResult {
                     storage_fee: 11556000,
-                    processing_fee: 526140,
+                    // the nonce derived id is billed 4 SHA-256 blocks instead of 2
+                    processing_fee: 536140,
                     fee_refunds: FeeRefunds::default(),
-                    removed_bytes_from_system: 0
+                    removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 },
                 address_balance_changes: std::collections::BTreeMap::new()
             }
@@ -688,8 +785,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -704,6 +800,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -715,6 +814,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -726,6 +828,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -737,6 +842,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -755,20 +863,24 @@ mod creation_tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -892,7 +1004,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -911,9 +1023,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1151,8 +1261,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -1167,6 +1276,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1188,13 +1300,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1219,6 +1333,9 @@ mod creation_tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let owner_id = document_1.owner_id();
         let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
@@ -1286,7 +1403,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1311,9 +1428,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1443,6 +1558,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1464,13 +1582,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1495,6 +1615,9 @@ mod creation_tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let owner_id = document_1.owner_id();
         let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
@@ -1569,7 +1692,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -1594,9 +1717,7 @@ mod creation_tests {
 
         // The contest must not exist: no contender was added under the real
         // contested index, and no document was created.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1729,6 +1850,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_3
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_3 = domain
             .random_document_with_identifier_and_entropy(
@@ -1750,13 +1874,14 @@ mod creation_tests {
 
         let salt_3: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("quantum.dash".as_bytes());
-
-        preorder_document_3.set(
-            "saltedDomainHash",
-            hash_double(salted_domain_buffer_3).into(),
+        let preorder_owner = preorder_document_3.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3,
+            preorder_owner,
+            &salt_3,
+            "quantum",
+            "dash",
+            platform_version,
         );
 
         document_3.set("preorderSalt", salt_3.into());
@@ -1779,6 +1904,9 @@ mod creation_tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
+        document_3
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let owner_id = document_3.owner_id();
         let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
@@ -1884,9 +2012,7 @@ mod creation_tests {
         );
 
         // The contest still has exactly its two original contenders.
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -1986,8 +2112,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2002,6 +2127,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -2023,13 +2151,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -2054,6 +2184,9 @@ mod creation_tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
         let owner_id = document_1.owner_id();
         let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
             base: DocumentBaseTransition::from_document(
@@ -2120,7 +2253,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2142,9 +2275,7 @@ mod creation_tests {
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2219,8 +2350,16 @@ mod creation_tests {
         assert!(!documents.is_empty());
     }
 
+    /// A contested and a non-contested create of one owner that reuse an
+    /// entropy. While the id derived from the entropy alone the two shared an
+    /// id: state validation v1 (up to protocol version 13) accepts both,
+    /// because it only probes contested storage for contested creates, and the
+    /// one id ends up in primary and in contested storage; state validation v2
+    /// was added to refuse the second create. With the id committing to the
+    /// identity contract nonce the two no longer collide at all: every create
+    /// gets an id of its own and both are accepted.
     #[tokio::test]
-    async fn should_reject_reused_entropy_for_contested_and_non_contested_creates() {
+    async fn should_give_contested_and_non_contested_creates_reusing_entropy_their_own_ids() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -2260,8 +2399,7 @@ mod creation_tests {
             .expect("expected a profile document type");
 
         assert!(!domain.documents_mutable());
-        // Deletion is disabled with data trigger
-        assert!(domain.documents_can_be_deleted());
+        assert!(!domain.documents_can_be_deleted());
         assert!(domain.documents_transferable().is_transferable());
 
         let entropy = Bytes32::random_with_rng(&mut rng);
@@ -2276,6 +2414,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -2287,6 +2428,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let new_entropy = Bytes32::random_with_rng(&mut rng);
 
@@ -2302,6 +2446,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_3_on_identity_1
+            .set_id_for_creation(preorder, &new_entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_4_on_identity_1 = preorder
             .random_document_with_identifier_and_entropy(
@@ -2313,6 +2460,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_4_on_identity_1
+            .set_id_for_creation(preorder, &another_entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -2324,6 +2474,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -2335,6 +2488,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_3_on_identity_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -2346,6 +2502,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_3_on_identity_1
+            .set_id_for_creation(domain, &entropy.0, 6, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_4_on_identity_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -2357,6 +2516,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_4_on_identity_1
+            .set_id_for_creation(domain, &entropy.0, 7, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -2392,7 +2554,8 @@ mod creation_tests {
         );
         document_4_on_identity_1.set("subdomainRules.allowSubdomains", false.into());
 
-        assert_eq!(document_1.id(), document_4_on_identity_1.id());
+        assert_ne!(document_1.id(), document_3_on_identity_1.id());
+        assert_ne!(document_1.id(), document_4_on_identity_1.id());
         assert!(domain
             .prefunded_voting_balance_for_document(&document_1, platform_version)
             .expect("expected to classify the contested document")
@@ -2407,34 +2570,42 @@ mod creation_tests {
         let salt_3: [u8; 32] = rng.gen();
         let salt_4: [u8; 32] = rng.gen();
 
-        let mut salted_domain_buffer_1: Vec<u8> = vec![];
-        salted_domain_buffer_1.extend(salt_1);
-        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
-
-        let mut salted_domain_buffer_2: Vec<u8> = vec![];
-        salted_domain_buffer_2.extend(salt_2);
-        salted_domain_buffer_2.extend("quantum.dash".as_bytes());
-
-        let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
-
-        let mut salted_domain_buffer_3: Vec<u8> = vec![];
-        salted_domain_buffer_3.extend(salt_3);
-        salted_domain_buffer_3.extend("cry.dash".as_bytes());
-
-        let salted_domain_hash_3 = hash_double(salted_domain_buffer_3);
-
-        let mut salted_domain_buffer_4: Vec<u8> = vec![];
-        salted_domain_buffer_4.extend(salt_4);
-        salted_domain_buffer_4.extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
-        let salted_domain_hash_4 = hash_double(salted_domain_buffer_4);
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
-        preorder_document_3_on_identity_1.set("saltedDomainHash", salted_domain_hash_3.into());
-        preorder_document_4_on_identity_1.set("saltedDomainHash", salted_domain_hash_4.into());
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
+            &salt_1,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
+            &salt_2,
+            "quantum",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_3_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3_on_identity_1,
+            preorder_owner,
+            &salt_3,
+            "cry",
+            "dash",
+            platform_version,
+        );
+        let preorder_owner = preorder_document_4_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_4_on_identity_1,
+            preorder_owner,
+            &salt_4,
+            &non_contested_normalized_label,
+            "dash",
+            platform_version,
+        );
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -2644,7 +2815,7 @@ mod creation_tests {
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2668,7 +2839,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_3.clone()],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2685,12 +2856,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError {
-                error: ConsensusError::StateError(
-                    StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
-                ),
-                ..
-            }]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let transaction = platform.drive.grove.start_transaction();
@@ -2700,7 +2866,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &vec![documents_batch_create_serialized_transition_4],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_after_the_preorders(),
                 &transaction,
                 platform_version,
                 false,
@@ -2710,19 +2876,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError {
-                error: ConsensusError::StateError(
-                    StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
-                ),
-                ..
-            }]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         // Now let's run a query for the vote totals
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
@@ -2973,6 +3132,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        contested_preorder_document
+            .set_id_for_creation(preorder, &entropy.0, 1, platform_version)
+            .expect("expected to set the document id");
 
         let mut non_contested_preorder_document = preorder
             .random_document_with_identifier_and_entropy(
@@ -2984,6 +3146,14 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        non_contested_preorder_document
+            .set_id_for_creation(
+                preorder,
+                &non_contested_preorder_entropy.0,
+                2,
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut contested_document = domain
             .random_document_with_identifier_and_entropy(
@@ -2995,6 +3165,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        contested_document
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut non_contested_document = domain
             .random_document_with_identifier_and_entropy(
@@ -3006,6 +3179,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        non_contested_document
+            .set_id_for_creation(domain, &entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
 
         for (document, label, normalized_label) in [
             (&mut contested_document, contested_label, contested_label),
@@ -3038,22 +3214,23 @@ mod creation_tests {
         let contested_salt: [u8; 32] = rng.gen();
         let non_contested_salt: [u8; 32] = rng.gen();
 
-        let mut contested_salted_domain_buffer: Vec<u8> = vec![];
-        contested_salted_domain_buffer.extend(contested_salt);
-        contested_salted_domain_buffer.extend(format!("{contested_label}.dash").as_bytes());
-
-        let mut non_contested_salted_domain_buffer: Vec<u8> = vec![];
-        non_contested_salted_domain_buffer.extend(non_contested_salt);
-        non_contested_salted_domain_buffer
-            .extend(format!("{non_contested_normalized_label}.dash").as_bytes());
-
-        contested_preorder_document.set(
-            "saltedDomainHash",
-            hash_double(contested_salted_domain_buffer).into(),
+        let preorder_owner = contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut contested_preorder_document,
+            preorder_owner,
+            &contested_salt,
+            contested_label,
+            "dash",
+            platform_version,
         );
-        non_contested_preorder_document.set(
-            "saltedDomainHash",
-            hash_double(non_contested_salted_domain_buffer).into(),
+        let preorder_owner = non_contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut non_contested_preorder_document,
+            preorder_owner,
+            &non_contested_salt,
+            non_contested_normalized_label,
+            "dash",
+            platform_version,
         );
         contested_document.set("preorderSalt", contested_salt.into());
         non_contested_document.set("preorderSalt", non_contested_salt.into());
@@ -3229,9 +3406,26 @@ mod creation_tests {
 
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
-        let platform_version = PlatformVersion::latest();
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: the join check reads the generic join window there too; the
+    /// target contract's window of a moderation election is read only from 14 on.
+    #[tokio::test]
+    async fn should_refuse_joining_a_contest_after_the_join_window_protocol_version_13() {
+        run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(13).await;
+    }
+
+    async fn run_contested_document_can_not_be_added_to_after_a_week_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -3300,7 +3494,7 @@ mod creation_tests {
         let extra_time_used = 3000; // add_contender_to_dpns_name_contest uses this extra time
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 0, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 1, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
             time_started + extra_time_used,
             time_started + extra_time_used,
             time_now + extra_time_used,
@@ -3421,6 +3615,519 @@ mod creation_tests {
         assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
     }
 
+    /// The fund a contest's prefunded specialized balance holds
+    fn dpns_name_contest_fund(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        let specialized_balance_id = dpns_name_vote_poll(dpns_contract, name)
+            .specialized_balance_id()
+            .expect("expected the specialized balance id");
+        platform
+            .drive
+            .fetch_prefunded_specialized_balance(
+                specialized_balance_id.to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contest's fund")
+            .expect("expected the contest to have a fund")
+    }
+
+    /// What `contender` holds
+    fn balance_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        contender: &Identity,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        platform
+            .drive
+            .fetch_identity_balance(contender.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch the contender's balance")
+            .expect("expected the contender to have a balance")
+    }
+
+    /// Asserts `join` succeeded charging the contender `fund` beside the fees of its document
+    fn assert_joined_paying(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        join: DpnsContenderJoin,
+        fund: Credits,
+        platform_version: &PlatformVersion,
+    ) {
+        let DpnsContenderJoin {
+            contender,
+            balance_before_create,
+            result,
+        } = join;
+        let SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the contender to join, got {result:?}");
+        };
+        // From protocol version 15 the join consumes the contender's preorder, which refunds
+        // nothing (it expires), though the check reads the refund to hold either way
+        let preorder_refund = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(contender.id())
+            .unwrap_or_default();
+        assert_eq!(
+            balance_before_create - balance_of(platform, &contender, platform_version),
+            fund + fee_result.total_base_fee() - preorder_refund,
+            "the contender pays the fund to join and the fees of its document"
+        );
+    }
+
+    /// Asserts `join` was refused, paid, for stating `paid` where the contest takes `expected`
+    fn assert_refused_for_underpaying(join: DpnsContenderJoin, expected: Credits, paid: Credits) {
+        let PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentContestNotPaidForError(error)),
+            ..
+        } = join.result
+        else {
+            panic!(
+                "expected the contest not to be paid for, got {:?}",
+                join.result
+            );
+        };
+        assert_eq!(error.expected_amount(), expected);
+        assert_eq!(error.paid_amount(), paid);
+    }
+
+    /// The fund a contender pays doubles once the contest holds 250 contenders: from then, a
+    /// contender stating the contested document fund is refused, paid, with the fund it has to
+    /// pay, and one stating twice it joins and pays it into the contest's fund
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, 2 * fund, fund);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund
+        );
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(2 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 2 * fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + 2 * fund
+        );
+    }
+
+    /// PROTOCOL_VERSION_13: every contender pays the same fund, however many the contest holds
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders_protocol_version_13(
+    ) {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund
+        );
+    }
+
+    /// A contender states the most it pays: it is charged the fund to join, and what it stated
+    /// beyond that stays with it
+    #[tokio::test]
+    async fn should_charge_a_contender_the_fund_to_join_and_leave_it_the_rest() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund + fund / 2),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund
+        );
+
+        // Holding 300 contenders the contest takes four times its fund
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            300,
+            platform_version,
+        );
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(10 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 4 * fund, platform_version);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + 5 * fund
+        );
+    }
+
+    /// The 250th contender, joining a contest holding 249, still pays the contest's fund
+    #[tokio::test]
+    async fn should_let_the_250th_contender_join_for_the_contest_fund() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            249,
+            platform_version,
+        );
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+    }
+
+    /// The first contender of a contest pays its fund too: one stating less is refused, paid,
+    /// with the fund, and opens no contest
+    #[tokio::test]
+    async fn should_refuse_a_contender_opening_a_contest_for_less_than_its_fund() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+
+        let platform_state = platform.state.load();
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "sapphire",
+            Some(fund - 1),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, fund, fund - 1);
+        let specialized_balance_id = dpns_name_vote_poll(&dpns_contract, "sapphire")
+            .specialized_balance_id()
+            .expect("expected the specialized balance id");
+        assert_eq!(
+            platform
+                .drive
+                .fetch_prefunded_specialized_balance(
+                    specialized_balance_id.to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the contest's fund"),
+            None,
+            "the refused contender opened no contest"
+        );
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "sapphire",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, fund, platform_version);
+    }
+
+    /// A contest started before protocol version 14 counts its contenders by walking them, not
+    /// from a count tree, and from 14 its fund doubles past 250 contenders like any other
+    #[tokio::test]
+    async fn should_double_the_fund_of_a_contest_started_before_protocol_version_14() {
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version_13,
+        )
+        .await;
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            250,
+            platform_version_13,
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &mut PlatformState::clone(&platform_state),
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 1000,
+                ),
+                &transaction,
+                13,
+                platform_version,
+            )
+            .expect("expected the first block of the latest protocol version");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the transaction");
+        let mut upgraded_state = platform_state.as_ref().clone();
+        // The state runs the version the upgrade went to: from protocol version 15 the
+        // upgrade re-stores DPNS v3, which the version 14 create trigger does not read
+        upgraded_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+        upgraded_state.set_next_epoch_protocol_version(platform_version.protocol_version);
+        platform.state.store(Arc::new(upgraded_state));
+        let platform_state = platform.state.load();
+
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_refused_for_underpaying(join, 2 * fund, fund);
+
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(2 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 2 * fund, platform_version);
+    }
+
+    /// A contest accepts at most `max_contenders_per_contest` contenders (1,000): the one that
+    /// would be the 1,001st is refused, paid
+    #[tokio::test]
+    async fn should_refuse_a_contender_past_the_most_a_contest_accepts() {
+        let platform_version = PlatformVersion::latest();
+        let max_contenders = platform_version.system_limits.max_contenders_per_contest as u64;
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            max_contenders - 1,
+            platform_version,
+        );
+        // The 1,000th contender pays 32,768 times the fund
+        let fund = required_vote_resolution_fund(&dpns_contract.id(), "domain", platform_version);
+        let join = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(32_768 * fund),
+            platform_version,
+        )
+        .await;
+        assert_joined_paying(&platform, join, 32_768 * fund, platform_version);
+
+        add_contender_to_dpns_name_contest(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some("The vote poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } already has 1000 contenders, the most a contest accepts"),
+            platform_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: a contest accepts any number of contenders
+    #[tokio::test]
+    async fn should_accept_a_contender_past_the_most_a_contest_accepts_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let max_contenders = PlatformVersion::latest()
+            .system_limits
+            .max_contenders_per_contest as u64;
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_name_vote_poll(&dpns_contract, "quantum"),
+            max_contenders,
+            platform_version,
+        );
+        add_contender_to_dpns_name_contest(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            None,
+            platform_version,
+        )
+        .await;
+    }
+
     #[tokio::test]
     async fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
         let platform_version = PlatformVersion::latest();
@@ -3521,7 +4228,7 @@ mod creation_tests {
         // We expect this to fail
 
         let expected_error_message = format!(
-            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 0, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
+            "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 1, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
             time_after_distribution_limit
         );
 
@@ -3597,6 +4304,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -3659,6 +4369,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 8.into());
         document.set("defense", 2.into());
@@ -3784,6 +4497,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected to create a random document");
+        document
+            .set_id_for_creation(doc_type, &entropy.0, 1, platform_version)
+            .expect("expected to set the document id");
 
         // Set fields in the document
         document.set("keyword", "meme".into());
@@ -3919,6 +4635,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4065,6 +4784,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4209,6 +4931,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4341,6 +5066,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4474,6 +5202,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4607,6 +5338,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4735,6 +5469,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -4863,6 +5600,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -5009,6 +5749,7 @@ mod creation_tests {
                 token_amount: 5,
                 effect: Default::default(),
                 gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+                optional: false,
             })
         );
 
@@ -5024,6 +5765,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -5130,6 +5874,62 @@ mod creation_tests {
     /// references it since it is the one contract known to exist in state.
     const REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_ID: &str =
         "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd";
+    const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-elected-contract-ref.json";
+    /// The `id` of the elected-contract-reference fixture: the one contract in state in its
+    /// tests, and one that declares no moderation, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID: &str =
+        "9k3RE6kHNTsDmyXFwEPpiFQ3ipXfp5FuXGXpQ1rDHDJb";
+    const REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-election-open-contract-ref.json";
+    /// The `id` of the election-open-contract-reference fixture: in state in its tests, and
+    /// one that declares no moderation, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_ID: &str =
+        "FutvNUuQYthkyfNtaEsdJEFsnCQshBohD9GP7NrSUwR";
+    const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-aged-contract-ref.json";
+    /// The `id` of the aged-contract-reference fixture (`minimumAgeSeconds: 3600`): written to
+    /// state without a creation time, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_ID: &str =
+        "GbYWKJSr6P7fJqkAdSCNM5kuN2eBewAgYfrMJ22rfhrD";
+    const REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-updated-contract-ref.json";
+    /// The block time the aged- and updated-contract-reference tests write the referring
+    /// document at
+    const AGED_REFERENCE_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+    /// The minimum age, and minimum time since the last update, the aged- and
+    /// updated-contract-reference fixtures declare, in milliseconds
+    const AGED_REFERENCE_MINIMUM_AGE_MS: u64 = 3_600_000;
+    const REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-self-contract-ref.json";
+    /// The `id` of the self-owned-contract-reference fixture (`owner: "self"`): owned by an
+    /// identity that is not the writer, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_ID: &str =
+        "Gb9ZqQQTAoV7JCUrZhsS4ssZozbE33Suunzhr7RVy2pD";
+    const REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-other-contract-ref.json";
+    /// The `id` of the other-owned-contract-reference fixture (`owner: "other"`): owned by an
+    /// identity that is not the writer, so a reference to it is met.
+    const REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_ID: &str =
+        "EPHoATa8ifeWoviLaxTQRWfsJUHAQUCro6dEkwgjwog7";
+    const REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-readonly-contract-ref.json";
+    /// The `id` of the read-only-contract-reference fixture (`readonly: true`): not read-only
+    /// itself, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_ID: &str =
+        "2FkduiNwoBct7PdxmCRYgLxckj4s8dhx7tXLUUpq74Qk";
+    const REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-keeps-history-contract-ref.json";
+    /// The `id` of the history-keeping-contract-reference fixture (`keepsHistory: true`): not
+    /// keeping history itself, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_ID: &str =
+        "7gQQ8BdF9gem9YxBNLd3QW7AmiGYNTTuVLerkiJZ3JCx";
+    const REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-protected-contract-ref.json";
+    /// The `id` of the owner-protected-contract-reference fixture (`ownerProtected: true`):
+    /// declaring no moderation at all, so a reference to it is unmet.
+    const REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_ID: &str =
+        "6BL67iVAJ5eiVne4qXJGNRGpVqB2b2TKiF1odQ7y2qjn";
     const REFERENCE_VALIDATION_TOKEN_REF_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-token-ref.json";
     const REFERENCE_VALIDATION_OPTIONAL_CONTRACT_PATH: &str =
@@ -5150,6 +5950,33 @@ mod creation_tests {
     ) -> StateTransitionExecutionResult
     where
         F: FnOnce(&mut Document, &ReferenceTargets),
+    {
+        run_reference_validation_creation_with_setup_and_mutator(
+            contract_path,
+            BlockInfo::default(),
+            |_, _, _| Identifier::default(),
+            |document, targets, _| mutator(document, targets),
+        )
+        .await
+    }
+
+    /// Like `run_reference_validation_creation_with_mutator`, with a `setup` step that writes
+    /// whatever else the test needs into state before the contract, given the targets already
+    /// in state (the writer's identity among them), and hands the mutator an id it produced
+    /// (a contract's, say). The document is written in a block of `block_info`.
+    async fn run_reference_validation_creation_with_setup_and_mutator<S, F>(
+        contract_path: &str,
+        block_info: BlockInfo,
+        setup: S,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        S: FnOnce(
+            &mut TempPlatform<MockCoreRPCLike>,
+            &ReferenceTargets,
+            &PlatformVersion,
+        ) -> Identifier,
+        F: FnOnce(&mut Document, &ReferenceTargets, Identifier),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -5180,6 +6007,8 @@ mod creation_tests {
             token_id,
         };
 
+        let setup_id = setup(&mut platform, &targets, platform_version);
+
         let contract = setup_contract(
             &platform.drive,
             contract_path,
@@ -5206,8 +6035,11 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
-        mutator(&mut document, &targets);
+        mutator(&mut document, &targets, setup_id);
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -5236,7 +6068,7 @@ mod creation_tests {
             .process_raw_state_transitions(
                 &[documents_batch_create_serialized_transition],
                 &platform_state,
-                &BlockInfo::default(),
+                &block_info,
                 &transaction,
                 platform_version,
                 false,
@@ -5404,6 +6236,766 @@ mod creation_tests {
         );
     }
 
+    /// A contract with an elected moderation team, protecting its owner from the team or not,
+    /// for a reference that requires one. It is written to state directly, the way the
+    /// fixtures are, so the moderated type needs no list behind it.
+    fn insert_elected_contract(
+        owner_protected: bool,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        insert_elected_contract_with(None, None, owner_protected)
+    }
+
+    /// An elected contract with the given election delay, recorded creation time and owner
+    /// protection, written to state directly, the way the fixtures are.
+    fn insert_elected_contract_with(
+        election_delay: Option<u32>,
+        created_at: Option<u64>,
+        owner_protected: bool,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
+            use dpp::data_contract::config::moderation::{
+                ContractModerationConfig, ContractModerators, ElectedModerators, InterimModerators,
+                ModerationAbility, DEFAULT_ELECTION_WINDOW_SECONDS,
+            };
+            use std::collections::{BTreeMap, BTreeSet};
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some([0xE1; 32]),
+                None,
+                Some(|contract: &mut DataContract| {
+                    contract.set_created_at(created_at);
+                    contract.set_config(contract.config().clone().with_moderation(Some(
+                        ContractModerationConfig {
+                            banlist: true,
+                            suspensions: true,
+                            warnings: false,
+                            moderators: ContractModerators::Elected(Box::new(ElectedModerators {
+                                join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                                vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
+                                challenge_cool_down: Some(1_209_600),
+                                election_delay,
+                                max_added_moderators: 0,
+                                moderated_document_types: BTreeMap::from([(
+                                    "message".to_string(),
+                                    BTreeSet::from([ModerationAbility::Ban]),
+                                )]),
+                                interim: InterimModerators::ContractOwner,
+                                owner_protected,
+                            })),
+                        },
+                    )));
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
+    }
+
+    /// A contract with the id `contract_id` whose config `configure` adjusts, for a reference
+    /// that requires something of the config. Written to state directly, the way the fixtures
+    /// are.
+    fn insert_contract_configured(
+        contract_id: [u8; 32],
+        configure: impl FnOnce(&mut DataContractConfig),
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
+            use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some(contract_id),
+                None,
+                Some(|contract: &mut DataContract| {
+                    let mut config = contract.config().clone();
+                    configure(&mut config);
+                    contract.set_config(config);
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
+    }
+    #[tokio::test]
+    async fn should_document_creation_fail_when_election_open_contract_is_not_elected() {
+        // The fixture contract itself exists in state and declares no moderation at all
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "moderation"
+                && e.required() == "electionOpen"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_elected_contract_declares_no_election_delay() {
+        // No delay: the election is open from the contract's creation, whether or not the
+        // creation time is recorded
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract_with(None, None, false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_the_election_delay_has_not_passed() {
+        // Created one millisecond less than its own delay before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(
+                Some(3600),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1),
+                false,
+            ),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xE1; 32])
+                && e.field() == "moderation"
+                && e.required() == "electionOpen"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_a_delayed_contract_has_no_creation_time() {
+        // A delay on a contract of unknown age never opens
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(Some(1), None, false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.field() == "moderation" && e.required() == "electionOpen"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_the_election_delay_has_passed() {
+        // Created exactly its own delay before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTION_OPEN_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_elected_contract_with(
+                Some(3600),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS),
+                false,
+            ),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_is_not_elected_moderated() {
+        // The fixture contract itself exists in state and declares no moderation at all
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "moderation"
+                && e.required() == "elected"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_elected_contract_missing() {
+        // A missing contract is still reported as missing, not as unmet
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", Identifier::random().into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_is_elected_moderated() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_ELECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract(false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A contract created at `created_at`, for a reference that requires a minimum age. It is
+    /// written to state directly, the way the fixtures are, with the creation time a contract
+    /// create transition would have recorded.
+    fn insert_contract_created_at(
+        created_at: Option<u64>,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        insert_contract_with_times(created_at, None)
+    }
+
+    /// A contract created at `created_at` and last updated at `updated_at`, the times the
+    /// create and update transitions would have recorded, written to state directly.
+    fn insert_contract_with_times(
+        created_at: Option<u64>,
+        updated_at: Option<u64>,
+    ) -> impl FnOnce(&mut TempPlatform<MockCoreRPCLike>, &ReferenceTargets, &PlatformVersion) -> Identifier
+    {
+        move |platform, _targets, _platform_version| {
+            use dpp::data_contract::accessors::v1::DataContractV1Setters;
+
+            let contract = setup_contract(
+                &platform.drive,
+                REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+                Some([0xA6; 32]),
+                None,
+                Some(|contract: &mut DataContract| {
+                    contract.set_created_at(created_at);
+                    contract.set_updated_at(updated_at);
+                }),
+                None,
+                None,
+            );
+            contract.id()
+        }
+    }
+
+    fn aged_reference_block_info() -> BlockInfo {
+        BlockInfo {
+            time_ms: AGED_REFERENCE_BLOCK_TIME_MS,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_is_too_young() {
+        // Created one millisecond less than the minimum age before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1,
+            )),
+            |document, _, young_contract_id| {
+                document.set("refContractId", young_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xA6; 32])
+                && e.field() == "minimumAgeSeconds"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_has_no_creation_time() {
+        // The fixture contract itself exists in state, written without a creation time, as a
+        // contract created before contracts recorded one would be: its age is unknown
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            |_, _, _| Identifier::default(),
+            |document, _, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "minimumAgeSeconds"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_contract_was_updated_too_recently() {
+        // Created long before the block, but updated one millisecond less than the minimum
+        // before it: the update restarts the clock
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_with_times(
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - 100 * AGED_REFERENCE_MINIMUM_AGE_MS),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS + 1),
+            ),
+            |document, _, updated_contract_id| {
+                document.set("refContractId", updated_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xA6; 32])
+                && e.field() == "minimumSecondsSinceUpdate"
+                && e.required() == "3600"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_was_updated_long_enough_ago()
+    {
+        // Updated exactly the minimum before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_with_times(
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - 100 * AGED_REFERENCE_MINIMUM_AGE_MS),
+                Some(AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS),
+            ),
+            |document, _, updated_contract_id| {
+                document.set("refContractId", updated_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_never_updated_referenced_contract_is_old_enough()
+    {
+        // Never updated: the creation time is the last change
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_UPDATED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS,
+            )),
+            |document, _, old_contract_id| {
+                document.set("refContractId", old_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_contract_is_old_enough() {
+        // Created exactly the minimum age before the block
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_AGED_CONTRACT_REF_CONTRACT_PATH,
+            aged_reference_block_info(),
+            insert_contract_created_at(Some(
+                AGED_REFERENCE_BLOCK_TIME_MS - AGED_REFERENCE_MINIMUM_AGE_MS,
+            )),
+            |document, _, old_contract_id| {
+                document.set("refContractId", old_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A contract owned by the writer of the referring document, for a reference that requires
+    /// the referenced contract to be, or not to be, the writer's own. Written to state directly,
+    /// the way the fixtures are.
+    fn insert_contract_owned_by_writer(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        targets: &ReferenceTargets,
+        _platform_version: &PlatformVersion,
+    ) -> Identifier {
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_CONTRACT_REF_CONTRACT_PATH,
+            Some([0xB1; 32]),
+            Some(targets.identity_id.to_buffer()),
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+        contract.id()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_self_owned_contract_is_the_writers() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_owned_by_writer,
+            |document, _, own_contract_id| {
+                document.set("refContractId", own_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_self_owned_contract_is_someone_elses() {
+        // The fixture contract itself exists in state, owned by an identity that is not the
+        // writer
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_SELF_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "owner"
+                && e.required() == "self"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_other_owned_contract_is_someone_elses()
+    {
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_other_owned_contract_is_the_writers() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_OTHER_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_owned_by_writer,
+            |document, _, own_contract_id| {
+                document.set("refContractId", own_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xB1; 32])
+                && e.field() == "owner"
+                && e.required() == "other"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_readonly_contract_is_readonly() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_configured([0xC1; 32], |config| config.set_readonly(true)),
+            |document, _, readonly_contract_id| {
+                document.set("refContractId", readonly_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_readonly_contract_is_updatable() {
+        // The fixture contract itself exists in state and is not read-only
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_READONLY_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "readonly"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_history_keeping_contract_keeps_history()
+    {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_contract_configured([0xC2; 32], |config| config.set_keeps_history(true)),
+            |document, _, history_contract_id| {
+                document.set("refContractId", history_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_history_keeping_contract_keeps_none() {
+        // The fixture contract itself exists in state and keeps no history
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_KEEPS_HISTORY_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "keepsHistory"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_required_owner_protection_is_declared() {
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract(true),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_owner_protection_is_not_declared() {
+        // Elected moderation whose declaration leaves the owner unprotected
+        let result = run_reference_validation_creation_with_setup_and_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            BlockInfo::default(),
+            insert_elected_contract(false),
+            |document, _, elected_contract_id| {
+                document.set("refContractId", elected_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &Identifier::from([0xE1; 32])
+                && e.field() == "ownerProtected"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_required_owner_protection_has_no_elected_moderation(
+    ) {
+        // The fixture contract itself exists in state and declares no moderation at all, so
+        // there is no owner protection flag to meet either value
+        let existing_contract_id = Identifier::from_string(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_ID,
+            Encoding::Base58,
+        )
+        .expect("expected a valid contract id");
+
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_OWNER_PROTECTED_CONTRACT_REF_CONTRACT_PATH,
+            |document, _| {
+                document.set("refContractId", existing_contract_id.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(ref e)),
+                ..
+            } if e.contract_id() == &existing_contract_id
+                && e.field() == "ownerProtected"
+                && e.required() == "true"
+                && e.path() == "refContractId"
+        );
+    }
+
     #[tokio::test]
     async fn should_document_creation_succeed_with_nested_and_multiple_references() {
         let result = run_reference_validation_creation_with_mutator(
@@ -5507,7 +7099,7 @@ mod creation_tests {
 
             let note_entropy = Bytes32::random_with_rng(&mut rng);
 
-            let note_document = note
+            let mut note_document = note
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
                     identity.id(),
@@ -5517,6 +7109,9 @@ mod creation_tests {
                     platform_version,
                 )
                 .expect("expected a random note document");
+            note_document
+                .set_id_for_creation(note, &note_entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
 
             note_ids.push(note_document.id());
 
@@ -5591,6 +7186,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
 
         mutator(&mut document, &targets);
 
@@ -5825,6 +7423,9 @@ mod creation_tests {
                 platform_version,
             )
             .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         mutator(&mut document, &targets);
 
@@ -5963,6 +7564,794 @@ mod creation_tests {
                 )),
                 ..
             }
+        );
+    }
+
+    /// Registers the key-requirements fixture contract, adds the keys of
+    /// [`IdentityKeyRequirementTargets`] to the test identity, then creates a `message`
+    /// document mutated by the test and returns the execution result.
+    async fn run_identity_key_requirement_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &IdentityKeyRequirementTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_IDENTITY_KEY_REQUIREMENTS_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let targets = add_identity_key_requirement_targets(
+            &mut platform,
+            &identity,
+            key.id(),
+            contract.id(),
+            platform_version,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_referenced_key_meets_its_requirements() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.decryption_key_bound_to_inbox_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_has_the_wrong_purpose() {
+        let cases: [(fn(&IdentityKeyRequirementTargets) -> KeyID, &str); 2] = [
+            (
+                |t: &IdentityKeyRequirementTargets| t.encryption_key_bound_to_inbox_id,
+                "encryption",
+            ),
+            (
+                |t: &IdentityKeyRequirementTargets| t.authentication_key_id,
+                "authentication",
+            ),
+        ];
+        for (key_id, actual) in cases {
+            let result = run_identity_key_requirement_creation(|document, targets| {
+                document.set("recipientId", targets.identity_id.into());
+                document.set("recipientKeyId", (key_id(targets) as i64).into());
+            })
+            .await;
+
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                    ),
+                    ..
+                } if e.document_type_name() == "message"
+                    && e.path() == "recipientId"
+                    && e.field() == "purpose"
+                    && e.required() == "decryption"
+                    && e.actual() == actual
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_is_bound_to_another_document_type() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.decryption_key_bound_to_message_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.document_type_name() == "message"
+                && e.path() == "recipientId"
+                && e.key_id() == 4
+                && e.field() == "boundTo"
+                && e.required() == "inbox"
+                && e.actual().ends_with(" document type message")
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_referenced_key_has_no_contract_bounds() {
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set(
+                "recipientKeyId",
+                (targets.unbound_decryption_key_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.field() == "boundTo"
+                && e.required() == "inbox"
+                && e.actual() == "no contract bounds"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_as_key_not_found_when_required_key_is_missing() {
+        // A key that does not exist is still reported as missing, not as unmet
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+            document.set("recipientKeyId", 99i64.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    _
+                )),
+                ..
+            }
+        );
+
+        // And an unset key id property is still reported as invalid
+        let result = run_identity_key_requirement_creation(|document, targets| {
+            document.set("recipientId", targets.identity_id.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedKeyIdPropertyInvalidError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    const REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key.json";
+
+    /// Committed state the key id reference tests can point at: the writer
+    /// (its enabled critical key, its master key disabled in state) and a
+    /// second identity in the same state, for the form naming an identity
+    /// property.
+    struct KeyIdReferenceTargets {
+        writer_id: Identifier,
+        enabled_key_id: KeyID,
+        disabled_key_id: KeyID,
+        other_id: Identifier,
+        other_enabled_key_id: KeyID,
+        other_disabled_key_id: KeyID,
+    }
+
+    /// Registers the key id reference fixture at `contract_path` (a `message`
+    /// type whose key id property carries `refersTo: identityPublicKey` with
+    /// an `identityProperty`), disables the master key of the writer and of
+    /// a second identity in state, then creates a `message` document mutated
+    /// by the test and returns the execution result.
+    async fn run_key_id_reference_creation<F>(
+        contract_path: &str,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &KeyIdReferenceTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(434);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+        let (other, _, other_key) = setup_identity(&mut platform, 452, dash_to_credits!(0.1));
+
+        // Key 0 is the master key; documents are signed with the critical key,
+        // so disabling it leaves the transition below valid
+        for identity_id in [identity.id(), other.id()] {
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity_id.to_buffer(),
+                    vec![0],
+                    1,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to disable the master key");
+        }
+
+        let targets = KeyIdReferenceTargets {
+            writer_id: identity.id(),
+            enabled_key_id: key.id(),
+            disabled_key_id: 0,
+            other_id: other.id(),
+            other_enabled_key_id: other_key.id(),
+            other_disabled_key_id: 0,
+        };
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                // The key id property is optional; each test sets what it
+                // exercises
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_reference_names_an_existing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The reference names a key of the writer's own identity, so a key id
+    /// the owner does not have is a missing key, whatever other identity may
+    /// hold a key under that id: there is no property naming another
+    /// identity, so "another identity's key" is not expressible and needs no
+    /// test of its own. Refused paid, the identity exists.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_reference_names_a_missing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "senderKeyId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_reference_names_a_disabled_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.disabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    _
+                )),
+                ..
+            }
+        );
+    }
+
+    /// The form on a nested property is validated at its dotted path, the
+    /// same path the flattened properties and the error report.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_nested_owner_key_reference_names_a_missing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set(
+                    "meta",
+                    dpp::platform_value::platform_value!({ "senderKeyId": 99u32 }),
+                );
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "meta.senderKeyId"
+        );
+    }
+
+    /// An unset key id is not a reference to validate; whether the property
+    /// may be absent is the document type's required list (it is optional
+    /// in the fixture).
+    const REFERENCE_VALIDATION_OWNER_KEY_REQUIREMENTS_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-owner-key-requirements.json";
+
+    /// Registers the owner-key fixture whose `senderKeyId` requires a
+    /// decryption key bound to the contract's `inbox` type, adds the keys of
+    /// [`IdentityKeyRequirementTargets`] to the writer, then creates a
+    /// `message` document mutated by the test and returns the execution
+    /// result.
+    async fn run_owner_key_requirement_creation<F>(mutator: F) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, &IdentityKeyRequirementTargets),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(436);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 960, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            REFERENCE_VALIDATION_OWNER_KEY_REQUIREMENTS_CONTRACT_PATH,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let targets = add_identity_key_requirement_targets(
+            &mut platform,
+            &identity,
+            key.id(),
+            contract.id(),
+            platform_version,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
+
+        mutator(&mut document, &targets);
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized create transition")],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    /// `keyRequirements` apply to the key id form exactly as to the
+    /// identifier form, through the shared key check.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_meets_its_requirements() {
+        let result = run_owner_key_requirement_creation(|document, targets| {
+            document.set(
+                "senderKeyId",
+                (targets.decryption_key_bound_to_inbox_id as i64).into(),
+            );
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_owner_key_does_not_meet_its_requirements() {
+        let result = run_owner_key_requirement_creation(|document, targets| {
+            document.set("senderKeyId", (targets.authentication_key_id as i64).into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedIdentityKeyRequirementNotMetError(ref e)
+                ),
+                ..
+            } if e.path() == "senderKeyId" && e.field() == "purpose"
+        );
+    }
+
+    const REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key.json";
+    const REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-identity-property-key.json";
+
+    /// `$creatorId` on a create names the writer, the document's creator.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_creator_key_reference_names_an_existing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("senderKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_fail_when_creator_key_reference_names_a_missing_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_CREATOR_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("senderKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99 && e.path() == "senderKeyId"
+        );
+    }
+
+    /// A property path: `toUserId` carries the identity, `recipientKeyId` the
+    /// id of one of its keys.
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_key_reference_names_an_identity_property() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set(
+                    "recipientKeyId",
+                    (targets.other_enabled_key_id as i64).into(),
+                );
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The key is looked up on the named identity, not the writer: the
+    /// writer's critical key id is enabled on the writer but names the other
+    /// identity's disabled master key when the ids coincide, and a missing
+    /// one is missing on the other identity.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_named_identity_lacks_or_disabled_the_key() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set(
+                    "recipientKeyId",
+                    (targets.other_disabled_key_id as i64).into(),
+                );
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyDisabledError(
+                    e
+                )),
+                ..
+            } if e.path() == "recipientKeyId"
+        );
+
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("toUserId", targets.other_id.into());
+                document.set("recipientKeyId", 99i64.into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedIdentityKeyNotFoundError(
+                    e
+                )),
+                ..
+            } if e.key_id() == 99
+        );
+    }
+
+    /// A key id without the identity it belongs to is refused: the pair is
+    /// the reference.
+    #[tokio::test]
+    async fn should_document_creation_fail_when_key_reference_identity_property_is_not_set() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_IDENTITY_PROPERTY_KEY_CONTRACT_PATH,
+            |document, targets| {
+                document.set("recipientKeyId", (targets.enabled_key_id as i64).into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedKeyIdPropertyInvalidError(
+                    e
+                )),
+                ..
+            } if e.path() == "recipientKeyId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_document_creation_succeed_when_owner_key_reference_is_not_set() {
+        let result = run_key_id_reference_creation(
+            REFERENCE_VALIDATION_OWNER_KEY_CONTRACT_PATH,
+            |document, _| {
+                document.set("note", "no key named".into());
+            },
+        )
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 }

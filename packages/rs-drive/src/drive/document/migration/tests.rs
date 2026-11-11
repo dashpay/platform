@@ -6,6 +6,63 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::DocumentV0Setters;
 use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
+#[test]
+fn should_accept_history_migration_when_only_primary_writer_changes() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_to_primary_storage = 2;
+    let transaction = drive.grove.start_transaction();
+
+    let stats = drive
+        .migrate_document_history_storage(&transaction, &platform_version)
+        .expect("the current history layout remains supported");
+    assert_eq!(stats.migrated_documents, 0);
+}
+
+#[test]
+fn should_reject_history_migration_for_legacy_layout_with_current_writer() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout = 0;
+    let transaction = drive.grove.start_transaction();
+
+    assert!(matches!(
+        drive.migrate_document_history_storage(&transaction, &platform_version),
+        Err(Error::Drive(DriveError::CorruptedDriveState(message)))
+            if message == "document history migration requires the composite-key layout"
+    ));
+}
+
+#[test]
+fn should_reject_history_migration_for_unknown_layout() {
+    let mut platform_version = PlatformVersion::latest().clone();
+    let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+    platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout = 2;
+    let transaction = drive.grove.start_transaction();
+
+    assert!(matches!(
+        drive.migrate_document_history_storage(&transaction, &platform_version),
+        Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method,
+            known_versions,
+            received: 2,
+        })) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
+    ));
+}
+
 fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStats {
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
@@ -88,7 +145,6 @@ fn migrate_summable_history(revision_count: u64) -> DocumentHistoryMigrationStat
                 true,
                 None,
                 old,
-                None,
             )
             .unwrap();
     }
@@ -280,7 +336,6 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
                 true,
                 None,
                 old,
-                None,
             )
             .unwrap();
     }
@@ -349,7 +404,6 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     use crate::query::document_history_drive_query::{
         DocumentHistoryDriveQuery, DocumentHistoryFilter,
     };
-    use crate::verify::document::DocumentHistoryProof;
     let mut history_query = DocumentHistoryDriveQuery {
         contract_id: contract.id().to_buffer(),
         document_type_name: "profile".into(),
@@ -404,39 +458,20 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
     let committed_page = drive
         .fetch_document_history(&history_query, document_type, None, new)
         .unwrap();
-    let proof = DocumentHistoryProof::from_bytes(
-        &drive
-            .prove_document_history(&history_query, document_type, None, new)
-            .unwrap(),
-    )
-    .unwrap();
+    let proof = drive
+        .prove_document_history(&history_query, document_type, None, new)
+        .unwrap();
     assert_eq!(committed_page, page);
     assert_eq!(
-        Drive::verify_document_history(
-            &history_query,
-            &proof.to_bytes().unwrap(),
-            document_type,
-            new,
-        )
-        .unwrap()
-        .1,
+        Drive::verify_document_history(&history_query, &proof, document_type, new,)
+            .unwrap()
+            .1,
         page
     );
-    let mut legacy_entries = proof.clone();
-    legacy_entries.entries_proof = Some(
-        crate::util::test_helpers::history_proof::downgrade_history_count(
-            proof.entries_proof.as_ref().unwrap(),
-            None,
-            new,
-        ),
-    );
-    let error = Drive::verify_document_history(
-        &history_query,
-        &legacy_entries.to_bytes().unwrap(),
-        document_type,
-        new,
-    )
-    .expect_err("entries require a GroveDB v1 envelope");
+    let legacy_entries =
+        crate::util::test_helpers::history_proof::downgrade_history_count(&proof, None, new);
+    let error = Drive::verify_document_history(&history_query, &legacy_entries, document_type, new)
+        .expect_err("entries require a GroveDB v1 envelope");
     assert!(matches!(
         error,
         Error::Proof(
@@ -450,54 +485,23 @@ fn should_migrate_revisions_and_indexes_without_recovering_overwritten_revisions
         history_query.filter = filter;
         let fetched = drive.fetch_document_history(&history_query, document_type, None, new);
         let proved = drive.prove_document_history(&history_query, document_type, None, new);
-        let dishonest = DocumentHistoryProof {
-            entries_proof: Some(
-                drive
-                    .grove_get_proved_path_query(
-                        &history_query.construct_path_query(new).unwrap(),
-                        None,
-                        &mut vec![],
-                        &new.drive,
-                    )
-                    .unwrap(),
-            ),
-            metadata_proof: proof.metadata_proof.clone(),
-        };
-        let verified = Drive::verify_document_history(
-            &history_query,
-            &dishonest.to_bytes().unwrap(),
-            document_type,
+        let dishonest = drive
+            .grove_get_proved_path_query(
+                &history_query.construct_path_query(new).unwrap(),
+                None,
+                &mut vec![],
+                &new.drive,
+            )
+            .unwrap();
+        let verified =
+            Drive::verify_document_history(&history_query, &dishonest, document_type, new);
+        let downgraded = crate::util::test_helpers::history_proof::downgrade_history_count(
+            &dishonest,
+            Some(3),
             new,
         );
-        let mut downgraded = dishonest.clone();
-        downgraded.metadata_proof =
-            crate::util::test_helpers::history_proof::downgrade_history_count(
-                &proof.metadata_proof,
-                Some(3),
-                new,
-            );
-        let (legacy_root, _) = grovedb::GroveDb::verify_query_with_options(
-            &downgraded.metadata_proof,
-            &history_query.metadata_path_query(new).unwrap(),
-            grovedb::VerifyOptions {
-                absence_proofs_for_non_existing_searched_keys: false,
-                verify_proof_succinctness: true,
-                include_empty_trees_in_result: true,
-            },
-            &new.drive.grove_version,
-        )
-        .unwrap();
-        assert_eq!(
-            legacy_root, root_migrated,
-            "legacy terminal counts do not change the committed root"
-        );
-        let error = Drive::verify_document_history(
-            &history_query,
-            &downgraded.to_bytes().unwrap(),
-            document_type,
-            new,
-        )
-        .expect_err("document history rejects legacy metadata envelopes");
+        let error = Drive::verify_document_history(&history_query, &downgraded, document_type, new)
+            .expect_err("document history rejects legacy metadata envelopes");
         assert!(matches!(
             error,
             Error::Proof(
@@ -589,7 +593,6 @@ fn should_halt_migration_when_an_inventoried_index_reference_was_not_rewritten()
             true,
             None,
             old,
-            None,
         )
         .unwrap();
     let transaction = drive.grove.start_transaction();
@@ -713,7 +716,6 @@ fn should_migrate_a_legacy_contested_keep_history_contract() {
             true,
             None,
             old,
-            None,
         )
         .unwrap();
 

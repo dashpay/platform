@@ -1,4 +1,4 @@
-//! Legacy envelope fixtures for document-history format validation.
+//! Legacy GroveDB proof fixtures for document-history format validation.
 use dpp::version::PlatformVersion;
 use grovedb::operations::proof::{
     GroveDBProof, GroveDBProofV0, LayerProof, MerkOnlyLayerProof, ProofBytes, ProveOptions,
@@ -31,7 +31,25 @@ pub fn downgrade_history_count(
                     other => return other,
                 };
                 let node = match node {
-                    Node::KVValueHashFeatureTypeWithChildHash(key, value, hash, feature, _) => {
+                    Node::KVValueHash(key, value, hash) => {
+                        let mut element =
+                            Element::deserialize(&value, &version.drive.grove_version).unwrap();
+                        if let (
+                            Some(count),
+                            Element::ProvableCountTree(_, ref mut stored_count, _),
+                        ) = (count, &mut element)
+                        {
+                            *stored_count = count;
+                            *changed += 1;
+                        }
+                        Node::KVValueHash(
+                            key,
+                            element.serialize(&version.drive.grove_version).unwrap(),
+                            hash,
+                        )
+                    }
+                    Node::KVValueHashFeatureTypeWithChildHash(key, value, hash, feature, _)
+                    | Node::KVValueHashFeatureType(key, value, hash, feature) => {
                         let mut element =
                             Element::deserialize(&value, &version.drive.grove_version).unwrap();
                         if let (
@@ -79,7 +97,7 @@ pub fn downgrade_history_count(
     assert_eq!(
         changed,
         usize::from(count.is_some()),
-        "must override exactly the terminal history tree"
+        "must override exactly the history tree count"
     );
     bincode::encode_to_vec(
         GroveDBProof::V0(GroveDBProofV0 {

@@ -14,6 +14,8 @@ mod estimation_costs;
 mod fetch;
 #[cfg(feature = "server")]
 mod prove;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};
@@ -25,11 +27,37 @@ use crate::util::batch::GroveDbOpBatch;
 /// The key for prefunded balances for voting
 pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
 
+/// The key for the credits the token marketplace holds in escrow for open offers (protocol
+/// version 15): a SumTree whose SumItems are keyed by order id. It sits under the prefunded
+/// specialized balances root, a SumTree, so the credit conservation check counts it.
+pub const PREFUNDED_BALANCES_FOR_TOKEN_ORDERS: u8 = 32;
+
 /// prefunded specialized balances for voting
 pub fn prefunded_specialized_balances_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(
         RootTree::PreFundedSpecializedBalances,
     )]
+}
+
+/// The credits held in escrow for the token marketplace's open offers
+pub fn prefunded_specialized_balances_for_token_orders_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances),
+        &[PREFUNDED_BALANCES_FOR_TOKEN_ORDERS],
+    ]
+}
+
+/// The credits held in escrow for the token marketplace's open offers, as a vec
+pub fn prefunded_specialized_balances_for_token_orders_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec(),
+        vec![PREFUNDED_BALANCES_FOR_TOKEN_ORDERS],
+    ]
+}
+
+/// prefunded specialized balances vector
+pub fn prefunded_specialized_balances_path_vec() -> Vec<Vec<u8>> {
+    vec![Into::<&[u8; 1]>::into(RootTree::PreFundedSpecializedBalances).to_vec()]
 }
 
 /// prefunded specialized balances for voting

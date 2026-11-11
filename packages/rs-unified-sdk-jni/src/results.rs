@@ -7,14 +7,16 @@
 //! picks them up.
 #![allow(dead_code)]
 
-use crate::support::throw_sdk_exception;
+use crate::support::{throw_sdk_consensus_exception, throw_sdk_exception};
 use jni::objects::{JByteArray, JString};
+use jni::sys::jint;
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_address_info_free, dash_sdk_address_info_map_free, dash_sdk_binary_data_free,
     dash_sdk_error_free, dash_sdk_identity_balance_map_free, dash_sdk_signature_free,
     dash_sdk_string_free, DashSDKAddressInfo, DashSDKAddressInfoMap, DashSDKBinaryData,
-    DashSDKIdentityBalanceMap, DashSDKResult, DashSDKResultDataType, DashSDKSignature,
+    DashSDKError, DashSDKIdentityBalanceMap, DashSDKResult, DashSDKResultDataType,
+    DashSDKSignature,
 };
 use std::ffi::{c_char, CStr};
 use std::fmt::Write as _;
@@ -29,15 +31,37 @@ pub unsafe fn take_error(env: &mut JNIEnv, r: &DashSDKResult) -> bool {
     if r.error.is_null() {
         return false;
     }
-    let err = &*r.error;
+    throw_sdk_error(env, &*r.error);
+    dash_sdk_error_free(r.error);
+    true
+}
+
+/// Throw the `DashSDKException` for `err`, leaving it for the caller to free.
+/// An error that carries a consensus rejection (`consensus_code != 0`) hands
+/// its code and kind to the exception as well, so Kotlin can branch on them
+/// instead of on the message (the rs-sdk-ffi counterpart of
+/// `support::throw_pwffi_result`).
+///
+/// # Safety
+/// `err.message`, when non-null, must be a valid C string produced by the
+/// FFI layer and not yet freed.
+pub unsafe fn throw_sdk_error(env: &mut JNIEnv, err: &DashSDKError) {
     let message = if err.message.is_null() {
         String::from("Unknown SDK error")
     } else {
         CStr::from_ptr(err.message).to_string_lossy().into_owned()
     };
-    throw_sdk_exception(env, err.code as i32, &message);
-    dash_sdk_error_free(r.error);
-    true
+    if err.consensus_code == 0 {
+        throw_sdk_exception(env, err.code as i32, &message);
+    } else {
+        throw_sdk_consensus_exception(
+            env,
+            err.code as i32,
+            &message,
+            err.consensus_code,
+            err.consensus_kind as jint,
+        );
+    }
 }
 
 /// Unwrap a result whose success payload is an opaque handle pointer

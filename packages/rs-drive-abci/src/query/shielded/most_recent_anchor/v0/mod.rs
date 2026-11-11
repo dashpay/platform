@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
+use crate::query::shielded::ShieldedPoolSelector;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0;
 use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_response::{
@@ -10,7 +11,6 @@ use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_latest_recorded_anchor_path_query;
 use drive::error::drive::DriveError;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::Element;
@@ -27,11 +27,23 @@ impl<C> Platform<C> {
     /// recorded an anchor yet on this chain.
     pub(super) fn query_most_recent_shielded_anchor_v0(
         &self,
-        GetMostRecentShieldedAnchorRequestV0 { prove }: GetMostRecentShieldedAnchorRequestV0,
+        GetMostRecentShieldedAnchorRequestV0 { prove, token_id }: GetMostRecentShieldedAnchorRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetMostRecentShieldedAnchorResponseV0>, Error> {
-        let path_query = shielded_latest_recorded_anchor_path_query();
+        // Protocol versions 1 through 13 select this generation as well, and the selector
+        // leaves a request any of them can make untouched: `token_id` is absent there,
+        // `from_request` maps that to the credit pool without consulting the version, the credit
+        // pool's path is the same one this handler used to build inline, and
+        // `validate_pool_exists` is a no-op for it. The query, the proof and the response
+        // therefore all stay as they were. A `token_id` is refused outright below the version
+        // that admits token pools.
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
+
+        let path_query = pool.latest_recorded_anchor_path_query();
 
         let response = if prove {
             let proof = check_validation_result_with_data!(self.drive.grove_get_proved_path_query(
@@ -51,6 +63,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             let (results, _) = self.drive.grove_get_raw_path_query(
                 &path_query,
                 None,

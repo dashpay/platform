@@ -1,0 +1,111 @@
+name: Refresh SwiftData schema freeze PRs
+
+# PR CI tests a branch merged with its base as of that run, and merging does not
+# require an up-to-date branch. When the Swift SDK changes on a base, merge it
+# into the open schema freeze PRs (swift-sdk-freeze-release.yml) so their CI runs
+# again and a stale green build cannot be merged.
+on:
+  push:
+    branches:
+      - 'v*-dev'
+    paths:
+      - 'packages/swift-sdk/**'
+      - '.github/workflows/swift-sdk-freeze-pr-refresh.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only report freeze PRs that are behind their base
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Each run re-reads the base, so a superseded pending run loses nothing. Dry
+# runs get their own group, so one can never replace a pending run that writes.
+# Not the freeze worker's group: a queued refresh would cancel a pending freeze
+# dispatch.
+concurrency:
+  group: swift-sdk-freeze-pr-refresh-${{ github.ref }}-${{ inputs.dry_run && 'dry-run' || 'write' }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'dashpay/platform'
+    runs-on: ubuntu-24.04
+    # A PR takes at most three requests with a 60-second wait each (about four
+    # minutes); there is one freeze PR per schema version, so a few at most.
+    timeout-minutes: 20
+    steps:
+      - name: Merge the base into open freeze PRs
+        env:
+          # Pushes made with GITHUB_TOKEN would not trigger the PRs' CI.
+          GH_TOKEN: ${{ secrets.SCHEMA_RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.ref_name }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::SCHEMA_RELEASE_TOKEN is not available"
+            exit 1
+          fi
+          # A manual run may pick any ref; only a development branch is a base
+          # that freeze PRs target, so anything else would pass vacuously.
+          if [[ "$BASE" != v*-dev ]]; then
+            echo "::error::Run this workflow on a v*-dev branch, not $BASE"
+            exit 1
+          fi
+          # A fork can reuse the branch name; only the worker's branches count.
+          prs=$(gh api --paginate "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" --jq '.[]
+            | select(.head.repo.full_name == env.REPO
+                and (.head.ref | startswith("codex/freeze-swift-schema-v")))
+            | .number')
+          [[ -n "$prs" ]] || echo "No open freeze PRs target $BASE"
+          failed=0
+          for pr in $prs; do
+            # At most three update requests; every pass re-reads the head and
+            # checks it first, so the result of the last request is confirmed.
+            # A rejected request (e.g. a concurrent push by the freeze worker
+            # failing expected_head_sha) is retried; an accepted one merges
+            # asynchronously, so wait for the head to move.
+            requests=0
+            while true; do
+              sha=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+              behind=$(gh api "repos/$REPO/compare/$BASE...$sha" --jq .behind_by)
+              if [[ "$behind" == 0 ]]; then
+                echo "#$pr contains $BASE"
+                continue 2
+              fi
+              if [[ "$DRY_RUN" == true ]]; then
+                echo "#$pr is $behind commit(s) behind $BASE (dry run)"
+                continue 2
+              fi
+              (( requests < 3 )) || break
+              requests=$((requests + 1))
+              echo "#$pr is $behind commit(s) behind $BASE; merging (request $requests)"
+              if ! error=$(gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" \
+                  -f expected_head_sha="$sha" 2>&1 > /dev/null); then
+                problem="update-branch was rejected: ${error//$'\n'/ }"
+                sleep 5
+                continue
+              fi
+              problem="$BASE moved again after each merge"
+              moved=false
+              for _ in {1..12}; do
+                sleep 5
+                if [[ "$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)" != "$sha" ]]; then
+                  moved=true
+                  break
+                fi
+              done
+              if [[ "$moved" != true ]]; then
+                problem="update-branch was accepted, but the head did not change within 60 seconds"
+                break
+              fi
+            done
+            echo "::error::https://github.com/$REPO/pull/$pr is still behind $BASE: $problem. Merge $BASE into its branch so its CI runs again."
+            failed=1
+          done
+          exit "$failed"

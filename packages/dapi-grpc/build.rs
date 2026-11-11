@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use prost_build::{Config, Service, ServiceGenerator};
 use tonic_prost_build::Builder;
 
 const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
@@ -80,13 +81,47 @@ struct MappingConfig {
     out_dir: PathBuf,
     builder: Builder,
     proto_includes: Vec<PathBuf>,
+    server_generation: bool,
+}
+
+/// Generate clients and servers separately so their codecs can preserve decode direction.
+struct ClientServerGenerator {
+    client: Box<dyn ServiceGenerator>,
+    server: Box<dyn ServiceGenerator>,
+}
+
+impl ServiceGenerator for ClientServerGenerator {
+    fn generate(&mut self, service: Service, buf: &mut String) {
+        self.client.generate(service.clone(), buf);
+        self.server.generate(service, buf);
+    }
+
+    fn finalize(&mut self, buf: &mut String) {
+        self.client.finalize(buf);
+        self.server.finalize(buf);
+    }
+
+    fn finalize_package(&mut self, package: &str, buf: &mut String) {
+        self.client.finalize_package(package, buf);
+        self.server.finalize_package(package, buf);
+    }
 }
 
 fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 58] = [
+    const VERSIONED_REQUESTS: [&str; 75] = [
+        "GetContractModerationStatusRequest",
+        "GetContractModerationEntriesRequest",
+        "GetContractDocumentRemovalsRequest",
+        "GetContractTeamActionsRequest",
+        "GetContractTeamActionSignersRequest",
+        "GetContractModerationActionCountsRequest",
+        "GetContractFeePotsRequest",
+        "GetContractGroupInfoRequest",
+        "GetContractGroupMembersRequest",
+        "GetContractGroupsForContractRequest",
         "GetDataContractHistoryRequest",
         "GetDataContractsLatestVersionsRequest",
         "GetDataContractRequest",
@@ -99,6 +134,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
+        "GetIdentityKeysRemainingBudgetsRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByNonUniquePublicKeyHashRequest",
@@ -106,6 +142,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
         "WaitForStateTransitionResultRequest",
+        "GetRecentStateTransitionStatusRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
@@ -116,6 +153,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityRequest",
         "GetContestedResourceIdentityVotesRequest",
         "GetVotePollsByEndDateRequest",
+        "GetYesNoVotePollStateRequest",
+        "GetMasternodeYesNoVoteRequest",
         "GetTotalCreditsInPlatformRequest",
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
@@ -145,6 +184,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateRequest",
         "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
+        "GetPrivateDocumentEntriesRequest",
+        "GetOwnerTransactionsInBlockRequest",
+        "GetBlocksRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -154,12 +196,25 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
+    // - "GetRecentStateTransitionStatusResponse"
     //
     // The following responses are excluded as they need custom proof handling:
-    // - "GetIdentityByNonUniquePublicKeyHashResponse"
+    // - "GetOwnerTransactionsInBlockResponse" (a Tenderdash block proof, not a GroveDB one)
+    // - "GetBlocksResponse" (a Tenderdash block proof in each block)
+    // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 55] = [
+    const VERSIONED_RESPONSES: [&str; 69] = [
+        "GetContractModerationStatusResponse",
+        "GetContractModerationEntriesResponse",
+        "GetContractDocumentRemovalsResponse",
+        "GetContractTeamActionsResponse",
+        "GetContractTeamActionSignersResponse",
+        "GetContractModerationActionCountsResponse",
+        "GetContractFeePotsResponse",
+        "GetContractGroupInfoResponse",
+        "GetContractGroupMembersResponse",
+        "GetContractGroupsForContractResponse",
         "GetDataContractHistoryResponse",
         "GetDataContractsLatestVersionsResponse",
         "GetDataContractResponse",
@@ -173,6 +228,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityKeysRemainingBudgetsResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -188,6 +244,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityResponse",
         "GetContestedResourceIdentityVotesResponse",
         "GetVotePollsByEndDateResponse",
+        "GetYesNoVotePollStateResponse",
+        "GetMasternodeYesNoVoteResponse",
         "GetTotalCreditsInPlatformResponse",
         "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentityTokenBalancesResponse",
@@ -215,6 +273,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateResponse",
         "GetShieldedNotesCountResponse",
         "GetShieldedNullifiersResponse",
+        "GetPrivateDocumentEntriesResponse",
     ];
 
     const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
@@ -238,8 +297,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //   - Bumping the matching `FeatureVersionBounds.max_version`
     //     to 1 in `rs-platform-version`.
     //   - Implementing the v1 dispatch arm in `drive-abci`.
-    const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
-    const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
+    const VERSIONED_AT_V1_REQUESTS: [&str; 3] = [
+        "GetDocumentsRequest",
+        "GetDocumentHistoryRequest",
+        "GetIdentityByNonUniquePublicKeyHashRequest",
+    ];
+    const VERSIONED_AT_V1_RESPONSES: [&str; 2] =
+        ["GetDocumentsResponse", "GetDocumentHistoryResponse"];
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
@@ -349,6 +413,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // vectors captured while the operand still rode `value` carry no
         // `time_range` key.
         .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
+        .field_attribute(
+            "GetDocumentsRequest.WhereClause.integer_range",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
@@ -362,6 +430,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // and doesn't need the `bytes`-shaped serde shim.
         .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
         .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
+        // A private document entry: up to a chunk of these fills a page
+        .field_attribute("PrivateDocumentEntry.data", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
@@ -500,6 +570,7 @@ impl MappingConfig {
             out_dir,
             builder,
             proto_includes: vec![abs_path(&PathBuf::from("protos"))],
+            server_generation: matches!(typ, ImplType::Server),
         }
     }
 
@@ -543,8 +614,26 @@ impl MappingConfig {
         }
         create_dir_all(&self.out_dir)?;
 
-        self.builder
-            .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        if self.server_generation {
+            let client = self.builder.clone().build_server(false).service_generator();
+            let server = self
+                .builder
+                .clone()
+                .build_client(false)
+                .codec_path("crate::request_codec::RequestCodec")
+                .service_generator();
+            let mut config = Config::new();
+            config.service_generator(Box::new(ClientServerGenerator { client, server }));
+
+            // Disable the outer generators to retain the supplied composite generator.
+            self.builder
+                .build_client(false)
+                .build_server(false)
+                .compile_with_config(config, &[self.protobuf_file], &self.proto_includes)
+        } else {
+            self.builder
+                .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        }
     }
 }
 

@@ -24,7 +24,7 @@ impl Drive {
     /// (deduplicated by key bytes) and emits per-In-value `SumEntry`
     /// where `in_key: None`, `key: serialized_value`, `sum: Some(i64)`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_per_in_value_no_proof(
+    pub(crate) fn execute_document_sum_per_in_value_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

@@ -5,12 +5,18 @@ mod tests {
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
     use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::consensus;
     use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
     use dpp::dashcore::transaction::TransactionPayload::AssetUnlockPayloadType;
     use dpp::dashcore::{BlockHash, ChainLock, Transaction, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
+    use dpp::dashcore_rpc::Error as CoreRpcError;
     use dpp::data_contracts::withdrawals_contract;
+    use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+    use dpp::document::{Document, DocumentV0Getters};
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::withdrawal::WithdrawalTransactionIndex;
     use dpp::{dash_to_credits, dash_to_duffs};
     use drive::config::DEFAULT_QUERY_LIMIT;
@@ -26,9 +32,12 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
+    use drive_abci::rpc::core::MockCoreRPCLike;
+    use drive_abci::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use platform_version::version::mocks::v3_test::TEST_PLATFORM_V3;
     use platform_version::version::PlatformVersion;
+    use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
     use strategy_tests::frequency::Frequency;
@@ -217,6 +226,14 @@ mod tests {
                 .unwrap();
             assert!(withdrawal_documents_pooled.is_empty());
 
+            // Nothing is queued, so the next block has no withdrawal work waiting and
+            // Tenderdash may wait for transactions again.
+            assert!(!outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
+
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -367,6 +384,14 @@ mod tests {
                 .unwrap();
             assert!(!withdrawal_documents_pooled.is_empty());
 
+            // The pooled transactions wait in the queue for the next block to sign them, so
+            // Drive asks Tenderdash for that block right away.
+            assert!(outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
+
             let locked_amount = outcome
                 .abci_app
                 .platform
@@ -452,6 +477,14 @@ mod tests {
                 withdrawal_documents_broadcasted.len(),
                 last_block_pooled_withdrawals_amount
             );
+
+            // Nothing is queued, so the next block has no withdrawal work waiting and
+            // Tenderdash may wait for transactions again.
+            assert!(!outcome
+                .abci_app
+                .platform
+                .has_pending_withdrawal_work(None, platform_version)
+                .expect("expected to check for pending withdrawal work"));
 
             let locked_amount = outcome
                 .abci_app
@@ -3027,6 +3060,256 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_hold_back_withdrawals_over_the_core_anchored_limit() {
+        // Latest protocol version, and a Core whose credit pool holds 120 Dash at every
+        // height. The chain is so young that every window start Core may measure an unlock
+        // from lies before it, an empty pool, so Core admits unlocks up to the pool itself.
+        // Platform's own daily limit (the flat 2,000 Dash while no recorded total is a day old,
+        // plus the 10,000 Dash of funding inflows) is far above that, so the Core-anchored
+        // side alone decides what is pooled.
+        let platform_version = PlatformVersion::latest();
+        let start_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 10..11,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
+                    start_balance_range: dash_to_duffs!(500)..=dash_to_duffs!(500),
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let minute_in_ms = 1000 * 60;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: minute_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Replace the default Core answers (a credit pool of 10 million Dash) with the small
+        // pool; Core has mined none of the unlocks.
+        platform.core_rpc.checkpoint();
+        platform
+            .core_rpc
+            .expect_get_block_hash()
+            .returning(|_| Ok(BlockHash::all_zeros()));
+        platform
+            .core_rpc
+            .expect_get_block_json()
+            .returning(|_| Ok(serde_json::json!({ "tx": [] })));
+        platform
+            .core_rpc
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(dash_to_duffs!(120)));
+        // V24 is not active.
+        platform
+            .core_rpc
+            .expect_get_coinbase_payload_version()
+            .returning(|_| Ok(Some(3)));
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
+        platform
+            .core_rpc
+            .expect_get_asset_unlock_statuses()
+            .returning(|indices, _| {
+                Ok(indices
+                    .iter()
+                    .map(|index| AssetUnlockStatusResult {
+                        index: *index,
+                        status: AssetUnlockStatus::Unknown,
+                    })
+                    .collect())
+            });
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(|| {
+                Ok(ChainLock {
+                    block_height: 1,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: BLSSignature::from([2; 96]),
+                })
+            });
+
+        // Blocks 1 and 2 create 20 identities of 500 Dash.
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance,
+            signer,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            2,
+            start_strategy,
+            config.clone(),
+            1,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let continue_strategy_only_withdrawal = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityWithdrawal(
+                        dash_to_credits!(50)..=dash_to_credits!(50),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 4..5, // 50 Dash x 4 Withdrawals = 200 Dash
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: Some(signer),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        // Blocks 3 to 5 withdraw 200 Dash each.
+        let outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: 3,
+                core_height_start: 1,
+                block_count: 3,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
+            },
+            continue_strategy_only_withdrawal,
+            config,
+            StrategyRandomness::SeedEntropy(2),
+        )
+        .await;
+
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            assert_eq!(tx_results_per_block.len(), 4);
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(
+                    result.code, 0,
+                    "state transition got code {} : {:?}",
+                    result.code, state_transition
+                );
+            }
+        }
+
+        let documents_with_status = |status: withdrawals_contract::WithdrawalStatus| {
+            outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    status.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch withdrawal documents")
+                .len()
+        };
+
+        // The first withdrawal block pools two (100 Dash) of its four into the 120 Dash Core
+        // admits; after that what is pooled and not mined leaves under 50 Dash, so the other
+        // ten wait in the queue although Platform's own limit has thousands left.
+        assert_eq!(
+            documents_with_status(withdrawals_contract::WithdrawalStatus::POOLED)
+                + documents_with_status(withdrawals_contract::WithdrawalStatus::BROADCASTED),
+            2
+        );
+        assert_eq!(
+            documents_with_status(withdrawals_contract::WithdrawalStatus::QUEUED),
+            10
+        );
+
+        let locked_amount = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove_get_sum_tree_total_value(
+                (&get_withdrawal_root_path()).into(),
+                &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get locked amount");
+        assert_eq!(locked_amount, dash_to_credits!(100) as i64);
+    }
+
+    #[tokio::test]
     async fn run_chain_withdraw_from_identities_many_small_withdrawals() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
@@ -3705,6 +3988,625 @@ mod tests {
         assert!(
             before_rewards.total_credits < total_credits_in_platform,
             "epoch 0 must have paid Core rewards into Platform"
+        );
+    }
+
+    /// Core as the version 2 asset unlock tests see it.
+    struct V24CoreState {
+        /// What Core says about each withdrawal index; an index it does not list is unknown.
+        asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatus>,
+        chain_locked_height: u32,
+        /// The first core height whose coinbase has payload version 4, which Core requires
+        /// exactly while V24 is active.
+        v24_activation_height: u32,
+        /// Every asset unlock Platform sent to Core, in order.
+        broadcast: Vec<Transaction>,
+        /// Every core height Platform asked the coinbase payload version of, in order.
+        coinbase_reads: Vec<u32>,
+        /// Whether Core fails to read a coinbase, as it does while it is down.
+        coinbase_down: bool,
+    }
+
+    impl V24CoreState {
+        fn new(v24_activation_height: u32) -> Arc<Mutex<Self>> {
+            Arc::new(Mutex::new(Self {
+                asset_unlock_statuses: BTreeMap::new(),
+                chain_locked_height: 1,
+                v24_activation_height,
+                broadcast: vec![],
+                coinbase_reads: vec![],
+                coinbase_down: false,
+            }))
+        }
+
+        /// The asset unlocks broadcast for `index`, in order.
+        fn broadcast_for(&self, index: WithdrawalTransactionIndex) -> Vec<Transaction> {
+            self.broadcast
+                .iter()
+                .filter(|transaction| asset_unlock_index(transaction) == index)
+                .cloned()
+                .collect()
+        }
+    }
+
+    /// The asset unlock payload of `tx`, which must be an asset unlock.
+    fn asset_unlock_payload(tx: &Transaction) -> &AssetUnlockPayload {
+        let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+            panic!("expected to get AssetUnlockPayloadType");
+        };
+        payload
+    }
+
+    /// One block an hour, with the minimal verifications the withdrawal strategy tests use.
+    fn v24_test_config() -> PlatformConfig {
+        PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 1000 * 60 * 60,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        }
+    }
+
+    /// A platform at the latest protocol version whose Core is `core_state`. Core's credit pool
+    /// is large enough that the Core-anchored withdrawal limit never binds.
+    fn platform_with_v24_core(
+        config: &PlatformConfig,
+        core_state: &Arc<Mutex<V24CoreState>>,
+    ) -> TempPlatform<MockCoreRPCLike> {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // The default answers would shadow the ones below.
+        platform.core_rpc.checkpoint();
+        platform
+            .core_rpc
+            .expect_get_block_hash()
+            .returning(|_| Ok(BlockHash::all_zeros()));
+        platform
+            .core_rpc
+            .expect_get_block_json()
+            .returning(|_| Ok(serde_json::json!({ "tx": [] })));
+        // 10 million Dash, in duffs.
+        platform
+            .core_rpc
+            .expect_get_credit_pool_balance()
+            .returning(|_| Ok(1_000_000_000_000_000));
+
+        let state = core_state.clone();
+        platform
+            .core_rpc
+            .expect_get_coinbase_payload_version()
+            .returning(move |core_height| {
+                let mut state = state.lock().unwrap();
+                state.coinbase_reads.push(core_height);
+                if state.coinbase_down {
+                    return Err(CoreRpcError::UnexpectedStructure(
+                        "Core is down".to_string(),
+                    ));
+                }
+                let v24_active = core_height >= state.v24_activation_height;
+                Ok(Some(if v24_active { 4 } else { 3 }))
+            });
+
+        let state = core_state.clone();
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .returning(move |bytes| {
+                let transaction: Transaction =
+                    consensus::deserialize(bytes).expect("expected a transaction");
+                let txid = transaction.txid();
+                state.lock().unwrap().broadcast.push(transaction);
+                Ok(txid)
+            });
+
+        let state = core_state.clone();
+        platform
+            .core_rpc
+            .expect_get_asset_unlock_statuses()
+            .returning(move |indices, _| {
+                let state = state.lock().unwrap();
+                Ok(indices
+                    .iter()
+                    .map(|index| AssetUnlockStatusResult {
+                        index: *index,
+                        status: state
+                            .asset_unlock_statuses
+                            .get(index)
+                            .cloned()
+                            .unwrap_or(AssetUnlockStatus::Unknown),
+                    })
+                    .collect())
+            });
+
+        let state = core_state.clone();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(ChainLock {
+                    block_height: state.lock().unwrap().chain_locked_height,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: BLSSignature::from([2; 96]),
+                })
+            });
+
+        platform
+    }
+
+    /// A strategy running `operations` on 100 evonodes. Without a `signer` it also creates one
+    /// identity of 1 Dash per block, the identities the later blocks withdraw from.
+    fn v24_test_strategy(
+        operations: Vec<Operation>,
+        signer: Option<SimpleSigner>,
+    ) -> NetworkStrategy {
+        NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations,
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: if signer.is_none() {
+                    IdentityInsertInfo {
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
+                        start_keys: 3,
+                        extra_keys: [(
+                            Purpose::TRANSFER,
+                            [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                        )]
+                        .into(),
+                        start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+                    }
+                } else {
+                    IdentityInsertInfo::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        }
+    }
+
+    /// What `run_identity_blocks` ran, and the strategies of the blocks after it.
+    struct IdentityBlocks<'a> {
+        /// The outcome of blocks 1 and 2.
+        outcome: ChainExecutionOutcome<'a>,
+        /// The strategy of a block with one withdrawal.
+        withdraw: NetworkStrategy,
+        /// The strategy of an empty block.
+        idle: NetworkStrategy,
+    }
+
+    /// Runs blocks 1 and 2, which create the identities that later withdraw.
+    async fn run_identity_blocks<'a>(
+        platform: &'a mut TempPlatform<MockCoreRPCLike>,
+        config: &PlatformConfig,
+    ) -> IdentityBlocks<'a> {
+        let outcome = run_chain_for_strategy(
+            platform,
+            2,
+            v24_test_strategy(
+                vec![Operation {
+                    op_type: OperationType::IdentityTopUp(dash_to_duffs!(10)..=dash_to_duffs!(10)),
+                    frequency: Frequency {
+                        times_per_block_range: 1..4,
+                        chance_per_block: None,
+                    },
+                }],
+                None,
+            ),
+            config.clone(),
+            1,
+            &mut None,
+            &mut None,
+        )
+        .await;
+
+        let withdraw = v24_test_strategy(
+            vec![Operation {
+                op_type: OperationType::IdentityWithdrawal(
+                    dash_to_credits!(0.1)..=dash_to_credits!(0.1),
+                ),
+                frequency: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+            }],
+            Some(outcome.signer.clone()),
+        );
+        let idle = v24_test_strategy(vec![], Some(outcome.signer.clone()));
+
+        IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        }
+    }
+
+    /// Runs block `block`, the one after `outcome`, with `strategy`, and checks that every state
+    /// transition in it succeeded.
+    async fn next_block<'a>(
+        outcome: ChainExecutionOutcome<'a>,
+        block: u64,
+        strategy: &NetworkStrategy,
+        config: &PlatformConfig,
+    ) -> ChainExecutionOutcome<'a> {
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance,
+            ..
+        } = outcome;
+
+        let outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: block,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(block),
+        )
+        .await;
+
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(
+                    result.code, 0,
+                    "state transition got code {} : {:?}",
+                    result.code, state_transition
+                );
+            }
+        }
+
+        outcome
+    }
+
+    /// The withdrawal documents in `status` after `outcome`, oldest first.
+    fn withdrawal_documents(
+        outcome: &ChainExecutionOutcome,
+        status: withdrawals_contract::WithdrawalStatus,
+    ) -> Vec<Document> {
+        outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                status.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch withdrawal documents")
+    }
+
+    /// Core mines every withdrawal it was sent, and the next block marks them complete.
+    async fn mine_all_and_complete<'a>(
+        outcome: ChainExecutionOutcome<'a>,
+        block: u64,
+        idle: &NetworkStrategy,
+        config: &PlatformConfig,
+        core_state: &Arc<Mutex<V24CoreState>>,
+    ) -> ChainExecutionOutcome<'a> {
+        {
+            let mut state = core_state.lock().unwrap();
+            let indices = state
+                .broadcast
+                .iter()
+                .map(asset_unlock_index)
+                .collect::<Vec<_>>();
+            for index in indices {
+                state
+                    .asset_unlock_statuses
+                    .insert(index, AssetUnlockStatus::Chainlocked);
+            }
+            state.chain_locked_height += 1;
+        }
+
+        let outcome = next_block(outcome, block, idle, config).await;
+
+        for status in [
+            withdrawals_contract::WithdrawalStatus::QUEUED,
+            withdrawals_contract::WithdrawalStatus::POOLED,
+            withdrawals_contract::WithdrawalStatus::BROADCASTED,
+            withdrawals_contract::WithdrawalStatus::EXPIRED,
+            withdrawals_contract::WithdrawalStatus::FAILED,
+        ] {
+            assert!(
+                withdrawal_documents(&outcome, status).is_empty(),
+                "no withdrawal may remain {status}"
+            );
+        }
+
+        outcome
+    }
+
+    /// Core may InstantSend-lock a version 2 withdrawal under its txid before mining it, and a
+    /// child spending its output then relies on that txid, so the withdrawal must keep it when
+    /// it expires unmined and is re-signed. The re-signed instance differs only in its signing
+    /// info: a later sign height and a new signature over a new message, so Core relays it
+    /// under a new instance hash and replaces the expired one in place.
+    #[tokio::test]
+    async fn should_keep_the_txid_of_a_version_2_withdrawal_when_it_is_re_signed_after_expiry() {
+        let config = v24_test_config();
+        // V24 is active from the first core height.
+        let core_state = V24CoreState::new(1);
+        let mut platform = platform_with_v24_core(&config, &core_state);
+        let IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        } = run_identity_blocks(&mut platform, &config).await;
+
+        // Block 3 pools a withdrawal at core height 1; block 4 signs it there.
+        let outcome = next_block(outcome, 3, &withdraw, &config).await;
+        let outcome = next_block(outcome, 4, &idle, &config).await;
+        let index = asset_unlock_index(outcome.withdrawals.first().expect("signed in block 4"));
+
+        // Core reaches core height 50 without mining it: 49 blocks after its sign height it
+        // expires in block 5, and block 6 signs it again.
+        core_state.lock().unwrap().chain_locked_height = 50;
+        let outcome = next_block(outcome, 5, &idle, &config).await;
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::EXPIRED).len(),
+            1
+        );
+        let outcome = next_block(outcome, 6, &idle, &config).await;
+
+        let broadcast = core_state.lock().unwrap().broadcast_for(index);
+        let [first, re_signed] = broadcast.as_slice() else {
+            panic!("expected two instances, got {broadcast:?}");
+        };
+        let (first_payload, re_signed_payload) =
+            (asset_unlock_payload(first), asset_unlock_payload(re_signed));
+        assert_eq!(first_payload.base.version, 2);
+        assert_eq!(re_signed_payload.base, first_payload.base);
+        assert_eq!(first.output, re_signed.output);
+
+        assert_eq!(re_signed.txid(), first.txid());
+        assert_ne!(re_signed.instance_hash(), first.instance_hash());
+
+        // Signed again at the first chain locked height where it counts as expired, past the
+        // first instance's last minable height, so no earlier instance can still be mined.
+        let first_height = first_payload.request_info.request_height;
+        let re_signed_height = re_signed_payload.request_info.request_height;
+        assert_eq!(first_height, 1);
+        assert_eq!(re_signed_height, 50);
+        let broadcasted = withdrawal_documents(
+            &outcome,
+            withdrawals_contract::WithdrawalStatus::BROADCASTED,
+        );
+        let [document] = broadcasted.as_slice() else {
+            panic!("expected the re-signed withdrawal to be broadcast");
+        };
+        assert_eq!(
+            document
+                .properties()
+                .get_integer::<u64>(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)
+                .expect("expected a sign height"),
+            re_signed_height as u64
+        );
+
+        let outcome = mine_all_and_complete(outcome, 7, &idle, &config, &core_state).await;
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::COMPLETE).len(),
+            1
+        );
+        assert_eq!(
+            core_state.lock().unwrap().coinbase_reads,
+            vec![1],
+            "V24 is recorded at init chain, and no block asks Core about it again"
+        );
+    }
+
+    /// Platform emits version 2 from the block that records V24 as active, the first block
+    /// whose chain locked height has V24 active, and only for withdrawals pooled from then on.
+    /// One pooled before the switch stays version 1 when it is first signed after the switch,
+    /// and when it expires and is re-signed after it, with a new txid each time, as Core keeps
+    /// accepting version 1. Core is asked at init chain and at each height the chain locked
+    /// height moves to until V24 is recorded, and by no block that pools a withdrawal.
+    #[tokio::test]
+    async fn should_switch_to_version_2_asset_unlocks_at_the_first_chain_locked_height_where_v24_is_active(
+    ) {
+        const V24_ACTIVATION_HEIGHT: u32 = 50;
+        let config = v24_test_config();
+        let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
+        let mut platform = platform_with_v24_core(&config, &core_state);
+        let IdentityBlocks {
+            outcome,
+            withdraw,
+            idle,
+        } = run_identity_blocks(&mut platform, &config).await;
+
+        // Block 3 pools a withdrawal at core height 1, block 4 signs it.
+        let outcome = next_block(outcome, 3, &withdraw, &config).await;
+        let outcome = next_block(outcome, 4, &idle, &config).await;
+        let pooled_long_before = asset_unlock_index(outcome.withdrawals.first().expect("signed"));
+
+        // Block 5 pools one at the last core height before V24.
+        core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT - 1;
+        let outcome = next_block(outcome, 5, &withdraw, &config).await;
+
+        // Block 6, at the first core height with V24 active, records V24, pools one, signs the
+        // one pooled before, and the first one expires, 49 core blocks after it was signed.
+        core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT;
+        let outcome = next_block(outcome, 6, &withdraw, &config).await;
+        let pooled_just_before = asset_unlock_index(outcome.withdrawals.first().expect("signed"));
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::EXPIRED).len(),
+            1
+        );
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::POOLED).len(),
+            1,
+            "block 6 pools the withdrawal it creates"
+        );
+        assert!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::QUEUED)
+                .is_empty()
+        );
+
+        // Block 7, at the same core height, re-signs the expired one, signs the one pooled in
+        // block 6 and pools another; block 8 signs that.
+        let outcome = next_block(outcome, 7, &withdraw, &config).await;
+        let pooled_when_recorded = outcome
+            .withdrawals
+            .iter()
+            .map(asset_unlock_index)
+            .find(|index| *index != pooled_long_before)
+            .expect("expected the withdrawal pooled in block 6 to be signed");
+        let outcome = next_block(outcome, 8, &idle, &config).await;
+        let pooled_after_recorded =
+            asset_unlock_index(outcome.withdrawals.first().expect("signed"));
+
+        let outcome = mine_all_and_complete(outcome, 9, &idle, &config, &core_state).await;
+        assert_eq!(
+            withdrawal_documents(&outcome, withdrawals_contract::WithdrawalStatus::COMPLETE).len(),
+            4
+        );
+
+        let state = core_state.lock().unwrap();
+        let payload_versions_and_heights = |index| {
+            state
+                .broadcast_for(index)
+                .iter()
+                .map(|transaction| {
+                    let payload = asset_unlock_payload(transaction);
+                    (payload.base.version, payload.request_info.request_height)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            payload_versions_and_heights(pooled_long_before),
+            vec![(1, 1), (1, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_just_before),
+            vec![(1, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_when_recorded),
+            vec![(2, V24_ACTIVATION_HEIGHT)]
+        );
+        assert_eq!(
+            payload_versions_and_heights(pooled_after_recorded),
+            vec![(2, V24_ACTIVATION_HEIGHT)]
+        );
+
+        let re_signed_version_1 = state.broadcast_for(pooled_long_before);
+        assert_ne!(
+            re_signed_version_1[0].txid(),
+            re_signed_version_1[1].txid(),
+            "a version 1 txid covers the signing info"
+        );
+
+        // Init chain, then blocks 5 and 6, which moved the chain locked height before V24 was
+        // recorded. Blocks 3, 6 and 7 pooled, and block 9 moved the height again.
+        assert_eq!(
+            state.coinbase_reads,
+            vec![1, V24_ACTIVATION_HEIGHT - 1, V24_ACTIVATION_HEIGHT]
+        );
+    }
+
+    /// Once a block has recorded V24, a block that pools a withdrawal at the same chain locked
+    /// height reads the record instead of asking Core, so a Core that refuses the coinbase
+    /// payload version no longer stops it: the withdrawal pools as version 2, and the chain is
+    /// the one a node whose Core answers commits. Only that question fails here; the
+    /// withdrawal scan, which reads Core's credit pool from the same coinbase, makes no call at
+    /// an unchanged chain locked height once it has caught up, as at protocol version 14.
+    #[tokio::test]
+    async fn should_keep_pooling_version_2_withdrawals_at_an_unchanged_chain_locked_height_without_asking_core_about_v24(
+    ) {
+        const V24_ACTIVATION_HEIGHT: u32 = 50;
+        let config = v24_test_config();
+        let mut app_hashes = vec![];
+        for coinbase_down in [false, true] {
+            let core_state = V24CoreState::new(V24_ACTIVATION_HEIGHT);
+            let mut platform = platform_with_v24_core(&config, &core_state);
+            let IdentityBlocks {
+                outcome,
+                withdraw,
+                idle,
+            } = run_identity_blocks(&mut platform, &config).await;
+
+            // Block 3 moves the chain locked height to the activation height and records V24.
+            core_state.lock().unwrap().chain_locked_height = V24_ACTIVATION_HEIGHT;
+            let outcome = next_block(outcome, 3, &idle, &config).await;
+            assert_eq!(
+                core_state.lock().unwrap().coinbase_reads,
+                vec![1, V24_ACTIVATION_HEIGHT]
+            );
+            core_state.lock().unwrap().coinbase_down = coinbase_down;
+
+            // Blocks 4 and 5 pool a withdrawal each at the same height; blocks 5 and 6 sign them.
+            let outcome = next_block(outcome, 4, &withdraw, &config).await;
+            let outcome = next_block(outcome, 5, &withdraw, &config).await;
+            let outcome = next_block(outcome, 6, &idle, &config).await;
+            let signed = core_state.lock().unwrap().broadcast.clone();
+            assert_eq!(signed.len(), 2);
+            assert!(signed
+                .iter()
+                .all(|transaction| asset_unlock_payload(transaction).base.version == 2));
+            assert_eq!(
+                core_state.lock().unwrap().coinbase_reads,
+                vec![1, V24_ACTIVATION_HEIGHT],
+                "no block after the one that recorded V24 asks Core about it"
+            );
+            app_hashes.push(
+                outcome
+                    .abci_app
+                    .platform
+                    .state
+                    .load()
+                    .last_committed_block_app_hash(),
+            );
+        }
+        assert_eq!(
+            app_hashes[0], app_hashes[1],
+            "the node whose Core refuses the coinbase payload version must commit the same chain"
         );
     }
 }

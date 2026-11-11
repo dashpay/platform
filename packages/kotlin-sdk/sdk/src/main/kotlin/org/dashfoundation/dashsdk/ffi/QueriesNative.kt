@@ -72,6 +72,69 @@ internal object QueriesNative {
         serializedContracts: Array<ByteArray>,
     )
 
+    /**
+     * The `propertyConstraints` rules (protocol version 14) of [documentType]
+     * as a JSON array in name order, each
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsStored", "readsTotals", "readsReferenced"}`:
+     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`,
+     * `elements` or `bytes`, a property of the stored version listed under
+     * its `$old.` path, `readsSystem` names the system values the rule reads
+     * (`$createdAt`, `$updatedAtBlockHeight`, `$revision`, `$old.$updatedAt`,
+     * ...), `readsStored` says whether it reads the stored version through
+     * `$old.` (missing from a library built before it),
+     * `readsTotals` lists its `countOf` and `sumOf` totals as
+     * `{"kind", "documentType", "property" (a sumOf only), "filter"}`, and
+     * `readsReferenced` the values it reads of the documents the type's
+     * references point at as `{"reference", "path", "kind"}` (`kind` as in
+     * `reads`, which leaves them out).
+     * [serializedContract] is the contract's platform serialization (what
+     * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
+     * protocol version; no network call. Throws on error (unknown document
+     * type, bytes that are not a contract, empty input).
+     */
+    external fun dataContractGetPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+    ): String?
+
+    /**
+     * The first `propertyConstraints` rule a document to create would break,
+     * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
+     * meets every rule. [propertiesJson] is what the create would send and
+     * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
+     * for [dataContractGetPropertyConstraints]. A create has no stored
+     * version, so every `$old.` read is absent (a stored time, height or
+     * revision reads 0) and `$revision` reads 1, as consensus reads them on a
+     * create. The device clock stands in for the block time the create
+     * records (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule
+     * reading a block height the create records (without `$old.`) is not
+     * judged, the height being unknown until the block, nor is one reading a
+     * `countOf` or `sumOf` total, which only the platform reads from state, or
+     * a value of a referenced document, which the platform reads when it
+     * checks the reference. No network call. Throws on error (as above, plus
+     * an owner id that is not 32 bytes or properties that are not a JSON
+     * object).
+     */
+    external fun dataContractCheckPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        ownerId: ByteArray,
+    ): String?
+
+    /**
+     * [contractJson] (a contract as [dataContractFetchJson] returns it) with
+     * its property type shorthands (protocol version 14) written in full:
+     * `"type": "identifier"` and `"type": "bytes", "size": n` become the byte
+     * array they stand for, in every document type schema and in
+     * `schemaDefs`; everything else comes back as given. Takes no SDK handle;
+     * no network call. Throws on error (null input, text that is not a JSON
+     * object).
+     */
+    external fun dataContractJsonExpandPropertyTypeShorthands(contractJson: String): String?
+
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(
         sdk: Long,
@@ -154,6 +217,19 @@ internal object QueriesNative {
 
     /** Identity balance + revision as a JSON object, or null. */
     external fun identityFetchBalanceAndRevision(sdk: Long, identityId: String): String?
+
+    /**
+     * What is left of the budgets of [keyIds] of [identityId] (protocol version 14),
+     * as a JSON object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key
+     * maps to the credits left as a decimal string; a key without a budget, or that
+     * the identity does not have, maps to null. Bridges
+     * `dash_sdk_identity_fetch_keys_remaining_budgets`.
+     */
+    external fun identityFetchKeysRemainingBudgets(
+        sdk: Long,
+        identityId: String,
+        keyIds: IntArray,
+    ): String?
 
     /** Identity owning a unique public-key hash (hex) as JSON, or null. */
     external fun identityFetchByPublicKeyHash(sdk: Long, publicKeyHash: String): String?

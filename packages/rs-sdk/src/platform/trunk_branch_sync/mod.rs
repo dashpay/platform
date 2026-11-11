@@ -23,6 +23,7 @@ mod tracker;
 pub use tracker::KeyLeafTracker;
 
 use crate::error::Error;
+use crate::sdk::verifier_version;
 use crate::Sdk;
 use dpp::version::PlatformVersion;
 use drive::grovedb::{
@@ -44,6 +45,8 @@ pub struct TrunkQueryResponse {
     pub height: u64,
     /// The block time in milliseconds since epoch.
     pub block_time_ms: u64,
+    /// Protocol version authenticated by the trunk proof's quorum signature.
+    pub protocol_version: u32,
 }
 
 /// Parameters for a single branch query.
@@ -207,15 +210,21 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
     request_settings: RequestSettings,
     context: &mut Ops::Context<'_>,
 ) -> Result<(u64, u64), Error> {
-    let platform_version = sdk.version();
-
     // Step 1: Execute trunk query
     let trunk_response = Ops::execute_trunk_query(sdk, request_settings, context).await?;
     let TrunkQueryResponse {
         trunk: trunk_result,
         height: checkpoint_height,
         block_time_ms,
+        protocol_version,
     } = trunk_response;
+    // Branch responses have no signed metadata; this trunk authenticates their
+    // roots. The node builds proofs with its current version, while the signed
+    // metadata names the checkpoint's version. Address item-row encoding is
+    // compatible across these versions. Revisit this choice if item-row proof
+    // encoding, the address tree's item-only structure, or branch verification
+    // method versions or depth bounds change.
+    let platform_version = verifier_version(sdk.version(), protocol_version);
     Ops::set_checkpoint_height(context, checkpoint_height);
 
     // Step 2: Process trunk result

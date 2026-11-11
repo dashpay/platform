@@ -24,6 +24,7 @@ describe('DocumentsFacade', () => {
   let getDocumentStub: SinonStub;
   let getDocumentWithProofInfoStub: SinonStub;
   let documentCreateStub: SinonStub;
+  let getContestFundToJoinStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
   let documentEraseStub: SinonStub;
@@ -73,7 +74,10 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
-    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({ entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } });
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves({
+      entries: [],
+      lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) },
+    });
     getDocumentHistoryWithProofInfoStub = this.sinon.stub(
       wasmSdk,
       'getDocumentHistoryWithProofInfo',
@@ -91,6 +95,7 @@ describe('DocumentsFacade', () => {
 
     // Stub transition methods
     documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
+    getContestFundToJoinStub = this.sinon.stub(wasmSdk, 'getContestFundToJoin').resolves(undefined);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
     documentEraseStub = this.sinon.stub(wasmSdk, 'documentErase').resolves();
@@ -195,11 +200,43 @@ describe('DocumentsFacade', () => {
         revision: BigInt(2),
       };
 
-      const result = { data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } }, proof: { grovedbProof: new Uint8Array([2]) }, metadata: {} };
+      const result = {
+        data: { entries: [], lifecycle: { state: 'ABSENT', remainingRevisions: BigInt(0) } },
+        proof: { grovedbProof: new Uint8Array([2]) },
+        metadata: {},
+      };
       getDocumentHistoryWithProofInfoStub.resolves(result);
       expect(await client.documents.historyWithProof(query)).to.equal(result);
 
       expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  (['history', 'historyWithProof'] as const).forEach((method) => {
+    it(`should forward a returned history entry unchanged as the ${method} cursor`, async () => {
+      const entry = { timeMs: BigInt(1000), revision: BigInt(2), document };
+      const data = { entries: [entry], lifecycle: undefined };
+      const stub = method === 'history'
+        ? getDocumentHistoryStub : getDocumentHistoryWithProofInfoStub;
+      stub.resolves(method === 'history' ? data : { data, proof: {}, metadata: {} });
+      const query: wasmSDKPackage.DocumentHistoryQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        startAtMs: BigInt(0),
+      };
+      const response = await client.documents[method](query);
+      const page = 'data' in response ? response.data : response;
+      const nextQuery: wasmSDKPackage.DocumentHistoryQuery = {
+        ...query,
+        startAtMs: undefined,
+        startAfter: page.entries[0],
+      };
+
+      await client.documents[method](nextQuery);
+
+      expect(stub.secondCall).to.have.been.calledWithExactly(nextQuery);
+      expect(stub.secondCall.args[0].startAfter).to.equal(entry);
     });
   });
 
@@ -241,6 +278,28 @@ describe('DocumentsFacade', () => {
       await client.documents.create(options);
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('contestFundToJoin()', () => {
+    it('should resolve to the prefunded voting balance the create states', async () => {
+      const prefundedVotingBalance = new wasmSDKPackage.PrefundedVotingBalance({
+        indexName: 'parentNameAndLabel',
+        credits: BigInt(20000000000),
+      });
+      getContestFundToJoinStub.resolves(prefundedVotingBalance);
+
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.equal(prefundedVotingBalance);
+    });
+
+    it('should resolve to undefined for a document that joins no contest', async () => {
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.be.undefined();
     });
   });
 
@@ -501,6 +560,22 @@ describe('DocumentsFacade', () => {
         aggregate: { type: 'count' },
         where: [['country', '==', 'DE']],
         direction: 'asc',
+        limit: 10,
+      };
+
+      await client.documents.ranked(query);
+
+      expect(getDocumentsRankedStub).to.be.calledOnceWithExactly(query);
+    });
+
+    it('should accept a contains pin on a typed array element', async () => {
+      // Typed so the spec stops compiling if `DocumentsIndexPin` drops `contains`.
+      const query: wasmSDKPackage.DocumentsRankedQuery = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'like',
+        groupBy: 'postId',
+        aggregate: { type: 'count' },
+        where: [['tags', 'contains', 'dash']],
         limit: 10,
       };
 

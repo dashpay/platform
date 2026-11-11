@@ -1,3 +1,4 @@
+use crate::state_transition::batch_transition::batched_transition::DocumentEraseTransition;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 use derive_more::{Display, From};
@@ -5,8 +6,13 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode, DecodeUntrusted};
 use crate::prelude::{IdentityNonce, Revision};
-use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition};
-use crate::state_transition::batch_transition::batched_transition::{DocumentEraseTransition, DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
+use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenMintToPoolTransition, TokenBurnFromPoolTransition,
+    TokenClaimToPoolTransition, TokenDirectPurchaseToPoolTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
+use crate::state_transition::batch_transition::batched_transition::{DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
 use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -67,10 +73,10 @@ pub enum DocumentTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentTransition {}
+impl JsonConvertible for DocumentTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentTransition {}
+impl ValueConvertible for DocumentTransition {}
 
 #[cfg(all(
     test,
@@ -295,6 +301,36 @@ impl BatchTransitionResolversV0 for DocumentTransition {
     ) -> Option<&TokenSetPriceForDirectPurchaseTransition> {
         None
     }
+
+    fn as_transition_token_shield(&self) -> Option<&TokenShieldTransition> {
+        None
+    }
+
+    fn as_transition_token_unshield(&self) -> Option<&TokenUnshieldTransition> {
+        None
+    }
+
+    fn as_transition_token_shielded_transfer(&self) -> Option<&TokenShieldedTransferTransition> {
+        None
+    }
+
+    fn as_transition_token_mint_to_pool(&self) -> Option<&TokenMintToPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_burn_from_pool(&self) -> Option<&TokenBurnFromPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_claim_to_pool(&self) -> Option<&TokenClaimToPoolTransition> {
+        None
+    }
+
+    fn as_transition_token_direct_purchase_to_pool(
+        &self,
+    ) -> Option<&TokenDirectPurchaseToPoolTransition> {
+        None
+    }
 }
 
 pub trait DocumentTransitionV0Methods {
@@ -348,6 +384,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base(),
             DocumentTransition::Purchase(t) => t.base(),
             DocumentTransition::IndexOnlyDelete(t) => t.base(),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(t) => t.base(),
         }
     }
@@ -361,6 +399,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => t.data().get(path),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => None,
         }
     }
@@ -382,6 +422,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(_) => None,
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => None,
         }
     }
@@ -399,6 +441,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => Some(t.data()),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => None,
         }
     }
@@ -418,6 +462,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => Some(t.revision()),
             DocumentTransition::Purchase(t) => Some(t.revision()),
             DocumentTransition::IndexOnlyDelete(_) => None,
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => None,
         }
     }
@@ -431,6 +477,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base().identity_contract_nonce(),
             DocumentTransition::Purchase(t) => t.base().identity_contract_nonce(),
             DocumentTransition::IndexOnlyDelete(t) => t.base().identity_contract_nonce(),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(t) => t.base().identity_contract_nonce(),
         }
     }
@@ -455,6 +503,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::IndexOnlyDelete(t) => {
                 t.data_mut().insert(property_name, value);
             }
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => {}
         }
     }
@@ -472,6 +522,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(t) => t.base_mut(),
             DocumentTransition::Purchase(t) => t.base_mut(),
             DocumentTransition::IndexOnlyDelete(t) => t.base_mut(),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(t) => t.base_mut(),
         }
     }
@@ -485,6 +537,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => None,
             DocumentTransition::Purchase(_) => None,
             DocumentTransition::IndexOnlyDelete(t) => Some(t.data_mut()),
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => None,
         }
     }
@@ -498,6 +552,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::UpdatePrice(ref mut t) => t.set_revision(revision),
             DocumentTransition::Purchase(ref mut t) => t.set_revision(revision),
             DocumentTransition::IndexOnlyDelete(_) => {}
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => {}
         }
     }
@@ -513,6 +569,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::IndexOnlyDelete(t) => {
                 t.base_mut().set_identity_contract_nonce(nonce)
             }
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(t) => t.base_mut().set_identity_contract_nonce(nonce),
         }
     }

@@ -25,10 +25,19 @@ pub struct TrackedAssetLockFFI {
     pub amount: u64,
     /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
     /// 4=Consumed, 5=RecoveredFromChain — Core finality proven by restore
-    /// reconstruction or live reconciliation, Platform-side consumption unknown).
+    /// reconstruction or live reconciliation, Platform-side consumption unknown;
+    /// 6=DrainCompleted — proven drain consumption and owned output recorded durably).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,
+    /// Whether `shielded_recipient_raw_43` carries the Orchard recipient a
+    /// shielded funding (funding type 5) was built to pay. False for other
+    /// funding types and for shielded locks tracked before the recipient was
+    /// recorded (a resume of those pays the recipient the caller names).
+    pub has_shielded_recipient: bool,
+    /// The raw 43-byte Orchard recipient a resume of this lock pays, valid
+    /// only when `has_shielded_recipient` is true (all zero otherwise).
+    pub shielded_recipient_raw_43: [u8; 43],
 }
 
 /// Destroy an AssetLockManager handle.
@@ -81,8 +90,11 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                         AssetLockStatus::ChainLocked => 3,
                         AssetLockStatus::Consumed => 4,
                         AssetLockStatus::RecoveredFromChain => 5,
+        AssetLockStatus::DrainCompleted => 6,
                     },
                     has_proof: lock.proof.is_some(),
+                    has_shielded_recipient: lock.shielded_recipient.is_some(),
+                    shielded_recipient_raw_43: lock.shielded_recipient.unwrap_or([0; 43]),
                 }
             })
             .collect();

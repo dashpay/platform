@@ -1,19 +1,19 @@
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Inserts a contract into the drive.
@@ -59,9 +59,12 @@ impl Drive {
             2 => {
                 self.insert_contract_v2(contract, block_info, apply, transaction, platform_version)
             }
+            3 => {
+                self.insert_contract_v3(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }
@@ -74,7 +77,7 @@ impl Drive {
     /// * `contract_element` - The contract data encapsulated in an `Element`.
     /// * `contract` - A reference to the `DataContract` to be inserted.
     /// * `block_info` - A reference to information about the current block.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` for estimated layer information.
     /// * `drive_operations` - A mutable reference to a `Vec` of `LowLevelDriveOperation` objects to perform.
     /// * `platform_version` - The version of Platform.
     ///
@@ -91,9 +94,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -131,9 +132,18 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            3 => self.insert_contract_add_operations_v3(
+                contract_element,
+                contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                drive_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_add_operations".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }

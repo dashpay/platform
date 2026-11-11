@@ -4,6 +4,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::DocumentIndexOnlyDeleteTransition;
+use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
@@ -16,6 +17,7 @@ impl DocumentIndexOnlyDeleteTransitionAction {
         owner_id: Identifier,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -24,7 +26,7 @@ impl DocumentIndexOnlyDeleteTransitionAction {
         Error,
     > {
         match value {
-            DocumentIndexOnlyDeleteTransition::V0(v0) => DocumentIndexOnlyDeleteTransitionActionV0::try_from_borrowed_document_index_only_delete_transition_with_contract_lookup(v0, owner_id, user_fee_increase, get_data_contract),
+            DocumentIndexOnlyDeleteTransition::V0(v0) => DocumentIndexOnlyDeleteTransitionActionV0::try_from_borrowed_document_index_only_delete_transition_with_contract_lookup(v0, owner_id, user_fee_increase, get_data_contract, platform_version),
         }
     }
 }

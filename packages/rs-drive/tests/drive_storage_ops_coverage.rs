@@ -903,6 +903,8 @@ mod document_operation_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let update_info = UpdateOperationInfo {
@@ -937,6 +939,8 @@ mod document_operation_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let serialized = vec![1, 2, 3, 4, 5];
@@ -957,6 +961,7 @@ mod grovedb_op_batch_tests {
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use grovedb::batch::{GroveOp, QualifiedGroveDbOp};
     use grovedb::{Element, TreeType};
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn new_batch_is_empty() {
@@ -1381,7 +1386,9 @@ mod grovedb_op_batch_tests {
     #[test]
     fn verify_consistency_of_empty_batch() {
         let batch = GroveDbOpBatch::new();
-        let results = batch.verify_consistency_of_operations();
+        let results = batch
+            .verify_consistency_of_operations(&PlatformVersion::latest().drive.grove_version)
+            .expect("expected to check the batch");
         // An empty batch should have no inconsistencies
         assert!(
             results.is_empty(),

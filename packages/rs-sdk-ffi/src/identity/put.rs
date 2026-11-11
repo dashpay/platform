@@ -52,7 +52,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -82,9 +82,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
                 settings,
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to put identity to platform", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -142,7 +140,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -173,10 +171,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
             )
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to put identity to platform and wait: {}",
-                    e
-                ))
+                FFIError::sdk_call_failed("Failed to put identity to platform and wait", e)
             })?;
 
         Ok(confirmed_identity)
@@ -230,7 +225,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -254,9 +249,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
                 settings,
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to put identity to platform", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -309,7 +302,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let identity = &*(identity_handle as *const Identity);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -334,10 +327,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
             )
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to put identity to platform and wait: {}",
-                    e
-                ))
+                FFIError::sdk_call_failed("Failed to put identity to platform and wait", e)
             })?;
 
         Ok(confirmed_identity)

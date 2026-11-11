@@ -1,12 +1,12 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     #[allow(clippy::too_many_arguments)]
@@ -34,13 +34,11 @@ impl Drive {
             platform_version,
         )?;
 
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         Ok(fees)
@@ -58,8 +56,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info =
-            if apply { None } else { Some(HashMap::new()) };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.token_mint_many_operations_v0(
             token_id,
@@ -87,9 +84,7 @@ impl Drive {
         mut recipients: Vec<(Identifier, u64)>,
         total_mint_amount: u64,
         allow_first_mint: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -151,6 +146,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
@@ -655,7 +651,7 @@ mod tests {
             .expect("fetch supply before")
             .unwrap_or(0);
 
-        let mut estimated_costs_only_with_layer_info = Some(std::collections::HashMap::new());
+        let mut estimated_costs_only_with_layer_info = Some(EstimatedLayers::new());
         let ops = drive
             .token_mint_many_operations_v0(
                 Identifier::new(token_id),

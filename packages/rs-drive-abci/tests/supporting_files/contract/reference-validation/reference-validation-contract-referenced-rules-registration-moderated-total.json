@@ -1,0 +1,98 @@
+{
+  "$formatVersion": "1",
+  "id": "FmNtTTiJ9X8sJdKvkpK58yzUAx78PW61bCpwW8dZnpMC",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "room": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "capacity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "position": 0
+        }
+      },
+      "required": [
+        "capacity"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "moderatorAbilities": {
+        "changeFields": [
+          "status"
+        ]
+      },
+      "properties": {
+        "roomId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "room"
+          },
+          "position": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "approved"
+          ],
+          "maxLength": 10,
+          "position": 1
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "indices": [
+        {
+          "name": "byRoomStatus",
+          "properties": [
+            {
+              "roomId": "asc"
+            },
+            {
+              "status": "asc"
+            }
+          ],
+          "countable": "countable"
+        }
+      ],
+      "propertyConstraints": {
+        "cap": {
+          "lessThanOrEqual": [
+            {
+              "countOf": [
+                "entry",
+                {
+                  "roomId": "roomId",
+                  "status": {
+                    "const": "approved"
+                  }
+                }
+              ]
+            },
+            {
+              "referenced": [
+                "roomId",
+                "capacity"
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -2,6 +2,8 @@
 pub mod identity_create_from_shielded_pool;
 /// IdentityTopUpFromShieldedPool transition action
 pub mod identity_top_up_from_shielded_pool;
+/// PrivateDocumentCreateFromShieldedPool transition action
+pub mod private_document_create_from_shielded_pool;
 /// Shield transition action
 pub mod shield;
 /// Shield from asset lock transition action
@@ -12,6 +14,12 @@ pub mod shield_from_identity;
 pub mod shielded_transfer;
 /// Shielded withdrawal transition action
 pub mod shielded_withdrawal;
+/// TokenPurchaseFromShieldedPool transition action
+pub mod token_purchase_from_shielded_pool;
+/// TokenShieldedTransferWithShieldedFee transition action
+pub mod token_shielded_transfer_with_shielded_fee;
+/// TokenUnshieldWithShieldedFee transition action
+pub mod token_unshield_with_shielded_fee;
 /// Unshield transition action
 pub mod unshield;
 

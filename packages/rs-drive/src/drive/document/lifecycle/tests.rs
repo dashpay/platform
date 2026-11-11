@@ -14,11 +14,11 @@ use crate::query::document_history_drive_query::{
 use crate::query::{
     DriveDocumentQuery, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus,
 };
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-use crate::verify::document::DocumentHistoryProof;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -31,7 +31,6 @@ use dpp::tests::json_document::{json_document_to_contract, json_document_to_docu
 use dpp::version::PlatformVersion;
 use grovedb::{MaybeTree, TransactionArg, TreeType};
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 const FAMILY_HISTORY_CONTRACT: &str =
     "tests/supporting_files/contract/family/family-contract-with-history.json";
@@ -82,7 +81,6 @@ fn setup_history(revisions: u64, owner: [u8; 32]) -> (Drive, DataContract, Ident
                 true,
                 None,
                 version,
-                None,
             )
             .expect("expected to write a revision");
     }
@@ -196,15 +194,9 @@ fn delete(
     drive
         .apply_batch_low_level_drive_operations(None, None, batch, &mut operations, &latest().drive)
         .expect("expected to apply the delete");
-    Drive::calculate_fee(
-        None,
-        Some(operations),
-        &block_info.epoch,
-        drive.config.epochs_per_era,
-        latest(),
-        None,
-    )
-    .expect("expected a fee")
+    drive
+        .calculate_fee(None, Some(operations), &block_info.epoch, latest())
+        .expect("expected a fee")
 }
 
 fn erase(
@@ -229,15 +221,9 @@ fn erase(
     drive
         .apply_batch_low_level_drive_operations(None, None, batch, &mut operations, &latest().drive)
         .expect("expected to apply the erase");
-    Drive::calculate_fee(
-        None,
-        Some(operations),
-        &block_info.epoch,
-        drive.config.epochs_per_era,
-        latest(),
-        None,
-    )
-    .expect("expected a fee")
+    drive
+        .calculate_fee(None, Some(operations), &block_info.epoch, latest())
+        .expect("expected a fee")
 }
 
 /// The admission estimate of an erase, which knows nothing about the document
@@ -248,7 +234,7 @@ fn estimated_erase_fee(
     id: Identifier,
 ) -> dpp::fee::fee_result::FeeResult {
     let mut operations = vec![];
-    let mut layers = Some(HashMap::new());
+    let mut layers = Some(EstimatedLayers::new());
     let block_info = BlockInfo::default_with_time(9_000);
     let batch = drive
         .erase_document_for_contract_operations(
@@ -270,15 +256,9 @@ fn estimated_erase_fee(
             &latest().drive,
         )
         .expect("expected to price the erase");
-    Drive::calculate_fee(
-        None,
-        Some(operations),
-        &block_info.epoch,
-        drive.config.epochs_per_era,
-        latest(),
-        None,
-    )
-    .expect("expected a fee")
+    drive
+        .calculate_fee(None, Some(operations), &block_info.epoch, latest())
+        .expect("expected a fee")
 }
 
 #[test]
@@ -450,7 +430,6 @@ fn should_refuse_to_create_a_document_whose_revisions_are_still_retained() {
             true,
             None,
             version,
-            None,
         )
         .expect_err("a reserved id must not be creatable");
     assert!(matches!(
@@ -475,7 +454,6 @@ fn should_refuse_to_create_a_document_whose_revisions_are_still_retained() {
             true,
             None,
             version,
-            None,
         )
         .expect("an erased id is reusable");
     assert_eq!(visible_document_count(&drive, &contract), 1);
@@ -513,7 +491,6 @@ fn should_refuse_to_create_over_retained_revisions_even_when_the_caller_override
             true,
             None,
             version,
-            None,
         )
         .expect_err("an override must not merge a new document into a deleted one's history");
     assert!(matches!(
@@ -562,8 +539,10 @@ fn should_refuse_to_drop_a_history_subtree_while_a_revision_survives() {
 #[test]
 fn should_refund_each_removed_revision_to_the_identity_that_wrote_it() {
     let owner = [14u8; 32];
+    let deleter = [80u8; 32];
     let (drive, contract, id) = setup_history(3, owner);
-    delete(&drive, &contract, id, Identifier::new(owner), 5_000);
+    delete(&drive, &contract, id, Identifier::new(deleter), 5_000);
+    let record_refunds = isolated_record_removal_refunds(&drive, &contract, id);
 
     let fee = erase(&drive, &contract, id, 6_000);
 
@@ -577,6 +556,53 @@ fn should_refund_each_removed_revision_to_the_identity_that_wrote_it() {
         refunded > 0,
         "the revisions' writer must be credited for the bytes the erase removed"
     );
+    assert_eq!(
+        fee.fee_refunds.0.get(&deleter),
+        record_refunds.0.get(&deleter)
+    );
+    assert!(record_refunds.0.contains_key(&deleter));
+}
+
+fn isolated_record_removal_refunds(
+    drive: &Drive,
+    contract: &DataContract,
+    id: Identifier,
+) -> dpp::fee::fee_result::refunds::FeeRefunds {
+    let transaction = drive.grove.start_transaction();
+    let mut batch = vec![];
+    drive
+        .batch_delete(
+            document_lifecycle_path(contract.id_ref().as_bytes(), "person")
+                .as_slice()
+                .into(),
+            id.as_slice(),
+            StatefulBatchDelete {
+                is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+            },
+            Some(&transaction),
+            &mut batch,
+            &latest().drive,
+        )
+        .unwrap();
+    let mut operations = vec![];
+    drive
+        .apply_batch_low_level_drive_operations(
+            None,
+            Some(&transaction),
+            batch,
+            &mut operations,
+            &latest().drive,
+        )
+        .unwrap();
+    drive
+        .calculate_fee(
+            None,
+            Some(operations),
+            &BlockInfo::default_with_time(6_000).epoch,
+            latest(),
+        )
+        .unwrap()
+        .fee_refunds
 }
 
 #[test]
@@ -733,6 +759,7 @@ fn should_keep_the_deleter_as_the_records_beneficiary_across_an_erase_start() {
 fn should_refund_distinct_writers_separately() {
     let first = [21u8; 32];
     let second = [22u8; 32];
+    let deleter = [81u8; 32];
     let version = latest();
     let (drive, contract, id) = setup_history(1, first);
     let document_type = document_type_of(&contract);
@@ -757,11 +784,11 @@ fn should_refund_distinct_writers_separately() {
             true,
             None,
             version,
-            None,
         )
         .expect("expected a second writer's revision");
 
-    delete(&drive, &contract, id, Identifier::new(first), 5_000);
+    delete(&drive, &contract, id, Identifier::new(deleter), 5_000);
+    let record_refunds = isolated_record_removal_refunds(&drive, &contract, id);
     let fee = erase(&drive, &contract, id, 6_000);
 
     assert!(
@@ -769,6 +796,11 @@ fn should_refund_distinct_writers_separately() {
         "each writer must be credited for the revision they paid for; got {:?}",
         fee.fee_refunds.0.keys().collect::<Vec<_>>()
     );
+    assert_eq!(
+        fee.fee_refunds.0.get(&deleter),
+        record_refunds.0.get(&deleter)
+    );
+    assert!(record_refunds.0.contains_key(&deleter));
 }
 
 #[test]
@@ -896,7 +928,6 @@ fn should_decrement_the_count_and_the_sum_when_a_keep_history_document_is_delete
                 true,
                 None,
                 version,
-                None,
             )
             .expect("expected to write a revision");
     }
@@ -1055,7 +1086,6 @@ fn should_charge_the_container_to_the_first_delete_of_a_type_only() {
             true,
             None,
             version,
-            None,
         )
         .expect("expected a second document");
 
@@ -1076,7 +1106,7 @@ fn should_charge_the_container_to_the_first_delete_of_a_type_only() {
 /// keep using the old estimate.
 #[test]
 fn should_reject_an_unsupported_erase_estimation_version() {
-    use std::collections::HashMap;
+    use crate::util::estimated_layers::EstimatedLayers;
 
     let owner = [30u8; 32];
     let (_drive, contract, id) = setup_history(1, owner);
@@ -1102,7 +1132,7 @@ fn should_reject_an_unsupported_erase_estimation_version() {
         id,
         &contract,
         document_type_of(&contract),
-        &mut HashMap::new(),
+        &mut EstimatedLayers::new(),
         &version,
     )
     .expect_err("an unimplemented version must be refused");
@@ -1228,7 +1258,6 @@ fn should_refund_each_writer_under_the_epoch_they_wrote_in() {
                 true,
                 None,
                 version,
-                None,
             )
             .expect("expected to write a revision");
     };
@@ -1321,15 +1350,9 @@ fn erase_at(
     drive
         .apply_batch_low_level_drive_operations(None, None, batch, &mut operations, &latest().drive)
         .expect("expected to apply the erase");
-    Drive::calculate_fee(
-        None,
-        Some(operations),
-        &block_info.epoch,
-        drive.config.epochs_per_era,
-        latest(),
-        None,
-    )
-    .expect("expected a fee")
+    drive
+        .calculate_fee(None, Some(operations), &block_info.epoch, latest())
+        .expect("expected a fee")
 }
 
 /// A refund is a credit to a real identity, not just a map entry: the amount
@@ -1446,7 +1469,6 @@ fn should_erase_identically_with_batch_consistency_checking_on() {
                     true,
                     None,
                     version,
-                    None,
                 )
                 .expect("expected to write a revision");
         }
@@ -1472,20 +1494,9 @@ fn should_erase_identically_with_batch_consistency_checking_on() {
     assert_eq!(fees[0], fees[1], "nor what it costs");
 }
 
-/// Two deletes of different documents of one type, combined into one batch
-/// before either is applied and before the type has a lifecycle container, each
-/// emit the insert of the same shared key. Every document operation is
-/// converted on its own and cannot see its siblings, so neither can tell that
-/// the other is already creating it.
-///
-/// GroveDB refuses the batch rather than committing one of the two, so nothing
-/// is written and the caller is told. That fail-closed behaviour is what this
-/// pins. Consensus cannot reach it: a batch state transition carries exactly
-/// one document transition at every protocol version, so two document
-/// operations never share a batch by that route, and no other caller combines
-/// keep-history deletes.
+/// Sibling deletes share the per-type lifecycle container even before it is committed.
 #[test]
-fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
+fn should_apply_two_deletes_sharing_a_new_container() {
     assert_eq!(
         latest().system_limits.max_transitions_in_documents_batch,
         1,
@@ -1520,7 +1531,6 @@ fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
             true,
             None,
             version,
-            None,
         )
         .expect("expected a second document");
 
@@ -1539,39 +1549,127 @@ fn should_refuse_rather_than_half_apply_two_deletes_sharing_a_new_container() {
             &BlockInfo::default_with_time(5_000),
             None,
             version,
-            None,
         )
-        .expect_err("the duplicated container insert must be refused, not half applied");
+        .expect("sibling deletes create their shared lifecycle container once");
 
-    for id in [first_id, second.id()] {
-        assert!(
-            matches!(
-                lifecycle_of(&drive, &contract, id),
-                DocumentLifecycleState::Active(_)
-            ),
-            "a refused batch must leave both documents exactly as they were"
-        );
-    }
-
-    // One at a time is the supported shape, and the second finds the container
-    // the first created.
-    for id in [first_id, second.id()] {
-        drive
-            .apply_drive_operations(
-                vec![delete_operation(id)],
-                true,
-                &BlockInfo::default_with_time(6_000),
-                None,
-                version,
-                None,
-            )
-            .expect("expected one delete at a time to succeed");
-    }
     for id in [first_id, second.id()] {
         assert!(matches!(
             lifecycle_of(&drive, &contract, id),
             DocumentLifecycleState::Deleted(_)
         ));
+    }
+}
+
+#[test]
+fn should_keep_sibling_lifecycle_containers_separate_and_reuse_existing_containers() {
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+
+    let version = latest();
+    let owner = Identifier::from([48; 32]);
+    for existing in [false, true] {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let mut contract =
+            json_document_to_contract(FAMILY_HISTORY_CONTRACT, false, version).unwrap();
+        let schema = contract
+            .document_type_for_name("person")
+            .unwrap()
+            .schema()
+            .clone();
+        contract
+            .set_document_schema("otherPerson", schema, false, &mut vec![], version)
+            .unwrap();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        let insert = |name: &str, id: Identifier| {
+            let document_type = contract.document_type_for_name(name).unwrap();
+            let mut document =
+                json_document_to_document(PERSON, Some(owner), document_type, version).unwrap();
+            document.set_id(id);
+            document.set_revision(Some(1));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default_with_time(1000),
+                    true,
+                    None,
+                    version,
+                )
+                .unwrap();
+        };
+        let documents: [(&str, Identifier); 2] = [
+            ("person", [49; 32].into()),
+            ("otherPerson", [50; 32].into()),
+        ];
+        for (name, id) in documents {
+            if existing {
+                let seed_id = Identifier::from([id.as_slice()[0] + 10; 32]);
+                insert(name, seed_id);
+                drive
+                    .delete_document_for_contract(
+                        seed_id,
+                        &contract,
+                        name,
+                        BlockInfo::default_with_time(2000),
+                        true,
+                        None,
+                        version,
+                    )
+                    .unwrap();
+            }
+            insert(name, id);
+        }
+        let operations = || {
+            documents
+                .iter()
+                .map(|(name, id)| {
+                    DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+                        document_id: *id,
+                        deleter_id: Some(owner),
+                        contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName((*name).to_string()),
+                    })
+                })
+                .collect()
+        };
+        for apply in [false, true] {
+            drive
+                .apply_drive_operations(
+                    operations(),
+                    apply,
+                    &BlockInfo::default_with_time(3000),
+                    None,
+                    version,
+                )
+                .expect("each type has its own lifecycle container in estimation and application");
+        }
+        for (name, id) in documents {
+            assert!(matches!(
+                drive
+                    .fetch_document_lifecycle(
+                        &contract,
+                        contract.document_type_for_name(name).unwrap(),
+                        id,
+                        None,
+                        None,
+                        version,
+                    )
+                    .unwrap()
+                    .0,
+                DocumentLifecycleState::Deleted(_)
+            ));
+        }
     }
 }
 
@@ -1626,10 +1724,8 @@ fn should_prove_the_erasing_state_and_reject_a_tampered_proof() {
         assert_eq!(lifecycle.times.erasing_started_at_ms, 6_000);
         assert_eq!(lifecycle.times.erasing_from_revision, chunk + 2);
 
-        let mut tampered =
-            DocumentHistoryProof::from_bytes(&proof).expect("expected the history proof envelope");
-        tampered.metadata_proof.push(0xff);
-        let tampered = tampered.to_bytes().expect("expected to encode the proof");
+        let mut tampered = proof.clone();
+        tampered.push(0xff);
         Drive::verify_document_history(&query, &tampered, document_type_of(&contract), latest())
             .expect_err("tampering with the lifecycle proof must fail verification");
     }
@@ -1653,11 +1749,9 @@ fn should_prove_the_erasing_state_and_reject_a_tampered_proof() {
     assert_eq!(lifecycle.state, DocumentHistoryState::Absent);
     assert_eq!(lifecycle.remaining_revisions, 0);
     assert_eq!(lifecycle.times, Default::default());
-    let proof =
-        DocumentHistoryProof::from_bytes(&proof).expect("expected the history proof envelope");
     assert!(
-        proof.entries_proof.is_none(),
-        "there is no history tree left to page over"
+        verified.entries.is_empty(),
+        "no revisions survive the terminal erase"
     );
 }
 
@@ -1716,7 +1810,11 @@ fn should_read_revisions_by_position_after_a_partial_erasure() {
 #[test]
 fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
     let old = PlatformVersion::get(14).unwrap();
-    let new = PlatformVersion::get(15).unwrap();
+    let mut version = latest().clone();
+    version
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(1);
+    let new = &version;
     let drive = setup_drive_with_initial_state_structure(None);
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
@@ -1758,7 +1856,6 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
                 true,
                 None,
                 old,
-                None,
             )
             .unwrap();
     }
@@ -1861,9 +1958,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
         );
     }
 
-    // Two revisions fit in one erase chunk, so the erasure finishes at once
-    // and the id is unused again: a by-revision read of an unused id is an
-    // ordinary empty page, authenticated as an absence rather than refused.
+    // A one-revision chunk leaves the oldest revision of the migrated history.
     apply(
         drive
             .erase_document_for_contract_operations(
@@ -1876,6 +1971,71 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
                 new,
             )
             .expect("expected to build the erase"),
+    );
+    let history_query = query(DocumentHistoryFilter::StartAtTime(0));
+    let page = drive
+        .fetch_document_history(&history_query, document_type, None, new)
+        .unwrap();
+    let proof = drive
+        .prove_document_history(&history_query, document_type, None, new)
+        .unwrap();
+    let (_, verified) =
+        Drive::verify_document_history(&history_query, &proof, document_type, new).unwrap();
+    assert_eq!(verified, page);
+    let lifecycle = page.lifecycle.unwrap();
+    assert_eq!(lifecycle.state, DocumentHistoryState::Erasing);
+    assert_eq!(lifecycle.remaining_revisions, 1);
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|entry| entry.revision)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    for selector in by_revision.clone() {
+        is_gap_refusal(
+            drive
+                .fetch_document_history(&query(selector.clone()), document_type, None, new)
+                .unwrap_err(),
+        );
+        is_gap_refusal(
+            drive
+                .prove_document_history(&query(selector), document_type, None, new)
+                .unwrap_err(),
+        );
+    }
+    for time in [0, 999, 1_000, 2_000, 4_999, 5_000, 6_000, u64::MAX] {
+        let timed = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "profile".into(),
+            document_type_keeps_history: true,
+            document_id: id.to_buffer(),
+            block_time_ms: Some(time),
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+        let path_query = timed.construct_path_query(new).unwrap();
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &new.drive)
+            .unwrap();
+        for subset in [false, true] {
+            let (_, returned) = timed
+                .verify_proof(subset, &proof, document_type, new)
+                .unwrap();
+            assert!(returned.is_none(), "erasing is absent at time {time}");
+        }
+    }
+    apply(
+        drive
+            .erase_document_for_contract_operations(
+                id,
+                &contract,
+                document_type,
+                &BlockInfo::default_with_time(7_000),
+                &mut None,
+                None,
+                new,
+            )
+            .unwrap(),
     );
     for selector in by_revision {
         let page = drive
@@ -1893,7 +2053,7 @@ fn should_keep_refusing_by_revision_reads_of_a_gapped_history_after_deletion() {
 
 /// A lifecycle delete given only the contract's id has to fetch the contract,
 /// and that fetch is billed: its operation must come back with the delete's
-/// operations rather than be dropped on the way out, as it is for an erase.
+/// operations, as an erase also preserves its contract fetch.
 #[test]
 fn should_keep_the_contract_fetch_cost_of_a_lifecycle_delete_by_contract_id() {
     use crate::fees::op::LowLevelDriveOperation;
@@ -1936,6 +2096,269 @@ fn should_keep_the_contract_fetch_cost_of_a_lifecycle_delete_by_contract_id() {
         borrowed[..],
         "after the fetch cost, the by-id path emits exactly the delete's operations"
     );
+}
+
+#[test]
+fn should_preserve_released_non_history_delete_operations_by_contract_id() {
+    use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+    use crate::util::batch::DocumentOperationType;
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+
+    for protocol in [12, 13, 14] {
+        let version = PlatformVersion::get(protocol).unwrap();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract.json",
+            false,
+            version,
+        )
+        .unwrap();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        let document_type = document_type_of(&contract);
+        let document = json_document_to_document(
+            PERSON,
+            Some(Identifier::new([82; 32])),
+            document_type,
+            version,
+        )
+        .unwrap();
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        let block = BlockInfo::default_with_time(5_000);
+        let lower = |contract_info| {
+            DocumentOperationType::DeleteDocument {
+                document_id: document.id(),
+                deleter_id: None,
+                contract_info,
+                document_type_info: DocumentTypeInfo::DocumentTypeName("person".into()),
+            }
+            .into_low_level_drive_operations(&drive, &mut None, &block, None, version)
+            .unwrap()
+        };
+        assert_eq!(
+            lower(DataContractInfo::DataContractId(contract.id())),
+            lower(DataContractInfo::BorrowedDataContract(&contract)),
+            "protocol {protocol} retains its original delete operations"
+        );
+    }
+}
+
+#[test]
+fn should_keep_non_history_delete_independent_of_pending_lifecycle_operations() {
+    let version = latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/family/family-contract-only-first-name-index.json",
+        false,
+        version,
+    )
+    .unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = document_type_of(&contract);
+    let first = json_document_to_document(
+        PERSON,
+        Some(Identifier::new([82; 32])),
+        document_type,
+        version,
+    )
+    .unwrap();
+    let mut second = first.clone();
+    second.set_id(Identifier::new([84; 32]));
+    for document in [&first, &second] {
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+    }
+    let block = BlockInfo::default_with_time(5_000);
+    let build = |id, previous| {
+        drive
+            .delete_document_for_contract_operations(
+                id,
+                &contract,
+                document_type,
+                &block,
+                None,
+                previous,
+                &mut None,
+                None,
+                version,
+            )
+            .unwrap()
+    };
+    let mut previous = build(first.id(), None);
+    assert_eq!(
+        build(second.id(), Some(&mut previous)),
+        build(second.id(), None)
+    );
+}
+
+fn install_lifecycle_record(drive: &Drive, contract: &DataContract, id: Identifier) {
+    let mut operations = vec![];
+    drive
+        .add_lifecycle_record_operations(
+            id,
+            contract,
+            document_type_of(contract),
+            DocumentLifecycleRecord::deleted_at(5_000, 2, 2),
+            None,
+            &mut None,
+            None,
+            None,
+            &mut operations,
+            latest(),
+        )
+        .unwrap();
+    drive
+        .apply_batch_low_level_drive_operations(
+            None,
+            None,
+            operations,
+            &mut vec![],
+            &latest().drive,
+        )
+        .unwrap();
+}
+
+#[test]
+fn should_refuse_a_current_pointer_and_lifecycle_record_when_fetching_lifecycle() {
+    let (drive, contract, id) = setup_history(2, [74; 32]);
+    install_lifecycle_record(&drive, &contract, id);
+    assert!(matches!(
+        drive.fetch_document_lifecycle(
+            &contract,
+            document_type_of(&contract),
+            id,
+            None,
+            None,
+            latest()
+        ),
+        Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+    ));
+}
+
+#[test]
+fn should_refuse_a_current_pointer_and_lifecycle_record_when_erasing() {
+    let (drive, contract, id) = setup_history(2, [75; 32]);
+    install_lifecycle_record(&drive, &contract, id);
+    assert!(matches!(
+        drive.erase_document_for_contract_operations(
+            id,
+            &contract,
+            document_type_of(&contract),
+            &BlockInfo::default_with_time(6_000),
+            &mut None,
+            None,
+            latest(),
+        ),
+        Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+    ));
+}
+
+#[test]
+fn should_refuse_to_replace_an_existing_deletion_record() {
+    let (drive, contract, id) = setup_history(2, [76; 32]);
+    install_lifecycle_record(&drive, &contract, id);
+    let batch = drive.delete_document_for_contract_operations(
+        id,
+        &contract,
+        document_type_of(&contract),
+        &BlockInfo::default_with_time(6_000),
+        None,
+        None,
+        &mut None,
+        None,
+        latest(),
+    );
+    let result = batch.and_then(|batch| {
+        drive.apply_batch_low_level_drive_operations(
+            None,
+            None,
+            batch,
+            &mut vec![],
+            &latest().drive,
+        )
+    });
+    assert!(
+        result.is_err(),
+        "a deletion must not overwrite an existing lifecycle record"
+    );
+}
+
+#[test]
+fn should_refuse_to_write_an_incoherent_deletion_record() {
+    let (drive, contract, id) = setup_history(2, [77; 32]);
+    let result = drive.add_lifecycle_record_operations(
+        id,
+        &contract,
+        document_type_of(&contract),
+        DocumentLifecycleRecord::deleted_at(5_000, 0, 2),
+        None,
+        &mut None,
+        None,
+        None,
+        &mut vec![],
+        latest(),
+    );
+    assert!(matches!(
+        result,
+        Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+    ));
+}
+
+#[test]
+fn should_refuse_to_start_erasing_before_the_deletion_time() {
+    let (drive, contract, id) = setup_history(2, [78; 32]);
+    delete(&drive, &contract, id, Identifier::new([79; 32]), 5_000);
+    let mut version = latest().clone();
+    version
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(1);
+    let result = drive.erase_document_for_contract_operations(
+        id,
+        &contract,
+        document_type_of(&contract),
+        &BlockInfo::default_with_time(4_000),
+        &mut None,
+        None,
+        &version,
+    );
+    assert!(matches!(
+        result,
+        Err(Error::Drive(DriveError::CorruptedDriveState(_)))
+    ));
 }
 
 /// The erase operation is a public Drive method, reachable without the
@@ -2024,7 +2447,6 @@ fn should_refuse_to_erase_a_document_that_is_not_deleted() {
             true,
             None,
             version,
-            None,
         )
         .expect("expected the id to be free again");
 
@@ -2038,4 +2460,263 @@ fn should_refuse_to_erase_a_document_that_is_not_deleted() {
         DocumentLifecycleState::Active(_)
     ));
     assert_eq!(revisions_retained(&drive), 1);
+}
+
+#[test]
+fn should_refuse_an_erase_limit_that_cannot_probe_a_following_revision() {
+    let owner = [7; 32];
+    let (drive, contract, id) = setup_history(1, owner);
+    delete(&drive, &contract, id, owner.into(), 9000);
+    for limit in [0, u16::MAX] {
+        let mut version = latest().clone();
+        version
+            .system_limits
+            .max_document_revisions_erased_per_transition = Some(limit);
+        assert!(
+            drive
+                .erase_document_for_contract_operations(
+                    id,
+                    &contract,
+                    document_type_of(&contract),
+                    &BlockInfo::default_with_time(9001),
+                    &mut None,
+                    None,
+                    &version
+                )
+                .is_err(),
+            "limit {limit} cannot bound a chunk plus its probe"
+        );
+    }
+}
+
+#[test]
+fn should_select_history_pointer_removal_by_the_storage_layout() {
+    use crate::drive::document::paths::contract_documents_primary_key_path;
+
+    let (drive, contract, id) = setup_history(1, [7; 32]);
+    let document_type = document_type_of(&contract);
+    let path = contract_documents_primary_key_path(contract.id_ref().as_bytes(), "person");
+    for layout in [0, 2] {
+        let mut version = latest().clone();
+        version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = layout;
+        let result = drive.remove_document_from_primary_storage(
+            id,
+            document_type,
+            path,
+            &mut None,
+            None,
+            &mut vec![],
+            &version,
+        );
+        assert!(
+            result.is_err(),
+            "layout {layout} cannot remove a history pointer"
+        );
+    }
+
+    let mut version = latest().clone();
+    version
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_to_primary_storage = 0;
+    drive
+        .remove_document_from_primary_storage(
+            id,
+            document_type,
+            path,
+            &mut None,
+            None,
+            &mut vec![],
+            &version,
+        )
+        .expect(
+            "the layout slot, independently of the writer selector, describes the stored pointer",
+        );
+}
+
+#[test]
+fn should_refuse_erasure_from_an_incoherent_lifecycle_record() {
+    use dpp::serialization::PlatformSerializable;
+
+    let (drive, contract, id) = setup_history(1, [7; 32]);
+    delete(&drive, &contract, id, [7; 32].into(), 9000);
+    let path = document_lifecycle_path(contract.id_ref().as_bytes(), "person");
+    drive
+        .grove
+        .insert(
+            path.as_slice(),
+            id.as_slice(),
+            grovedb::Element::new_item(
+                DocumentLifecycleRecord::deleted_at(9000, 1, 0)
+                    .serialize_to_bytes()
+                    .unwrap(),
+            ),
+            None,
+            None,
+            &latest().drive.grove_version,
+        )
+        .value
+        .unwrap();
+    assert!(
+        drive
+            .erase_document_for_contract_operations(
+                id,
+                &contract,
+                document_type_of(&contract),
+                &BlockInfo::default_with_time(9001),
+                &mut None,
+                None,
+                latest(),
+            )
+            .is_err(),
+        "only a coherent deletion may authorize removing retained revisions"
+    );
+}
+
+#[test]
+fn should_cover_distinct_storing_epoch_reads_in_a_minimal_document_erase_estimate() {
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::document_factory::DocumentFactory;
+    use dpp::platform_value::platform_value;
+    let mut version = latest().clone();
+    version
+        .system_limits
+        .max_document_revisions_erased_per_transition = Some(4);
+    let drive = setup_drive_with_initial_state_structure(Some(&version));
+    let contract = DataContractFactory::new(version.protocol_version).unwrap()
+        .create_with_value_config([7; 32].into(), 0, platform_value!({"person": {
+            "type": "object", "documentsKeepHistory": true, "canBeDeleted": true, "canBeErased": true,
+            "properties": {"a": {"type": "boolean", "position": 0}}, "additionalProperties": false
+        }}), None, None).unwrap().data_contract_owned();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, &version)
+        .unwrap();
+    let mut epoch_records = GroveDbOpBatch::new();
+    for epoch in 2..=6 {
+        epoch_records.push(
+            Epoch::new(epoch)
+                .unwrap()
+                .update_protocol_version_operation(version.protocol_version),
+        );
+    }
+    drive
+        .grove_apply_batch(epoch_records, false, None, &version.drive)
+        .unwrap();
+    let document_type = document_type_of(&contract);
+    let mut document = DocumentFactory::new(version.protocol_version)
+        .unwrap()
+        .create_document(
+            &contract,
+            [7; 32].into(),
+            "person".into(),
+            platform_value!({}),
+        )
+        .unwrap();
+    for revision in 1..=4 {
+        document.set_revision(Some(revision));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((
+                            &document,
+                            Some(Cow::Owned(StorageFlags::new_single_epoch(
+                                revision as u16 + 1,
+                                Some([7; 32]),
+                            ))),
+                        )),
+                        owner_id: Some([7; 32]),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                revision > 1,
+                BlockInfo {
+                    epoch: Epoch::new(revision as u16 + 1).unwrap(),
+                    ..BlockInfo::default_with_time(revision * 1000)
+                },
+                true,
+                None,
+                &version,
+            )
+            .unwrap();
+    }
+    let block = BlockInfo {
+        epoch: Epoch::new(6).unwrap(),
+        ..BlockInfo::default_with_time(5000)
+    };
+    let deletes = drive
+        .delete_document_for_contract_operations(
+            document.id(),
+            &contract,
+            document_type,
+            &block,
+            Some([7; 32].into()),
+            None,
+            &mut None,
+            None,
+            &version,
+        )
+        .unwrap();
+    drive
+        .apply_batch_low_level_drive_operations(None, None, deletes, &mut vec![], &version.drive)
+        .unwrap();
+    let block = BlockInfo {
+        epoch: Epoch::new(7).unwrap(),
+        ..BlockInfo::default_with_time(6000)
+    };
+    let mut layers = Some(EstimatedLayers::new());
+    let estimate = drive
+        .erase_document_for_contract_operations(
+            document.id(),
+            &contract,
+            document_type,
+            &block,
+            &mut layers,
+            None,
+            &version,
+        )
+        .unwrap();
+    let mut costs = vec![];
+    drive
+        .apply_batch_low_level_drive_operations(layers, None, estimate, &mut costs, &version.drive)
+        .unwrap();
+    let estimated = drive
+        .calculate_fee(None, Some(costs), &block.epoch, &version)
+        .unwrap();
+    let actual = drive
+        .erase_document_for_contract_operations(
+            document.id(),
+            &contract,
+            document_type,
+            &block,
+            &mut None,
+            None,
+            &version,
+        )
+        .unwrap();
+    let mut costs = vec![];
+    drive
+        .apply_batch_low_level_drive_operations(None, None, actual, &mut costs, &version.drive)
+        .unwrap();
+    let actual = drive
+        .calculate_fee(None, Some(costs), &block.epoch, &version)
+        .unwrap();
+    assert!(
+        actual.processing_fee <= estimated.processing_fee,
+        "distinct storing epochs must fit the erase estimate: actual {}, estimated {}",
+        actual.processing_fee,
+        estimated.processing_fee
+    );
+    assert!(actual.storage_fee <= estimated.storage_fee);
 }

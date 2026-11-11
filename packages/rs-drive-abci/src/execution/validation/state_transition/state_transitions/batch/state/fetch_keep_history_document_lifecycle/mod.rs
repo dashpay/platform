@@ -1,8 +1,8 @@
-mod v0;
-
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -12,9 +12,6 @@ use drive::drive::document::lifecycle::DocumentLifecycleState;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
-use self::v0::fetch_keep_history_document_lifecycle_v0;
-
-/// Classifies a keep-history document and bills the reads it performs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_keep_history_document_lifecycle(
     drive: &Drive,
@@ -26,31 +23,16 @@ pub(crate) fn fetch_keep_history_document_lifecycle(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentLifecycleState, Error> {
-    match platform_version
-        .drive_abci
-        .validation_and_processing
-        .state_transitions
-        .batch_state_transition
-        .fetch_keep_history_document_lifecycle
-    {
-        Some(0) => fetch_keep_history_document_lifecycle_v0(
-            drive,
+    let (state, fee_result) = drive
+        .fetch_document_lifecycle(
             contract,
             document_type,
             id,
-            epoch,
-            execution_context,
+            Some(epoch),
             transaction,
             platform_version,
-        ),
-        Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-            method: "fetch_keep_history_document_lifecycle".to_string(),
-            known_versions: vec![0],
-            received: version,
-        })),
-        None => Err(Error::Execution(ExecutionError::VersionNotActive {
-            method: "fetch_keep_history_document_lifecycle".to_string(),
-            known_versions: vec![0],
-        })),
-    }
+        )
+        .map_err(Error::Drive)?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+    Ok(state)
 }

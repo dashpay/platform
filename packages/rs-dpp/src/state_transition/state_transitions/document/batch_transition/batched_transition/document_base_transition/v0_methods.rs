@@ -10,6 +10,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.id(),
             DocumentBaseTransition::V1(v1) => v1.id(),
+            DocumentBaseTransition::V2(v2) => v2.id(),
         }
     }
 
@@ -17,6 +18,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.set_id(id),
             DocumentBaseTransition::V1(v1) => v1.set_id(id),
+            DocumentBaseTransition::V2(v2) => v2.set_id(id),
         }
     }
 
@@ -24,12 +26,14 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.document_type_name(),
             DocumentBaseTransition::V1(v1) => v1.document_type_name(),
+            DocumentBaseTransition::V2(v2) => v2.document_type_name(),
         }
     }
     fn document_type_name_owned(self) -> String {
         match self {
             DocumentBaseTransition::V0(v0) => v0.document_type_name_owned(),
             DocumentBaseTransition::V1(v1) => v1.document_type_name_owned(),
+            DocumentBaseTransition::V2(v2) => v2.document_type_name_owned(),
         }
     }
 
@@ -37,6 +41,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.set_document_type_name(document_type_name),
             DocumentBaseTransition::V1(v1) => v1.set_document_type_name(document_type_name),
+            DocumentBaseTransition::V2(v2) => v2.set_document_type_name(document_type_name),
         }
     }
 
@@ -44,6 +49,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.data_contract_id(),
             DocumentBaseTransition::V1(v1) => v1.data_contract_id(),
+            DocumentBaseTransition::V2(v2) => v2.data_contract_id(),
         }
     }
 
@@ -51,6 +57,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.data_contract_id_ref(),
             DocumentBaseTransition::V1(v1) => v1.data_contract_id_ref(),
+            DocumentBaseTransition::V2(v2) => v2.data_contract_id_ref(),
         }
     }
 
@@ -58,6 +65,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentBaseTransition::V1(v1) => v1.set_data_contract_id(data_contract_id),
+            DocumentBaseTransition::V2(v2) => v2.set_data_contract_id(data_contract_id),
         }
     }
 
@@ -65,6 +73,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.identity_contract_nonce,
             DocumentBaseTransition::V1(v1) => v1.identity_contract_nonce,
+            DocumentBaseTransition::V2(v2) => v2.identity_contract_nonce,
         }
     }
 
@@ -72,6 +81,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(v0) => v0.identity_contract_nonce = identity_contract_nonce,
             DocumentBaseTransition::V1(v1) => v1.identity_contract_nonce = identity_contract_nonce,
+            DocumentBaseTransition::V2(v2) => v2.identity_contract_nonce = identity_contract_nonce,
         }
     }
 }

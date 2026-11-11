@@ -164,6 +164,14 @@ impl DocumentV0Getters for DocumentV0 {
     fn contract_version(&self) -> Option<u32> {
         self.contract_version
     }
+
+    fn moderated_at(&self) -> Option<TimestampMillis> {
+        self.moderated_at
+    }
+
+    fn moderated_by(&self) -> Option<Identifier> {
+        self.moderated_by
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {
@@ -300,5 +308,13 @@ impl DocumentV0Setters for DocumentV0 {
     /// is (re-)supplied; `None` for pre-stamp documents.
     fn set_contract_version(&mut self, contract_version: Option<u32>) {
         self.contract_version = contract_version;
+    }
+
+    fn set_moderated_at(&mut self, moderated_at: Option<TimestampMillis>) {
+        self.moderated_at = moderated_at;
+    }
+
+    fn set_moderated_by(&mut self, moderated_by: Option<Identifier>) {
+        self.moderated_by = moderated_by;
     }
 }

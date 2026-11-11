@@ -1,4 +1,5 @@
 use bincode::config;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_value::Value;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -44,7 +45,7 @@ static ALLOCATOR: ObservedAllocator = ObservedAllocator;
 
 #[test]
 fn should_reject_missing_value_payload_without_reserving_declared_lengths() {
-    let config = config::standard().with_big_endian().with_no_limit();
+    let config = PLATFORM_BINCODE_CONFIG;
     // Bytes, enum bytes/strings, text, arrays and maps all allocate. Include
     // arrays/maps with one complete entry before the missing remainder.
     for variant in [10u32, 14, 15, 18, 21, 22] {
@@ -96,16 +97,14 @@ fn should_preserve_value_wire_format_and_consumed_bytes() {
         }};
     }
     check!(config::standard());
-    check!(config::standard().with_big_endian());
+    check!(PLATFORM_BINCODE_CONFIG);
     check!(config::standard().with_fixed_int_encoding());
-    check!(config::standard()
-        .with_big_endian()
-        .with_fixed_int_encoding());
+    check!(PLATFORM_BINCODE_CONFIG.with_fixed_int_encoding());
 }
 
 #[test]
 fn should_preserve_value_depth_and_budget_checks() {
-    let config = config::standard().with_big_endian();
+    let config = PLATFORM_BINCODE_CONFIG;
     let mut bytes = [21, 1].repeat(1_000);
     bytes.push(20); // Null at the bottom of the nested arrays.
     assert!(bincode::decode_from_slice_untrusted::<Value, _>(&bytes, config).is_err());

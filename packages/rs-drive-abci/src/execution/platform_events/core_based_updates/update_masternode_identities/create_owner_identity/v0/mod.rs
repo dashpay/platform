@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -15,10 +16,16 @@ where
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<Identity, Error> {
+        let payout_address = masternode.state.payout_address.ok_or_else(|| {
+            Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                "masternode {} has no payout address",
+                masternode.pro_tx_hash
+            )))
+        })?;
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Identity::create_basic_identity(owner_identifier, platform_version)?;
         identity.add_public_keys([Self::get_owner_identity_withdrawal_key(
-            masternode.state.payout_address,
+            payout_address,
             0,
             platform_version,
         )?]);
@@ -52,7 +59,7 @@ mod tests {
             pro_tx_hash: ProTxHash::from_byte_array(pro_tx),
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
@@ -60,14 +67,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [0u8; 20],
+                owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
-                payout_address,
+                payout_address: Some(payout_address),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         }
     }

@@ -189,3 +189,41 @@ object AuthorizedActionTakers {
     fun group(position: Int): String = "$GROUP_PREFIX$position"
     fun identity(base58: String): String = "$IDENTITY_PREFIX$base58"
 }
+
+/**
+ * `oncePerIdentityDistribution` (protocol version 14): a fixed [amount]
+ * every identity may claim exactly once. Decoded view of the raw block
+ * [TokenMaterializer] persists in
+ * [org.dashfoundation.dashsdk.persistence.entities.TokenEntity.oncePerIdentityDistribution]
+ * (`{"$formatVersion":"0","amount":<u64>}`, the amount a JSON number or a
+ * decimal string). [amount] is a decimal string like every other raw token
+ * amount in the app.
+ */
+data class TokenOncePerIdentityDistribution(val amount: String) {
+
+    companion object {
+
+        fun parse(json: String?): TokenOncePerIdentityDistribution? {
+            if (json.isNullOrBlank()) return null
+            return try {
+                parse(LenientJson.parseToJsonElement(json).jsonObject)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        /**
+         * Null when the block carries no `amount` that is a raw u64, the
+         * type the protocol gives token amounts. The range rs-dpp admits for
+         * this field (1 to `i64::MAX`) is validated in Rust at registration
+         * and is deliberately not mirrored here.
+         */
+        fun parse(obj: JsonObject): TokenOncePerIdentityDistribution? {
+            // Tolerate the enum-wrapped rendering the pre-programmed
+            // resolver also accepts; rs-dpp itself emits the flat shape.
+            val body = (obj["V0"] as? JsonObject) ?: obj
+            val content = (body["amount"] as? JsonPrimitive)?.content ?: return null
+            return TokenAmounts.parseRaw(content)?.let(::TokenOncePerIdentityDistribution)
+        }
+    }
+}

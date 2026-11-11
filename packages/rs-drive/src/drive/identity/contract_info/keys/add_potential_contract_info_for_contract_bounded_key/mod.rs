@@ -2,14 +2,14 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
     /// Adds potential contract information for a contract-bounded key.
@@ -21,7 +21,7 @@ impl Drive {
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `identity_key` - A reference to the `IdentityPublicKey` associated with the contract.
     /// * `epoch` - The current epoch.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `EstimatedLayers` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
     /// * `platform_version` - A reference to the platform version information.
@@ -39,9 +39,7 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         epoch: &Epoch,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -62,9 +60,18 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_potential_contract_info_for_contract_bounded_key_v1(
+                identity_id,
+                identity_key,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_potential_contract_info_for_contract_bounded_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

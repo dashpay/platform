@@ -5,7 +5,7 @@ Platform monorepo.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v20+
+- [Node.js](https://nodejs.org/) v24+
 - [Docker](https://docs.docker.com/get-docker/) v20.10+
 - [Rust](https://www.rust-lang.org/tools/install) v1.92+, with the wasm32
   target:

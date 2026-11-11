@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertContestedMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentExpirationMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 /// V3 differs from V2 in three method-version bumps that switch the
@@ -20,6 +21,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
+            fetch_document_lifecycle: None,
+
             query_documents: 0,
             query_chained_documents: 0,
             query_composite_documents: 0,
@@ -29,8 +32,6 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             fetch_document_history_query: 0,
             fetch_document_history: 0,
             prove_document_history: 0,
-            primary_key_path_query: 0,
-            fetch_document_lifecycle: None,
             detect_count_mode: 0,
             detect_sum_mode: 0,
             detect_ranked_mode: 0,
@@ -39,8 +40,14 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             non_primary_key_single_in_path_query: 0,
             non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 0,
+            start_at_document: 0,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
+            erase_document_for_contract_operations: None,
+            add_estimation_costs_for_erase_document: None,
+            add_estimation_costs_for_lifecycle_record: None,
+
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
             delete_document_for_contract: 0,
             delete_document_for_contract_id: 0,
@@ -59,9 +66,6 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             delete_document_for_contract_operations: 0,
             delete_index_only_document_for_contract_operations: 0,
             delete_index_only_document_for_contract: 0,
-            erase_document_for_contract_operations: None,
-            add_estimation_costs_for_erase_document: None,
-            add_estimation_costs_for_lifecycle_record: None,
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,
@@ -87,6 +91,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 0,
+            fetch_charter_election_windows: None,
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,
@@ -108,6 +113,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1,
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 1,
         },
         // Bumped to 1 vs V2's frozen 0: this is the v12-gated entry
         // point for the sum-tree feature. The v1 dispatch arm in
@@ -120,4 +127,18 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
         // versions stay on V2's v0 dispatch via their own method
         // tables (see V2's comment for the freeze rationale).
         primary_key_tree_type: 1,
+        document_history_storage_layout: 0,
+        fetch_property_constraint_aggregate: 0,
+        insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
+        fetch_private_document_entries: None, // no private document type before protocol version 15
+        prove_private_document_entries: None,
+        append_private_document_entries_operations: None, // no private document type before protocol version 15
+        expiration: DriveDocumentExpirationMethodVersions {
+            insert_document_ttl_trees: 0,
+            add_document_expiration_operations: 0,
+            remove_document_expiration_operations: 0,
+            fetch_expired_documents: 0,
+            remove_expired_documents: 0,
+            add_estimation_costs_for_document_expiration: 0,
+        },
     };

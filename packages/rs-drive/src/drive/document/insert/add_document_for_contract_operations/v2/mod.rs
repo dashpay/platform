@@ -3,6 +3,7 @@ use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeTyp
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
@@ -12,22 +13,14 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
     ///
-    /// v2 is v1 with one difference in how a fresh insert of a keep-history
-    /// document reaches primary storage: `override_document` no longer lets
-    /// the primary-storage writer skip its own checks once the document turned
-    /// out not to exist. Under the keep-history layout a deleted document has
-    /// no current entry but still retains its revisions, and the writer
-    /// refuses to create over them only when it is allowed to check; a
-    /// caller's override speaks for the current entry alone, so the insert
-    /// path does not forward it for such a type. Types that keep no history
-    /// have nothing behind a missing entry and keep v1's cheaper write.
+    /// Uses the current insert operations, but reserves a retained history's id even
+    /// when the caller allows overwriting an existing document. Other types delegate
+    /// to generation 1, including its expiration and derived-index handling.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_for_contract_operations_v2(
@@ -36,13 +29,55 @@ impl Drive {
         override_document: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if !document_and_contract_info
+            .document_type
+            .documents_keep_history()
+        {
+            return self.add_document_for_contract_operations_v1(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            );
+        }
+        self.add_document_or_estimate_change_operations_v2(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            false,
+            platform_version,
+        )
+    }
+
+    /// Prepares the insert, including its derived index values and expiration costs.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn add_document_or_estimate_change_operations_v2(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        estimates_a_change: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // A document whose type declares a `ttl` is stored without storage flags.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
 
         // indexOnly document types have no primary-storage row and no
         // primary-key tree at all — the index entries are the rows, and
@@ -148,6 +183,18 @@ impl Drive {
             return Ok(batch_operations);
         }
 
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at, which the document does not
+        // store: they are read here, before anything is keyed. Every other type passes through
+        // unchanged.
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         // if we are trying to get estimated costs we need to add the upper levels
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
@@ -157,18 +204,14 @@ impl Drive {
             )?;
         }
 
-        // The document has no current entry, whatever the caller assumed. For
-        // a keep-history type that entry is not the whole story, so the writer
-        // performs its own checks, including the refusal to create over a
-        // deleted document's retained revisions.
-        let insert_without_check = override_document
-            && !document_and_contract_info
-                .document_type
-                .documents_keep_history();
+        // if we have override_document set that means we already checked if it exists
         self.add_document_to_primary_storage(
             &document_and_contract_info,
             block_info,
-            insert_without_check,
+            override_document
+                && !document_and_contract_info
+                    .document_type
+                    .documents_keep_history(),
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
@@ -185,20 +228,44 @@ impl Drive {
             platform_version,
         )?;
 
+        // A document whose type declares a `ttl` also gets its expirations tree entry, pays
+        // for its bytes by the time it will live, and prepays its deletion.
+        if let Some(ttl_seconds) = document_and_contract_info
+            .document_type
+            .documents_ttl_seconds()
+        {
+            batch_operations = self.add_document_ttl_operations(
+                &document_and_contract_info,
+                ttl_seconds,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                estimates_a_change,
+                platform_version,
+            )?;
+        }
+
         // If any indexOnly document type of this contract carries a
         // `preallocated` index bound to this document type through a
         // refersTo declaration, create that index's trees for entries
         // referencing this document now — see
         // `add_preallocated_index_tree_operations`. A no-op for every
-        // contract without the (PV14+, indexOnly-only) flag.
-        self.add_preallocated_index_tree_operations_for_referring_types(
-            &document_and_contract_info,
-            previous_batch_operations,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            &mut batch_operations,
-            platform_version,
-        )?;
+        // contract without the (PV14+, indexOnly-only) flag. A change of
+        // the document preallocates nothing (its trees came with its
+        // creation, and an applied replace walks no preallocation), so its
+        // dry run leaves them out and still bounds what the change writes.
+        if !estimates_a_change {
+            self.add_preallocated_index_tree_operations_for_referring_types(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
 
         Ok(batch_operations)
     }

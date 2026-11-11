@@ -127,6 +127,40 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
     public let data: BinaryData
     public let disabledAt: TimestampMillis?
 
+    /// Usage limit (protocol version 14): the credits this key may take
+    /// from the identity over its whole lifetime. `nil` for a key
+    /// registered without a budget, which may spend without a ceiling.
+    ///
+    /// A key carrying either limit is an `IdentityPublicKey::V1` on the
+    /// wire (tagged `"$formatVersion": "1"`); a key with neither stays a
+    /// version 0 key with the same bytes as ever.
+    public let totalBudget: Credits?
+
+    /// Usage limit (protocol version 14): the block time in milliseconds
+    /// from which this key can no longer sign. `nil` for a key registered
+    /// without an expiry, which never expires.
+    public let expiresAt: TimestampMillis?
+
+    /// Whether the key carries either usage limit, which is what makes it
+    /// a version 1 key.
+    public var hasLimits: Bool {
+        totalBudget != nil || expiresAt != nil
+    }
+
+    /// Check if the key has expired at a deterministic block time
+    /// (milliseconds). A key without an expiry never expires.
+    public func isExpired(at timestamp: TimestampMillis) -> Bool {
+        guard let expiresAt = expiresAt else { return false }
+        return expiresAt <= timestamp
+    }
+
+    /// Check if the key has expired at a deterministic date. Convenience
+    /// over ``isExpired(at:)-(TimestampMillis)`` for wall-clock callers;
+    /// consensus compares against block time, so treat this as an estimate.
+    public func isExpired(at date: Date = Date()) -> Bool {
+        isExpired(at: TimestampMillis(date.timeIntervalSince1970 * 1000))
+    }
+
     /// Check if the key is disabled at a deterministic timestamp.
     public func isDisabled(at timestamp: TimestampMillis) -> Bool {
         guard let disabledAt = disabledAt else { return false }
@@ -151,7 +185,9 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
         keyType: KeyType,
         readOnly: Bool,
         data: BinaryData,
-        disabledAt: TimestampMillis? = nil
+        disabledAt: TimestampMillis? = nil,
+        totalBudget: Credits? = nil,
+        expiresAt: TimestampMillis? = nil
     ) {
         self.id = id
         self.purpose = purpose
@@ -161,6 +197,8 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
         self.readOnly = readOnly
         self.data = data
         self.disabledAt = disabledAt
+        self.totalBudget = totalBudget
+        self.expiresAt = expiresAt
     }
 }
 

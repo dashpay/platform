@@ -6,7 +6,11 @@ use super::address_funds::{
     VerifiedAddressInfosWasm, VerifiedIdentityFullWithAddressInfosWasm,
     VerifiedIdentityWithAddressInfosWasm,
 };
-use super::data_contract::VerifiedDataContractWasm;
+use super::data_contract::{
+    VerifiedContractDocumentRemovalWasm, VerifiedContractFeeClaimWasm,
+    VerifiedContractModerationListStatusesWasm, VerifiedContractTeamActionSignatureWasm,
+    VerifiedDataContractWasm,
+};
 use super::document::VerifiedDocumentsWasm;
 use super::helpers::{
     action_status_to_string, build_address_infos_map, build_nullifier_map, doc_to_wasm,
@@ -19,18 +23,22 @@ use super::shielded::{
     VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
+    VerifiedTokenGroupActionWithShieldedNullifiersWasm,
 };
 use super::token::{
     VerifiedTokenActionWithDocumentWasm, VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceWasm,
-    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithTokenBalanceWasm,
+    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm, VerifiedTokenIdentitiesBalancesWasm,
-    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm, VerifiedTokenStatusWasm,
+    VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm,
+    VerifiedTokenShieldedPoolBalanceWasm, VerifiedTokenStatusWasm,
 };
 use super::voting::{VerifiedMasternodeVoteWasm, VerifiedNextDistributionWasm};
 use crate::IdentifierWasm;
 use crate::error::WasmDppResult;
 use crate::utils::JsMapExt;
+use dpp::data_contract::config::moderation::ContractModerationListStatus;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use js_sys::{BigInt, Map};
 use wasm_bindgen::JsValue;
@@ -67,9 +75,16 @@ export type StateTransitionProofResultType =
   | VerifiedAssetLockConsumed
   | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
+  | VerifiedTokenShieldedPoolBalance
   | VerifiedShieldedNullifiersWithAddressInfos
   | VerifiedShieldedNullifiersWithWithdrawalDocument
-  | VerifiedIdentityWithShieldedNullifiers;
+  | VerifiedIdentityWithShieldedNullifiers
+  | VerifiedContractModerationListStatuses
+  | VerifiedContractFeeClaim
+  | VerifiedContractDocumentRemoval
+  | VerifiedTokenGroupActionWithShieldedPoolBalance
+  | VerifiedTokenGroupActionWithShieldedNullifiers
+  | VerifiedContractTeamActionSignature;
 "#;
 
 #[wasm_bindgen]
@@ -283,6 +298,36 @@ pub fn convert_proof_result(
             VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
         }
 
+        StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, amount) => {
+            VerifiedTokenShieldedPoolBalanceWasm {
+                token_id: id.into(),
+                balance: amount,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            power,
+            status,
+            maybe_balance,
+        ) => VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+            group_power: power,
+            action_status: action_status_to_string(status),
+            balance: maybe_balance,
+        }
+        .into(),
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            power,
+            status,
+            nullifiers,
+        ) => VerifiedTokenGroupActionWithShieldedNullifiersWasm::new(
+            power,
+            action_status_to_string(status),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
+
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
             nullifiers,
             infos,
@@ -318,6 +363,111 @@ pub fn convert_proof_result(
             identity.into(),
             build_nullifier_map(nullifiers),
         )
+        .into(),
+
+        StateTransitionProofResult::VerifiedContractModerationListStatuses(
+            contract_id,
+            identity_id,
+            statuses,
+        ) => {
+            let mut lists = vec![];
+            let mut banned = None;
+            let mut ban_reason = None;
+            let mut suspended_until = None;
+            let mut suspension_reason = None;
+            let mut warnings = None;
+            for status in statuses.0 {
+                match status {
+                    ContractModerationListStatus::Banlist { ban } => {
+                        lists.push("banlist".to_string());
+                        banned = Some(ban.is_some());
+                        ban_reason = ban.map(|ban| ban.reason);
+                    }
+                    ContractModerationListStatus::Suspensions { suspension } => {
+                        lists.push("suspensions".to_string());
+                        if let Some(suspension) = suspension {
+                            suspended_until = Some(suspension.until);
+                            suspension_reason = Some(suspension.reason);
+                        }
+                    }
+                    ContractModerationListStatus::Warnings {
+                        warnings: proved_warnings,
+                    } => {
+                        lists.push("warnings".to_string());
+                        warnings = Some(proved_warnings);
+                    }
+                }
+            }
+            VerifiedContractModerationListStatusesWasm {
+                contract_id: contract_id.into(),
+                identity_id: identity_id.into(),
+                lists,
+                banned,
+                ban_reason,
+                suspended_until,
+                suspension_reason,
+                warnings,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedContractFeeClaim(
+            contract_id,
+            pot,
+            last_claim,
+            remaining_credits,
+            balances,
+        ) => {
+            let balances = Map::from_entries(balances.into_iter().map(|(id, credits)| {
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+                let val: JsValue = BigInt::from(credits).into();
+                (key, val)
+            }));
+            VerifiedContractFeeClaimWasm {
+                contract_id: contract_id.into(),
+                pot: pot.to_string(),
+                last_claim_epoch: last_claim.epoch_index,
+                last_claim_time_ms: last_claim.time_ms,
+                last_claimant_id: last_claim.claimant_id.into(),
+                remaining_credits,
+                balances,
+            }
+            .into()
+        }
+        StateTransitionProofResult::VerifiedContractDocumentRemoval(
+            contract_id,
+            document_type_name,
+            document_id,
+            removal,
+        ) => VerifiedContractDocumentRemovalWasm {
+            contract_id: contract_id.into(),
+            document_type_name,
+            document_id: document_id.into(),
+            document_owner_id: removal.document_owner_id.into(),
+            moderator_id: removal.moderator_id.into(),
+            reason: removal.reason,
+            removed_at: removal.removed_at,
+            document_hash: removal.document_hash,
+            restored_by: removal
+                .restoration
+                .as_ref()
+                .map(|restoration| restoration.moderator_id.into()),
+            restored_at: removal
+                .restoration
+                .as_ref()
+                .map(|restoration| restoration.restored_at),
+            kept_fields: removal.kept_fields,
+        }
+        .into(),
+        StateTransitionProofResult::VerifiedContractTeamActionSignature(
+            contract_id,
+            action_id,
+            status,
+        ) => VerifiedContractTeamActionSignatureWasm {
+            contract_id: contract_id.into(),
+            action_id: action_id.into(),
+            status,
+        }
         .into(),
     };
 

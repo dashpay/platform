@@ -2,12 +2,11 @@
 //!
 //! Implements DIP-15 DashPay contact request functionality
 
-use crate::platform::transition::put_document::PutDocument;
+use crate::platform::transition::broadcast::{wait_after_broadcast, BroadcastStateTransition};
+use crate::platform::transition::put_document::prepare_document_state_transition;
+use crate::platform::transition::waitable::Waitable;
 use crate::platform::Document;
 use crate::{Error, Sdk};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::DocumentV0;
@@ -18,6 +17,10 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
+use dpp::secp256k1::{PublicKey, SecretKey};
+use dpp::state_transition::StateTransition;
 use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
 };
@@ -105,7 +108,13 @@ pub struct ContactRequestInput {
 /// Result of creating a contact request document
 #[derive(Debug)]
 pub struct ContactRequestResult {
-    /// The document ID
+    /// The document id derived from `entropy` alone.
+    ///
+    /// From protocol version 14 the id of a new document also commits to the
+    /// identity contract nonce of its create transition, which is only
+    /// assigned when the document is sent, so this is a placeholder there:
+    /// the id of the contact request is the one on the document returned by
+    /// `send_contact_request`.
     pub id: Identifier,
     /// The owner ID (sender identity ID)
     pub owner_id: Identifier,
@@ -113,10 +122,11 @@ pub struct ContactRequestResult {
     pub properties: BTreeMap<String, Value>,
     /// The entropy used to derive `id`.
     ///
-    /// This must be reused when broadcasting the document so that the
-    /// document id computed at creation matches the id platform consensus
-    /// recomputes from the entropy (otherwise the create transition is
-    /// rejected with `InvalidDocumentTransitionIdError`).
+    /// This must be reused when broadcasting the document: up to protocol
+    /// version 13 the id platform consensus recomputes from the entropy must
+    /// match `id` (otherwise the create transition is rejected with
+    /// `InvalidDocumentTransitionIdError`), and from protocol version 14 it is
+    /// one of the inputs of the final id.
     pub entropy: Bytes32,
 }
 
@@ -141,13 +151,27 @@ pub struct SendContactRequestResult {
     pub account_reference: u32,
 }
 
+/// A contact request signed and not yet broadcast
+/// ([`Sdk::sign_contact_request`]).
+#[derive(Debug, Clone)]
+pub struct SignedContactRequest {
+    /// The signed `contactRequest` create transition. Broadcasting these same
+    /// bytes again is a retry of this request, never a second one: the
+    /// transition carries its identity contract nonce.
+    pub state_transition: StateTransition,
+    /// The recipient's identity ID
+    pub recipient_id: Identifier,
+    /// The account reference
+    pub account_reference: u32,
+}
+
 /// Whether `purpose` is acceptable for the `senderKeyIndex` key of a contact
 /// request **we are about to mint**. The sender always references its own
 /// ENCRYPTION key.
 ///
 /// Mint-side only — see [`sender_key_purpose_is_acceptable_on_receive`] for
 /// what we accept from documents already on chain.
-fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
+pub(crate) fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
 
@@ -358,7 +382,7 @@ impl Sdk {
         }
 
         // Generate random IVs for encryption
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let mut xpub_iv = [0u8; 16];
         rng.fill_bytes(&mut xpub_iv);
 
@@ -403,8 +427,8 @@ impl Sdk {
             })?;
 
         // Generate entropy for document ID
-        let mut rng = StdRng::from_entropy();
-        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut rng = StdRng::from_os_rng();
+        let entropy = Bytes32::new(rng.random());
 
         // Generate document ID
         let sender_id = input.sender_identity.id().to_owned();
@@ -495,6 +519,52 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let SignedContactRequest {
+            state_transition,
+            recipient_id,
+            account_reference,
+        } = self
+            .sign_contact_request(input, ecdh_provider, get_extended_public_key)
+            .await?;
+
+        // Submit the document to the platform, and wait for the proof of the
+        // same signed transition.
+        let broadcast = state_transition.broadcast(self, None).await;
+        let platform_document = wait_after_broadcast(
+            broadcast,
+            <Document as Waitable>::wait_for_response(self, state_transition, None),
+        )
+        .await?;
+
+        // Return the result with recipient ID and account reference we saved earlier
+        Ok(SendContactRequestResult {
+            document: platform_document,
+            recipient_id,
+            account_reference,
+        })
+    }
+
+    /// Sign a contact request without broadcasting it: what
+    /// [`Self::send_contact_request`] submits, for a caller that keeps the
+    /// signed transition so that a retry broadcasts the same bytes again
+    /// rather than signing a second request.
+    ///
+    /// The transition takes the sender's next identity contract nonce for
+    /// DashPay, as a send does.
+    pub async fn sign_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
+        &self,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SignedContactRequest, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         // Save values we need before moving contact_request
         let recipient_id = input.contact_request.recipient.id();
         let account_reference = input.contact_request.account_reference;
@@ -539,24 +609,24 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
-        // Submit the document to the platform
-        let platform_document = document
-            .put_to_platform_and_wait_for_response(
-                self,
-                contact_request_document_type.to_owned_document_type(),
-                Some(entropy.0),
-                input.identity_public_key,
-                None, // token payment info
-                &input.signer,
-                None, // settings
-            )
-            .await?;
+        let state_transition = prepare_document_state_transition(
+            &document,
+            self,
+            contact_request_document_type.to_owned_document_type(),
+            Some(entropy.0),
+            input.identity_public_key,
+            None, // token payment info
+            &input.signer,
+            None, // settings
+        )
+        .await?;
 
-        // Return the result with recipient ID and account reference we saved earlier
-        Ok(SendContactRequestResult {
-            document: platform_document,
+        Ok(SignedContactRequest {
+            state_transition,
             recipient_id,
             account_reference,
         })
@@ -566,15 +636,14 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::dashcore::secp256k1::rand::{self, RngCore};
-    use dpp::dashcore::secp256k1::Secp256k1;
+    use dpp::secp256k1;
+    use dpp::secp256k1::rand::{self, RngCore};
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {
         // Test that ECDH encryption produces the correct output sizes
-        let secp = Secp256k1::new();
-        let (secret1, _public1) = secp.generate_keypair(&mut rand::thread_rng());
-        let (_secret2, public2) = secp.generate_keypair(&mut rand::thread_rng());
+        let (secret1, _public1) = secp256k1::generate_keypair(&mut rand::rng());
+        let (_secret2, public2) = secp256k1::generate_keypair(&mut rand::rng());
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);
@@ -582,8 +651,8 @@ mod tests {
         // Generate random IVs
         let mut xpub_iv = [0u8; 16];
         let mut label_iv = [0u8; 16];
-        rand::thread_rng().fill_bytes(&mut xpub_iv);
-        rand::thread_rng().fill_bytes(&mut label_iv);
+        rand::rng().fill_bytes(&mut xpub_iv);
+        rand::rng().fill_bytes(&mut label_iv);
 
         // Test extended public key encryption: the DIP-15 compact plaintext is
         // 69 bytes (parentFingerprint ‖ chainCode ‖ pubKey) → 96 bytes with IV
@@ -645,7 +714,7 @@ mod tests {
         // send_contact_request would generate fresh entropy E2 != E1 and this
         // invariant could not even be expressed. This test pins it.
         let mut rng = StdRng::seed_from_u64(0x6732_4732); // deterministic, no network
-        let entropy = Bytes32::random_with_rng(&mut rng);
+        let entropy = Bytes32::new(rng.random());
 
         let contract_id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -763,9 +832,8 @@ mod tests {
     #[test]
     fn test_ecdh_shared_secret_symmetry() {
         // Test that both parties derive the same shared secret
-        let secp = Secp256k1::new();
-        let (secret_alice, public_alice) = secp.generate_keypair(&mut rand::thread_rng());
-        let (secret_bob, public_bob) = secp.generate_keypair(&mut rand::thread_rng());
+        let (secret_alice, public_alice) = secp256k1::generate_keypair(&mut rand::rng());
+        let (secret_bob, public_bob) = secp256k1::generate_keypair(&mut rand::rng());
 
         // Alice derives shared secret using her private key and Bob's public key
         let shared_alice = derive_shared_key_ecdh(&secret_alice, &public_bob);

@@ -2,24 +2,24 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
-use std::collections::HashMap;
 
 mod v0;
+mod v1;
 
 impl Drive {
-    /// Adds indices for an index level and recurses.
+    /// Adds the contested index entries of a document: a tree per index value, and below the
+    /// last value the document's contender entry and the poll's abstain and lock trees.
+    /// Version 1 writes the last value as a count tree.
     /// Will return true if the contest already existed
     pub(crate) fn add_contested_indices_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -39,9 +39,17 @@ impl Drive {
                 batch_operations,
                 platform_version,
             ),
+            1 => self.add_contested_indices_for_contract_operations_v1(
+                document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_contested_indices_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

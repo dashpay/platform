@@ -1,14 +1,14 @@
 # Keep-History Documents
 
-> **Status:** implemented and gated at protocol version 15 (meta-schema v4 /
+> **Status:** implemented and gated at protocol version 15 (meta-schema v3 /
 > parser generation 4). The storage layout, the delete and erase paths and
 > the fee accounting are pinned against a real grovedb by
-> [`lifecycle/tests.rs`](https://github.com/dashpay/platform/blob/v4.3-dev/packages/rs-drive/src/drive/document/lifecycle/tests.rs)
+> [`lifecycle/tests.rs`](https://github.com/dashpay/platform/blob/v5.1-dev/packages/rs-drive/src/drive/document/lifecycle/tests.rs)
 > in rs-drive; the full ABCI pipeline (transitions, validation, proofs,
 > refunds) by the `keep_history`, `deletion`, `erase` and
 > `lifecycle_contracts` modules under rs-drive-abci's batch tests; and the
 > whole story against a running network by
-> [`KeepHistoryDocument.spec.js`](https://github.com/dashpay/platform/blob/v4.3-dev/packages/platform-test-suite/test/functional/platform/KeepHistoryDocument.spec.js).
+> [`KeepHistoryDocument.spec.js`](https://github.com/dashpay/platform/blob/v5.1-dev/packages/platform-test-suite/test/functional/platform/KeepHistoryDocument.spec.js).
 
 A document type declared with `documentsKeepHistory: true` retains every
 revision of every document instead of overwriting the previous one. This
@@ -51,7 +51,7 @@ keep-history type:
   never used: both are absent from the primary-key tree. The record is
   `DocumentLifecycleRecord` in `rs-dpp` (`packages/rs-dpp/src/document/lifecycle`),
   a versioned enum with the ordinary platform-serialization derives, stored
-  with the storage flags of the identity that deleted the document.
+  with the storage flags of the identity paying for deletion, including a gas sponsor.
 
 The record carries the block time the document was deleted at, the revision
 it carried then, how many revisions the history retained at that moment,
@@ -88,10 +88,11 @@ a keep-history type that award could land on an id whose retained history
 already exists. Lifting this needs changes to the contested machinery
 itself; until then the parser refuses the combination.
 
-Types registered under protocol 14 or earlier keep their frozen grammar: a
-keep-history type that allows deletion is still refused by the generation 3
-parser, so nothing that exists today can enter the lifecycle without a
-contract update at protocol 15.
+The generation 3 parser still refuses registration of a deletable keep-history
+type. At activation, existing historical types use the composite layout; a
+legacy type whose `canBeDeleted` is true, including its default, becomes
+soft-deletable without a contract update. `canBeErased` remains false unless
+the type declared it when registered under protocol 15.
 
 ## The four lifecycle states
 
@@ -181,6 +182,10 @@ before emitting anything, whether this chunk is the last one:
 The two never happen together, so one batch never carries two operations on
 the record's key.
 
+The eraser pays for rewriting the record on the first chunk, including any
+encoded-size growth. Its retained storage flags still determine who receives
+the refund when the record is removed.
+
 **Accounting.** Removing a revision credits whoever paid for it, through the
 storage flags every revision carries, in balance updates applied after the
 transition's fee result is formed. The admission estimate cannot know how
@@ -267,10 +272,25 @@ Everything above is selected only from `PLATFORM_V15`. Released tables gain
 dormant slots, and protocols 12 through 14 replay unchanged: a keep-history
 delete still ends in `InvalidDeletionOfDocumentThatKeepsHistory` at 12 and
 13 and in a paid rejection at 14, and an erase transition is refused at
-basic-structure validation below 15 by its per-kind bounds slot. A
-keep-history type registered under protocol 14 can never become deletable,
-so the migrated storage layout and the lifecycle are only ever exercised
-together on types updated at 15.
+basic-structure validation below 15 by its per-kind bounds slot. The activation
+migration preserves existing revisions and moves their pointers and index
+references into the composite layout before lifecycle operations run.
+
+## Reads at a block time
+
+A single-document lookup at time `T` authenticates both its lifecycle record
+and the newest retained revision at or before the ordered time limit. An
+active document returns that revision, or absence before its first revision.
+A deleted document returns a retained revision only when `T < deleted_at`;
+at the deletion time and later it returns absence, including a replacement
+and deletion in the same block. This comparison uses the original requested
+time, before the history query clamps it to the maximum ordered timestamp.
+As soon as erasure starts, every time returns absence. After terminal erasure
+the empty history proves absence without a permanent receipt.
+
+History v1 pages continue returning surviving revisions and lifecycle metadata
+during erasure. A `DriveDocumentQuery` with a block time remains refused for
+keep-history types.
 
 ## Rules and guidelines
 

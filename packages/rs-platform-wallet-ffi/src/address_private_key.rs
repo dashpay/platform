@@ -3,43 +3,26 @@
 //!
 //! Thin marshalling over
 //! [`PlatformWallet::derive_core_address_private_key`](platform_wallet::PlatformWallet::derive_core_address_private_key):
-//! the whole address-lookup-and-derive decision lives on the Rust
-//! library side. This shim only resolves the mnemonic (for the
-//! external-signable / watch-only wallets the iOS app holds, whose seed
-//! lives in the iOS Keychain rather than the `WalletManager`) and
-//! marshals the resulting hex + WIF strings across the C ABI.
-//!
-//! # Key source: chosen by wallet capability
-//!
-//! Mirrors the sibling
-//! [`platform_wallet_preview_identity_registration_keys`](crate::platform_wallet_preview_identity_registration_keys):
-//! a [`MnemonicResolverHandle`] is a *capability*, consulted only when
-//! the in-process wallet lacks resident private keys.
-//!
-//! - **Resident-key wallet** (created from a raw seed): the resolver is
-//!   never touched and the key is derived from the in-process wallet.
-//! - **External-signable / watch-only wallet** (the iOS shape): the
-//!   mnemonic is resolved on demand (keyed by the wallet handle's own
-//!   `wallet_id`), a master [`ExtendedPrivKey`] is built, the address's
-//!   key is derived from it, and the master's scalar is wiped before
-//!   returning. If the resolver handle is null for such a wallet the
-//!   call errors.
-//!
-//! The two-phase locking rule from the identity preview applies here
-//! too: the wallet-manager read guard is NEVER held across the Swift
-//! resolver callback.
+//! the address lookup, the choice of key source and the derive all live
+//! on the Rust library side. This shim turns the [`MnemonicResolverHandle`]
+//! into the `master_key` callback platform-wallet calls for a wallet
+//! without resident private keys, such as the external-signable wallets
+//! the iOS app holds, and marshals the resulting hex + WIF strings across
+//! the C ABI. A null resolver handle fails only when the callback runs.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::ptr;
 
 use key_wallet::bip32::ExtendedPrivKey;
-use platform_wallet::CoreAddressPrivateKey;
+use platform_wallet::{
+    CoreAddressKeyError, CoreAddressPrivateKey, PlatformWallet, PlatformWalletError,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
-use crate::types::Network;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -64,8 +47,8 @@ impl AddressPrivateKeyFFI {
     /// empty state instead of uninitialized memory.
     fn empty() -> Self {
         Self {
-            private_key_hex: std::ptr::null_mut(),
-            private_key_wif: std::ptr::null_mut(),
+            private_key_hex: ptr::null_mut(),
+            private_key_wif: ptr::null_mut(),
         }
     }
 }
@@ -100,70 +83,73 @@ pub unsafe extern "C" fn platform_wallet_address_private_key(
     address_cstr: *const c_char,
     out: *mut AddressPrivateKeyFFI,
 ) -> PlatformWalletFFIResult {
+    reveal_address_private_key(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        address_cstr,
+        out,
+        |wallet, address, master_key| wallet.derive_core_address_private_key(address, master_key),
+    )
+}
+
+/// The `master_key` callback [`reveal_address_private_key`] passes to `derive`.
+type MasterKey<'a> = &'a dyn Fn() -> Result<ExtendedPrivKey, PlatformWalletFFIResult>;
+
+/// Reveals the private key `derive` finds for `address_cstr` and writes it
+/// into `out`, with the mnemonic resolver as the master key source.
+///
+/// # Safety
+/// As for [`platform_wallet_address_private_key`].
+unsafe fn reveal_address_private_key(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    address_cstr: *const c_char,
+    out: *mut AddressPrivateKeyFFI,
+    derive: impl FnOnce(
+        &PlatformWallet,
+        &str,
+        MasterKey<'_>,
+    )
+        -> Result<CoreAddressPrivateKey, CoreAddressKeyError<PlatformWalletFFIResult>>,
+) -> PlatformWalletFFIResult {
     check_ptr!(out);
     unsafe { *out = AddressPrivateKeyFFI::empty() };
     check_ptr!(address_cstr);
 
     let address_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(address_cstr) }.to_str());
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(
-        wallet_handle,
-        |wallet| -> Result<CoreAddressPrivateKey, PlatformWalletFFIResult> {
-            let network: Network = wallet.network();
-
-            // Phase 1 — capability probe under a SHORT read guard,
-            // dropped before any resolver interaction.
-            let is_resident = {
-                let wm = wallet.wallet_manager().blocking_read();
-                match wm.get_wallet(&wallet.wallet_id()) {
-                    Some(key_wallet) => {
-                        !key_wallet.is_external_signable() && !key_wallet.is_watch_only()
-                    }
-                    None => {
-                        return Err(PlatformWalletFFIResult::err(
-                            PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                            "wallet not found in wallet manager",
-                        ));
-                    }
-                }
-            };
-
-            // Phase 2 — resolve the master xpriv for external-signable /
-            // watch-only wallets. NEVER under the guard above: the
-            // resolver synchronously re-enters Swift and reads the iOS
-            // Keychain (which can stall on biometric unlock).
-            let mut master_opt: Option<ExtendedPrivKey> = None;
-            if !is_resident {
-                if mnemonic_resolver_handle.is_null() {
-                    return Err(PlatformWalletFFIResult::err(
-                        PlatformWalletFFIResultCode::ErrorWalletOperation,
-                        "this wallet has no resident private keys (external-signable / \
-                         watch-only); a mnemonic resolver handle is required to reveal \
-                         an address private key",
-                    ));
-                }
-                let wallet_id = wallet.wallet_id();
-                // SAFETY: handle is non-null (checked) and the caller's
-                // safety contract guarantees it came from
-                // `dash_sdk_mnemonic_resolver_create`.
-                master_opt = Some(unsafe {
-                    resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)?
-                });
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let master_key = || {
+            if mnemonic_resolver_handle.is_null() {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "this wallet has no resident private keys (external-signable / \
+                     watch-only); a mnemonic resolver handle is required to reveal \
+                     an address private key",
+                ));
             }
-
-            // Phase 3 — library lookup + derive (re-acquires the guard
-            // internally; the resolver, if any, has already run).
-            let result = wallet.derive_core_address_private_key(address_str, master_opt.as_ref());
-
-            // Wipe the resolved master's inner scalar — `ExtendedPrivKey`
-            // has no `Drop` / `Zeroize`. No-op on the resident path.
-            if let Some(mut master) = master_opt {
-                master.private_key.non_secure_erase();
+            // SAFETY: the handle is non-null (checked) and the caller's
+            // safety contract guarantees it came from
+            // `dash_sdk_mnemonic_resolver_create`.
+            unsafe {
+                resolve_master_from_resolver(
+                    mnemonic_resolver_handle,
+                    &wallet.wallet_id(),
+                    wallet.network(),
+                )
             }
-
-            result.map_err(PlatformWalletFFIResult::from)
-        },
-    );
+        };
+        derive(wallet, address_str, &master_key).map_err(|error| match error {
+            CoreAddressKeyError::KeySource(result) => result,
+            CoreAddressKeyError::Wallet(PlatformWalletError::WalletNotFound(_)) => {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                    "wallet not found in wallet manager",
+                )
+            }
+            CoreAddressKeyError::Wallet(error) => error.into(),
+        })
+    });
     let result = unwrap_option_or_return!(option);
     let secret = unwrap_result_or_return!(result);
 
@@ -214,15 +200,106 @@ pub(crate) fn secret_string_into_raw(
     Ok(CString::new(buf)?.into_raw())
 }
 
+/// Returns the derivation path of `address_cstr` within the BIP-44
+/// account 0 scan of
+/// [`PlatformWallet::find_bip44_address_path`](platform_wallet::PlatformWallet::find_bip44_address_path),
+/// such as `m/44'/5'/0'/0/7`.
+///
+/// `*out_path` is null on success when the scan does not reach the address,
+/// and an address not valid on the wallet's network fails the call. A wallet
+/// without BIP-44 account 0 fails with `NotFound`, because the scan cannot
+/// run. On success the caller owns a non-null `*out_path` and must free it
+/// via [`crate::xpub_render::platform_wallet_free_string`].
+///
+/// # Safety
+/// `address_cstr` must point to a valid null-terminated UTF-8 C string and
+/// `out_path` to writable memory for one `*mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_find_bip44_address_path(
+    wallet_handle: Handle,
+    address_cstr: *const c_char,
+    out_path: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_path);
+    unsafe { *out_path = ptr::null_mut() };
+    check_ptr!(address_cstr);
+
+    let address_str = unwrap_result_or_return!(unsafe { CStr::from_ptr(address_cstr) }.to_str());
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        wallet.find_bip44_address_path(address_str)
+    });
+    let path = unwrap_result_or_return!(unwrap_option_or_return!(option));
+    if let Some(path) = path {
+        let path = unwrap_result_or_return!(CString::new(path.to_string()));
+        unsafe { *out_path = path.into_raw() };
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Returns the extended public key of BIP-44 account 0 from
+/// [`PlatformWallet::bip44_account_xpub`](platform_wallet::PlatformWallet::bip44_account_xpub),
+/// as an `xpub…` or `tpub…` string.
+///
+/// A wallet without BIP-44 account 0 fails with `NotFound`. On success the
+/// caller owns `*out_xpub` and must free it via
+/// [`crate::xpub_render::platform_wallet_free_string`].
+///
+/// # Safety
+/// `out_xpub` must point to writable memory for one `*mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_bip44_account_xpub(
+    wallet_handle: Handle,
+    out_xpub: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_xpub);
+    unsafe { *out_xpub = ptr::null_mut() };
+
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.bip44_account_xpub());
+    let xpub = unwrap_result_or_return!(unwrap_option_or_return!(option));
+    let xpub = unwrap_result_or_return!(CString::new(xpub.to_string()));
+    unsafe { *out_xpub = xpub.into_raw() };
+    PlatformWalletFFIResult::ok()
+}
+
+/// Derives the private key of `address_cstr` at the path
+/// [`platform_wallet_find_bip44_address_path`] finds, and returns it as hex
+/// and WIF in `out`.
+///
+/// Parameters and key source are as for
+/// [`platform_wallet_address_private_key`]. An address the scan does not
+/// reach fails the call, and a wallet without BIP-44 account 0 fails with
+/// `NotFound`. Release `out` with
+/// [`platform_wallet_address_private_key_free`].
+///
+/// # Safety
+/// As for [`platform_wallet_address_private_key`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_bip44_address_private_key(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    address_cstr: *const c_char,
+    out: *mut AddressPrivateKeyFFI,
+) -> PlatformWalletFFIResult {
+    reveal_address_private_key(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        address_cstr,
+        out,
+        |wallet, address, master_key| wallet.bip44_address_private_key(address, master_key),
+    )
+}
+
 /// Release an [`AddressPrivateKeyFFI`] populated by
-/// [`platform_wallet_address_private_key`], zeroizing the sensitive hex
+/// [`platform_wallet_address_private_key`] or
+/// [`platform_wallet_bip44_address_private_key`], zeroizing the sensitive hex
 /// and WIF backing bytes before freeing. Safe on a null outer pointer or
 /// an already-freed / empty struct (no-op). Fields are nulled after free
 /// so a second call is idempotent.
 ///
 /// # Safety
-/// `out`'s pointers must have been produced by
-/// [`platform_wallet_address_private_key`] and must not be freed twice.
+/// `out`'s pointers must have been produced by one of the functions above
+/// and must not be freed twice.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_address_private_key_free(out: *mut AddressPrivateKeyFFI) {
     if out.is_null() {
@@ -232,11 +309,116 @@ pub unsafe extern "C" fn platform_wallet_address_private_key_free(out: *mut Addr
     if !out.private_key_hex.is_null() {
         let mut bytes = unsafe { CString::from_raw(out.private_key_hex) }.into_bytes_with_nul();
         bytes.zeroize();
-        out.private_key_hex = std::ptr::null_mut();
+        out.private_key_hex = ptr::null_mut();
     }
     if !out.private_key_wif.is_null() {
         let mut bytes = unsafe { CString::from_raw(out.private_key_wif) }.into_bytes_with_nul();
         bytes.zeroize();
-        out.private_key_wif = std::ptr::null_mut();
+        out.private_key_wif = ptr::null_mut();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::runtime;
+    use crate::test_fixtures::out_string;
+    use crate::types::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Mnemonic;
+    use platform_wallet::first_receive_address_for_mnemonic;
+    use platform_wallet::test_support::{
+        test_platform_wallet_manager, TEST_FRENCH_MNEMONIC as FRENCH, TEST_PLATFORM_WALLET_MNEMONIC,
+    };
+    use PlatformWalletFFIResultCode::{
+        ErrorInvalidHandle, ErrorNullPointer, ErrorWalletOperation, NotFound,
+    };
+
+    #[test]
+    fn should_report_bip44_scan_paths_and_refuse_without_a_key_source() {
+        let (manager, wallet) = runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+            (manager, wallet)
+        });
+        let handle = PLATFORM_WALLET_STORAGE.insert(wallet);
+        let path = |handle: Handle, address: &str| {
+            let address = CString::new(address).unwrap();
+            out_string(|out| unsafe {
+                platform_wallet_find_bip44_address_path(handle, address.as_ptr(), out)
+            })
+        };
+        let xpub = |handle: Handle| {
+            out_string(|out| unsafe { platform_wallet_bip44_account_xpub(handle, out) })
+        };
+        let key = |handle: Handle, address: &str| {
+            let address = CString::new(address).unwrap();
+            let mut out = AddressPrivateKeyFFI::empty();
+            let r = unsafe {
+                platform_wallet_bip44_address_private_key(
+                    handle,
+                    ptr::null_mut(),
+                    address.as_ptr(),
+                    &mut out,
+                )
+            };
+            assert!(out.private_key_hex.is_null() && out.private_key_wif.is_null());
+            r.code
+        };
+
+        let own =
+            first_receive_address_for_mnemonic(TEST_PLATFORM_WALLET_MNEMONIC, Network::Testnet)
+                .unwrap();
+        let foreign = first_receive_address_for_mnemonic(FRENCH, Network::Testnet).unwrap();
+        assert_eq!(
+            path(handle, &own.to_string()),
+            Ok(Some("m/44'/1'/0'/0/0".to_owned()))
+        );
+        assert_eq!(path(handle, &foreign.to_string()), Ok(None));
+        let expected = PLATFORM_WALLET_STORAGE
+            .with_item(handle, |w| w.bip44_account_xpub())
+            .unwrap()
+            .unwrap();
+        assert_eq!(xpub(handle), Ok(Some(expected.to_string())));
+        let r = unsafe { platform_wallet_bip44_account_xpub(handle, ptr::null_mut()) };
+        assert_eq!(r.code, ErrorNullPointer);
+        assert!(path(handle, "not an address").is_err());
+
+        let mut out: *mut c_char = ptr::null_mut();
+        let r = unsafe { platform_wallet_find_bip44_address_path(handle, ptr::null(), &mut out) };
+        assert_eq!(r.code, ErrorNullPointer);
+
+        // The test wallet is external-signable, so revealing a key needs the
+        // mnemonic resolver this call leaves out.
+        assert_eq!(key(handle, &own.to_string()), ErrorWalletOperation);
+
+        // A wallet without BIP-44 account 0 cannot run the scan.
+        let no_bip44 = runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &Mnemonic::from_phrase(FRENCH).unwrap().to_seed(""),
+                WalletAccountCreationOptions::None,
+                Some(0),
+            ))
+            .unwrap();
+        let no_bip44 = PLATFORM_WALLET_STORAGE.insert(no_bip44);
+        assert_eq!(xpub(no_bip44), Err(NotFound));
+        assert_eq!(path(no_bip44, &foreign.to_string()), Err(NotFound));
+        assert_eq!(key(no_bip44, &foreign.to_string()), NotFound);
+        PLATFORM_WALLET_STORAGE.remove(no_bip44);
+
+        // A handle kept past the wallet's removal fails instead of aborting.
+        let wallet_id = runtime().block_on(async {
+            let wallet = PLATFORM_WALLET_STORAGE
+                .with_item(handle, |w| w.wallet_id())
+                .unwrap();
+            manager.remove_wallet(&wallet).await.unwrap();
+            wallet
+        });
+        assert!(manager.get_wallet_blocking(&wallet_id).is_none());
+        assert!(path(handle, &own.to_string()).is_err());
+        assert!(xpub(handle).is_err());
+        assert_eq!(key(handle, &own.to_string()), ErrorInvalidHandle);
+        PLATFORM_WALLET_STORAGE.remove(handle);
     }
 }

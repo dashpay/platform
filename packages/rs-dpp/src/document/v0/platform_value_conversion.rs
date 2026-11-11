@@ -37,6 +37,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 
@@ -60,6 +62,8 @@ mod tests {
             updated_at_core_block_height: Some(2),
             transferred_at_core_block_height: Some(3),
             creator_id: Some(Identifier::new([9u8; 32])),
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

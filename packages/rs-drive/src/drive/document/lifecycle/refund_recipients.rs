@@ -7,13 +7,10 @@
 //! through the execution context, which feeds both the admission estimate and
 //! the fee actually charged.
 
-use std::collections::HashMap;
-
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -49,8 +46,7 @@ impl Drive {
             )))?;
         let recipients = chunk as u64 + STRUCTURAL_REFUND_RECIPIENTS;
 
-        let mut layers: Option<HashMap<KeyInfoPath, EstimatedLayerInformation>> =
-            Some(HashMap::new());
+        let mut layers: Option<EstimatedLayers> = Some(EstimatedLayers::new());
         let batch = self.add_to_identity_balance_operations(
             [0u8; 32],
             1,
@@ -66,20 +62,14 @@ impl Drive {
             &mut operations,
             &platform_version.drive,
         )?;
-        let one = Drive::calculate_fee(
-            None,
-            Some(operations),
-            epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
+        let one = self.calculate_fee(None, Some(operations), epoch, platform_version)?;
 
         Ok(FeeResult {
             storage_fee: one.storage_fee.saturating_mul(recipients),
             processing_fee: one.processing_fee.saturating_mul(recipients),
             fee_refunds: Default::default(),
             removed_bytes_from_system: 0,
+            lifetime_storage_fees: Default::default(),
         })
     }
 }

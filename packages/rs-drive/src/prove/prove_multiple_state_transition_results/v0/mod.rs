@@ -106,6 +106,7 @@ impl Drive {
             path_queries.extend(document_queries.iter().filter_map(|drive_query| {
                 // The path query construction can only fail in extremely rare circumstances.
                 let mut path_query = drive_query.construct_path_query(platform_version).ok()?;
+                // Timed single-document queries need a subquery cap here or verification fails closed.
                 path_query.query.limit = None;
                 Some(path_query)
             }));
@@ -115,7 +116,7 @@ impl Drive {
             path_queries.extend(vote_queries.iter().filter_map(|vote_query| {
                 // The path query construction can only fail if the serialization fails.
                 // Because the serialization will pretty much never fail, we can do this.
-                let mut path_query = vote_query.construct_path_query().ok()?;
+                let mut path_query = vote_query.construct_path_query(platform_version).ok()?;
                 path_query.query.limit = None;
                 Some(path_query)
             }));

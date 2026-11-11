@@ -1,0 +1,268 @@
+{
+  "$formatVersion": "1",
+  "id": "8Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVg",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": false,
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "position": 0
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "maxItems": 4,
+          "position": 1
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "maxItems": 4,
+          "position": 2
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "like": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "tags": "tags"
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "position": 1
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
+    "copy": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "members": "members",
+              "scores": "scores"
+            }
+          }
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "maxItems": 4,
+          "position": 1
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "maxItems": 4,
+          "position": 2
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
+    "tagged": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "tags": { "contains": "tag" }
+            }
+          }
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "position": 2
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
+    "memberNote": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "members": { "contains": "$ownerId" }
+            }
+          }
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
+    "scoreSubset": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "scores": { "containsAll": "scores" }
+            }
+          }
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "maxItems": 4,
+          "position": 1
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    },
+    "subset": {
+      "type": "object",
+      "documentsMutable": false,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "post",
+            "where": {
+              "tags": { "containsAll": "tags" }
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "maxItems": 4,
+          "position": 1
+        }
+      },
+      "required": ["postId"],
+      "additionalProperties": false
+    }
+  }
+}

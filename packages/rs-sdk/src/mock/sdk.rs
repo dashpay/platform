@@ -2,6 +2,7 @@
 //!
 //! See [MockDashPlatformSdk] for more details.
 use super::MockResponse;
+use crate::sdk::{verifier_version, ProofResponseMetadata};
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
@@ -24,9 +25,9 @@ use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DapiClient, DumpData, ExecutionResponse,
+    DapiClient, ExecutionResponse,
 };
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, convert::identity, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 /// Mechanisms to mock Dash Platform SDK.
@@ -44,9 +45,27 @@ pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     dapi: Arc<Mutex<MockDapiClient>>,
     sdk: ArcSwapOption<Sdk>,
+    /// The block time the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_time_ms]); 0 unless set.
+    response_time_ms: u64,
+    /// The block height the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_height]); 0 unless set.
+    response_height: u64,
+    /// The block height the metadata of a response of one type answered from an expectation
+    /// reports, by the type's name ([Self::set_response_height_of]), over `response_height`.
+    response_heights_of: BTreeMap<&'static str, u64>,
+    /// The block height the metadata of the response to one request answered from an
+    /// expectation reports, by the request's key ([Self::set_response_height_for]), over
+    /// `response_heights_of`.
+    response_heights_for: BTreeMap<Key, u64>,
 }
 
 impl MockDashPlatformSdk {
+    /// Number of transport executions of this exact request, including failures.
+    pub async fn request_count<R: Mockable>(&self, request: &R) -> usize {
+        self.dapi.lock().await.request_count(request)
+    }
+
     /// Returns true when requests should use proofs.
     ///
     /// ## Panics
@@ -70,7 +89,48 @@ impl MockDashPlatformSdk {
             from_proof_expectations: Default::default(),
             dapi,
             sdk: ArcSwapOption::new(None),
+            response_time_ms: 0,
+            response_height: 0,
+            response_heights_of: BTreeMap::new(),
+            response_heights_for: BTreeMap::new(),
         }
+    }
+
+    /// Sets the block time, in milliseconds, the metadata of every response answered from an
+    /// expectation reports, for code under test that reads the time a response was proved at.
+    pub fn set_response_time_ms(&mut self, time_ms: u64) -> &mut Self {
+        self.response_time_ms = time_ms;
+        self
+    }
+
+    /// Sets the block height the metadata of every response answered from an expectation
+    /// reports, for code under test that reads the height a response was proved at.
+    pub fn set_response_height(&mut self, height: u64) -> &mut Self {
+        self.response_height = height;
+        self
+    }
+
+    /// Sets the block height the metadata of every response of type `O` answered from an
+    /// expectation reports, over [Self::set_response_height]: for code under test that reads
+    /// two kinds of responses proved at different heights.
+    pub fn set_response_height_of<O>(&mut self, height: u64) -> &mut Self {
+        self.response_heights_of
+            .insert(std::any::type_name::<O>(), height);
+        self
+    }
+
+    /// Sets the block height the metadata of the response to `query`, a fetch of `O` answered
+    /// from an expectation, reports, over [Self::set_response_height_of]: for code under test
+    /// that reads responses of one type proved at different heights.
+    pub fn set_response_height_for<O: Fetch, Q: Query<<O as Fetch>::Query>>(
+        &mut self,
+        query: Q,
+        height: u64,
+    ) -> &mut Self {
+        let (rich, _) = self
+            .encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query, identity);
+        self.response_heights_for.insert(Key::new(&rich), height);
+        self
     }
 
     pub(crate) fn set_sdk(&mut self, sdk: Sdk) {
@@ -165,6 +225,53 @@ impl MockDashPlatformSdk {
                 "GetDataContractHistoryRequest" => {
                     load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
                 }
+                "GetContractGroupInfoRequest" => {
+                    load_expectation::<proto::GetContractGroupInfoRequest>(&mut dapi, filename)?
+                }
+                "GetContractGroupMembersRequest" => {
+                    load_expectation::<proto::GetContractGroupMembersRequest>(&mut dapi, filename)?
+                }
+                "GetContractGroupsForContractRequest" => load_expectation::<
+                    proto::GetContractGroupsForContractRequest,
+                >(&mut dapi, filename)?,
+                "GetContractModerationStatusRequest" => load_expectation::<
+                    proto::GetContractModerationStatusRequest,
+                >(&mut dapi, filename)?,
+                "GetContractModerationEntriesRequest" => load_expectation::<
+                    proto::GetContractModerationEntriesRequest,
+                >(&mut dapi, filename)?,
+                "GetContractDocumentRemovalsRequest" => load_expectation::<
+                    proto::GetContractDocumentRemovalsRequest,
+                >(&mut dapi, filename)?,
+                "GetContractTeamActionsRequest" => {
+                    load_expectation::<proto::GetContractTeamActionsRequest>(&mut dapi, filename)?
+                }
+                "GetContractTeamActionSignersRequest" => load_expectation::<
+                    proto::GetContractTeamActionSignersRequest,
+                >(&mut dapi, filename)?,
+                "GetContractModerationActionCountsRequest" => {
+                    load_expectation::<proto::GetContractModerationActionCountsRequest>(
+                        &mut dapi, filename,
+                    )?
+                }
+                "GetContractFeePotsRequest" => {
+                    load_expectation::<proto::GetContractFeePotsRequest>(&mut dapi, filename)?
+                }
+                "GetYesNoVotePollStateRequest" => {
+                    load_expectation::<proto::GetYesNoVotePollStateRequest>(&mut dapi, filename)?
+                }
+                "GetMasternodeYesNoVoteRequest" => {
+                    load_expectation::<proto::GetMasternodeYesNoVoteRequest>(&mut dapi, filename)?
+                }
+                "GetPrivateDocumentEntriesRequest" => load_expectation::<
+                    proto::GetPrivateDocumentEntriesRequest,
+                >(&mut dapi, filename)?,
+                "GetOwnerTransactionsInBlockRequest" => load_expectation::<
+                    proto::GetOwnerTransactionsInBlockRequest,
+                >(&mut dapi, filename)?,
+                "GetBlocksRequest" => {
+                    load_expectation::<proto::GetBlocksRequest>(&mut dapi, filename)?
+                }
                 "GetDocumentHistoryRequest" => {
                     load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
                 }
@@ -227,6 +334,9 @@ impl MockDashPlatformSdk {
                 "GetTotalCreditsInPlatformRequest" => load_expectation::<
                     proto::GetTotalCreditsInPlatformRequest,
                 >(&mut dapi, filename)?,
+                "GetIdentityKeysRemainingBudgetsRequest" => load_expectation::<
+                    proto::GetIdentityKeysRemainingBudgetsRequest,
+                >(&mut dapi, filename)?,
                 "GetIdentityTokenBalancesRequest" => {
                     load_expectation::<proto::GetIdentityTokenBalancesRequest>(&mut dapi, filename)?
                 }
@@ -257,6 +367,12 @@ impl MockDashPlatformSdk {
                 "GetGroupActionSignersRequest" => {
                     load_expectation::<proto::GetGroupActionSignersRequest>(&mut dapi, filename)?
                 }
+                "BroadcastStateTransitionRequest" => {
+                    load_expectation::<proto::BroadcastStateTransitionRequest>(&mut dapi, filename)?
+                }
+                "WaitForStateTransitionResultRequest" => load_expectation::<
+                    proto::WaitForStateTransitionResultRequest,
+                >(&mut dapi, filename)?,
                 "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
                 "GetTokenDirectPurchasePricesRequest" => load_expectation::<
                     proto::GetTokenDirectPurchasePricesRequest,
@@ -345,8 +461,8 @@ impl MockDashPlatformSdk {
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let (rich, wire) =
-            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
+        let (rich, wire) = self
+            .encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query, identity);
         self.expect(&rich, wire, object).await?;
 
         Ok(self)
@@ -360,8 +476,8 @@ impl MockDashPlatformSdk {
         O: Fetch,
         Q: Query<<O as Fetch>::Query>,
     {
-        let (rich, wire) =
-            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
+        let (rich, wire) = self
+            .encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query, identity);
         self.remove(&rich, wire).await
     }
 
@@ -420,16 +536,16 @@ impl MockDashPlatformSdk {
         let (rich, wire) = self
             .encode_rich_to_wire::<Q, <O as FetchMany<K, R>>::Query, <O as FetchMany<K, R>>::Request>(
                 query,
+                <O as FetchMany<K, R>>::prepare_query,
             );
         self.expect(&rich, wire, objects).await?;
 
         Ok(self)
     }
 
-    /// Encode a user-facing `query` first into its rich form (`R`) and
-    /// then into its wire form (`W`), both against the SDK's current
-    /// `QuerySettings`. Returns `(rich, wire)` for use as proof-mock /
-    /// DAPI-mock expectation keys.
+    /// Convert the user-facing query to its rich form (`R`), prepare the owned
+    /// value, then encode its wire form (`W`) using the SDK's current `QuerySettings`.
+    /// Return `(rich, wire)` for proof and DAPI mock expectation keys.
     ///
     /// ## Panics
     ///
@@ -437,7 +553,7 @@ impl MockDashPlatformSdk {
     /// for V1-only `DocumentQuery` features against a V0
     /// `PlatformVersion` crash the test setup loudly rather than
     /// silently propagate. Panics also if `set_sdk` was not called.
-    fn encode_rich_to_wire<Q, R, W>(&self, query: Q) -> (R, W)
+    fn encode_rich_to_wire<Q, R, W>(&self, query: Q, prepare: impl FnOnce(R) -> R) -> (R, W)
     where
         Q: Query<R>,
         R: Query<W> + Mockable,
@@ -448,7 +564,7 @@ impl MockDashPlatformSdk {
             .as_ref()
             .expect("sdk must be set when creating mock");
         let settings = sdk.query_settings();
-        let rich: R = query.query(&settings).expect("query must be correct");
+        let rich: R = prepare(query.query(&settings).expect("query must be correct"));
         let wire: W = rich.query(&settings).expect("wire encoding must succeed");
         (rich, wire)
     }
@@ -513,13 +629,19 @@ impl MockDashPlatformSdk {
     }
 
     /// Wrapper around [FromProof] that uses mock expectations, falling back to [FromProof] if no expectation is found.
+    ///
+    /// The flag is `true` when an expectation answered, so the metadata was made up
+    /// rather than verified.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+        platform_version: &'static PlatformVersion,
+    ) -> Result<((Option<O>, ResponseMetadata, Proof), bool), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
+        O::Response: ProofResponseMetadata,
         Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
@@ -530,26 +652,42 @@ impl MockDashPlatformSdk {
             // (`maybe_update_protocol_version`) fires as it would against a real
             // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
-                Option::<O>::mock_deserialize(self, d),
-                ResponseMetadata {
-                    protocol_version: dpp::version::LATEST_VERSION,
-                    ..Default::default()
-                },
-                Proof::default(),
+                (
+                    Option::<O>::mock_deserialize(self, d),
+                    ResponseMetadata {
+                        protocol_version: dpp::version::LATEST_VERSION,
+                        time_ms: self.response_time_ms,
+                        height: self
+                            .response_heights_for
+                            .get(&key)
+                            .or_else(|| self.response_heights_of.get(std::any::type_name::<O>()))
+                            .copied()
+                            .unwrap_or(self.response_height),
+                        ..Default::default()
+                    },
+                    Proof::default(),
+                ),
+                true,
             ),
             None => {
-                let version = self.version();
+                let platform_version = verifier_version(
+                    platform_version,
+                    response.response_metadata()?.protocol_version,
+                );
                 let provider = self.context_provider()
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof_with_metadata(
-                    request,
-                    response,
-                    Network::Regtest,
-                    version,
-                    &provider,
-                )?
+                (
+                    O::maybe_from_proof_with_metadata(
+                        request,
+                        response,
+                        Network::Regtest,
+                        platform_version,
+                        &provider,
+                    )?,
+                    false,
+                )
             }
         };
 
@@ -574,15 +712,74 @@ fn load_expectation<T: TransportRequest>(
     dapi_guard: &mut OwnedMutexGuard<MockDapiClient>,
     path: &PathBuf,
 ) -> Result<(), Error> {
-    let data = DumpData::<T>::load(path)
-        .map_err(|e| {
-            Error::Config(format!(
-                "cannot load mock expectations from {}: {}",
-                path.display(),
-                e
-            ))
-        })?
-        .deserialize();
-    dapi_guard.expect(&data.0, &data.1)?;
+    let _ = dapi_guard.load::<T, _>(path).map_err(|e| {
+        Error::Config(format!(
+            "cannot load mock expectations from {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod recording_tests {
+    use super::*;
+    use crate::SdkBuilder;
+    use dapi_grpc::tonic::metadata::MetadataValue;
+    use dapi_grpc::tonic::{ConnectError, Status};
+    use rs_dapi_client::transport::TransportError;
+    use rs_dapi_client::DumpData;
+    use rs_dapi_client::{DapiClientError, DapiRequestExecutor, ExecutionError, RequestSettings};
+    use std::io;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn should_preserve_recorded_submission_classification_through_sdk_loaders() {
+        let connector = Status::from_error(Box::new(ConnectError(Box::new(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        )))));
+        let mut refusal = Status::unavailable("application refusal");
+        refusal.metadata_mut().insert_bin(
+            "dash-serialized-consensus-error-bin",
+            MetadataValue::from_bytes(&[1]),
+        );
+        for status in [connector, refusal] {
+            for possibly_accepted in [false, true] {
+                let request = proto::BroadcastStateTransitionRequest::default();
+                let directory = tempfile::tempdir().unwrap();
+                let dump = DumpData::new(
+                    &request,
+                    &Err(ExecutionError {
+                        inner: DapiClientError::Transport(TransportError::Grpc(status.clone())),
+                        possibly_accepted,
+                        address: None,
+                        retries: 0,
+                    }),
+                );
+                dump.save(&directory.path().join(dump.filename().unwrap()))
+                    .unwrap();
+                for builder in [false, true] {
+                    let sdk = if builder {
+                        SdkBuilder::new_mock()
+                            .with_dump_dir(directory.path())
+                            .build()
+                            .unwrap()
+                    } else {
+                        let mut sdk = Sdk::new_mock();
+                        sdk.mock().load_expectations_sync(directory.path()).unwrap();
+                        sdk
+                    };
+                    let error = sdk
+                        .mock_dapi()
+                        .lock()
+                        .await
+                        .execute(request.clone(), RequestSettings::default())
+                        .await
+                        .unwrap_err();
+                    assert_eq!(error.possibly_accepted, possibly_accepted);
+                }
+            }
+        }
+    }
 }

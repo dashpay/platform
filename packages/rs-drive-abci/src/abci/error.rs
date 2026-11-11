@@ -1,4 +1,4 @@
-use dpp::bls_signatures::BlsError;
+use dpp::bls::BlsError;
 use dpp::consensus::ConsensusError;
 use tenderdash_abci::proto::abci::ExtendVoteExtension;
 use tenderdash_abci::proto::types::VoteExtension;

@@ -916,10 +916,10 @@ impl WasmSdk {
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
 
-        // Step 1: Verify trusted context is available
-        let trusted_context = self.trusted_context().ok_or_else(|| {
+        // Step 1: Verify a quorum context is available to cache into
+        let quorum_context = self.quorum_context().ok_or_else(|| {
             WasmSdkError::generic(
-                "Trusted context not initialized. Use a trusted builder with a prefetched cache.",
+                "No quorum context attached. Build the SDK with withTrustedContext() or withVerifiedContext().",
             )
         })?;
 
@@ -950,8 +950,8 @@ impl WasmSdk {
             })?
             .clone();
 
-        // Step 5: Add the token configuration to the trusted context cache
-        trusted_context.add_known_token_configuration(token_id, token_configuration);
+        // Step 5: Add the token configuration to the quorum context cache
+        quorum_context.add_known_token_configuration(token_id, token_configuration);
 
         Ok(())
     }

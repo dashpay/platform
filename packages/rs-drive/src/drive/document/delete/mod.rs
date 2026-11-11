@@ -5,6 +5,7 @@
 
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
+
 mod delete_document_for_contract;
 
 // Module: delete_document_for_contract_id
@@ -50,15 +51,13 @@ mod internal;
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use crate::util::estimated_layers::EstimatedLayers;
     use dpp::balances::credits::Creditable;
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
 
-    use once_cell::sync::Lazy;
     use std::borrow::Cow;
-    use std::collections::BTreeMap;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
@@ -76,25 +75,18 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
-    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -141,7 +133,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -182,7 +173,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -210,7 +200,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected deleting a nonexistent document to fail");
 
@@ -275,7 +264,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -324,7 +312,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -423,7 +410,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -458,7 +444,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -502,7 +487,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -546,7 +530,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -622,7 +605,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -653,7 +635,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -697,7 +678,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -728,7 +708,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -751,7 +730,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -771,7 +749,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -834,7 +811,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to insert a document successfully");
 
@@ -854,7 +830,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
     }
@@ -911,15 +886,13 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
         // We added 1559 bytes
         assert_eq!(added_bytes, 1559);
 
@@ -940,7 +913,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -953,10 +925,9 @@ mod tests {
 
         assert_eq!(*removed_credits, 41881536);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
@@ -1014,15 +985,13 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).unwrap().cost_for_known_cost_item(
-                &EPOCH_CHANGE_FEE_VERSION_TEST,
-                StorageDiskUsageCreditPerByte,
-            );
+            / FeeVersion::first()
+                .storage
+                .storage_disk_usage_credit_per_byte;
         // We added 1558 bytes
         assert_eq!(added_bytes, 1559);
 
@@ -1043,15 +1012,16 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
         // estimated_size v1 adds the contract-version stamp varint to the
-        // worst-case document size
-        assert_eq!(fee_result.processing_fee, 72064200);
+        // worst-case document size; from protocol version 15 the delete's estimate describes
+        // an index's entries as references and prices each height of its climb with the layer
+        // deleted in there (protocol v15 note 14)
+        assert_eq!(fee_result.processing_fee, 73034400);
     }
 
     #[test]
@@ -1103,7 +1073,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1146,7 +1115,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document by contract id");
 
@@ -1206,7 +1174,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1233,7 +1200,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to estimate delete costs");
 
@@ -1328,7 +1294,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1353,7 +1318,6 @@ mod tests {
             true,
             None,
             platform_version,
-            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         );
 
         if protocol_version < 15 {
@@ -1446,7 +1410,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to insert a document successfully");
             (drive, contract, person_document.id())
@@ -1591,7 +1554,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected delete_document_for_contract_id with bad contract id to fail");
 
@@ -1620,7 +1582,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected delete_document_for_contract with bad type to fail");
 
@@ -1641,9 +1602,6 @@ mod tests {
         // which has its own DataContractNotFound error branch (via the
         // `let Some(...) = ... else { return Err(...); }` pattern).
         use crate::error::document::DocumentError;
-        use grovedb::batch::KeyInfoPath;
-        use grovedb::EstimatedLayerInformation;
-        use std::collections::HashMap;
 
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
@@ -1652,9 +1610,7 @@ mod tests {
         let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
         let random_document_id = Identifier::random();
 
-        let mut estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        > = None;
+        let mut estimated_costs_only_with_layer_info: Option<EstimatedLayers> = None;
 
         let err = drive
             .delete_document_for_contract_id_with_named_type_operations(
@@ -1689,7 +1645,7 @@ mod tests {
         let document_id = Identifier::random();
 
         // With apply=false the code takes the estimated_costs_only_with_layer_info
-        // = Some(HashMap::new()) branch. The document does not exist, so we
+        // = Some(EstimatedLayers::new()) branch. The document does not exist, so we
         // expect an error, but a different one than the stateful path.
         let result = drive.delete_document_for_contract(
             document_id,
@@ -1699,7 +1655,6 @@ mod tests {
             false,
             None,
             platform_version,
-            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         );
 
         // The estimation-costs branch (apply=false) uses fake cost estimates

@@ -1,8 +1,6 @@
-use grovedb::batch::KeyInfoPath;
+use crate::util::estimated_layers::EstimatedLayers;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
@@ -29,9 +27,7 @@ impl Drive {
         block_info: &BlockInfo,
         deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

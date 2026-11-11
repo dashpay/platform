@@ -19,7 +19,8 @@ where
         let given_chain_lock_height = chain_lock.block_height;
         // We need to make sure core is synced to the core height we see as valid for the state transitions
 
-        // TODO: submit_chain_lock responds with invalid signature. We should handle it properly and return CoreSyncStatus
+        // TODO: Core answers with an error instead of a height when its tip is too far behind to
+        //  know the quorum that signed the chain lock. We should report that as a CoreSyncStatus.
         let best_chain_locked_height = self.core_rpc.submit_chain_lock(chain_lock)?;
         Ok(if best_chain_locked_height >= given_chain_lock_height {
             CoreSyncStatus::Done

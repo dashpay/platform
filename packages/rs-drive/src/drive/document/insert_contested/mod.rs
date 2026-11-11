@@ -36,6 +36,11 @@ mod add_contested_indices_for_contract_operations;
 mod add_contested_reference_and_vote_subtree_to_document_operations;
 mod add_contested_vote_subtrees_for_non_identities_operations;
 
+// Module: fetch_charter_election_windows
+// This module reads the windows a moderation election takes from its target contract
+mod fetch_charter_election_windows;
+pub use fetch_charter_election_windows::ContestWindows;
+
 // TODO: Disabled module add_contested_indices_for_index_level_for_contract_operations
 
 #[cfg(test)]
@@ -100,7 +105,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -122,7 +126,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
@@ -567,7 +570,7 @@ mod tests {
         /// `add_contested_document_for_contract` targeting a document type
         /// that has no contested index (`preorder` in DPNS) must surface
         /// `DriveError::ContestedIndexNotFound` from
-        /// `add_contested_indices_for_contract_operations_v0`.
+        /// `add_contested_indices_for_contract_operations`.
         #[test]
         fn add_contested_document_for_contract_errors_on_missing_contested_index() {
             let platform_version = PlatformVersion::latest();

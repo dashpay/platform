@@ -13,7 +13,11 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
 };
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::{
+    TokenConfigurationV1Getters, TokenConfigurationV1Setters,
+};
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::v1::default_transferable;
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
@@ -35,6 +39,12 @@ struct TokenConfigurationOptions {
     main_control_group: Option<GroupContractPosition>,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    has_shielded_pool: bool,
+    #[serde(default)]
+    minimum_pool_notes_for_outgoing: Option<u64>,
+    #[serde(default = "default_transferable")]
+    transferable: bool,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -59,6 +69,37 @@ export interface TokenConfigurationOptions {
     mainControlGroup?: number;
     mainControlGroupCanBeModified: AuthorizedActionTakers;
     description?: string;
+    /**
+     * Give the token its own shielded pool (protocol version 14+). Produces a
+     * format-version-1 token configuration; the flag cannot change after creation, and
+     * freezeRules, unfreezeRules and destroyFrozenFundsRules must then authorize no one
+     * (no action takers and no admins): shielded notes cannot be frozen or destroyed.
+     */
+    hasShieldedPool?: boolean;
+    /**
+     * The fewest notes the token's shielded pool must hold before tokens may leave it for a
+     * visible destination: unshielding to an identity, burning from the pool, or paying a
+     * document's token cost out of the pool. Transfers that stay inside the pool are never
+     * held back. Requires hasShieldedPool.
+     *
+     * What is counted is note commitments, not depositors, and one bundle carries several of
+     * them, so a single depositor can reach a threshold alone: it says how busy the pool
+     * should be before anyone leaves it, and guarantees no anonymity set. Omitted, or
+     * undefined, means no threshold, which is the default because any threshold above 0 keeps
+     * a new pool's first depositors from leaving until enough notes accumulate. A contract
+     * create refuses a threshold above the protocol's maximum of 250. The issuer changes it
+     * afterwards with a TokenConfigUpdate, under its own change control rules.
+     */
+    minimumPoolNotesForOutgoing?: bigint;
+    /**
+     * Whether holders may move the token to another identity (protocol version 14+).
+     * Defaults to true. false produces a format-version-1 token configuration and cannot
+     * change after creation: every TokenTransfer is refused, a document type may charge the
+     * token only by burning it (so only its own contract's document types can use it), and
+     * the token cannot have a shielded pool. Minting, claims, direct purchases, burns and
+     * freezes work as configured.
+     */
+    transferable?: boolean;
 }
 "#;
 
@@ -85,6 +126,26 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 }
 
 impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
+
+/// Writes the shielded pool's outgoing notes threshold through
+/// `TokenConfiguration::set_minimum_pool_notes_for_outgoing`, which only a configuration that
+/// has a pool accepts.
+///
+/// A threshold asked for on a token without a pool is refused rather than dropped quietly: the
+/// caller asked for a guard and would get none.
+fn write_minimum_pool_notes_for_outgoing(
+    configuration: &mut TokenConfiguration,
+    minimum_pool_notes_for_outgoing: Option<u64>,
+) -> WasmDppResult<()> {
+    if configuration.set_minimum_pool_notes_for_outgoing(minimum_pool_notes_for_outgoing) {
+        Ok(())
+    } else {
+        Err(WasmDppError::invalid_argument(
+            "'minimumPoolNotesForOutgoing' needs 'hasShieldedPool': a token without a shielded \
+             pool holds no notes to count",
+        ))
+    }
+}
 
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
@@ -121,29 +182,42 @@ impl TokenConfigurationWasm {
         let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        Ok(TokenConfigurationWasm(TokenConfiguration::V0(
-            TokenConfigurationV0 {
-                conventions: conventions.into(),
-                conventions_change_rules: conventions_change_rules.into(),
-                base_supply: opts.base_supply,
-                max_supply: opts.max_supply,
-                keeps_history: keeps_history.into(),
-                start_as_paused: opts.is_started_as_paused,
-                allow_transfer_to_frozen_balance: opts.is_allowed_transfer_to_frozen_balance,
-                max_supply_change_rules: max_supply_change_rules.into(),
-                distribution_rules: distribution_rules.into(),
-                marketplace_rules: marketplace_rules.into(),
-                manual_minting_rules: manual_minting_rules.into(),
-                manual_burning_rules: manual_burning_rules.into(),
-                freeze_rules: freeze_rules.into(),
-                unfreeze_rules: unfreeze_rules.into(),
-                destroy_frozen_funds_rules: destroy_frozen_funds_rules.into(),
-                emergency_action_rules: emergency_action_rules.into(),
-                main_control_group: opts.main_control_group,
-                main_control_group_can_be_modified: main_control_group_can_be_modified.into(),
-                description: opts.description,
-            },
-        )))
+        let mut configuration = TokenConfiguration::V0(TokenConfigurationV0 {
+            conventions: conventions.into(),
+            conventions_change_rules: conventions_change_rules.into(),
+            base_supply: opts.base_supply,
+            max_supply: opts.max_supply,
+            keeps_history: keeps_history.into(),
+            start_as_paused: opts.is_started_as_paused,
+            allow_transfer_to_frozen_balance: opts.is_allowed_transfer_to_frozen_balance,
+            max_supply_change_rules: max_supply_change_rules.into(),
+            distribution_rules: distribution_rules.into(),
+            marketplace_rules: marketplace_rules.into(),
+            manual_minting_rules: manual_minting_rules.into(),
+            manual_burning_rules: manual_burning_rules.into(),
+            freeze_rules: freeze_rules.into(),
+            unfreeze_rules: unfreeze_rules.into(),
+            destroy_frozen_funds_rules: destroy_frozen_funds_rules.into(),
+            emergency_action_rules: emergency_action_rules.into(),
+            main_control_group: opts.main_control_group,
+            main_control_group_can_be_modified: main_control_group_can_be_modified.into(),
+            description: opts.description,
+        });
+
+        if opts.has_shielded_pool {
+            configuration.set_has_shielded_pool(true);
+        }
+        if !opts.transferable {
+            configuration.set_transferable(false);
+        }
+
+        // After the pool, since only a pooled configuration has somewhere to keep a threshold.
+        write_minimum_pool_notes_for_outgoing(
+            &mut configuration,
+            opts.minimum_pool_notes_for_outgoing,
+        )?;
+
+        Ok(TokenConfigurationWasm(configuration))
     }
 
     #[wasm_bindgen(getter = "conventions")]
@@ -193,9 +267,34 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(getter = "marketplaceRules")]
     pub fn marketplace_rules(&self) -> TokenMarketplaceRulesWasm {
-        match self.0.clone() {
-            TokenConfiguration::V0(v0) => v0.marketplace_rules.clone().into(),
-        }
+        self.0.as_v0().marketplace_rules.clone().into()
+    }
+
+    /// Whether the token has its own shielded pool (format version 1 configurations only).
+    #[wasm_bindgen(getter = "hasShieldedPool")]
+    pub fn has_shielded_pool(&self) -> bool {
+        self.0.has_shielded_pool()
+    }
+
+    /// Whether holders may move the token to another identity. Always true for format
+    /// version 0 configurations.
+    #[wasm_bindgen(getter = "transferable")]
+    pub fn transferable(&self) -> bool {
+        self.0.is_transferable()
+    }
+
+    /// The token configuration format version: 0 for a transferable token without a shielded
+    /// pool, 1 for one with a pool or a non-transferable token.
+    #[wasm_bindgen(getter = "formatVersion")]
+    pub fn format_version(&self) -> u16 {
+        self.0.format_version()
+    }
+
+    /// The fewest notes the shielded pool must hold before tokens may leave it. 0 means no
+    /// threshold, which is also what every token without a pool reports.
+    #[wasm_bindgen(getter = "minimumPoolNotesForOutgoing")]
+    pub fn minimum_pool_notes_for_outgoing(&self) -> u64 {
+        self.0.minimum_pool_notes_for_outgoing()
     }
 
     #[wasm_bindgen(getter = "manualMintingRules")]
@@ -302,13 +401,44 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(setter = "marketplaceRules")]
     pub fn set_marketplace_rules(&mut self, marketplace_rules: &TokenMarketplaceRulesWasm) {
-        self.0 = match self.0.clone() {
-            TokenConfiguration::V0(mut v0) => {
-                v0.marketplace_rules = marketplace_rules.clone().into();
+        self.0.as_v0_mut().marketplace_rules = marketplace_rules.clone().into();
+    }
 
-                TokenConfiguration::V0(v0)
-            }
-        }
+    /// Enabling upgrades a format-version-0 configuration to version 1 in place.
+    ///
+    /// Disabling downgrades a transferable token back to version 0 and takes any
+    /// `minimumPoolNotesForOutgoing` with it, since a token without a pool keeps no threshold.
+    #[wasm_bindgen(setter = "hasShieldedPool")]
+    pub fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
+        self.0.set_has_shielded_pool(has_shielded_pool)
+    }
+
+    /// `false` upgrades a format-version-0 configuration to version 1 in place; `true` on a
+    /// token without a shielded pool downgrades it back to version 0.
+    #[wasm_bindgen(setter = "transferable")]
+    pub fn set_transferable(&mut self, transferable: bool) {
+        self.0.set_transferable(transferable)
+    }
+
+    /// `undefined` or `null` removes the threshold. Throws for a token that has no shielded
+    /// pool, which has no threshold to hold.
+    #[wasm_bindgen(setter = "minimumPoolNotesForOutgoing")]
+    pub fn set_minimum_pool_notes_for_outgoing(
+        &mut self,
+        minimum_pool_notes_for_outgoing: JsValue,
+    ) -> WasmDppResult<()> {
+        let minimum_pool_notes_for_outgoing = if minimum_pool_notes_for_outgoing.is_undefined()
+            || minimum_pool_notes_for_outgoing.is_null()
+        {
+            None
+        } else {
+            Some(try_to_u64(
+                &minimum_pool_notes_for_outgoing,
+                "minimumPoolNotesForOutgoing",
+            )?)
+        };
+
+        write_minimum_pool_notes_for_outgoing(&mut self.0, minimum_pool_notes_for_outgoing)
     }
 
     #[wasm_bindgen(setter = "manualMintingRules")]

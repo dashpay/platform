@@ -66,7 +66,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, PlatformWalletError> {
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id).await?;
+        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
 
         self.token_freeze_with_signer(
             data_contract,
@@ -80,13 +80,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             None,
         )
         .await
-        .map_err(|e| {
-            // Preserve a structured key-unavailable signer failure so the FFI
-            // boundary can still restore code 31; only genuine operation
-            // failures get stringified into `TokenError`.
-            crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                PlatformWalletError::TokenError(format!("Token freeze failed: {}", e))
-            })
-        })
+        // Keeps the SDK error, so a consensus rejection reaches the FFI
+        // boundary with its code instead of as rendered text.
+        .map_err(|e| PlatformWalletError::token_operation_failed("freeze", e))
     }
 }

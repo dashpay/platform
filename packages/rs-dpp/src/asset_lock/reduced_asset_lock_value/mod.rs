@@ -1,5 +1,9 @@
 use crate::asset_lock::reduced_asset_lock_value::v0::AssetLockValueV0;
 use crate::fee::Credits;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
@@ -40,10 +44,10 @@ pub enum AssetLockValue {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for AssetLockValue {}
+impl JsonConvertible for AssetLockValue {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for AssetLockValue {}
+impl ValueConvertible for AssetLockValue {}
 
 impl AssetLockValue {
     pub fn new(
@@ -239,13 +243,12 @@ mod json_convertible_tests {
 mod deserialize_limit_tests {
     use super::*;
     use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// Bincode-encode the V0 shape by hand so the `tx_out_script` length prefix
     /// can claim more bytes than exist in the payload.
     fn payload_with_script_length(fake_len: u64) -> Vec<u8> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let mut buf = Vec::new();
         // enum discriminant: V0
         buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());

@@ -8,8 +8,8 @@ import org.junit.Test
 class NetworkTest {
 
     @Test
-    fun ffiOrdinalsMatchDashNetworkFfiEnum() {
-        // Must stay in sync with dash-network/src/ffi.rs.
+    fun ffiOrdinalsMatchSdkFfiEnum() {
+        // Must stay in sync with rs-sdk-ffi/src/types.rs.
         assertEquals(0, Network.MAINNET.ffiValue)
         assertEquals(1, Network.TESTNET.ffiValue)
         assertEquals(2, Network.DEVNET.ffiValue)

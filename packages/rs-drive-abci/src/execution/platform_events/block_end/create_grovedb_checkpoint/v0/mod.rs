@@ -3,7 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::drive::{Checkpoint, CheckpointInfo};
 use drive::error::Error::IOErrorWithInfoString;
@@ -165,9 +164,11 @@ fn complete_checkpoint(
     platform_state: &PlatformState,
     injected_fault: Option<CheckpointStep>,
 ) -> Result<GroveDb, Error> {
-    // Save platform state to checkpoint directory on disk (after grovedb creates the directory)
+    // Save platform state to checkpoint directory on disk (after grovedb creates the directory).
+    // The file is read on its own at startup, so it holds the whole state in one record
+    // whatever structure the database's record uses.
     let checkpoint_state_path = checkpoint_path.join("platform_state.bin");
-    let state_bytes = platform_state.serialize_to_bytes()?;
+    let state_bytes = platform_state.serialize_standalone_to_bytes()?;
     fail_if_injected(injected_fault, CheckpointStep::WriteState)
         .and_then(|()| std::fs::write(&checkpoint_state_path, &state_bytes))
         .map_err(|err| io_error(CheckpointStep::WriteState, &checkpoint_state_path, err))?;

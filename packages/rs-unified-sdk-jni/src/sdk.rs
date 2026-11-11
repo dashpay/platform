@@ -9,7 +9,7 @@ use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_create_trusted, dash_sdk_destroy, dash_sdk_enable_logging, dash_sdk_get_network,
-    dash_sdk_init, dash_sdk_version, DashSDKConfig, SDKHandle,
+    dash_sdk_init, dash_sdk_version, DashSDKConfig, FFINetwork, SDKHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -71,10 +71,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SdkNative_createTrust
         let quorum = to_c_string(env, &quorum_url);
         let config = DashSDKConfig {
             network: match network {
-                0 => dash_network::ffi::FFINetwork::Mainnet,
-                2 => dash_network::ffi::FFINetwork::Devnet,
-                3 => dash_network::ffi::FFINetwork::Regtest,
-                _ => dash_network::ffi::FFINetwork::Testnet,
+                0 => FFINetwork::Mainnet,
+                2 => FFINetwork::Devnet,
+                3 => FFINetwork::Regtest,
+                _ => FFINetwork::Testnet,
             },
             dapi_addresses: dapi.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             skip_asset_lock_proof_verification: skip_asset_lock_proof_verification == JNI_TRUE,
@@ -169,8 +169,8 @@ fn to_c_string(env: &mut JNIEnv, value: &JString) -> Option<CString> {
 // Keep the raw C ABI of the dependent FFI crates reachable so their symbols
 // stay exported from this cdylib even before the shim references every
 // module. `dash_sdk_version`'s address is enough to anchor rs-sdk-ffi;
-// platform-wallet-ffi and key-wallet-ffi are anchored once their bridges
-// land (persistence.rs, signer.rs, wallet_manager.rs).
+// platform-wallet-ffi is anchored once its bridges land (persistence.rs,
+// signer.rs, wallet_manager.rs).
 #[allow(dead_code)]
 fn _anchor() -> *const c_char {
     dash_sdk_version()

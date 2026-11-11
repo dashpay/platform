@@ -4,16 +4,14 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
 use dpp::balances::credits::TokenAmount;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// The operations for adding a certain amount of credits to an identity's balance. This function is version controlled.
@@ -27,7 +25,6 @@ impl Drive {
     /// * `apply` - A boolean indicating whether the operation should be applied or not.
     /// * `transaction` - The transaction information related to the operation.
     /// * `platform_version` - The platform version.
-    /// * `previous_fee_versions` - Cached fee versions, if any.
     ///
     /// # Returns
     ///
@@ -42,7 +39,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -59,7 +55,6 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_identity_token_balance".to_string(),
@@ -89,9 +84,7 @@ impl Drive {
         token_id: [u8; 32],
         identity_id: [u8; 32],
         balance_to_add: TokenAmount,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

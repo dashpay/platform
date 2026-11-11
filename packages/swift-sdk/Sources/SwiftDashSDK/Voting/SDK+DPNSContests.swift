@@ -214,16 +214,9 @@ extension SDK {
       if info.contender_count > 0, let contendersPtr = info.contenders {
         contenders.reserveCapacity(Int(info.contender_count))
         for contenderIndex in 0..<Int(info.contender_count) {
-          let contender = contendersPtr[contenderIndex]
-          guard let idPtr = contender.identity_id else { continue }
-          // `label` is null when the FFI could not decode that contender's
-          // document — a missing display name, not a reason to drop the row.
-          let displayLabel = contender.label.map { String(cString: $0) }
-          contenders.append(
-            DPNSContender(
-              identityId: String(cString: idPtr),
-              voteTally: contender.vote_count,
-              displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil))
+          if let contender = Self.contender(from: contendersPtr[contenderIndex]) {
+            contenders.append(contender)
+          }
         }
       }
 
@@ -242,9 +235,7 @@ extension SDK {
           normalizedLabel: normalizedLabel,
           // `end_time` is milliseconds since epoch; the FFI reports 0 when it
           // has none. Keep that as `nil` rather than rendering 1970.
-          endTime: info.end_time > 0
-            ? Date(timeIntervalSince1970: Double(info.end_time) / 1000)
-            : nil,
+          endTime: Self.date(fromSentinelMilliseconds: info.end_time),
           hasWinner: info.has_winner,
           abstainVotes: info.abstain_votes,
           lockVotes: info.lock_votes,
@@ -253,6 +244,50 @@ extension SDK {
     }
 
     return contests.sorted { $0.normalizedLabel < $1.normalizedLabel }
+  }
+
+  /// One C contender as a Swift value; copies, never frees (the list owner
+  /// frees). `nil` without an identity id.
+  ///
+  /// `internal` so the decoder tests can build a `DashSDKContender` by hand
+  /// without a live list.
+  nonisolated static func contender(from contender: DashSDKContender) -> DPNSContender? {
+    guard let idPtr = contender.identity_id else { return nil }
+    // `label` is null when the SDK could not decode that contender's
+    // document — a missing display name, not a reason to drop the row.
+    let displayLabel = contender.label.map { String(cString: $0) }
+    return DPNSContender(
+      identityId: String(cString: idPtr),
+      voteTally: contender.vote_count,
+      displayLabel: displayLabel?.isEmpty == false ? displayLabel : nil,
+      // The flag alone says whether the SDK decoded a date.
+      createdAt: contender.has_created_at ? date(milliseconds: contender.created_at) : nil)
+  }
+
+  /// Milliseconds since the epoch as a `Date`; `nil` for 0, the FFI's "none"
+  /// for a timestamp field without a presence flag (`end_time`). A field that
+  /// has a flag or can be omitted (`created_at`) does not go through this.
+  nonisolated static func date(fromSentinelMilliseconds milliseconds: UInt64) -> Date? {
+    milliseconds > 0 ? date(milliseconds: milliseconds) : nil
+  }
+
+  /// Milliseconds since the epoch as a `Date`, 0 included.
+  nonisolated static func date(milliseconds: UInt64) -> Date {
+    Date(timeIntervalSince1970: Double(milliseconds) / 1000)
+  }
+
+  /// A JSON millisecond timestamp as a `Date`. The member's presence is what
+  /// says a date exists, so 0 is the epoch rather than "none"; `nil` when it
+  /// is missing or not a non-negative integer. `JSONSerialization` hands
+  /// booleans and floats back as `NSNumber` too, and a negative value would
+  /// wrap through `uint64Value`, so all three are refused. The SDK writes the
+  /// member as a JSON integer.
+  nonisolated static func date(fromJSONMilliseconds value: Any?) -> Date? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID(),
+          !CFNumberIsFloatType(number),
+          number.int64Value >= 0 else { return nil }
+    return date(milliseconds: number.uint64Value)
   }
 
   // MARK: - One contest's vote state
@@ -270,6 +305,10 @@ extension SDK {
   ///   Distinguishing "no contest" from "empty contest" is not possible at
   ///   this layer, so the absence is surfaced as `nil` rather than as an
   ///   empty state that reads like a live contest with zero votes.
+  ///
+  /// - Important: Synchronous and main-actor isolated, so it blocks the main
+  ///   thread for the whole network round trip. Prefer
+  ///   ``dpnsContestVoteStateOffMain(normalizedLabel:limit:)``.
   public func dpnsContestVoteState(
     normalizedLabel: String,
     limit: UInt32 = 100
@@ -277,7 +316,31 @@ extension SDK {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
+    return try Self.fetchContestVoteState(
+      handle: handle, normalizedLabel: normalizedLabel, limit: limit)
+  }
 
+  /// ``dpnsContestVoteState(normalizedLabel:limit:)`` without blocking the
+  /// caller's actor: the FFI call runs on the shared Platform query queue
+  /// (see ``SDK/performBlockingQuery(_:)``) and the caller only awaits it.
+  public nonisolated func dpnsContestVoteStateOffMain(
+    normalizedLabel: String,
+    limit: UInt32 = 100
+  ) async throws -> DPNSContestVoteState? {
+    try await performBlockingQuery { handle in
+      try Self.fetchContestVoteState(
+        handle: handle, normalizedLabel: normalizedLabel, limit: limit)
+    }
+  }
+
+  /// The blocking half shared by both vote-state reads. Every C-string
+  /// argument is bridged for the duration of the FFI call, and the returned
+  /// JSON is copied and freed here, so only Swift values leave this function.
+  nonisolated private static func fetchContestVoteState(
+    handle: OpaquePointer,
+    normalizedLabel: String,
+    limit: UInt32
+  ) throws -> DPNSContestVoteState? {
     let indexValues = DPNSVotePoll.indexValues(normalizedLabel: normalizedLabel)
     let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
     guard let indexValuesJson = String(data: indexValuesData, encoding: .utf8) else {
@@ -320,10 +383,11 @@ extension SDK {
   ///   "winner_info":"NoWinner"|"Locked"|{"type":"WonByIdentity","identity_id":"…"},
   ///   "block_info":{"height":…,"core_height":…,"timestamp":…},
   ///   "contenders":[{"identity_id":"…","vote_count":N,"document":"hex"|null,
-  ///                  "label":"pizza"}]}`
+  ///                  "label":"pizza","created_at":<ms>}]}`
   ///
-  /// `label` is the requester's own spelling, decoded FFI-side from the
-  /// contender document; it is omitted when that decode was not possible.
+  /// `label` is the requester's own spelling and `created_at` its document's
+  /// `$createdAt` in milliseconds, both decoded by the SDK from the contender
+  /// document; each is omitted when that decode was not possible.
   ///
   /// `winner_info` and `block_info` are absent while voting is open; when
   /// either is present the poll has finished (see ``DPNSContestOutcome``).
@@ -338,10 +402,13 @@ extension SDK {
       .compactMap { entry in
         guard let identityId = entry["identity_id"] as? String else { return nil }
         let tally = (entry["vote_count"] as? NSNumber)?.uint32Value ?? 0
-        // `label` is absent when the FFI could not decode the document; that
+        // `label` is absent when the SDK could not decode the document; that
         // is a missing display name, not a reason to drop the contender.
         let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return DPNSContender(identityId: identityId, voteTally: tally, displayLabel: label)
+        // `created_at` is absent on the same terms as `label`.
+        let createdAt = Self.date(fromJSONMilliseconds: entry["created_at"])
+        return DPNSContender(
+          identityId: identityId, voteTally: tally, displayLabel: label, createdAt: createdAt)
       }
 
     let outcome: DPNSContestOutcome = {
@@ -387,8 +454,21 @@ extension SDK {
   /// instead. Implemented over ``dpnsContestVoteState(normalizedLabel:limit:)``
   /// (one round trip) because that query distinguishes all three states the
   /// caller cares about: no poll (`nil`), resolved, and open.
+  ///
+  /// - Important: Synchronous and main-actor isolated, so it blocks the main
+  ///   thread for the whole network round trip. Prefer
+  ///   ``dpnsContestIsOpenOffMain(normalizedLabel:)``.
   public func dpnsContestIsOpen(normalizedLabel: String) throws -> Bool {
     guard let state = try dpnsContestVoteState(normalizedLabel: normalizedLabel, limit: 1)
+    else { return false }
+    return !state.isResolved
+  }
+
+  /// ``dpnsContestIsOpen(normalizedLabel:)`` without blocking the caller's
+  /// actor; same single round trip, run on the shared Platform query queue.
+  public nonisolated func dpnsContestIsOpenOffMain(normalizedLabel: String) async throws -> Bool {
+    guard let state = try await dpnsContestVoteStateOffMain(
+      normalizedLabel: normalizedLabel, limit: 1)
     else { return false }
     return !state.isResolved
   }

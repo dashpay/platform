@@ -286,11 +286,12 @@ extension PlatformWalletManager {
     /// `ownerKeyIndexHint`: as on `masternodeWithdrawalKeys` — verified, not
     /// trusted.
     ///
-    /// Outcomes: a definitive rejection throws an ordinary error and may be
-    /// retried. An AMBIGUOUS outcome — broadcast accepted (or its ACK lost)
-    /// and the result wait failed — throws
+    /// Outcomes: only a failure before anything was sent throws an ordinary
+    /// error and may be retried. Once the withdrawal may have reached a node,
+    /// any outcome short of the proved balance (a failed result wait, a
+    /// node's refusal or a consensus verdict) throws
     /// `PlatformWalletError.masternodeWithdrawalUnconfirmed`: the claim may
-    /// have executed and the identity nonce was consumed, so callers must
+    /// have executed and a retry signs a second withdrawal, so callers must
     /// NOT retry until they have re-read the claimable balance.
     ///
     /// Pure bridge — the whole orchestration (masternode lookup, identity
@@ -367,8 +368,13 @@ extension PlatformWalletManager {
     ///
     /// - `operatorKeyIndex`: the wallet's operator-key index for this
     ///   masternode — the record's `operatorKeyIndex` join field.
-    /// - `platformP2PPort`: required for an evonode (the masternode list
-    ///   does not carry it); must be nil for a regular masternode.
+    /// - `platformP2PPort`: pass it for every evonode; must be nil for a
+    ///   regular masternode. Required when the evonode's list entry is
+    ///   pre-v3 (the list does not carry it); for a v3 entry it is optional
+    ///   and must match a Platform P2P port the entry lists. Once V24 is
+    ///   active, a pre-v3 evonode's update writes it into the evonode's new
+    ///   v3 address map, after which this call re-asserts it and cannot
+    ///   change it; on mainnet that update takes only port 26656.
     /// - `operatorPayoutAddress`: must be nil when the masternode's
     ///   registered `operatorReward` is 0, and must be given when it is
     ///   not — the payload REPLACES the operator payout script on-chain.

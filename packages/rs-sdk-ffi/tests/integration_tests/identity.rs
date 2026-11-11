@@ -29,7 +29,6 @@ fn test_identity_read_not_found() {
 
 /// Test fetching an existing identity
 #[test]
-#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"]
 fn test_identity_read() {
     setup_logs();
 
@@ -59,7 +58,6 @@ fn test_identity_read() {
 
 /// Test fetching identity balance
 #[test]
-#[ignore = "recorded vectors carry GroveDB V0 proofs; regenerate against a running Platform"]
 fn test_identity_balance() {
     setup_logs();
 

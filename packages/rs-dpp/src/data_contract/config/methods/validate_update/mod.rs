@@ -6,6 +6,7 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 mod v1;
+mod v2;
 
 impl DataContractConfig {
     pub fn validate_update(
@@ -22,9 +23,10 @@ impl DataContractConfig {
         {
             0 => Ok(self.validate_update_v0(new_config, contract_id)),
             1 => Ok(self.validate_update_v1(new_config, contract_id, platform_version)),
+            2 => Ok(self.validate_update_v2(new_config, contract_id, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_update".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

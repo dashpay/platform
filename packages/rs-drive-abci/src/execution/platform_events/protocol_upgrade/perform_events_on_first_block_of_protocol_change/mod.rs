@@ -1,17 +1,29 @@
 mod v0;
 mod v1;
 mod v2;
+mod v3;
+
+#[cfg(test)]
+mod credit_pool_backfill_tests;
+#[cfg(test)]
+mod operator_payout_reconciliation_tests;
+#[cfg(test)]
+mod token_history_storage_flags_tests;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Executes protocol-specific events on the first block after a protocol version change.
     ///
     /// This function is triggered when there is a protocol version upgrade detected in the network.
@@ -23,6 +35,9 @@ impl<C> Platform<C> {
     ///
     /// # Parameters
     ///
+    /// * `platform_state`: The committed platform state, still at the previous protocol version.
+    /// * `block_platform_state`: The platform state of the block being executed, for events that
+    ///   repair Platform's copy of Dash Core's masternode list.
     /// * `transaction`: A reference to the transaction context in which the changes should be applied.
     /// * `previous_protocol_version`: The protocol version prior to the upgrade.
     /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
@@ -41,14 +56,17 @@ impl<C> Platform<C> {
     ///   which contains the logic for version `0`.
     /// - If the version is `1`, it calls `perform_events_on_first_block_of_protocol_change_v1`, which runs
     ///   the same transitions and then refreshes the cached definitions of the contracts they rewrote.
-    /// - If the version is `2`, it calls `perform_events_on_first_block_of_protocol_change_v2`, which runs
-    ///   version `1` and then migrates retained document histories when crossing into protocol 15.
+    /// - If the version is `2`, it calls `perform_events_on_first_block_of_protocol_change_v2`, which
+    ///   empties the contract cache, so no read is billed at a fee cached under the old fee
+    ///   schedule, and then runs v1.
+    /// - If the version is `3`, it runs version `2` and migrates retained histories when crossing into protocol 15.
     /// - If no version is specified (`None`), the function does nothing and returns `Ok(())`.
     /// - If a different version is specified, it returns an error indicating an unknown version mismatch.
     ///
     pub fn perform_events_on_first_block_of_protocol_change(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -62,6 +80,7 @@ impl<C> Platform<C> {
         {
             Some(0) => self.perform_events_on_first_block_of_protocol_change_v0(
                 platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -69,6 +88,7 @@ impl<C> Platform<C> {
             ),
             Some(1) => self.perform_events_on_first_block_of_protocol_change_v1(
                 platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -76,6 +96,15 @@ impl<C> Platform<C> {
             ),
             Some(2) => self.perform_events_on_first_block_of_protocol_change_v2(
                 platform_state,
+                block_platform_state,
+                block_info,
+                transaction,
+                previous_protocol_version,
+                platform_version,
+            ),
+            Some(3) => self.perform_events_on_first_block_of_protocol_change_v3(
+                platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -84,7 +113,7 @@ impl<C> Platform<C> {
             None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
         }
@@ -98,6 +127,9 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::tests::fixtures::get_data_contract_fixture;
 
     #[test]
     fn test_perform_events_when_version_method_is_none() {
@@ -108,6 +140,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -125,6 +158,7 @@ mod tests {
         // since all transition conditions (previous < X && current >= X) will be false
         let result = platform.perform_events_on_first_block_of_protocol_change(
             &platform_state,
+            &mut PlatformState::clone(&platform_state),
             &block_info,
             &transaction,
             platform_version.protocol_version,
@@ -139,6 +173,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -161,6 +196,7 @@ mod tests {
 
         let result = platform.perform_events_on_first_block_of_protocol_change(
             &platform_state,
+            &mut PlatformState::clone(&platform_state),
             &block_info,
             &transaction,
             platform_version.protocol_version,
@@ -175,10 +211,321 @@ mod tests {
                 received,
             })) => {
                 assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
-                assert_eq!(known_versions, vec![0, 1, 2]);
+                assert_eq!(known_versions, vec![0, 1, 2, 3]);
                 assert_eq!(received, 255);
             }
             _ => panic!("expected UnknownVersionMismatch error"),
         }
+    }
+
+    #[test]
+    fn should_empty_the_contract_cache_on_the_first_block_of_protocol_version_14() {
+        let previous_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("epoch"),
+        };
+
+        // A user contract a node read while protocol version 13 was active, caching the fee of
+        // that read under version 13's fee schedule.
+        let contract = get_data_contract_fixture(None, 0, previous_version.protocol_version)
+            .data_contract_owned();
+        let contract_id = contract.id().to_buffer();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                previous_version,
+            )
+            .expect("expected to apply the contract");
+        platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                contract_id,
+                Some(&Epoch::new(0).expect("epoch")),
+                true,
+                None,
+                previous_version,
+            )
+            .expect("expected to read the contract");
+        let contracts = &platform.drive.cache.data_contracts;
+        let is_cached_with_its_fee = || {
+            contracts
+                .get(contract_id, false)
+                .is_some_and(|cached| cached.has_fee_for_tests())
+        };
+        assert!(is_cached_with_its_fee());
+
+        let run_the_events = |platform_version: &PlatformVersion| {
+            contracts.clear_block_cache();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &mut PlatformState::clone(&platform_state),
+                    &block_info,
+                    &transaction,
+                    previous_version.protocol_version,
+                    platform_version,
+                )
+                .expect("expected the protocol change events to run");
+        };
+
+        // The events of v1 leave it there, so a hit would keep billing the old fee.
+        let mut with_the_events_of_v1 = platform_version.clone();
+        with_the_events_of_v1
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .perform_events_on_first_block_of_protocol_change = Some(1);
+        run_the_events(&with_the_events_of_v1);
+        assert!(is_cached_with_its_fee());
+
+        run_the_events(platform_version);
+        assert!(contracts.get(contract_id, false).is_none());
+        assert!(contracts.get(contract_id, true).is_none());
+    }
+
+    #[test]
+    fn should_rollback_and_retry_app_connect_registration_through_the_upgrade_dispatcher() {
+        let previous_version = PlatformVersion::get(13).expect("protocol 13");
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("epoch"),
+        };
+        let id = SystemDataContract::AppConnect.id();
+        let original_root = platform
+            .drive
+            .grove
+            .root_hash(None, &previous_version.drive.grove_version)
+            .unwrap()
+            .expect("original root");
+        let mut first_candidate_root = None;
+
+        for commit in [false, true] {
+            // The block proposal path clears this cache before retrying a candidate.
+            platform.drive.cache.data_contracts.clear_block_cache();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &mut PlatformState::clone(&platform_state),
+                    &block_info,
+                    &transaction,
+                    13,
+                    platform_version,
+                )
+                .expect("protocol upgrade through the dispatcher");
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_contract_version(id.to_buffer(), Some(&transaction), platform_version)
+                    .expect("registered version"),
+                Some(1)
+            );
+            let candidate_root = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("candidate root");
+            assert_ne!(candidate_root, original_root);
+            // Compiling the new schema must not expose it to old-version cache readers.
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, platform_version)
+                .expect("new cache lookup")
+                .is_some());
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, previous_version)
+                .expect("old cache lookup")
+                .is_none());
+            if commit {
+                assert_eq!(
+                    Some(candidate_root),
+                    first_candidate_root,
+                    "retry after rollback must produce the same state"
+                );
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("commit retry");
+                platform
+                    .drive
+                    .cache
+                    .data_contracts
+                    .merge_and_clear_block_cache();
+            } else {
+                first_candidate_root = Some(candidate_root);
+                drop(transaction);
+                platform.drive.cache.data_contracts.clear_block_cache();
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(None, &previous_version.drive.grove_version)
+                        .unwrap()
+                        .expect("committed root after rollback"),
+                    original_root
+                );
+                assert!(platform
+                    .drive
+                    .fetch_contract(id.to_buffer(), None, None, None, previous_version)
+                    .value
+                    .expect("old committed state")
+                    .is_none());
+            }
+        }
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(id.to_buffer(), None, platform_version)
+                .expect("committed contract version"),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn should_rollback_and_retry_decision_proposals_registration_through_the_upgrade_dispatcher() {
+        let previous_version = PlatformVersion::get(14).expect("protocol 14");
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .with_no_core_masternodes()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("epoch"),
+        };
+        let id = SystemDataContract::DecisionProposals.id();
+        let original_root = platform
+            .drive
+            .grove
+            .root_hash(None, &previous_version.drive.grove_version)
+            .unwrap()
+            .expect("original root");
+        let mut first_candidate_root = None;
+
+        for commit in [false, true] {
+            // The block proposal path clears this cache before retrying a candidate.
+            platform.drive.cache.data_contracts.clear_block_cache();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &mut PlatformState::clone(&platform_state),
+                    &block_info,
+                    &transaction,
+                    previous_version.protocol_version,
+                    platform_version,
+                )
+                .expect("protocol upgrade through the dispatcher");
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_contract_version(id.to_buffer(), Some(&transaction), platform_version)
+                    .expect("registered version"),
+                Some(1)
+            );
+            let candidate_root = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("candidate root");
+            assert_ne!(candidate_root, original_root);
+            // Compiling the new schema must not expose it to old-version cache readers.
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, platform_version)
+                .expect("new cache lookup")
+                .is_some());
+            assert!(platform
+                .drive
+                .cache
+                .system_data_contracts
+                .find_by_id(id, previous_version)
+                .expect("old cache lookup")
+                .is_none());
+            if commit {
+                assert_eq!(
+                    Some(candidate_root),
+                    first_candidate_root,
+                    "retry after rollback must produce the same state"
+                );
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("commit retry");
+                platform
+                    .drive
+                    .cache
+                    .data_contracts
+                    .merge_and_clear_block_cache();
+            } else {
+                first_candidate_root = Some(candidate_root);
+                drop(transaction);
+                platform.drive.cache.data_contracts.clear_block_cache();
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(None, &previous_version.drive.grove_version)
+                        .unwrap()
+                        .expect("committed root after rollback"),
+                    original_root
+                );
+                assert!(platform
+                    .drive
+                    .fetch_contract(id.to_buffer(), None, None, None, previous_version)
+                    .value
+                    .expect("old committed state")
+                    .is_none());
+            }
+        }
+        assert_eq!(
+            platform
+                .drive
+                .fetch_contract_version(id.to_buffer(), None, platform_version)
+                .expect("committed contract version"),
+            Some(1)
+        );
     }
 }

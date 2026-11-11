@@ -20,7 +20,7 @@ impl Drive {
     ///
     /// Single summed entry with empty key.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_total_no_proof(
+    pub(crate) fn execute_document_count_total_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
@@ -63,7 +63,7 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "count query requires a `countable: true` index whose properties \
+                "count query requires a `countable: true` (or summableOffCountIndex) index whose properties \
                      exactly match the where clause fields, a `rangeCountable: true` \
                      index they cover up to its last property, or \
                      `documentsCountable: true` on the document type for unfiltered \

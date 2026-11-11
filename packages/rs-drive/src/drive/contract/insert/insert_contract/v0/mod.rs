@@ -1,6 +1,9 @@
 use crate::drive::contract::paths;
+use crate::drive::contract::serialize_contract_for_storage;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::private_document_store::insert_empty_private_document_store_operation;
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
@@ -15,16 +18,11 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
-
 use crate::drive::votes::paths::{
     CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
 };
-use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Insert a contract.
@@ -48,17 +46,9 @@ impl Drive {
             None
         };
 
-        let serialized_contract =
-            contract.serialize_to_bytes_with_platform_version(platform_version)?;
-
-        if serialized_contract.len() as u64 > u32::MAX as u64
-            || serialized_contract.len() as u32
-                > platform_version.dpp.contract_versions.max_serialized_size
-        {
-            // This should normally be caught by DPP, but there is a rare possibility that the
-            // re-serialized size is bigger than the original serialized data contract.
-            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
-        }
+        // Edited in place: protocol versions 1 to 8 select this generation, and store and cap
+        // contracts in format version 0 there, the bytes it serialized before
+        let serialized_contract = serialize_contract_for_storage(contract, platform_version)?;
 
         let contract_element = Element::Item(
             serialized_contract,
@@ -75,13 +65,11 @@ impl Drive {
             platform_version,
         )?;
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )
     }
 
@@ -98,11 +86,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
         let batch_operations = self.insert_contract_operations_v0(
             contract_element,
             contract,
@@ -128,9 +112,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -153,9 +135,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -285,6 +265,19 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
+            // A private document type (protocol version 15) keeps its entries in a private
+            // document store at `[0]`, in place of the primary-key tree, and has no index
+            // trees. In place in this shared generation: no type is private before protocol
+            // version 15, the first to parse one (`parse_private_document`), so every earlier
+            // contract insert replays byte-identically.
+            if let Some(private_document) = document_type.as_ref().private_document() {
+                batch_operations.push(insert_empty_private_document_store_operation(
+                    type_path,
+                    private_document,
+                    storage_flags.as_ref(),
+                    platform_version,
+                )?);
+            }
             // indexOnly document types have no primary-key tree at all —
             // the index entries are the rows, and nothing is ever addressed
             // by document id, so the `[0]` tree is skipped and only the
@@ -292,7 +285,7 @@ impl Drive {
             // `index_only()` can only be true on a PV14+ contract (the
             // grammar rejects the keyword below meta-schema v3), so
             // historical contract inserts replay byte-identically.
-            if !document_type.as_ref().index_only() {
+            else if !document_type.as_ref().index_only() {
                 // primary key tree — route through the centralized
                 // primary_key_tree_type() so contract creation, document inserts,
                 // deletes, and estimation paths all see the same tree-variant

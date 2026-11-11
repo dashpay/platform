@@ -1,7 +1,8 @@
 //! JNI bridge for the DashPay read surface added by the iOS DashPay
 //! completion (upstream #3841): payment history, cached contact profiles,
 //! per-identity sync state, wallet-scoped DPNS search and per-account
-//! wallet balances.
+//! wallet balances; and DashPay private contact requests (protocol
+//! version 15): the store sync, and the shielded send and accept.
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.DashpayNative`,
 //! driven by `org.dashfoundation.dashsdk.tokens.Dashpay` and
@@ -20,15 +21,22 @@
 
 use crate::identity::ManagedIdentityHandleGuard;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{guard, take_pwffi_error};
+use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, jobject, jstring};
+use jni::sys::{
+    jboolean, jbooleanArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE, JNI_TRUE,
+};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
+use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::invitation::InvitationPreviewFFI;
+use platform_wallet_ffi::PrivateContactReadinessFFI;
+use platform_wallet_ffi::{
+    ContactRequestHandleArray, PrivateContactFFI, PrivateContactSyncReportFFI,
+};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -961,6 +969,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
             inviter_username: ptr::null_mut(),
             amount_duffs: 0,
             expiry_unix: 0,
+            inviter_display_name: ptr::null_mut(),
+            inviter_avatar_url: ptr::null_mut(),
         };
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_parse_invitation(uri_c.as_ptr(), &mut preview)
@@ -970,6 +980,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseIn
         }
         let username = unsafe { opt_cstr(preview.inviter_username) };
         unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_username) };
+        // Not surfaced to Kotlin yet, but owned by us once the parse returns.
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_display_name) };
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_avatar_url) };
         let username_json = username
             .as_deref()
             .map(json_string)
@@ -1204,4 +1217,735 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
             }
         }
     })
+}
+
+// ── DashPay private contact requests (protocol version 15) ────────────
+//
+// Mirrors Swift's `PrivateContactRequests.swift`: the store sync is a
+// wallet-handle call (`ManagedPlatformWallet.syncPrivateContactRequests`);
+// the send and the private-reply accept are manager-handle shielded spends
+// (`PlatformWalletManager.sendPrivateContactRequest` /
+// `acceptPrivateContactRequest`), gated like the other shielded spends. The
+// accept that replies the way a request came
+// (`acceptContactRequestReplyingInKind`) is exported in every build.
+
+/// The bytes of an Orchard payment address the FFI reads from a
+/// `shielded_address` pointer: an 11-byte diversifier and a 32-byte
+/// transmission key.
+const SHIELDED_ADDRESS_LEN: usize = 43;
+
+/// The longs [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPrivateContactRequests`]
+/// returns, in the order `Dashpay.syncPrivateContactRequests` reads them:
+/// the requests the pass ingested, the store pages read, the entries
+/// refused, the identities whose ingest did not reach disk, the store
+/// position the pass stopped at, and whether it read to the store's last
+/// entry (1) or not (0).
+fn private_contact_sync_longs(requests: usize, report: &PrivateContactSyncReportFFI) -> [i64; 6] {
+    [
+        i64::try_from(requests).unwrap_or(i64::MAX),
+        i64::from(report.pages_read),
+        i64::from(report.rejected_count),
+        i64::from(report.unpersisted_identity_count),
+        i64::try_from(report.next_position).unwrap_or(i64::MAX),
+        i64::from(report.complete),
+    ]
+}
+
+/// Destroy every `ContactRequest` handle of `array`, free its buffer, and
+/// return how many handles it held. Kotlin reads ingested requests from Room
+/// (the persister writes them), so the handles are not handed across.
+///
+/// # Safety
+/// `array` must come from a platform-wallet-ffi enumerator and not yet be
+/// freed.
+unsafe fn release_contact_request_handles(array: &mut ContactRequestHandleArray) -> usize {
+    let count = array.count;
+    if !array.handles.is_null() && count > 0 {
+        for handle in std::slice::from_raw_parts(array.handles, count) {
+            let mut result = platform_wallet_ffi::contact_request_destroy(*handle);
+            platform_wallet_ffi_result_free(&mut result);
+        }
+    }
+    platform_wallet_ffi::platform_wallet_contact_request_handle_array_free(array);
+    count
+}
+
+/// Read DashPay's private contact request store for every identity of the
+/// wallet, at most `maxPages` pages, and ingest what it holds for them
+/// (bridges `platform_wallet_sync_private_contact_requests`). The store is
+/// opened with keys derived inside `coreSignerHandle`, the manager's
+/// `MnemonicResolverHandle`. Ingested requests reach Room through the
+/// persister; their handles are released here. Returns the six counters of
+/// [`private_contact_sync_longs`]. Blocking (network).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_syncPrivateContactRequests(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    core_signer_handle: jlong,
+    max_pages: jint,
+) -> jlongArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if max_pages < 0 {
+            throw_sdk_exception(env, 1, "maxPages must be non-negative");
+            return ptr::null_mut();
+        }
+        let mut array = ContactRequestHandleArray::empty();
+        let mut report = PrivateContactSyncReportFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_sync_private_contact_requests(
+                wallet_handle as Handle,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                max_pages as u32,
+                &mut array,
+                &mut report,
+            )
+        };
+        // The FFI leaves an empty array on every failure, so releasing it
+        // first is safe on both paths.
+        let requests = unsafe { release_contact_request_handles(&mut array) };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let longs = private_contact_sync_longs(requests, &report);
+        let Ok(out) = env.new_long_array(longs.len() as i32) else {
+            return ptr::null_mut();
+        };
+        if env.set_long_array_region(&out, 0, &longs).is_err() {
+            return ptr::null_mut();
+        }
+        out.into_raw()
+    })
+}
+
+/// A private contact read as the compact JSON object `managedIdentityPrivateContact`
+/// returns: `receivedPrivately`, `sentPrivately`, and `shieldedAddress` (the
+/// 43-byte Orchard address as lower hex, or `null`).
+fn private_contact_json(contact: &PrivateContactFFI) -> String {
+    let address = if contact.has_shielded_address {
+        let hex: String = contact
+            .shielded_address
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        json_string(&hex)
+    } else {
+        "null".to_string()
+    };
+    format!(
+        "{{\"receivedPrivately\":{},\"sentPrivately\":{},\"shieldedAddress\":{}}}",
+        contact.received_privately, contact.sent_privately, address
+    )
+}
+
+/// What this identity's private contact requests with `contactId` carry off a
+/// managed-identity handle (bridges `managed_identity_get_private_contact`):
+/// the JSON object of [`private_contact_json`], or null when neither tracked
+/// request between them came or went privately (the FFI's NotFound, benign
+/// here as for `TokensNative.getIncomingContactRequest`).
+/// ← Swift `ManagedIdentity.privateContact(contactId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_managedIdentityPrivateContact(
+    mut env: JNIEnv,
+    _class: JClass,
+    identity_handle: jlong,
+    contact_id: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &contact_id, "contactId") else {
+            return ptr::null_mut();
+        };
+        let mut contact = PrivateContactFFI {
+            received_privately: false,
+            sent_privately: false,
+            has_shielded_address: false,
+            shielded_address: [0; 43],
+        };
+        let mut result = unsafe {
+            platform_wallet_ffi::managed_identity_get_private_contact(
+                identity_handle as Handle,
+                id.as_ptr(),
+                &mut contact,
+            )
+        };
+        if result.code == PlatformWalletFFIResultCode::NotFound {
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+            return ptr::null_mut();
+        }
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        new_jstring(env, private_contact_json(&contact))
+    })
+}
+
+/// Whether a contact request from `senderId`, one of the wallet's identities,
+/// to `recipientId`, public or private, is held for a private one, as a send
+/// decides it (bridges `platform_wallet_get_private_pair_held`): a private
+/// request in flight, paid and not yet read back, or kept by the shielded
+/// store's journal. A journal record discharged since is applied first.
+/// Throws on an unknown wallet or sender, returning false.
+/// ← Swift `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privatePairHeld(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    sender_id: JByteArray,
+    recipient_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(sender) = read_id32(env, &sender_id, "senderId") else {
+            return JNI_FALSE;
+        };
+        let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
+            return JNI_FALSE;
+        };
+        let mut held = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_private_pair_held(
+                wallet_handle as Handle,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                &mut held,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if held {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
+/// Whether a public contact request from `senderId`, one of the wallet's
+/// identities, to `recipientId` was broadcast and may have been delivered,
+/// with no proof settling its outcome yet (bridges
+/// `platform_wallet_get_public_contact_request_unconfirmed`). While it
+/// stands, the wallet refuses every contact request or acceptance to the
+/// recipient with code 76; a DashPay sync settles it. Throws on an unknown
+/// wallet or sender, returning false.
+/// ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_publicContactRequestUnconfirmed(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    sender_id: JByteArray,
+    recipient_id: JByteArray,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let Some(sender) = read_id32(env, &sender_id, "senderId") else {
+            return JNI_FALSE;
+        };
+        let Some(recipient) = read_id32(env, &recipient_id, "recipientId") else {
+            return JNI_FALSE;
+        };
+        let mut unconfirmed = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_public_contact_request_unconfirmed(
+                wallet_handle as Handle,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                &mut unconfirmed,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if unconfirmed {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
+/// `DashpayNative.privatePaymentsRestoreFailure`: why the last restoration
+/// of the wallet's private payments failed, while they are not restored for
+/// `identity_id` (bridges `platform_wallet_get_private_payments_restore_failure`),
+/// or null when none failed. Throws on an unknown wallet or identity,
+/// returning null.
+/// ← Swift `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privatePaymentsRestoreFailure(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut reason: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_private_payments_restore_failure(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                &mut reason,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if reason.is_null() {
+            return ptr::null_mut();
+        }
+        // SAFETY: a non-null `reason` is the NUL-terminated string the call
+        // allocated; it is read once, then released to its allocator.
+        let text = unsafe { CStr::from_ptr(reason) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(reason) };
+        new_jstring(env, text)
+    })
+}
+
+/// `DashpayNative.privateContactReadiness`: the wallet's readiness for
+/// `identity_id`'s contact requests
+/// (`platform_wallet_get_private_contact_readiness`) as four flags,
+/// `[privatePaymentsRestored, privateStoreRead, unresolvedPrivatePayment,
+/// privatePaymentsRestoreFailed]`.
+/// Throws on an unknown wallet or identity, returning null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_privateContactReadiness(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+) -> jbooleanArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return std::ptr::null_mut();
+        };
+        let mut readiness = PrivateContactReadinessFFI::default();
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_private_contact_readiness(
+                wallet_handle as Handle,
+                id.as_ptr(),
+                &mut readiness,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return std::ptr::null_mut();
+        }
+        let flags = readiness_flags(&readiness);
+        let array = match env.new_boolean_array(flags.len() as i32) {
+            Ok(array) => array,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "allocating the readiness flags failed");
+                return std::ptr::null_mut();
+            }
+        };
+        if env.set_boolean_array_region(&array, 0, &flags).is_err() {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "writing the readiness flags failed");
+            return std::ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
+/// The readiness flags in the order Kotlin reads them.
+fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 4] {
+    let flag = |set: bool| if set { JNI_TRUE } else { JNI_FALSE };
+    [
+        flag(readiness.private_payments_restored),
+        flag(readiness.private_store_read),
+        flag(readiness.unresolved_private_payment),
+        flag(readiness.private_payments_restore_failed),
+    ]
+}
+
+/// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
+/// `Err` on a JNI error. `field` names the argument in the message.
+fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
+    if arr.is_null() {
+        return Ok(None);
+    }
+    match env.convert_byte_array(arr) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
+            Err(())
+        }
+    }
+}
+
+/// Copy an optional Orchard address. The FFI reads exactly
+/// [`SHIELDED_ADDRESS_LEN`] bytes from the pointer it is given and has no
+/// length to check against, so any other length is refused here before the
+/// pointer crosses.
+fn read_opt_shielded_address(env: &mut JNIEnv, arr: &JByteArray) -> Result<Option<Vec<u8>>, ()> {
+    let address = read_opt_bytes(env, arr, "shieldedAddress")?;
+    if let Some(address) = &address {
+        if address.len() != SHIELDED_ADDRESS_LEN {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "shieldedAddress must be {SHIELDED_ADDRESS_LEN} raw Orchard bytes, got {}",
+                    address.len()
+                ),
+            );
+            return Err(());
+        }
+    }
+    Ok(address)
+}
+
+/// Send a DashPay private contact request from `senderIdentityId` to
+/// `recipientIdentityId`, paying for it from `account`'s shielded notes
+/// (bridges `platform_wallet_manager_send_private_contact_request`).
+/// `resolverHandle` supplies the Orchard spend authority and the DashPay
+/// keys; `signerHandle` is the identity signer (`SignerHandle`) the public
+/// [`crate::tokens`] `sendContactRequest` takes, and signs the request.
+/// `accountLabel`, `autoAcceptProof` and `shieldedAddress` (43 bytes) may be
+/// null. Blocks for the Halo 2 proof; returns the created `ContactRequest`
+/// handle (destroy via `TokensNative.contactRequestDestroy`).
+#[cfg(feature = "shielded")]
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPrivateContactRequest(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    sender_identity_id: JByteArray,
+    recipient_identity_id: JByteArray,
+    account_label: JString,
+    auto_accept_proof: JByteArray,
+    shielded_address: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Some(sender) = read_id32(env, &sender_identity_id, "senderIdentityId") else {
+            return 0;
+        };
+        let Some(recipient) = read_id32(env, &recipient_identity_id, "recipientIdentityId") else {
+            return 0;
+        };
+        let Ok(label) = opt_jstring_to_cstring(env, "accountLabel", &account_label) else {
+            return 0;
+        };
+        let Ok(proof) = read_opt_bytes(env, &auto_accept_proof, "autoAcceptProof") else {
+            return 0;
+        };
+        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
+            return 0;
+        };
+        let (proof_ptr, proof_len) = proof
+            .as_ref()
+            .map_or((ptr::null(), 0), |proof| (proof.as_ptr(), proof.len()));
+        let mut out_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_send_private_contact_request(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                label.as_ref().map_or(ptr::null(), |label| label.as_ptr()),
+                proof_ptr,
+                proof_len,
+                address
+                    .as_ref()
+                    .map_or(ptr::null(), |address| address.as_ptr()),
+                signer_handle as *mut SignerHandle,
+                &mut out_handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_handle as jlong
+    })
+}
+
+/// Accept the incoming contact request `requestHandle` with a private reply,
+/// paying for the reply from `account`'s shielded notes (bridges
+/// `platform_wallet_manager_accept_private_contact_request`). The handles
+/// are as for [`Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendPrivateContactRequest`];
+/// `shieldedAddress` (43 bytes) may be null. Blocks for the Halo 2 proof;
+/// returns the `EstablishedContact` handle (destroy via
+/// `TokensNative.establishedContactDestroy`).
+#[cfg(feature = "shielded")]
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptPrivateContactRequest(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    request_handle: jlong,
+    shielded_address: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
+            return 0;
+        };
+        let mut out_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_accept_private_contact_request(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                request_handle as Handle,
+                address
+                    .as_ref()
+                    .map_or(ptr::null(), |address| address.as_ptr()),
+                signer_handle as *mut SignerHandle,
+                &mut out_handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_handle as jlong
+    })
+}
+
+/// Accept the incoming contact request `requestHandle` replying the way it
+/// came (bridges
+/// `platform_wallet_manager_accept_contact_request_replying_in_kind`):
+/// privately, paid from `account`'s shielded notes, when it came privately
+/// and no reply exists yet; otherwise with a `contactRequest` document, or by
+/// adopting the reply already sent. The wallet decides; this is the accept a
+/// host calls. Arguments and result are as for the private accept above.
+/// Exported in every build: without the `shielded` feature a request that
+/// needs a private reply is refused with `ErrorShieldedBuildRequired`, and a
+/// public or adopted reply works as in a shielded build.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_acceptContactRequestReplyingInKind(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    request_handle: jlong,
+    shielded_address: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return 0;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return 0;
+        };
+        let Ok(address) = read_opt_shielded_address(env, &shielded_address) else {
+            return 0;
+        };
+        let mut out_handle: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_accept_contact_request_replying_in_kind(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                request_handle as Handle,
+                address
+                    .as_ref()
+                    .map_or(ptr::null(), |address| address.as_ptr()),
+                signer_handle as *mut SignerHandle,
+                &mut out_handle,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        out_handle as jlong
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The natives above need a JVM; the counter layout Kotlin decodes and the
+    // handle release are pure and are pinned here.
+
+    /// A real `ContactRequest` handle, registered through platform-wallet-ffi's
+    /// `contact_request_create` as the FFI's own enumerators register theirs.
+    fn registered_request(sender_byte: u8) -> Handle {
+        let sender = [sender_byte; 32];
+        let recipient = [0xB0; 32];
+        let encrypted_public_key = [0x33; 96];
+        let mut handle: Handle = 0;
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_create(
+                sender.as_ptr(),
+                recipient.as_ptr(),
+                1,
+                2,
+                7,
+                encrypted_public_key.as_ptr(),
+                encrypted_public_key.len(),
+                100,
+                1_700_000_000_000,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        assert_ne!(handle, 0);
+        handle
+    }
+
+    /// The sender id a getter reads off `handle`, or the code it refuses with.
+    fn sender_id_of(handle: Handle) -> Result<[u8; 32], PlatformWalletFFIResultCode> {
+        let mut sender = [0u8; 32];
+        let mut result = unsafe {
+            platform_wallet_ffi::contact_request_get_sender_id(handle, sender.as_mut_ptr())
+        };
+        let code = result.code;
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        if code == PlatformWalletFFIResultCode::Success {
+            Ok(sender)
+        } else {
+            Err(code)
+        }
+    }
+
+    #[test]
+    fn should_lay_out_the_private_sync_counters_in_the_order_kotlin_reads() {
+        let report = PrivateContactSyncReportFFI {
+            next_position: 41,
+            pages_read: 3,
+            rejected_count: 2,
+            unpersisted_identity_count: 1,
+            complete: true,
+        };
+        assert_eq!(private_contact_sync_longs(5, &report), [5, 3, 2, 1, 41, 1]);
+        let incomplete = PrivateContactSyncReportFFI {
+            complete: false,
+            ..report
+        };
+        assert_eq!(private_contact_sync_longs(0, &incomplete)[5], 0);
+    }
+
+    #[test]
+    fn should_lay_out_the_readiness_flags_in_the_order_kotlin_reads() {
+        let readiness = PrivateContactReadinessFFI {
+            private_payments_restored: true,
+            private_store_read: false,
+            unresolved_private_payment: true,
+            private_payments_restore_failed: false,
+        };
+        assert_eq!(
+            readiness_flags(&readiness),
+            [JNI_TRUE, JNI_FALSE, JNI_TRUE, JNI_FALSE]
+        );
+        let failed = PrivateContactReadinessFFI {
+            private_payments_restore_failed: true,
+            ..PrivateContactReadinessFFI::default()
+        };
+        assert_eq!(
+            readiness_flags(&failed),
+            [JNI_FALSE, JNI_FALSE, JNI_FALSE, JNI_TRUE]
+        );
+        assert_eq!(
+            readiness_flags(&PrivateContactReadinessFFI::default()),
+            [JNI_FALSE; 4]
+        );
+    }
+
+    #[test]
+    fn should_saturate_a_store_position_past_the_long_range() {
+        let report = PrivateContactSyncReportFFI {
+            next_position: u64::MAX,
+            ..Default::default()
+        };
+        assert_eq!(private_contact_sync_longs(0, &report)[4], i64::MAX);
+    }
+
+    #[test]
+    fn should_render_a_private_contact_as_the_json_kotlin_reads() {
+        let mut contact = PrivateContactFFI {
+            received_privately: true,
+            sent_privately: false,
+            has_shielded_address: true,
+            shielded_address: [0xab; 43],
+        };
+        assert_eq!(
+            private_contact_json(&contact),
+            format!(
+                "{{\"receivedPrivately\":true,\"sentPrivately\":false,\"shieldedAddress\":\"{}\"}}",
+                "ab".repeat(43)
+            )
+        );
+        contact.has_shielded_address = false;
+        contact.sent_privately = true;
+        assert_eq!(
+            private_contact_json(&contact),
+            "{\"receivedPrivately\":true,\"sentPrivately\":true,\"shieldedAddress\":null}"
+        );
+    }
+
+    #[test]
+    fn should_release_an_empty_handle_array_as_zero_requests() {
+        let mut array = ContactRequestHandleArray::empty();
+        assert_eq!(unsafe { release_contact_request_handles(&mut array) }, 0);
+        assert!(array.handles.is_null());
+    }
+
+    /// The sync bridge hands Kotlin no handles, so it must destroy every
+    /// handle the FFI registered as well as free the array: both handles read
+    /// before the release and are refused after it.
+    #[test]
+    fn should_destroy_every_handle_of_the_array_and_free_it() {
+        let handles = [registered_request(0xA1), registered_request(0xA2)];
+        assert_eq!(sender_id_of(handles[0]), Ok([0xA1; 32]));
+        assert_eq!(sender_id_of(handles[1]), Ok([0xA2; 32]));
+
+        // The `ContactRequestHandleArray` contract: a boxed slice of handles,
+        // as `ContactRequestHandleArray::from_requests` allocates it.
+        let boxed: Box<[Handle]> = handles.to_vec().into_boxed_slice();
+        let count = boxed.len();
+        let mut array = ContactRequestHandleArray {
+            handles: Box::into_raw(boxed) as *mut Handle,
+            count,
+        };
+
+        assert_eq!(unsafe { release_contact_request_handles(&mut array) }, 2);
+        assert!(array.handles.is_null());
+        assert_eq!(array.count, 0);
+        for handle in handles {
+            assert_eq!(
+                sender_id_of(handle),
+                Err(PlatformWalletFFIResultCode::NotFound),
+                "a released handle reads nothing"
+            );
+        }
+    }
 }

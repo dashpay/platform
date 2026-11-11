@@ -1,5 +1,6 @@
 use super::*;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
 use crate::tests::json_document::json_document_to_contract;
@@ -565,6 +566,8 @@ fn doc_with_ids() -> DocumentV0 {
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
 }
 
@@ -1142,6 +1145,89 @@ fn serialize_v3_round_trips_every_property_type() {
         DocumentV0::from_bytes(&serialized, document_type.as_ref(), platform_version)
             .expect("expected to deserialize with absent optionals");
     assert_eq!(document, deserialized);
+}
+
+#[test]
+fn should_round_trip_the_moderation_stamp_in_format_3() {
+    let platform_version = PlatformVersion::latest();
+    let document_type = kitchen_sink_document_type();
+    let unstamped = stamped_document(
+        Some(1),
+        kitchen_sink_required_properties(),
+        document_type.as_ref(),
+    );
+    let unstamped_bytes = unstamped
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize the unstamped document");
+
+    // Each half of the stamp has its own timestamp flag, and the two round-trip together or
+    // apart: 8 bytes for the time, 32 for the moderator.
+    let mut stamped = unstamped.clone();
+    stamped.moderated_at = Some(1_700_000_000_000);
+    let time_only = stamped
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize the moderation time");
+    assert_eq!(time_only.len(), unstamped_bytes.len() + 8);
+    assert_eq!(
+        DocumentV0::from_bytes(&time_only, document_type.as_ref(), platform_version)
+            .expect("expected to deserialize the moderation time"),
+        stamped
+    );
+    stamped.moderated_by = Some(Identifier::new([5; 32]));
+    let stamped_bytes = stamped
+        .serialize_v3(document_type.as_ref())
+        .expect("expected to serialize the stamp");
+    assert_eq!(stamped_bytes.len(), unstamped_bytes.len() + 40);
+    assert_eq!(
+        DocumentV0::from_bytes(&stamped_bytes, document_type.as_ref(), platform_version)
+            .expect("expected to deserialize the stamp"),
+        stamped
+    );
+    // A document without it reads back without it.
+    assert_eq!(
+        DocumentV0::from_bytes(&unstamped_bytes, document_type.as_ref(), platform_version)
+            .expect("expected to deserialize the unstamped document"),
+        unstamped
+    );
+}
+
+#[test]
+fn should_refuse_the_moderation_stamp_in_an_older_format() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load dashpay contract");
+    // A config version 0 contract serializes in format 0 only, whatever the document holds
+    contract.set_config(
+        DataContractConfig::default_for_version(platform_version).expect("a latest config"),
+    );
+    let document_type = contract
+        .document_type_for_name("contactRequest")
+        .expect("expected contactRequest document type");
+    let crate::document::Document::V0(mut document) = document_type
+        .random_document(Some(7), platform_version)
+        .expect("expected random document");
+    document.moderated_by = Some(Identifier::new([5; 32]));
+
+    // Format 2 has no place for the stamp: refused, not dropped
+    let error = document
+        .serialize_specific_version(document_type, &contract, 2)
+        .expect_err("format 2 can not hold the stamp");
+    assert!(
+        error.to_string().contains("$moderatedBy"),
+        "expected the refusal to name the stamp, got {error}"
+    );
+    let bytes = document
+        .serialize_specific_version(document_type, &contract, 3)
+        .expect("format 3 holds the stamp");
+    assert_eq!(
+        DocumentV0::from_bytes(&bytes, document_type, platform_version)
+            .expect("expected to deserialize the stamped document"),
+        document
+    );
 }
 
 #[test]

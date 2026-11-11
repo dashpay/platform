@@ -1,12 +1,9 @@
+use crate::util::estimated_layers::EstimatedLayers;
 mod v0;
-
-use std::collections::HashMap;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -33,7 +30,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_lifecycle_record(
         contract: &DataContract,
         document_type: DocumentTypeRef,
-        layers: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        layers: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version

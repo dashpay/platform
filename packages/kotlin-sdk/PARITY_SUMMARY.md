@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **26**
+Capabilities tracked: **29**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 15 | 9 | 1 | 1 |
-| Swift | Example app | 4 | 12 | 1 | 9 |
-| Kotlin | SDK | 13 | 12 | 0 | 1 |
-| Kotlin | Example app | 5 | 12 | 0 | 9 |
+| Swift | SDK | 16 | 11 | 1 | 1 |
+| Swift | Example app | 4 | 14 | 2 | 9 |
+| Kotlin | SDK | 13 | 14 | 1 | 1 |
+| Kotlin | Example app | 5 | 13 | 1 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 0 | 8 | 18 |
-| Kotlin | 4 | 6 | 16 |
+| Swift | 1 | 10 | 18 |
+| Kotlin | 4 | 8 | 17 |
 
 ## Capability status
 
@@ -33,6 +33,8 @@ Capabilities tracked: **26**
 | `dashpay.invitations` | supported / partial / required | supported / partial / required |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
+| `dashpay.private_contact_requests` | partial / partial / required | partial / partial / required |
+| `dashpay.private_contact_request_scan_state` | partial / partial / required | partial / not-applicable / required |
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
@@ -50,6 +52,7 @@ Capabilities tracked: **26**
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `shielded.core_wallet_drain` | supported / unsupported / tested | unsupported / unsupported / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

@@ -17,6 +17,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedAddressBalanceChangesPerBlock;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 /// Bounded, exact-consumption decoding for a proof-derived per-block address
 /// balance row.
@@ -29,9 +30,7 @@ fn decode_address_balance_row(
         )));
     }
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<MAX_ADDRESS_BALANCE_ROW_DECODE_BYTES>();
     let (address_balances, consumed): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
         bincode::decode_from_slice_untrusted(serialized_data, config).map_err(|e| {
             Error::Proof(ProofError::CorruptedProof(format!(
@@ -174,6 +173,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::address_funds::PlatformAddress;
     use dpp::balances::credits::CreditOperation;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -191,7 +191,7 @@ mod tests {
             PlatformAddress::P2pkh([1; 20]),
             CreditOperation::AddToCredits(1),
         );
-        let config = bincode::config::standard().with_big_endian();
+        let config = PLATFORM_BINCODE_CONFIG;
         let mut bytes = bincode::encode_to_vec(&row, config).expect("encode row");
         assert!(decode_address_balance_row(&bytes).is_ok());
         bytes.push(0);

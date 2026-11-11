@@ -31,12 +31,37 @@ The current DashPay contract schema requires the system field
 `encryptedPublicKey` is exactly 96 bytes:
 
 - 16 bytes: AES-CBC initialization vector
-- 80 bytes: AES-CBC ciphertext for the sender's 78-byte serialized contact xpub
+- 80 bytes: AES-CBC ciphertext for the sender's 69-byte compact contact xpub
+
+The compact xpub is the parent fingerprint (4 bytes), chain code (32 bytes)
+and public key (33 bytes), without the version, depth and child number of a
+full 78-byte BIP32 serialization. Receivers, including the reference mobile
+wallets and the Rust, Swift and Kotlin SDKs, refuse any other plaintext
+length. Both 69 and 78 bytes pad to the same 80-byte ciphertext, so the
+contract cannot catch the mistake: a request that encrypts the full 78 bytes
+is stored on chain, and the recipient's wallet then drops it.
 
 The sender derives the contact xpub from the sender identity, recipient
 identity, account, and address index. The sender then encrypts that xpub with an
 ECDH shared secret from the sender's identity encryption private key and the
 recipient's identity decryption public key.
+
+## What consensus checks
+
+From protocol version 15 the DashPay contract (v3) states these checks in its
+schema, and a contact request that fails one is refused (and the fee charged):
+
+| Rule | Declared as | Error |
+| --- | --- | --- |
+| `toUserId` is not the sender | `distinctFrom: "$ownerId"` on `toUserId` | `DocumentPropertyNotDistinctError` (10419) |
+| The recipient identity exists | `refersTo` of type `identity` on `toUserId` | `ReferencedEntityNotFoundError` (40120) |
+| `encryptedPublicKey` and `encryptedAccountLabel` are a 16-byte IV plus whole 16-byte blocks | `encryptedFor` with scheme `ecdh-secp256k1-aes256-cbc` | `InvalidEncryptedPropertyShapeError` (10420) |
+
+Up to protocol version 14 a data trigger made only the first two checks and
+reported both as a `DataTriggerConditionError` (40500). Neither version checks
+that the two key indexes name keys the identities hold, the purpose of those
+keys, or that the bytes decrypt. Wallets and SDKs can read the encryption
+recipe from the contract (`encrypted_properties()` in Rust).
 
 ## Derive the contact payment xpub
 
@@ -99,14 +124,17 @@ function deriveSharedKey({
   return crypto.createHash('sha256').update(Buffer.concat([compressedPrefix, x])).digest();
 }
 
-function serializedXpubPayload(xpub: string): Buffer {
+function compactXpubPayload(xpub: string): Buffer {
   const payload = dashcore.encoding.Base58Check.decode(xpub);
 
   if (payload.length !== 78) {
     throw new Error(`Invalid DashPay contact xpub length: ${payload.length}`);
   }
 
-  return payload;
+  // BIP32 layout: version(4) depth(1) parentFingerprint(4) childNumber(4)
+  // chainCode(32) publicKey(33). DIP-15 encrypts only the parent
+  // fingerprint, chain code and public key: 69 bytes.
+  return Buffer.concat([payload.subarray(5, 9), payload.subarray(13, 78)]);
 }
 
 function encryptContactXpub({
@@ -122,7 +150,7 @@ function encryptContactXpub({
     privateKeyWif: senderEncryptionPrivateKeyWif,
     publicKeyBytes: recipientDecryptionPublicKeyBytes,
   });
-  const payload = serializedXpubPayload(contactXpub);
+  const payload = compactXpubPayload(contactXpub);
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-cbc', aesKey, iv);
   const encrypted = Buffer.concat([

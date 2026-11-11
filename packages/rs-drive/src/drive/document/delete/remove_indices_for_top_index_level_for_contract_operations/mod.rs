@@ -3,6 +3,7 @@ mod v1;
 mod v2;
 
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 
 use crate::error::drive::DriveError;
@@ -12,10 +13,7 @@ use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 
-use grovedb::batch::KeyInfoPath;
-
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Removes indices for the top index level and calls for lower levels.
@@ -32,13 +30,11 @@ impl Drive {
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn remove_indices_for_top_index_level_for_contract_operations(
+    pub(in crate::drive::document) fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
