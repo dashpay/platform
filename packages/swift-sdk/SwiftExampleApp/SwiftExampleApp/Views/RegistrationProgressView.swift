@@ -39,7 +39,7 @@ import SwiftDashSDK
 /// Step 4 ("Waiting for platform confirmation") exists so a
 /// post-broadcast confirmation failure is attributed there — NOT to the
 /// Halo 2 proof step — and so the `.unconfirmed` terminal state (the
-/// broadcast landed but its result couldn't be confirmed) has a step to
+/// transition may have reached a node but its result is not proved) has a step to
 /// render an orange warning on while steps 1–3 stay done and step 5
 /// stays pending.
 ///
@@ -253,7 +253,7 @@ struct RegistrationProgressSection: View {
     ///   On `.completed` return 6 (one past the last step) so all rows
     ///   render `.done`. On `.unconfirmed` return 4 ("Waiting for platform
     ///   confirmation") so that step carries the warning. On `.failed`
-    ///   attribute the step: a `.broadcastRejected` failure marks step 3
+    ///   attribute the step: a `.broadcastNotSent` failure marks step 3
     ///   ("Broadcasting transition"); an UNATTRIBUTED failure
     ///   (`failureStage == nil` — build / Halo 2 proof errors, or any other
     ///   error we can't confidently place) keeps the note-selection vs Halo 2
@@ -269,21 +269,21 @@ struct RegistrationProgressSection: View {
         case .completed:
             return 6
         case .unconfirmed:
-            // Broadcast landed; only the result confirmation failed.
+            // The transition may have reached a node; its result is not proved.
             // Attribute to the "Waiting for platform confirmation" step.
             return 4
         case .inFlight:
             return shieldedStep(elapsedTo: now)
         case .failed:
-            // A definitive broadcast rejection (`failureStage ==
-            // .broadcastRejected`) is attributed to the broadcast step (3).
+            // A refusal before anything was sent (`failureStage ==
+            // .broadcastNotSent`) is attributed to the broadcast step (3).
             // For an unattributed failure (`failureStage == nil` — build /
             // Halo 2 proof errors, or any other error we can't confidently
             // place), keep the elapsed-time heuristic (note-selection vs
             // proof) — frozen at the failure instant; fall back to `now` only
             // if the terminal timestamp is missing (pre-submit failure shapes
             // never set it).
-            if controller.failureStage == .broadcastRejected {
+            if controller.failureStage == .broadcastNotSent {
                 return 3
             }
             return shieldedStep(elapsedTo: controller.terminalAt ?? now)
@@ -386,10 +386,10 @@ struct RegistrationProgressSection: View {
     /// fallback — visually distinguishable so users don't think
     /// the step "didn't happen yet" once we've moved past it.
     /// `.warning` (orange triangle) marks the "Waiting for platform
-    /// confirmation" step when the broadcast landed but its result
-    /// couldn't be confirmed (the shielded `.unconfirmed` terminal
+    /// confirmation" step when the transition may have reached a node but
+    /// its result is not proved (the shielded `.unconfirmed` terminal
     /// state) — distinct from `.failed` because nothing is actually
-    /// wrong; the identity is probably live on chain.
+    /// wrong; the identity may be live on chain.
     enum StepState { case done, active, pending, skipped, failed, warning }
 
     private func stepState(
@@ -483,7 +483,7 @@ struct RegistrationProgressSection: View {
                 .foregroundColor(.red)
                 .font(.title3)
         case .warning:
-            // Broadcast landed but its result couldn't be confirmed —
+            // The transition may have reached a node; its result is not proved:
             // not an error, so an orange triangle, not the red octagon.
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.orange)
@@ -607,14 +607,14 @@ struct RegistrationProgressView: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
-                        "Broadcast succeeded — confirmation pending",
+                        "Result not confirmed",
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundColor(.orange)
                     .font(.headline)
                     // Same base58 styling as the completed case — the id is
                     // the derived identity id Rust handed back; the identity
-                    // is probably already live on chain.
+                    // may already be live on chain.
                     Text(identityId.toBase58String())
                         .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.secondary)
@@ -624,12 +624,11 @@ struct RegistrationProgressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Text(
-                        "The transition was broadcast and accepted, but its "
-                        + "execution-result proof couldn't be confirmed. The "
-                        + "identity above will appear in the Identities tab "
-                        + "after the next sync. Do NOT re-submit — the slot is "
-                        + "held to prevent burning funds against a duplicate "
-                        + "registration."
+                        "The transition may have reached the network, but its "
+                        + "result couldn't be confirmed. If it went through, the "
+                        + "identity above will appear in the Identities tab after "
+                        + "a later sync. Do NOT re-submit: the slot is held to "
+                        + "prevent burning funds against a duplicate registration."
                     )
                     .font(.caption)
                     .foregroundColor(.secondary)

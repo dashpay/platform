@@ -214,6 +214,51 @@ pub struct ContactIgnoredSenderFFI {
     pub is_ignored: bool,
 }
 
+/// One identity's read position in DashPay's private contact request store
+/// ([`ContactChangeSet::private_contact_requests_positions`]), for the
+/// private contact request scan state callbacks on
+/// [`PersistenceCallbacksExtension`](crate::persistence::PersistenceCallbacksExtension).
+///
+/// Flat POD. The host stores one row per `(wallet_id, identity_id)`,
+/// replacing the previous one, and hands it back unchanged at load: a lower
+/// `position` than the stored one is a rewind, not a stale write.
+///
+/// [`ContactChangeSet::private_contact_requests_positions`]: platform_wallet::changeset::ContactChangeSet::private_contact_requests_positions
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateContactRequestsPositionFFI {
+    /// The wallet-owned identity reading the store.
+    pub identity_id: [u8; 32],
+    /// The store position the identity reads from next.
+    pub position: u64,
+    /// The fingerprint of the scanning keys `position` holds for. Opaque
+    /// to the host: store it and return it as it came.
+    pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request the identity paid for may still
+    /// be unresolved. Store it and return it as it came: loaded set, it
+    /// holds the identity's public contact requests until its private
+    /// payments are restored from the shielded store.
+    pub private_payments_unresolved: bool,
+}
+
+/// The shielded address `contact_id`'s tracked private request to
+/// `owner_id` carries ([`ContactChangeSet::private_shielded_addresses`]).
+///
+/// Flat POD. The host stores one row per `(wallet_id, owner_id,
+/// contact_id)`, replacing the previous one.
+///
+/// [`ContactChangeSet::private_shielded_addresses`]: platform_wallet::changeset::ContactChangeSet::private_shielded_addresses
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateShieldedAddressFFI {
+    /// The wallet-owned identity the request is to.
+    pub owner_id: [u8; 32],
+    /// The contact who sent the request.
+    pub contact_id: [u8; 32],
+    /// The raw 43-byte Orchard payment address.
+    pub address: [u8; 43],
+}
+
 // Compile-time guards. Pin the expected layouts so any reshape on
 // the Rust side fails the cargo build before it can ship a dylib
 // the Swift side will mis-parse at runtime.
@@ -267,6 +312,39 @@ const _: [u8; 1] = [0u8; std::mem::align_of::<ContactRequestRemovalFFI>()];
 // Total size = 65, alignment = 1 (all-byte fields).
 const _: [u8; 65] = [0u8; std::mem::size_of::<ContactIgnoredSenderFFI>()];
 const _: [u8; 1] = [0u8; std::mem::align_of::<ContactIgnoredSenderFFI>()];
+
+// Expected `PrivateContactRequestsPositionFFI` layout on 64-bit targets:
+//
+//   0..=31    identity_id                  [u8; 32]
+//   32..=39   position                     u64
+//   40..=71   key_fingerprint              [u8; 32]
+//   72        private_payments_unresolved  bool
+//   73..=79   (tail padding to 8)
+//
+// Total size = 80, alignment = 8 (from the u64).
+const _: [u8; 80] = [0u8; std::mem::size_of::<PrivateContactRequestsPositionFFI>()];
+const _: [u8; 8] = [0u8; std::mem::align_of::<PrivateContactRequestsPositionFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, position) == 32);
+const _: () =
+    assert!(std::mem::offset_of!(PrivateContactRequestsPositionFFI, key_fingerprint) == 40);
+const _: () = assert!(
+    std::mem::offset_of!(
+        PrivateContactRequestsPositionFFI,
+        private_payments_unresolved
+    ) == 72
+);
+
+// Expected `PrivateShieldedAddressFFI` layout on all targets:
+//
+//   0..=31    owner_id    [u8; 32]
+//   32..=63   contact_id  [u8; 32]
+//   64..=106  address     [u8; 43]
+//
+// Total size = 107, alignment = 1 (all-byte fields).
+const _: [u8; 107] = [0u8; std::mem::size_of::<PrivateShieldedAddressFFI>()];
+const _: [u8; 1] = [0u8; std::mem::align_of::<PrivateShieldedAddressFFI>()];
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, contact_id) == 32);
+const _: () = assert!(std::mem::offset_of!(PrivateShieldedAddressFFI, address) == 64);
 
 impl ContactIgnoredSenderFFI {
     /// Project an `(owner, sender)` ignore key onto its flat C mirror.

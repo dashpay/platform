@@ -902,6 +902,11 @@ fn binds_a_changed_property(
             .operands()
             .iter()
             .any(|operand| binds_a_changed_property(operand, changed_fields, writer_can_change)),
+        // Only protocol version 15 parses a reference naming its target through the
+        // referring document, and it selects generation 1: none reaches this generation.
+        // One that did would be checked, and refused there as one this generation cannot
+        // resolve
+        DocumentPropertyReferenceTarget::DynamicDocument(_) => true,
     }
 }
 
@@ -1754,6 +1759,13 @@ fn validate_reference_target_v0(
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "a reference expression reached the leaf check, which only its evaluator calls",
+            )))
+        }
+        // Only protocol version 15 parses one, and it selects generation 1
+        DocumentPropertyReferenceTarget::DynamicDocument(_) => {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "a reference naming its target through the referring document reached \
+                 generation 0 of the reference check, which no version parsing one selects",
             )))
         }
     };

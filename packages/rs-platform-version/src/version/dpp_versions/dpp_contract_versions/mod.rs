@@ -152,7 +152,12 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     /// Folds the `refersTo` reference keyword into the parsed property type.
     /// `None` on versions that predate the keyword: they ignore it entirely,
-    /// exactly as they parsed before it existed.
+    /// exactly as they parsed before it existed. 0 (protocol version 14) reads every
+    /// reference that names its target in the schema. 1 (protocol version 15) also reads,
+    /// on an identifier property, a permanent or moderated document reference whose target
+    /// the referring document names (`contractId` and `documentType` written
+    /// `"$self.<property>"`, with `documentTypeRequirements`), and refuses such a
+    /// declaration wherever else a reference sits.
     pub apply_property_reference: OptionalFeatureVersion,
     /// Parses the `requiredSince` property keyword (the contract version from
     /// which a property is required). `None` on versions that predate the

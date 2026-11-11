@@ -563,7 +563,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// prune backstop); the pass outcome is logged, not surfaced.
 ///
 /// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
-fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
     let ambiguous = matches!(
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -596,19 +596,24 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
-fn map_spend_result(
+pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed — the host must NOT re-submit. For the
-        // spend-based operations the notes stay reserved wallet-side; a
-        // shield reserves nothing. Either way the next sync (or an app
-        // restart) reconciles the outcome; the typed Display already
-        // carries the operation name and guidance.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+        // Outcome not known: a dispatch may have reached a node and the
+        // execution result couldn't be confirmed, so the host must NOT
+        // re-submit. For the spend-based operations the notes stay reserved
+        // wallet-side, with the recovery record saved before the broadcast;
+        // a shield from Platform addresses reserves nothing. Either way the
+        // next sync reconciles a transition that landed; the typed Display
+        // already carries the operation name and guidance.
+        // A broadcast that may have been delivered reads the same: it may
+        // still execute, so its notes and recovery record stay, and a host
+        // must not pay again.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 e.to_string(),
@@ -620,6 +625,31 @@ fn map_spend_result(
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
+        // A private contact request in flight, or paid and not yet read back
+        // from the store: nothing new was paid, and a later private sync
+        // settles it, so it keeps its own pending code; unrestored private
+        // payments keep theirs, and so does a persister that cannot keep a
+        // private payment's recovery marker. A wallet removed before the
+        // payment started keeps the lifecycle refusal code (`NotFound`) every
+        // other export gives it. A protocol-version refusal from the store
+        // read before any payment keeps the blanket conversion's split: a
+        // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
+        // the catch-all.
+        // So does a public request to the pair whose outcome is unconfirmed,
+        // which holds the private send and accepts as it holds a public one.
+        // So does a private store read that did not finish before deciding
+        // (nothing reserved or sent), and a pair whose requests came or went
+        // privately, which the in-kind accept can raise.
+        Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::PublicContactRequestUnconfirmed(..))
+        | Err(e @ PlatformWalletError::PrivateContactStoreNotRead(..))
+        | Err(e @ PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..))
+        | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
+            e.into()
+        }
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -628,17 +658,19 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the transition was not executed and the notes
-        // were released; the host may retry.
+        // Definitive failure: the transition never left the wallet (refused
+        // before anything was sent); a spend's notes were released and the
+        // host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
         ),
-        // Definitively failed on an address-nonce race (a shield spends platform
-        // address funds; a shield reserves no notes). Its own code carries the
-        // safe-to-retry contract AND lets the host recognize the self-healing
-        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
-        // it would regress to the generic `ErrorWalletOperation` below.
+        // An address-nonce race keeps its own code, so the host can recognize
+        // the self-healing nonce mismatch: a plain retry re-fetches the nonce.
+        // No operation mapped here reports it today: a shield from Platform
+        // addresses reads an endpoint's nonce verdict on a dispatched shield
+        // as unconfirmed, above. The arm keeps the code from regressing to the
+        // generic `ErrorWalletOperation` below if one does.
         Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
@@ -659,6 +691,18 @@ fn map_spend_result(
         // here as the blanket `From` conversion does, so hosts route to key
         // repair instead of reading a generic wallet failure. Structural
         // position-0 check only, never a substring sniff of the rendering.
+        // The SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`)
+        // that reached here unclassified: the transition may have executed,
+        // so it keeps the blanket conversion's unconfirmed code rather than
+        // reading as a failure a host may retry.
+        Err(e)
+            if matches!(
+                &e,
+                PlatformWalletError::Sdk(source) if source.is_state_transition_result_unconfirmed()
+            ) =>
+        {
+            e.into()
+        }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),
@@ -742,8 +786,8 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
-/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
-fn catch_spend_panic(
+/// in place, and the next nullifier sync reconciles whether the spend landed.
+pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
@@ -2328,6 +2372,30 @@ pub(crate) fn resolve_wallet_and_coordinator(
     Ok((wallet, coordinator))
 }
 
+/// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
+/// errors. It blocks on the runtime, so it must not run on one of its async
+/// workers: call it from the export's thread or from `spawn_blocking`.
+pub(crate) fn resolve_shielded_coordinator(
+    handle: Handle,
+) -> Result<
+    std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    PlatformWalletFFIResult,
+> {
+    match PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_coordinator())
+    }) {
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured: call platform_wallet_manager_configure_shielded first",
+        )),
+        Some(Some(coordinator)) => Ok(coordinator),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2426,6 +2494,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    anchor_height: None,
                 },
             )
             .expect("seed malformed durable metadata");
@@ -2991,6 +3060,81 @@ mod tests {
         );
         assert_eq!(message_of(&result), rendered);
         assert!(message_of(&result).contains("this request was not started"));
+    }
+
+    /// A protocol-version refusal from the store read a private send or
+    /// accept makes before paying keeps the blanket conversion's split: a
+    /// lasting refusal is code 70, a transient one the catch-all.
+    #[test]
+    fn map_spend_result_keeps_a_protocol_version_refusal_typed() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            map_spend_result(
+                Err(PlatformWalletError::Sdk(
+                    dash_sdk::Error::ProtocolVersionNotActive {
+                        method: "get_private_document_entries",
+                        required: 15,
+                        feature: None,
+                        network: 14,
+                        pinned: false,
+                        cause,
+                    },
+                )),
+                "private contact request",
+            )
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as i32, 70);
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request",
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
+    }
+
+    /// A persister that cannot keep a private payment's recovery state is
+    /// refused by the explicit private send and accept before anything is
+    /// sealed or paid; the refusal keeps its own code (73) through the spend
+    /// mapper they use, as the in-kind accept's blanket conversion does.
+    #[test]
+    fn map_spend_result_keeps_the_storage_configuration_refusal_at_73() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+            "private contact request",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as i32, 73);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported)
+                .code
+        );
+    }
+
+    /// A private payment refused because its wallet was removed first keeps
+    /// the lifecycle refusal code, not the generic operation failure.
+    #[test]
+    fn map_spend_result_keeps_a_wallet_removed_before_send_at_not_found() {
+        let removed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+        );
+        let result = map_spend_result(removed, "private contact request");
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(result.code as i32, 98);
+        assert!(message_of(&result).contains("wallet removed"));
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet
