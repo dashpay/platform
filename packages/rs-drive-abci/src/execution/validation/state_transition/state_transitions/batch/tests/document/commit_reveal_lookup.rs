@@ -644,148 +644,267 @@ mod commit_reveal_lookup_tests {
         );
     }
 
+    /// The protocol versions a consume is pinned at: 14 runs document reference validation 0
+    /// and the create conversion 0, which delete a consumed document by its id, and 15 runs
+    /// their generation 1, which deletes it from what its lookup read.
+    const CONSUME_PROTOCOL_VERSIONS: [u32; 2] = [14, 15];
+
+    /// The fixture contract with a `preorder` only a consume deletes
+    /// (`canBeDeleted: "onlyWhenConsumed"`).
+    fn preorder_only_consumed(contract: &mut serde_json::Value) {
+        contract["documentSchemas"]["preorder"]["canBeDeleted"] =
+            serde_json::json!("onlyWhenConsumed");
+    }
+
+    /// [`preorder_only_consumed`], with a `domain` contested by its normalized label, so a
+    /// reveal joins a contest and its consumed commitments are deleted beside the contest's own
+    /// trees rather than with a plain insert.
+    fn contested_domain_and_preorder_only_consumed(contract: &mut serde_json::Value) {
+        preorder_only_consumed(contract);
+        contract["documentSchemas"]["domain"]["indices"] = serde_json::json!([{
+            "name": "byNormalizedLabel",
+            "properties": [{ "normalizedLabel": "asc" }],
+            "unique": true,
+            "contested": {
+                "fieldMatches": [
+                    { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                ],
+                "resolution": 0
+            }
+        }]);
+    }
+
     #[tokio::test]
     async fn should_create_a_domain_revealing_its_writers_old_enough_commitment_and_consume_it() {
-        let mut fixture = CommitRevealFixture::new();
-        let alice = fixture.id(Who::Alice);
-        let salt = [0x11; 32];
-        let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
-            .await;
-        assert!(fixture.preorder_exists(preorder.id()));
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_| {},
+            );
+            let alice = fixture.id(Who::Alice);
+            let salt = [0x11; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            assert!(fixture.preorder_exists(preorder.id()));
 
-        let result = fixture
-            .reveal_domain(
-                Who::Alice,
-                subdomain("Alice", "al1ce", "dash", salt),
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
 
-        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
-            panic!("expected the reveal to be accepted, got {result:?}");
-        };
-        // The commitment is gone, deleted with the create, and its storage is
-        // refunded to its owner, the writer
-        assert!(!fixture.preorder_exists(preorder.id()));
-        assert!(
-            fee_result
-                .fee_refunds
-                .calculate_refunds_amount_for_identity(alice)
-                .is_some_and(|refund| refund > 0),
-            "expected the consumed commitment's storage to be refunded to its owner"
-        );
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the reveal to be accepted at {protocol_version}, got {result:?}");
+            };
+            // The commitment is gone, deleted with the create, and its storage is
+            // refunded to its owner, the writer
+            assert!(
+                !fixture.preorder_exists(preorder.id()),
+                "expected the commitment consumed at {protocol_version}"
+            );
+            assert!(
+                fee_result
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(alice)
+                    .is_some_and(|refund| refund > 0),
+                "expected the consumed commitment's storage to be refunded to its owner at \
+                 {protocol_version}"
+            );
 
-        // A second reveal of the same commitment finds nothing
-        let result = fixture
-            .reveal_domain(
-                Who::Alice,
-                subdomain("Alice", "al1ce", "dash", salt),
-                &[],
-                REVEAL_HEIGHT + 1,
-            )
-            .await;
-        assert_no_commitment(result, revealed_key(salt, "al1ce", "dash"));
+            // A second reveal of the same commitment finds nothing
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    REVEAL_HEIGHT + 1,
+                )
+                .await;
+            assert_no_commitment(result, revealed_key(salt, "al1ce", "dash"));
+        }
     }
 
     /// `canBeDeleted: "onlyWhenConsumed"` on the commitment: its owner can not take it back
     /// with a delete, and the reveal still consumes it.
     #[tokio::test]
     async fn should_consume_a_commitment_its_owner_can_not_delete() {
-        let mut fixture = CommitRevealFixture::new_with(|contract| {
-            contract["documentSchemas"]["preorder"]["canBeDeleted"] =
-                serde_json::json!("onlyWhenConsumed");
-        });
-        let alice = fixture.id(Who::Alice);
-        let salt = [0x15; 32];
-        let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
-            .await;
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                preorder_only_consumed,
+            );
+            let alice = fixture.id(Who::Alice);
+            let salt = [0x15; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
 
-        let result = fixture
-            .delete(Who::Alice, "preorder", &preorder, COMMIT_HEIGHT)
-            .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::PaidConsensusError {
-                error: ConsensusError::BasicError(
-                    BasicError::InvalidDocumentTransitionActionError(_)
-                ),
-                ..
-            }
-        );
-        assert!(fixture.preorder_exists(preorder.id()));
+            let result = fixture
+                .delete(Who::Alice, "preorder", &preorder, COMMIT_HEIGHT)
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        BasicError::InvalidDocumentTransitionActionError(_)
+                    ),
+                    ..
+                },
+                "expected the owner's delete refused at {protocol_version}"
+            );
+            assert!(fixture.preorder_exists(preorder.id()));
 
-        let result = fixture
-            .reveal_domain(
-                Who::Alice,
-                subdomain("Alice", "al1ce", "dash", salt),
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
-        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
-            panic!("expected the reveal to be accepted, got {result:?}");
-        };
-        // Consumed as a delete by its owner would be: gone, its storage refunded to its owner
-        assert!(!fixture.preorder_exists(preorder.id()));
-        assert!(
-            fee_result
-                .fee_refunds
-                .calculate_refunds_amount_for_identity(alice)
-                .is_some_and(|refund| refund > 0),
-            "expected the consumed commitment's storage to be refunded to its owner"
-        );
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the reveal to be accepted at {protocol_version}, got {result:?}");
+            };
+            // Consumed as a delete by its owner would be: gone, its storage refunded to its
+            // owner
+            assert!(
+                !fixture.preorder_exists(preorder.id()),
+                "expected the commitment consumed at {protocol_version}"
+            );
+            assert!(
+                fee_result
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(alice)
+                    .is_some_and(|refund| refund > 0),
+                "expected the consumed commitment's storage to be refunded to its owner at \
+                 {protocol_version}"
+            );
+        }
     }
 
     /// The same through a contested create, whose consumed commitments are deleted beside
     /// the contest's own trees rather than with a plain insert.
     #[tokio::test]
     async fn should_consume_a_commitment_its_owner_can_not_delete_through_a_contested_create() {
-        let mut fixture = CommitRevealFixture::new_with(|contract| {
-            contract["documentSchemas"]["preorder"]["canBeDeleted"] =
-                serde_json::json!("onlyWhenConsumed");
-            contract["documentSchemas"]["domain"]["indices"] = serde_json::json!([{
-                "name": "byNormalizedLabel",
-                "properties": [{ "normalizedLabel": "asc" }],
-                "unique": true,
-                "contested": {
-                    "fieldMatches": [
-                        { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
-                    ],
-                    "resolution": 0
-                }
-            }]);
-        });
-        let alice = fixture.id(Who::Alice);
-        let salt = [0x16; 32];
-        let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
-            .await;
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                contested_domain_and_preorder_only_consumed,
+            );
+            let alice = fixture.id(Who::Alice);
+            let salt = [0x16; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
 
-        let (domain, result) = fixture
-            .create(
-                Who::Alice,
-                "domain",
-                &subdomain("Alice", "al1ce", "dash", salt),
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
-        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
-            panic!("expected the contested reveal to be accepted, got {result:?}");
-        };
-        // The domain waits in its contest, not in the type's storage, and the commitment is
-        // consumed, its storage refunded to its owner
-        assert!(!fixture.document_exists("domain", domain.id()));
-        assert!(!fixture.preorder_exists(preorder.id()));
-        assert!(
-            fee_result
-                .fee_refunds
-                .calculate_refunds_amount_for_identity(alice)
-                .is_some_and(|refund| refund > 0),
-            "expected the consumed commitment's storage to be refunded to its owner"
+            let (domain, result) = fixture
+                .create(
+                    Who::Alice,
+                    "domain",
+                    &subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!(
+                    "expected the contested reveal to be accepted at {protocol_version}, got \
+                     {result:?}"
+                );
+            };
+            // The domain waits in its contest, not in the type's storage, and the commitment is
+            // consumed, its storage refunded to its owner
+            assert!(!fixture.document_exists("domain", domain.id()));
+            assert!(
+                !fixture.preorder_exists(preorder.id()),
+                "expected the commitment consumed at {protocol_version}"
+            );
+            assert!(
+                fee_result
+                    .fee_refunds
+                    .calculate_refunds_amount_for_identity(alice)
+                    .is_some_and(|refund| refund > 0),
+                "expected the consumed commitment's storage to be refunded to its owner at \
+                 {protocol_version}"
+            );
+        }
+    }
+
+    /// The fees of a reveal consuming its commitment, through a plain and through a contested
+    /// create: the processing fee, the storage fee and the refund of the consumed commitment's
+    /// storage to its owner. At 15 the create deletes the commitment from what its lookup read,
+    /// so it pays one read of it fewer than at 14; the storage fee and the refund are the same.
+    #[tokio::test]
+    async fn should_pin_the_fees_of_a_consume_through_a_plain_and_a_contested_create() {
+        // A fee of a reveal: processing, storage, and the refund to the commitment's owner
+        type Fees = (Credits, Credits, Credits);
+        let mut measured: Vec<(u32, Fees, Fees)> = Vec::new();
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fees = Vec::new();
+            for contested in [false, true] {
+                let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                    if contested {
+                        contested_domain_and_preorder_only_consumed(contract)
+                    } else {
+                        preorder_only_consumed(contract)
+                    }
+                });
+                let alice = fixture.id(Who::Alice);
+                let salt = [0x17; 32];
+                fixture
+                    .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                    .await;
+                let result = fixture
+                    .reveal_domain(
+                        Who::Alice,
+                        subdomain("Alice", "al1ce", "dash", salt),
+                        &[],
+                        REVEAL_HEIGHT,
+                    )
+                    .await;
+                let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+                else {
+                    panic!(
+                        "expected the reveal (contested {contested}) to be accepted at \
+                         {protocol_version}, got {result:?}"
+                    );
+                };
+                fees.push((
+                    fee_result.processing_fee,
+                    fee_result.storage_fee,
+                    fee_result
+                        .fee_refunds
+                        .calculate_refunds_amount_for_identity(alice)
+                        .unwrap_or_default(),
+                ));
+            }
+            measured.push((protocol_version, fees[0], fees[1]));
+        }
+        // Each row: the protocol version, then the plain create's fees, then the contested
+        // create's
+        assert_eq!(
+            measured,
+            vec![
+                (
+                    14,
+                    (1_777_440, 9_720_000, 15_181_239),
+                    (3_489_420, 75_411_000, 15_181_239)
+                ),
+                (
+                    15,
+                    (1_766_860, 9_720_000, 15_181_239),
+                    (3_478_880, 75_411_000, 15_181_239)
+                ),
+            ]
         );
     }
 
@@ -1291,41 +1410,46 @@ mod commit_reveal_lookup_tests {
     /// the create adds to while the consumed ticket leaves it.
     #[tokio::test]
     async fn should_create_a_ticket_that_consumes_an_earlier_ticket_of_its_writer() {
-        let mut fixture = CommitRevealFixture::new();
-        let first_secret = [0x31; 32];
-        let (first, result) = fixture
-            .create(
-                Who::Alice,
-                "ticket",
-                &[("commitment", Value::Bytes32(hash_double(first_secret)))],
-                &["secret"],
-                COMMIT_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. }
-        );
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = CommitRevealFixture::new_at(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_| {},
+            );
+            let first_secret = [0x31; 32];
+            let (first, result) = fixture
+                .create(
+                    Who::Alice,
+                    "ticket",
+                    &[("commitment", Value::Bytes32(hash_double(first_secret)))],
+                    &["secret"],
+                    COMMIT_HEIGHT,
+                )
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
 
-        let (second, result) = fixture
-            .create(
-                Who::Alice,
-                "ticket",
-                &[
-                    ("commitment", Value::Bytes32(hash_double([0x32; 32]))),
-                    ("secret", Value::Bytes32(first_secret)),
-                ],
-                &[],
-                REVEAL_HEIGHT,
-            )
-            .await;
-        assert_matches!(
-            result,
-            StateTransitionExecutionResult::SuccessfulExecution { .. },
-            "expected the second ticket to consume the first"
-        );
-        assert!(!fixture.document_exists("ticket", first.id()));
-        assert!(fixture.document_exists("ticket", second.id()));
+            let (second, result) = fixture
+                .create(
+                    Who::Alice,
+                    "ticket",
+                    &[
+                        ("commitment", Value::Bytes32(hash_double([0x32; 32]))),
+                        ("secret", Value::Bytes32(first_secret)),
+                    ],
+                    &[],
+                    REVEAL_HEIGHT,
+                )
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "expected the second ticket to consume the first at {protocol_version}"
+            );
+            assert!(!fixture.document_exists("ticket", first.id()));
+            assert!(fixture.document_exists("ticket", second.id()));
+        }
     }
 
     /// A key bound to the `domain` type signs a domain that reveals and
