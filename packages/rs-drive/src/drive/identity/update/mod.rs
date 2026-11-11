@@ -14,7 +14,6 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
-        use crate::drive::Drive;
         use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
@@ -247,15 +246,14 @@ mod tests {
                 )
                 .expect("expected to apply operations");
 
-            let fee_result = Drive::calculate_fee(
-                None,
-                Some(drive_operations),
-                &Epoch::new(0).unwrap(),
-                drive.config.epochs_per_era,
-                platform_version,
-                None,
-            )
-            .expect("expected fee result");
+            let fee_result = drive
+                .calculate_fee(
+                    None,
+                    Some(drive_operations),
+                    &Epoch::new(0).unwrap(),
+                    platform_version,
+                )
+                .expect("expected fee result");
 
             assert_eq!(fee_result, expected_fee_result);
 
@@ -399,10 +397,16 @@ mod tests {
 
     mod add_new_keys_to_masternode_identity {
         use super::*;
+        use crate::drive::Drive;
+        use crate::error::identity::IdentityError;
+        use crate::error::Error;
         use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+        use crate::util::batch::DriveOperation;
         use crate::util::batch::IdentityOperationType;
         use crate::util::estimated_layers::EstimatedLayers;
         use dpp::block::block_info::BlockInfo;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
         use dpp::platform_value::BinaryData;
@@ -489,6 +493,325 @@ mod tests {
                         "protocol version {protocol_version}, estimate {estimate}"
                     );
                 }
+            }
+        }
+
+        /// A masternode identity holding only a key with hash `[2; 20]`, created like Platform
+        /// creates one, at `platform_version`.
+        fn drive_with_masternode_identity(platform_version: &PlatformVersion) -> Drive {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let masternode_identity: Identity = IdentityV0 {
+                id: MASTERNODE_IDENTITY_ID.into(),
+                public_keys: BTreeMap::from([(
+                    0,
+                    masternode_key(0, KeyType::ECDSA_HASH160, Purpose::TRANSFER),
+                )]),
+                balance: 0,
+                revision: 0,
+            }
+            .into();
+            drive
+                .add_new_identity(
+                    masternode_identity,
+                    true,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to insert the masternode identity");
+            drive
+        }
+
+        /// A masternode key with id `id`, of `key_type` and `purpose`, and data `data`.
+        fn key_with_data(
+            id: KeyID,
+            key_type: KeyType,
+            purpose: Purpose,
+            data: [u8; 20],
+        ) -> IdentityPublicKey {
+            IdentityPublicKeyV0 {
+                id,
+                key_type,
+                purpose,
+                security_level: SecurityLevel::CRITICAL,
+                read_only: true,
+                data: BinaryData::new(data.to_vec()),
+                disabled_at: None,
+                contract_bounds: None,
+            }
+            .into()
+        }
+
+        fn add_keys(
+            drive: &Drive,
+            keys: Vec<IdentityPublicKey>,
+            platform_version: &PlatformVersion,
+        ) -> Result<(), Error> {
+            drive
+                .apply_drive_operations(
+                    vec![DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                            identity_id: MASTERNODE_IDENTITY_ID,
+                            non_unique_keys_to_add: keys,
+                        },
+                    )],
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .map(|_| ())
+        }
+
+        fn key_ids(drive: &Drive, platform_version: &PlatformVersion) -> Vec<KeyID> {
+            drive
+                .fetch_full_identity(MASTERNODE_IDENTITY_ID, None, platform_version)
+                .expect("expected to fetch the identity")
+                .expect("expected the identity")
+                .public_keys()
+                .keys()
+                .copied()
+                .collect()
+        }
+
+        fn holds_reference(drive: &Drive, hash: [u8; 20]) -> bool {
+            drive
+                .has_non_unique_public_key_hash_already_for_identity_operations(
+                    hash,
+                    MASTERNODE_IDENTITY_ID,
+                    None,
+                    &mut vec![],
+                    &PlatformVersion::latest().drive,
+                )
+                .expect("expected to read the reference")
+        }
+
+        /// Core accepts any 20 bytes as an operator payout or platform node id, so a masternode
+        /// identity can need a key whose hash a key added to it earlier has, such as a payout
+        /// equal to an earlier node id. Up to protocol version 14 that key fails the batch with
+        /// `IdentityKeyAlreadyExists`; from 15 it is stored under its own id, and the identity
+        /// keeps its one reference for the hash.
+        #[test]
+        fn should_add_a_key_whose_hash_the_identity_already_references_from_protocol_version_15() {
+            let hash = [0x9f; 20];
+            for (platform_version, added) in [
+                (
+                    PlatformVersion::get(14).expect("expected protocol version 14"),
+                    false,
+                ),
+                (PlatformVersion::latest(), true),
+            ] {
+                let drive = drive_with_masternode_identity(platform_version);
+                add_keys(
+                    &drive,
+                    vec![key_with_data(
+                        1,
+                        KeyType::EDDSA_25519_HASH160,
+                        Purpose::SYSTEM,
+                        hash,
+                    )],
+                    platform_version,
+                )
+                .expect("expected to add the first key");
+                let result = add_keys(
+                    &drive,
+                    vec![key_with_data(
+                        2,
+                        KeyType::ECDSA_HASH160,
+                        Purpose::TRANSFER,
+                        hash,
+                    )],
+                    platform_version,
+                );
+                let context = format!("protocol version {}", platform_version.protocol_version);
+                if added {
+                    result.expect("expected to add the second key");
+                    assert_eq!(key_ids(&drive, platform_version), [0, 1, 2], "{context}");
+                } else {
+                    assert!(
+                        matches!(
+                            result,
+                            Err(Error::Identity(IdentityError::IdentityKeyAlreadyExists(_)))
+                        ),
+                        "{context}: {result:?}"
+                    );
+                    assert_eq!(key_ids(&drive, platform_version), [0, 1], "{context}");
+                }
+                assert!(holds_reference(&drive, hash), "{context}");
+            }
+        }
+
+        /// Two keys with one hash in a single call are both stored from protocol version 15,
+        /// under one reference for the hash.
+        #[test]
+        fn should_add_two_keys_with_one_hash_in_one_call() {
+            let platform_version = PlatformVersion::latest();
+            let hash = [0x9e; 20];
+            let drive = drive_with_masternode_identity(platform_version);
+            add_keys(
+                &drive,
+                vec![
+                    key_with_data(1, KeyType::EDDSA_25519_HASH160, Purpose::SYSTEM, hash),
+                    key_with_data(2, KeyType::ECDSA_HASH160, Purpose::TRANSFER, hash),
+                ],
+                platform_version,
+            )
+            .expect("expected to add both keys");
+            assert_eq!(key_ids(&drive, platform_version), [0, 1, 2]);
+            assert!(holds_reference(&drive, hash));
+        }
+
+        /// Masternodes whose operators share a payout address add keys of one hash no identity held
+        /// before, to several identities in one batch. Each identity's operation queues that hash's
+        /// tree under the non-unique key hashes tree; from protocol version 15 the batch creates it
+        /// once and keeps every identity's key and entry, also where batches are checked for
+        /// consistency, which refuse the repeated insert at protocol version 14.
+        #[test]
+        fn should_add_keys_of_one_new_hash_to_several_identities_in_one_batch() {
+            let other_identity_id = [2; 32];
+            let hash = [0x9b; 20];
+            for (platform_version, applied) in [
+                (
+                    PlatformVersion::get(14).expect("expected protocol version 14"),
+                    false,
+                ),
+                (PlatformVersion::latest(), true),
+            ] {
+                let drive = drive_with_masternode_identity(platform_version);
+                let other_identity: Identity = IdentityV0 {
+                    id: other_identity_id.into(),
+                    public_keys: BTreeMap::from([(
+                        0,
+                        key_with_data(0, KeyType::ECDSA_HASH160, Purpose::TRANSFER, [3; 20]),
+                    )]),
+                    balance: 0,
+                    revision: 0,
+                }
+                .into();
+                drive
+                    .add_new_identity(
+                        other_identity,
+                        true,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to insert the other masternode identity");
+                let add = |identity_id: [u8; 32]| {
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                            identity_id,
+                            non_unique_keys_to_add: vec![key_with_data(
+                                1,
+                                KeyType::ECDSA_HASH160,
+                                Purpose::TRANSFER,
+                                hash,
+                            )],
+                        },
+                    )
+                };
+                let result = drive.apply_drive_operations(
+                    vec![add(MASTERNODE_IDENTITY_ID), add(other_identity_id)],
+                    true,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                );
+                let context = format!("protocol version {}", platform_version.protocol_version);
+                if applied {
+                    result.expect("expected to add both keys");
+                    assert_eq!(key_ids(&drive, platform_version), [0, 1], "{context}");
+                    assert!(holds_reference(&drive, hash), "{context}");
+                    assert!(
+                        drive
+                            .has_non_unique_public_key_hash_already_for_identity_operations(
+                                hash,
+                                other_identity_id,
+                                None,
+                                &mut vec![],
+                                &platform_version.drive,
+                            )
+                            .expect("expected to read the reference"),
+                        "{context}"
+                    );
+                } else {
+                    assert!(result.is_err(), "{context}: {result:?}");
+                }
+            }
+        }
+
+        /// Estimating the cost of a call with two keys of one hash counts the hash's reference
+        /// once, as applying it writes it once: fewer operations than for two keys of two hashes.
+        #[test]
+        fn should_estimate_one_reference_for_two_keys_with_one_hash() {
+            let platform_version = PlatformVersion::latest();
+            let drive = drive_with_masternode_identity(platform_version);
+            let estimated_operations = |second_hash: [u8; 20]| {
+                let mut estimated_costs = Some(EstimatedLayers::new());
+                IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                    identity_id: MASTERNODE_IDENTITY_ID,
+                    non_unique_keys_to_add: vec![
+                        key_with_data(1, KeyType::EDDSA_25519_HASH160, Purpose::SYSTEM, [0x9d; 20]),
+                        key_with_data(2, KeyType::ECDSA_HASH160, Purpose::TRANSFER, second_hash),
+                    ],
+                }
+                .into_low_level_drive_operations(
+                    &drive,
+                    &mut estimated_costs,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected operations")
+                .len()
+            };
+            assert!(estimated_operations([0x9d; 20]) < estimated_operations([0x9c; 20]));
+        }
+
+        /// A key whose hash is another identity's unique key hash is added without a non-unique
+        /// key hash reference, at protocol version 14 and from 15 alike.
+        #[test]
+        fn should_add_a_key_with_a_unique_key_hash_without_a_reference() {
+            for platform_version in [
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                PlatformVersion::latest(),
+            ] {
+                let drive = drive_with_masternode_identity(platform_version);
+                let user_identity = Identity::random_identity(3, Some(15), platform_version)
+                    .expect("expected a random identity");
+                let unique_hash = user_identity
+                    .public_keys()
+                    .values()
+                    .find(|key| key.key_type().is_unique_key_type())
+                    .expect("expected a unique key")
+                    .public_key_hash()
+                    .expect("expected the key's hash");
+                drive
+                    .add_new_identity(
+                        user_identity,
+                        false,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to insert the user identity");
+                add_keys(
+                    &drive,
+                    vec![key_with_data(
+                        1,
+                        KeyType::ECDSA_HASH160,
+                        Purpose::TRANSFER,
+                        unique_hash,
+                    )],
+                    platform_version,
+                )
+                .expect("expected to add the key");
+                let context = format!("protocol version {}", platform_version.protocol_version);
+                assert_eq!(key_ids(&drive, platform_version), [0, 1], "{context}");
+                assert!(!holds_reference(&drive, unique_hash), "{context}");
             }
         }
     }
@@ -853,7 +1176,6 @@ mod tests {
                     apply,
                     Some(&db_transaction),
                     platform_version,
-                    None,
                 )
                 .expect("should update revision");
 

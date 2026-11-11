@@ -218,7 +218,6 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("should update contract");
 
@@ -592,7 +591,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply the update");
 
@@ -702,7 +700,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to estimate the update");
 
@@ -771,7 +768,6 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
-                    None,
                 )
                 .expect("expected to apply the update");
             assert!(drive.cache.data_contracts.is_modified_in_block(contract_id));
@@ -805,7 +801,6 @@ mod tests {
                         true,
                         Some(&transaction),
                         platform_version,
-                        None,
                     )
                     .expect("expected to insert a note");
             }

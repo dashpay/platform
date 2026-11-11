@@ -8,12 +8,16 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
-    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
+    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
+    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
+    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
+    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
+    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -22,6 +26,7 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use platform_wallet::changeset::PlatformWalletPersistence;
 use platform_wallet::PlatformWalletManager;
 use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
@@ -175,6 +180,32 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     )
 }
 
+/// The persistence capabilities a manager created from these callbacks
+/// would attest, without creating one: the declaration intersected with what
+/// the vtable and the extension structurally carry, as
+/// [`platform_wallet_manager_create_with_extensions`] computes them. For a
+/// host adapter's own tests, such as the JNI layer checking which bridge
+/// overrides keep a capability. `persistence` is consumed: its `release_fn`
+/// runs before this returns.
+///
+/// # Safety
+/// As for [`platform_wallet_manager_create_with_extensions`]: `extension`
+/// must point to a readable [`PersistenceCallbacksExtension`] of at least
+/// its declared `struct_size`, and `persistence`'s context must be valid
+/// for its `release_fn`.
+pub unsafe fn effective_persistence_capabilities(
+    persistence: PersistenceCallbacks,
+    declared: &PersistenceCapabilitiesFFI,
+    extension: *const PersistenceCallbacksExtension,
+) -> PersistenceCapabilities {
+    FFIPersister::new_with_persistence_capabilities_and_extensions(
+        persistence,
+        persistence_capabilities_declaration(declared),
+        persistence_extension_callbacks(extension),
+    )
+    .persistence_capabilities()
+}
+
 /// Read one negotiated slot out of a size/version-tagged extension struct
 /// — the single authority for the gate every reader below applies. A slot
 /// is read only when the host's declared `struct_size` proves it was
@@ -289,6 +320,34 @@ unsafe fn persistence_extension_callbacks(
         load_asset_lock_operation_id: slot!(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
+        ),
+        persist_asset_lock_shielded_recipient: slot!(
+            on_persist_asset_lock_shielded_recipient_fn,
+            PersistAssetLockShieldedRecipientFn
+        ),
+        load_asset_lock_shielded_recipient: slot!(
+            on_load_asset_lock_shielded_recipient_fn,
+            LoadAssetLockShieldedRecipientFn
+        ),
+        persist_private_contact_scan_state: slot!(
+            on_persist_private_contact_scan_state_fn,
+            PersistPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state: slot!(
+            on_load_private_contact_scan_state_fn,
+            LoadPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_free: slot!(
+            on_load_private_contact_scan_state_free_fn,
+            FreePrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_wallets: slot!(
+            on_load_private_contact_scan_state_wallets_fn,
+            LoadPrivateContactScanStateWalletsFn
+        ),
+        load_private_contact_scan_state_wallets_free: slot!(
+            on_load_private_contact_scan_state_wallets_free_fn,
+            FreePrivateContactScanStateWalletsFn
         ),
     }
 }
@@ -867,6 +926,9 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contact_persistence::{
+        ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
+    };
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1370,6 +1432,137 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    /// The effective capabilities are the declaration intersected with what
+    /// the callbacks carry, and the vtable's `release_fn` runs once.
+    #[test]
+    fn should_compute_the_effective_persistence_capabilities_without_a_manager() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static RELEASES: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "C" fn release(_: *mut c_void) {
+            RELEASES.fetch_add(1, Ordering::SeqCst);
+        }
+        let declared = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                .bits(),
+        };
+        let extension = PersistenceCallbacksExtension::default();
+        let effective = unsafe {
+            effective_persistence_capabilities(
+                PersistenceCallbacks {
+                    context: std::ptr::NonNull::<u8>::dangling().as_ptr().cast(),
+                    release_fn: Some(release),
+                    on_changeset_begin_fn: Some(begin_changeset),
+                    on_changeset_end_fn: Some(end_changeset),
+                    ..PersistenceCallbacks::default()
+                },
+                &declared,
+                &extension,
+            )
+        };
+        assert!(effective.contains(PersistenceCapabilities::ATOMIC_CHANGESETS));
+        assert!(
+            !effective.contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+            "declared without the callbacks it needs"
+        );
+        assert_eq!(RELEASES.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn should_size_gate_private_contact_scan_state_slots_independently() {
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const PrivateContactRequestsPositionFFI,
+            _: *mut usize,
+            _: *mut *const PrivateShieldedAddressFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(
+            _: *mut c_void,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+        ) {
+        }
+        unsafe extern "C" fn list(_: *mut c_void, _: *mut *const [u8; 32], _: *mut usize) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free_list(_: *mut c_void, _: *const [u8; 32], _: usize) {}
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_private_contact_scan_state_fn: Some(persist),
+            on_load_private_contact_scan_state_fn: Some(load),
+            on_load_private_contact_scan_state_free_fn: Some(free),
+            on_load_private_contact_scan_state_wallets_fn: Some(list),
+            on_load_private_contact_scan_state_wallets_free_fn: Some(free_list),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_some());
+        // An extension sized before the wallet list leaves both list slots
+        // unread.
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_none());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_private_contact_scan_state_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
     }
 
     #[test]

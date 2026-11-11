@@ -9,7 +9,7 @@ mod dashpay;
 mod identity_ops;
 mod sync;
 
-pub use dashpay::DashPayState;
+pub use dashpay::{DashPayState, PrivateContact};
 
 // `block_time` + `key_storage` moved to `crate::wallet::identity::types`.
 // Re-export so every `impl ManagedIdentity` block below keeps working

@@ -29,7 +29,6 @@ use crate::platform_types::platform_state::platform_state_for_saving::v2::Platfo
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
@@ -69,7 +68,9 @@ pub struct PlatformState {
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
-    /// previous FeeVersions
+    /// The fee versions earlier epochs ran on. Saved with the state and not read by block
+    /// execution: from protocol version 15 a refund uses the schedule of the epoch that stored
+    /// the bytes, read from that epoch's tree, and before it the removing block's schedule.
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
 
     /// True when a field carried only by the full saved record has changed since

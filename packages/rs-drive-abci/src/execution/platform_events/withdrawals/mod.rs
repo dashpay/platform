@@ -54,3 +54,60 @@ fn withdrawal_amount_is_core_dust(
 
     Ok(amount_duffs < core_dust_threshold_duffs(&output_script, dust_relay_fee_per_kb))
 }
+
+#[cfg(test)]
+mod tests {
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{PubkeyHash, ScriptBuf, ScriptHash};
+    use dpp::identity::convert_credits_to_duffs;
+    use dpp::version::PLATFORM_VERSIONS;
+    use dpp::withdrawal::core_dust_threshold_duffs;
+
+    /// FAILED may only ever reach a withdrawal of asset unlock payload version 1 (see
+    /// `withdrawal_amount_is_core_dust`). A withdrawal pooled as version 2 under one protocol
+    /// version can expire under a later one, so a later dust relay fee must never be higher,
+    /// and a withdrawal of the minimum amount must never be Core dust, for the output scripts a
+    /// withdrawal can pay (P2PKH and P2SH).
+    #[test]
+    fn should_never_raise_the_dust_relay_fee_nor_make_the_minimum_withdrawal_dust() {
+        let output_scripts = [
+            ("P2PKH", ScriptBuf::new_p2pkh(&PubkeyHash::all_zeros())),
+            ("P2SH", ScriptBuf::new_p2sh(&ScriptHash::all_zeros())),
+        ];
+        let mut previous_dust_relay_fee = None;
+        for platform_version in PLATFORM_VERSIONS {
+            let protocol_version = platform_version.protocol_version;
+            let Some(dust_relay_fee_per_kb) =
+                platform_version.system_limits.core_dust_relay_fee_per_kb
+            else {
+                continue;
+            };
+            if let Some((previous_version, previous_fee)) = previous_dust_relay_fee {
+                assert!(
+                    dust_relay_fee_per_kb <= previous_fee,
+                    "protocol version {protocol_version} raises the dust relay fee of protocol \
+                     version {previous_version} from {previous_fee} to {dust_relay_fee_per_kb} \
+                     duffs/kB"
+                );
+            }
+            let min_withdrawal_duffs =
+                convert_credits_to_duffs(platform_version.system_limits.min_withdrawal_amount)
+                    .expect("expected the minimum withdrawal in duffs");
+            for (name, output_script) in &output_scripts {
+                let dust_threshold =
+                    core_dust_threshold_duffs(output_script, dust_relay_fee_per_kb);
+                assert!(
+                    min_withdrawal_duffs >= dust_threshold,
+                    "protocol version {protocol_version}: the minimum withdrawal of \
+                     {min_withdrawal_duffs} duffs is below the {name} dust threshold of \
+                     {dust_threshold} duffs"
+                );
+            }
+            previous_dust_relay_fee = Some((protocol_version, dust_relay_fee_per_kb));
+        }
+        assert!(
+            previous_dust_relay_fee.is_some(),
+            "some protocol version sets a dust relay fee"
+        );
+    }
+}

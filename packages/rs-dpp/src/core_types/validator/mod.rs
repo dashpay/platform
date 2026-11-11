@@ -139,7 +139,6 @@ impl ValidatorV0Setters for Validator {
 mod json_convertible_tests {
     use super::*;
     use crate::core_types::validator::v0::ValidatorV0;
-    use dashcore::hashes::Hash;
     use dashcore::{ProTxHash, PubkeyHash};
     use platform_value::platform_value;
     use serde_json::json;

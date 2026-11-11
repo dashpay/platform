@@ -441,7 +441,6 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    None,
                 )
                 .expect("expected to add to identity balance");
 
@@ -500,7 +499,6 @@ mod tests {
                     false,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to add to identity balance");
 

@@ -1,19 +1,31 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
-use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
+use crate::clients::{
+    BLOCK_QUERY_KEEPALIVE, BLOCK_QUERY_KEEPALIVE_RETRIES, CONNECT_TIMEOUT, REQUEST_TIMEOUT,
+};
 use crate::error::{DAPIResult, DapiError};
 use crate::utils::{
-    deserialize_string_number_or_null, deserialize_string_or_number, generate_jsonrpc_id,
+    deserialize_null_as_default, deserialize_string_number_or_null, deserialize_string_or_number,
+    generate_jsonrpc_id,
 };
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{OnceCell, broadcast};
 use tracing::{debug, error, info, trace, warn};
+
+/// Tenderdash heights are signed 64-bit integers.
+pub const MAX_TENDERDASH_HEIGHT: u64 = i64::MAX as u64;
+
+/// How many bytes of a body Tenderdash answered with go into a log line. A block's answer
+/// can be megabytes long.
+const LOGGED_BODY_BYTES: usize = 512;
 
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
@@ -29,8 +41,13 @@ use tracing::{debug, error, info, trace, warn};
 /// - Service errors (HTTP error codes) are logged with `tracing::debug!`
 pub struct TenderdashClient {
     client: ClientWithMiddleware,
+    /// Sends what a block query asks of Tenderdash, with no deadline: see
+    /// [`block_query_http_client`].
+    block_query_client: ClientWithMiddleware,
     base_url: String,
     websocket_client: Arc<TenderdashWebSocketClient>,
+    /// The network's validator quorum type, read from Tenderdash the first time it is needed.
+    validator_quorum_type: OnceCell<u32>,
 }
 
 #[cfg(test)]
@@ -38,12 +55,22 @@ impl TenderdashClient {
     /// Construct an unused fixture client without probing HTTP or WebSocket endpoints.
     pub(crate) fn without_test_connection() -> Self {
         Self {
-            client: ClientBuilder::new(Client::new()).build(),
+            client: http_client().expect("Tenderdash HTTP client"),
+            block_query_client: block_query_http_client().expect("Tenderdash block query client"),
             base_url: "http://tenderdash.invalid".to_owned(),
             websocket_client: Arc::new(TenderdashWebSocketClient::new(
                 "ws://tenderdash.invalid".to_owned(),
                 256,
             )),
+            validator_quorum_type: OnceCell::new(),
+        }
+    }
+
+    /// Construct a fixture client whose HTTP requests go to `base_url`.
+    pub(crate) fn with_test_base_url(base_url: String) -> Self {
+        Self {
+            base_url,
+            ..Self::without_test_connection()
         }
     }
 }
@@ -97,6 +124,115 @@ struct UnconfirmedTxParams<'a> {
 struct TxParams<'a> {
     hash: &'a str,
     prove: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BlockHeightParams {
+    height: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct ValidatorsParams {
+    per_page: u32,
+}
+
+/// The answers for one height of [`TenderdashClient::block_batch`]. Each call fails on its
+/// own, so a height past the tip does not take the other heights down with it.
+#[derive(Debug)]
+pub struct BlockBatchEntry {
+    pub block: DAPIResult<ResultBlock>,
+    pub results: DAPIResult<ResultBlockResults>,
+    /// `None` when the commit was not asked for.
+    pub commit: Option<DAPIResult<ResultCommit>>,
+}
+
+/// The JSON-RPC ids of one height's calls in a batch.
+#[derive(Debug)]
+struct BlockBatchIds {
+    block: String,
+    results: String,
+    commit: Option<String>,
+}
+
+/// Tenderdash answers a batch with an array, but a failure of the whole batch with one object.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum BatchResponseBody {
+    Batch(Vec<TenderdashResponse<Value>>),
+    Single(Box<TenderdashResponse<Value>>),
+}
+
+/// The calls for `heights`, in one list, and which ids belong to which height.
+fn block_batch_requests(
+    heights: RangeInclusive<u64>,
+    with_commit: bool,
+) -> (Vec<JsonRpcRequest<BlockHeightParams>>, Vec<BlockBatchIds>) {
+    let mut requests = Vec::new();
+    let mut ids = Vec::new();
+    for height in heights {
+        let mut call = |method| {
+            let request = JsonRpcRequest::new(method, BlockHeightParams { height });
+            let id = request.id.clone();
+            requests.push(request);
+            id
+        };
+        ids.push(BlockBatchIds {
+            block: call("block"),
+            results: call("block_results"),
+            commit: with_commit.then(|| call("commit")),
+        });
+    }
+    (requests, ids)
+}
+
+/// Index a batch's answers by id, the order of an array being no part of JSON-RPC.
+fn parse_batch_response(body: &str) -> DAPIResult<HashMap<String, TenderdashResponse<Value>>> {
+    let parsed: BatchResponseBody = serde_json::from_str(body)
+        .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))?;
+    match parsed {
+        BatchResponseBody::Batch(responses) => Ok(responses
+            .into_iter()
+            .filter_map(|response| Some((response.id.as_str()?.to_owned(), response)))
+            .collect()),
+        BatchResponseBody::Single(response) => match response.error {
+            Some(error) => Err(DapiError::from_tenderdash_error(error)),
+            None => Err(DapiError::Client(
+                "Tenderdash answered a batch with a single result".to_string(),
+            )),
+        },
+    }
+}
+
+/// Take the answer of one call out of a parsed batch.
+fn take_batch_result<T: serde::de::DeserializeOwned>(
+    responses: &mut HashMap<String, TenderdashResponse<Value>>,
+    id: &str,
+) -> DAPIResult<T> {
+    let response = responses.remove(id).ok_or_else(|| {
+        DapiError::Client("Tenderdash batch response is missing a call".to_string())
+    })?;
+    if let Some(error) = response.error {
+        return Err(DapiError::from_tenderdash_error(error));
+    }
+    let result = response
+        .result
+        .ok_or_else(|| DapiError::Client("Tenderdash response missing result field".to_string()))?;
+    serde_json::from_value(result)
+        .map_err(|e| DapiError::Client(format!("Failed to parse response: {}", e)))
+}
+
+/// Read the answers of a whole batch out of its body, one entry for each height asked.
+fn read_block_batch(body: &str, ids: Vec<BlockBatchIds>) -> DAPIResult<Vec<BlockBatchEntry>> {
+    let mut responses = parse_batch_response(body)?;
+
+    Ok(ids
+        .into_iter()
+        .map(|ids| BlockBatchEntry {
+            block: take_batch_result(&mut responses, &ids.block),
+            results: take_batch_result(&mut responses, &ids.results),
+            commit: ids.commit.map(|id| take_batch_result(&mut responses, &id)),
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -330,6 +466,223 @@ impl ExecTxResult {
 
 pub type TxResult = ExecTxResult;
 
+/// The part of Tenderdash's `block` result that DAPI reads.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResultBlock {
+    #[serde(default)]
+    pub block_id: BlockId,
+    /// `None` when the node has no block at the height.
+    #[serde(default)]
+    pub block: Option<Block>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockId {
+    /// The block hash, hex encoded.
+    #[serde(default)]
+    pub hash: String,
+    #[serde(default)]
+    pub parts: PartSetHeader,
+    /// Hex encoded.
+    #[serde(default)]
+    pub state_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PartSetHeader {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub total: u32,
+    /// Hex encoded.
+    #[serde(default)]
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConsensusVersion {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub block: u64,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub app: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Block {
+    #[serde(default)]
+    pub header: BlockHeader,
+    #[serde(default)]
+    pub data: BlockData,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockHeader {
+    #[serde(default)]
+    pub version: ConsensusVersion,
+    #[serde(default)]
+    pub chain_id: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub height: u64,
+    /// The block time, as an RFC 3339 timestamp.
+    #[serde(default)]
+    pub time: String,
+    #[serde(default)]
+    pub core_chain_locked_height: u32,
+    #[serde(default)]
+    pub last_block_id: BlockId,
+    /// Hex encoded, like the other hashes below.
+    #[serde(default)]
+    pub last_commit_hash: String,
+    #[serde(default)]
+    pub data_hash: String,
+    #[serde(default)]
+    pub validators_hash: String,
+    #[serde(default)]
+    pub next_validators_hash: String,
+    #[serde(default)]
+    pub consensus_hash: String,
+    #[serde(default)]
+    pub next_consensus_hash: String,
+    #[serde(default)]
+    pub app_hash: String,
+    #[serde(default)]
+    pub results_hash: String,
+    #[serde(default)]
+    pub evidence_hash: String,
+    #[serde(default)]
+    pub proposer_pro_tx_hash: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub proposed_protocol_version: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockData {
+    /// The block's transactions, base64 encoded.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs: Vec<String>,
+}
+
+/// The part of Tenderdash's `block_results` result that DAPI reads.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResultBlockResults {
+    /// One result for each transaction of the block, in block order.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub txs_results: Vec<BlockTxResult>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BlockTxResult {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub code: u32,
+    /// Base64 encoded.
+    #[serde(default, deserialize_with = "deserialize_null_as_default")]
+    pub data: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub gas_used: i64,
+}
+
+/// Tenderdash's `commit` result: a block's header and the quorum's signature of it.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResultCommit {
+    #[serde(default)]
+    pub signed_header: SignedHeader,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SignedHeader {
+    #[serde(default)]
+    pub header: BlockHeader,
+    #[serde(default)]
+    pub commit: Commit,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Commit {
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub round: u32,
+    #[serde(default)]
+    pub block_id: BlockId,
+    /// Hex encoded.
+    #[serde(default)]
+    pub quorum_hash: String,
+    /// Base64 encoded.
+    #[serde(default)]
+    pub threshold_block_signature: String,
+}
+
+/// The part of Tenderdash's `validators` result that DAPI reads.
+#[derive(Debug, Clone, Deserialize)]
+struct ResultValidators {
+    #[serde(deserialize_with = "deserialize_string_or_number")]
+    quorum_type: u32,
+}
+
+/// The HTTP client for ordinary Tenderdash calls, each of which fails after `REQUEST_TIMEOUT`.
+fn http_client() -> DAPIResult<ClientWithMiddleware> {
+    with_tracing(
+        Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT),
+    )
+}
+
+/// The HTTP client for what a block query asks of Tenderdash, which has no deadline.
+///
+/// Tenderdash does not stop work whose caller has gone away, so giving up on a call would
+/// only hide that it is still running there. This client waits until Tenderdash answers or
+/// closes the connection, which is when the work is over, so a caller can count a call
+/// against a limit for as long as Tenderdash is busy with it. Keepalive probes close the
+/// connection to a peer that died without saying so.
+fn block_query_http_client() -> DAPIResult<ClientWithMiddleware> {
+    with_tracing(
+        Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .tcp_keepalive(BLOCK_QUERY_KEEPALIVE)
+            .tcp_keepalive_interval(BLOCK_QUERY_KEEPALIVE)
+            .tcp_keepalive_retries(BLOCK_QUERY_KEEPALIVE_RETRIES),
+    )
+}
+
+fn with_tracing(builder: reqwest::ClientBuilder) -> DAPIResult<ClientWithMiddleware> {
+    let http_client = builder.build().map_err(|e| {
+        error!("Failed to build Tenderdash HTTP client: {}", e);
+        DapiError::Client(format!("Failed to build Tenderdash HTTP client: {}", e))
+    })?;
+
+    Ok(ClientBuilder::new(http_client)
+        .with(TracingMiddleware::default())
+        .build())
+}
+
+/// The start of a body, for a log line: at most `LOGGED_BODY_BYTES` bytes, ending on a
+/// character boundary.
+fn body_preview(body: &str) -> &str {
+    &body[..body.floor_char_boundary(LOGGED_BODY_BYTES)]
+}
+
+/// Read the answer to one call out of its body: the result, or the error Tenderdash gave.
+fn read_response<T>(body: &str) -> DAPIResult<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let response: TenderdashResponse<T> = serde_json::from_str(body).map_err(|e| {
+        error!(
+            "Failed to parse Tenderdash response: {}; body of {} bytes starts with: {}",
+            e,
+            body.len(),
+            body_preview(body)
+        );
+        DapiError::Client(format!("Failed to parse response: {}", e))
+    })?;
+
+    if let Some(error) = response.error {
+        debug!("Tenderdash RPC returned error: {}", error);
+        return Err(DapiError::from_tenderdash_error(error));
+    }
+
+    response
+        .result
+        .ok_or_else(|| DapiError::Client("Tenderdash response missing result field".to_string()))
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -338,10 +691,64 @@ impl TenderdashClient {
         T: serde::de::DeserializeOwned + Debug,
         R: Serialize + Debug,
     {
+        self.post_with(&self.client, request).await
+    }
+
+    /// `post` for a block query: the call has no deadline, see [`block_query_http_client`].
+    ///
+    /// A full block is megabytes of JSON. Reading that much on an async thread would hold up
+    /// the other requests it serves, so the answer is read on the blocking pool.
+    async fn post_for_block_query<T, R>(&self, request: &R) -> DAPIResult<T>
+    where
+        T: serde::de::DeserializeOwned + Debug + Send + 'static,
+        R: Serialize + Debug,
+    {
         let start = tokio::time::Instant::now();
 
         let response_body = self
-            .client
+            .post_for_body(&self.block_query_client, request)
+            .await?;
+        let result =
+            tokio::task::spawn_blocking(move || read_response::<T>(&response_body)).await?;
+
+        tracing::trace!(
+            elapsed = ?start.elapsed(),
+            request = ?request,
+            response = ?result,
+            "tenderdash_client request executed");
+
+        result
+    }
+
+    async fn post_with<T, R>(&self, client: &ClientWithMiddleware, request: &R) -> DAPIResult<T>
+    where
+        T: serde::de::DeserializeOwned + Debug,
+        R: Serialize + Debug,
+    {
+        let start = tokio::time::Instant::now();
+
+        let response_body = self.post_for_body(client, request).await?;
+        let result = read_response::<T>(&response_body);
+
+        tracing::trace!(
+            elapsed = ?start.elapsed(),
+            request = ?request,
+            response = ?result,
+            "tenderdash_client request executed");
+
+        result
+    }
+
+    /// Send a request or a batch of them, returning the body Tenderdash answered with.
+    async fn post_for_body<R>(
+        &self,
+        client: &ClientWithMiddleware,
+        request: &R,
+    ) -> DAPIResult<String>
+    where
+        R: Serialize + Debug,
+    {
+        client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .json(request)
@@ -359,31 +766,7 @@ impl TenderdashClient {
             .map_err(|e| {
                 error!("Failed to read Tenderdash response body: {}", e);
                 DapiError::Client(format!("Failed to read response body: {}", e))
-            })?;
-
-        let response: TenderdashResponse<T> =
-            serde_json::from_str(&response_body).map_err(|e| {
-                error!(
-                    "Failed to parse Tenderdash response: {}; full body: {}",
-                    e, response_body
-                );
-                DapiError::Client(format!("Failed to parse response: {}", e))
-            })?;
-
-        tracing::trace!(
-            elapsed = ?start.elapsed(),
-            request = ?request,
-            response = ?response,
-            "tenderdash_client request executed");
-
-        if let Some(error) = response.error {
-            debug!("Tenderdash RPC returned error: {}", error);
-            return Err(DapiError::from_tenderdash_error(error));
-        }
-
-        response.result.ok_or_else(|| {
-            DapiError::Client("Tenderdash response missing result field".to_string())
-        })
+            })
     }
 
     /// Create a new TenderdashClient with HTTP and WebSocket support.
@@ -398,25 +781,14 @@ impl TenderdashClient {
             "Creating Tenderdash client with WebSocket support"
         );
 
-        let http_client = Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
-            .build()
-            .map_err(|e| {
-                error!("Failed to build Tenderdash HTTP client: {}", e);
-                DapiError::Client(format!("Failed to build Tenderdash HTTP client: {}", e))
-            })?;
-
-        let client = ClientBuilder::new(http_client)
-            .with(TracingMiddleware::default())
-            .build();
-
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 256));
 
         let tenderdash_client = Self {
-            client,
+            client: http_client()?,
+            block_query_client: block_query_http_client()?,
             base_url: uri.to_string(),
             websocket_client: websocket_client.clone(),
+            validator_quorum_type: OnceCell::new(),
         };
 
         if let Err(e) = tenderdash_client.validate_connection().await {
@@ -522,6 +894,60 @@ impl TenderdashClient {
 
         self.post(&request).await
     }
+
+    /// Get the block at a height
+    pub async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+        let request = JsonRpcRequest::new("block", BlockHeightParams { height });
+
+        self.post_for_block_query(&request).await
+    }
+
+    /// Get the execution results of the block at a height
+    pub async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
+        let request = JsonRpcRequest::new("block_results", BlockHeightParams { height });
+
+        self.post_for_block_query(&request).await
+    }
+
+    /// Read the block, results and optionally commit of each height in one HTTP request.
+    ///
+    /// Tenderdash takes one height per call, and a JSON-RPC batch carries them all at once.
+    /// The whole range is read before anything is returned, so a caller that keeps only part
+    /// of it has still paid for all of it.
+    pub async fn block_batch(
+        &self,
+        heights: RangeInclusive<u64>,
+        with_commit: bool,
+    ) -> DAPIResult<Vec<BlockBatchEntry>> {
+        let (requests, ids) = block_batch_requests(heights, with_commit);
+        let body = self
+            .post_for_body(&self.block_query_client, &requests)
+            .await?;
+
+        // A batch can carry ten full blocks. Reading that much JSON on an async thread would
+        // hold up the other requests it serves, so it runs on the blocking pool.
+        tokio::task::spawn_blocking(move || read_block_batch(&body, ids)).await?
+    }
+
+    /// Get the header of the block at a height and the quorum's signature of it
+    pub async fn commit(&self, height: u64) -> DAPIResult<ResultCommit> {
+        let request = JsonRpcRequest::new("commit", BlockHeightParams { height });
+
+        self.post_for_block_query(&request).await
+    }
+
+    /// Get the network's validator quorum type, which Tenderdash fixes at genesis.
+    pub async fn validator_quorum_type(&self) -> DAPIResult<u32> {
+        self.validator_quorum_type
+            .get_or_try_init(|| async {
+                let request = JsonRpcRequest::new("validators", ValidatorsParams { per_page: 1 });
+                let result: ResultValidators = self.post_for_block_query(&request).await?;
+                Ok(result.quorum_type)
+            })
+            .await
+            .copied()
+    }
+
     /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         self.websocket_client.subscribe()
@@ -539,5 +965,205 @@ impl TenderdashClient {
     /// Return a clone of the underlying WebSocket client to allow shared listeners.
     pub fn websocket_client(&self) -> Arc<TenderdashWebSocketClient> {
         self.websocket_client.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn answer(id: &str, result: Value) -> Value {
+        json!({ "jsonrpc": "2.0", "id": id, "result": result })
+    }
+
+    fn failure(id: &str, data: &str) -> Value {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32603, "message": "Internal error", "data": data },
+        })
+    }
+
+    #[test]
+    fn should_ask_for_each_height_in_one_list() {
+        let (requests, ids) = block_batch_requests(7..=8, false);
+
+        let calls = requests
+            .iter()
+            .map(|request| (request.method, request.params.height))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            calls,
+            [
+                ("block", 7),
+                ("block_results", 7),
+                ("block", 8),
+                ("block_results", 8),
+            ]
+        );
+        assert_eq!(ids.len(), 2);
+        assert!(ids.iter().all(|ids| ids.commit.is_none()));
+    }
+
+    #[test]
+    fn should_ask_for_the_commit_only_when_told_to() {
+        let (requests, ids) = block_batch_requests(7..=7, true);
+
+        let methods = requests
+            .iter()
+            .map(|request| request.method)
+            .collect::<Vec<_>>();
+        assert_eq!(methods, ["block", "block_results", "commit"]);
+        assert_eq!(ids[0].commit.as_deref(), Some(requests[2].id.as_str()));
+    }
+
+    #[test]
+    fn should_serialize_a_batch_as_a_json_array() {
+        let (requests, _) = block_batch_requests(7..=7, false);
+
+        let body = serde_json::to_value(&requests).unwrap();
+
+        assert_eq!(body[0]["method"], "block");
+        assert_eq!(body[0]["params"]["height"], 7);
+        assert_eq!(body[1]["method"], "block_results");
+    }
+
+    #[test]
+    fn should_match_batch_answers_by_id_in_any_order() {
+        let body = json!([
+            answer("b", json!({ "txs_results": [{ "code": 5 }] })),
+            answer("a", json!({ "block_id": { "hash": "AB" } })),
+        ])
+        .to_string();
+
+        let mut responses = parse_batch_response(&body).unwrap();
+
+        let block: ResultBlock = take_batch_result(&mut responses, "a").unwrap();
+        let results: ResultBlockResults = take_batch_result(&mut responses, "b").unwrap();
+        assert_eq!(block.block_id.hash, "AB");
+        assert_eq!(results.txs_results[0].code, 5);
+    }
+
+    #[test]
+    fn should_keep_a_failed_call_from_failing_the_others() {
+        let body = json!([
+            failure("a", "could not find results for height #6"),
+            answer("b", json!({ "txs_results": [] })),
+        ])
+        .to_string();
+
+        let mut responses = parse_batch_response(&body).unwrap();
+
+        let failed: DAPIResult<ResultBlockResults> = take_batch_result(&mut responses, "a");
+        assert!(failed.unwrap_err().is_missing_tenderdash_height());
+        let answered: ResultBlockResults = take_batch_result(&mut responses, "b").unwrap();
+        assert!(answered.txs_results.is_empty());
+    }
+
+    #[test]
+    fn should_read_a_batch_into_one_entry_for_each_height() {
+        let (_, ids) = block_batch_requests(7..=8, true);
+        let body = json!([
+            answer(
+                ids[1].commit.as_deref().unwrap(),
+                json!({ "signed_header": { "header": { "height": "8" } } })
+            ),
+            failure(&ids[1].results, "could not find results for height #8"),
+            answer(&ids[1].block, json!({ "block_id": { "hash": "08" } })),
+            answer(&ids[0].results, json!({ "txs_results": [{ "code": 5 }] })),
+            answer(&ids[0].block, json!({ "block_id": { "hash": "07" } })),
+        ])
+        .to_string();
+
+        let mut entries = read_block_batch(&body, ids).unwrap().into_iter();
+
+        let first = entries.next().unwrap();
+        assert_eq!(first.block.unwrap().block_id.hash, "07");
+        assert_eq!(first.results.unwrap().txs_results[0].code, 5);
+        assert!(matches!(first.commit, Some(Err(DapiError::Client(_)))));
+        let second = entries.next().unwrap();
+        assert_eq!(second.block.unwrap().block_id.hash, "08");
+        assert!(second.results.unwrap_err().is_missing_tenderdash_height());
+        let commit = second.commit.unwrap().unwrap();
+        assert_eq!(commit.signed_header.header.height, 8);
+        assert!(entries.next().is_none());
+    }
+
+    #[test]
+    fn should_report_a_call_tenderdash_did_not_answer() {
+        let mut responses =
+            parse_batch_response(&json!([answer("a", json!({}))]).to_string()).unwrap();
+
+        let missing: DAPIResult<ResultBlock> = take_batch_result(&mut responses, "b");
+
+        assert!(matches!(missing, Err(DapiError::Client(_))));
+    }
+
+    #[test]
+    fn should_fail_when_tenderdash_rejects_the_whole_batch() {
+        let body = failure("", "batch contains 101 requests, but the maximum is 100").to_string();
+
+        assert!(matches!(
+            parse_batch_response(&body),
+            Err(DapiError::TenderdashClientError(_))
+        ));
+    }
+
+    #[test]
+    fn should_fail_on_a_body_that_is_not_a_batch_response() {
+        assert!(matches!(
+            parse_batch_response("not json"),
+            Err(DapiError::Client(_))
+        ));
+        assert!(matches!(
+            parse_batch_response(&answer("a", json!({})).to_string()),
+            Err(DapiError::Client(_))
+        ));
+    }
+
+    #[test]
+    fn should_read_the_answer_to_a_single_call() {
+        let body = answer("a", json!({ "quorum_type": 6 })).to_string();
+        let result: ResultValidators = read_response(&body).unwrap();
+        assert_eq!(result.quorum_type, 6);
+
+        let rejected: DAPIResult<ResultValidators> =
+            read_response(&failure("a", "batch contains 101 requests").to_string());
+        assert!(matches!(rejected, Err(DapiError::TenderdashClientError(_))));
+
+        let without_result: DAPIResult<ResultValidators> =
+            read_response(&json!({ "jsonrpc": "2.0", "id": "a" }).to_string());
+        assert!(matches!(without_result, Err(DapiError::Client(_))));
+
+        let not_json: DAPIResult<ResultValidators> = read_response("not json");
+        assert!(matches!(not_json, Err(DapiError::Client(_))));
+    }
+
+    #[test]
+    fn should_log_only_the_start_of_a_body() {
+        assert_eq!(body_preview("short"), "short");
+
+        let long = "a".repeat(LOGGED_BODY_BYTES * 4);
+        assert_eq!(body_preview(&long).len(), LOGGED_BODY_BYTES);
+
+        // "é" is two bytes, and the limit falls in the middle of one
+        let accented = format!("a{}", "é".repeat(LOGGED_BODY_BYTES));
+        assert_eq!(body_preview(&accented).len(), LOGGED_BODY_BYTES - 1);
+    }
+
+    #[test]
+    fn should_read_the_validator_quorum_type() {
+        let result: ResultValidators = serde_json::from_value(json!({
+            "block_height": "7",
+            "validators": [],
+            "count": "0",
+            "total": "0",
+            "quorum_type": 6,
+            "quorum_hash": "AB",
+        }))
+        .unwrap();
+
+        assert_eq!(result.quorum_type, 6);
     }
 }

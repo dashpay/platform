@@ -39,7 +39,7 @@ use dapi_grpc::platform::v0::{
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore_rpc::dashcore::ProTxHash;
 use dpp::identity::KeyID;
 use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};

@@ -17,7 +17,6 @@
 use std::collections::BTreeMap;
 use std::os::raw::c_void;
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::PlatformAddress;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};

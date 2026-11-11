@@ -238,6 +238,10 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_new_non_unique_keys_to_identity: FeatureVersion,
     pub add_new_unique_keys_to_identity: FeatureVersion,
     pub add_new_keys_to_identity: FeatureVersion,
+    /// Adds keys to a masternode identity. Version 1 (protocol version 15) adds a key whose hash
+    /// the identity already holds a non-unique key hash reference for, or that an earlier key of
+    /// the same call has, without a second reference.
+    pub add_new_keys_to_masternode_identity: FeatureVersion,
     pub insert_identity_balance: FeatureVersion,
     pub initialize_negative_identity_balance: FeatureVersion,
     pub add_to_identity_balance: FeatureVersion,

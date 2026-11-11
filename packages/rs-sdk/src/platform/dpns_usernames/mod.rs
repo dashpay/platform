@@ -95,7 +95,7 @@ fn preorder_revealable(preorder: &Document, ttl_seconds: Option<u32>, now_ms: u6
 
 /// Hash a buffer twice using SHA256 (double SHA256)
 fn hash_double(data: Vec<u8>) -> [u8; 32] {
-    use dpp::dashcore::hashes::{sha256d, Hash};
+    use dpp::dashcore::hashes::sha256d;
     // sha256d already does double SHA256
     let hash = sha256d::Hash::hash(&data);
     hash.to_byte_array()
@@ -924,7 +924,7 @@ mod tests {
     }
 
     fn sha256d(parts: &[&[u8]]) -> [u8; 32] {
-        use dpp::dashcore::hashes::{sha256d, Hash};
+        use dpp::dashcore::hashes::sha256d;
         sha256d::Hash::hash(&parts.concat()).to_byte_array()
     }
 

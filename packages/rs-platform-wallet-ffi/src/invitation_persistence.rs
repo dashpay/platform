@@ -80,7 +80,6 @@ pub fn status_to_u8(status: &InvitationStatus) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     fn entry(vout: u32, status: InvitationStatus) -> InvitationEntry {
         InvitationEntry {

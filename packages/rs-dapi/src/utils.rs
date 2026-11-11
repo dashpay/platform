@@ -20,6 +20,15 @@ pub fn generate_jsonrpc_id() -> String {
     format!("{timestamp_ns}-{pid}-{counter}")
 }
 
+/// Read a JSON `null` as the type's default; Tenderdash encodes an empty list as `null`.
+pub fn deserialize_null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 pub fn deserialize_string_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,

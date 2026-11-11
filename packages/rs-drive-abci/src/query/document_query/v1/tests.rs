@@ -4073,7 +4073,6 @@ mod having_trust_boundary {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }

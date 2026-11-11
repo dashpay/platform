@@ -8,7 +8,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
+use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
@@ -43,11 +43,7 @@ use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::prelude::AddressNonce;
 
 #[allow(clippy::too_many_arguments)]
@@ -212,28 +208,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
-            // An identity create's identity id must be the one its asset lock's outpoint
-            // derives, and a block refuses one whose id is not. The id is outside the bytes the
-            // asset lock key signs, so it is compared here, before the asset lock proof is
-            // verified, and such a transition is refused without that verification. Basic
-            // structure has checked that the outpoint exists. Admission is not consensus, so
-            // every protocol version gets this.
-            if let StateTransition::IdentityCreate(identity_create) = state_transition {
-                if identity_create.asset_lock_proof().create_identifier()?
-                    != identity_create.identity_id()
-                {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_error(
-                            BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
-                                "identity_id".to_string(),
-                                "does not match created identifier from asset lock".to_string(),
-                            ))
-                            .into(),
-                        ),
-                    );
-                }
-            }
-
             // Validate minimum fee for shielded spending transitions (stateless, uses public
             // value_balance). This is cheaper than proof verification so we check it first.
             // Only applies to ShieldedTransfer/Unshield/ShieldedWithdrawal — Shield pays from
@@ -321,31 +295,23 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // left to the block. Admission is not consensus, so every protocol version gets this.
             // They are verified by generation 0, the generation identity update advanced structure
             // validation 1 uses, so admission refuses the same proofs such a block refuses.
-            // The verification holds node-local check_tx proof capacity, weighted by the number of
-            // added keys, so admission cannot take the capacity block processing needs; when none
-            // is free the update is answered busy and may be resubmitted. An update adding no key
-            // verifies no proof and takes none.
+            // The proofs are signatures, verified as identity create verifies the same proofs,
+            // without the check_tx proof capacity: that capacity bounds shielded proof verification,
+            // and an update that had to take it would be answered busy whenever shielded proofs
+            // hold it, while updates with a failing proof, which no fee pays for, would keep it
+            // from shielded transitions.
             if let StateTransition::IdentityUpdate(identity_update) = state_transition {
-                let added_keys = identity_update.public_keys_to_add().len();
-                if added_keys > 0 {
-                    let _permit =
-                        proof_verifier
-                            .try_acquire(added_keys)
-                            .ok_or(Error::Execution(
-                                ExecutionError::CheckTxProofVerificationBusy,
-                            ))?;
-                    let result = identity_update.validate_added_key_proofs_of_possession_v0(
-                        &state_transition.signable_bytes()?,
-                        &mut state_transition_execution_context,
-                    );
+                let result = identity_update.validate_added_key_proofs_of_possession_v0(
+                    &state_transition.signable_bytes()?,
+                    &mut state_transition_execution_context,
+                );
 
-                    if !result.is_valid() {
-                        return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                                result.errors,
-                            ),
-                        );
-                    }
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
                 }
             }
 

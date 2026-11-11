@@ -142,9 +142,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     private_document_store_target_chunk_bytes: None,
     private_document_store_min_chunk_power: None,
     private_document_store_max_chunk_power: None,
+    max_private_document_entries_per_transition: None,
     max_references_per_document: 256, // refersTo (new in v14): contract registration caps the references one document carries, a typed array of references counting its maxItems
     max_reference_operands: 4, // refersTo anyOf / allOf (new in v14): contract registration caps the operands one list holds
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
+    max_document_type_requirement_slots: 4, // backfilled: dynamic references parse from protocol version 15
     max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
     max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
     max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read

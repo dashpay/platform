@@ -1298,9 +1298,11 @@ pub struct ReceivedContactRequestKey {
 /// (a `sent_requests` insert clears a prior `removed_sent`, an un-ignore
 /// clears a prior ignore, and vice versa), keeping the two sets
 /// disjoint. This covers `sent_requests` vs `removed_sent`,
-/// `incoming_requests` vs `removed_incoming`, and `ignored` vs
-/// `unignored`. `established` has no opposing tombstone set and rides
-/// plain last-write-wins.
+/// `incoming_requests` vs `removed_incoming`, `ignored` vs
+/// `unignored`, and `private_shielded_addresses` vs
+/// `removed_private_shielded_addresses`. `established` and
+/// `private_contact_requests_positions` have no opposing tombstone set
+/// and ride plain last-write-wins.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
@@ -1330,6 +1332,66 @@ pub struct ContactChangeSet {
     /// sweep. Kept as a separate set (rather than a shrinking `ignored`
     /// snapshot) so the changeset's insert-XOR-tombstone discipline holds.
     pub unignored: BTreeSet<(Identifier, Identifier)>,
+    /// The position of DashPay's private contact request store each owner
+    /// identity reads from next, keyed by owner, with the fingerprint of the
+    /// scanning keys it holds for: every entry before it was read with those
+    /// keys and what it held for the owner stored. Written only for a backend
+    /// attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+    /// and only after the stores of what the entries before it held, so a
+    /// restored position never covers a request that did not reach disk. A
+    /// rewind (un-ignoring a sender, or the scanning keys changing) writes
+    /// the lower position. Last write wins.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_contact_requests_positions: BTreeMap<Identifier, PrivateContactRequestsPosition>,
+    /// The Orchard address each contact's tracked private request to the
+    /// owner carries, keyed by `(owner, contact)`: 43 bytes, an 11-byte
+    /// diversifier and a 32-byte transmission key. Written only for a
+    /// backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// Reconciled last-write-wins against
+    /// [`Self::removed_private_shielded_addresses`] on merge.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::private_shielded_addresses"
+        )
+    )]
+    pub private_shielded_addresses: BTreeMap<(Identifier, Identifier), [u8; 43]>,
+    /// `(owner, contact)` pairs whose tracked private request carries no
+    /// shielded address any more: the removal tombstone for
+    /// [`Self::private_shielded_addresses`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub removed_private_shielded_addresses: BTreeSet<(Identifier, Identifier)>,
+}
+
+/// Where an identity reads DashPay's private contact request store from
+/// next, and the scanning keys that position holds for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PrivateContactRequestsPosition {
+    /// The store position read from next.
+    pub position: u64,
+    /// SHA-256 over the identity's HD index and each `ECDSA_SECP256K1`
+    /// `ENCRYPTION` or `DECRYPTION` key (id, purpose and data, in key id
+    /// order) the entries before `position` were scanned with
+    /// (`ManagedIdentity::private_scan_key_fingerprint`). A loaded position
+    /// whose fingerprint is not the identity's is read again from 0.
+    pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request this identity paid for may still be
+    /// unresolved: written set before such a payment may reach the network,
+    /// and cleared once the identity holds no private request it is paying
+    /// for or has not read back (each read back, definitively rejected, or
+    /// released before it was broadcast). Loaded set, it holds the identity's
+    /// public contact requests, sent or accepted, in every build, until a
+    /// restoration from the shielded store restores the reservations it
+    /// stands for (`PlatformWallet::restore_private_contact_payments`). A
+    /// build without the `shielded` feature never restores them, so it keeps
+    /// the identity held: its private payment may still execute, and a
+    /// public request would publish the pair the private one kept off chain.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_payments_unresolved: bool,
 }
 
 impl Merge for ContactChangeSet {
@@ -1370,6 +1432,20 @@ impl Merge for ContactChangeSet {
         }
         self.ignored.extend(other.ignored);
         self.unignored.extend(other.unignored);
+
+        self.private_contact_requests_positions
+            .extend(other.private_contact_requests_positions);
+
+        for key in other.removed_private_shielded_addresses.iter() {
+            self.private_shielded_addresses.remove(key);
+        }
+        for key in other.private_shielded_addresses.keys() {
+            self.removed_private_shielded_addresses.remove(key);
+        }
+        self.private_shielded_addresses
+            .extend(other.private_shielded_addresses);
+        self.removed_private_shielded_addresses
+            .extend(other.removed_private_shielded_addresses);
     }
 
     fn is_empty(&self) -> bool {
@@ -1380,6 +1456,9 @@ impl Merge for ContactChangeSet {
             && self.established.is_empty()
             && self.ignored.is_empty()
             && self.unignored.is_empty()
+            && self.private_contact_requests_positions.is_empty()
+            && self.private_shielded_addresses.is_empty()
+            && self.removed_private_shielded_addresses.is_empty()
     }
 }
 
@@ -1493,6 +1572,18 @@ pub struct AssetLockChangeSet {
     pub removed: BTreeSet<OutPoint>,
 }
 
+/// Byte length of a raw Orchard payment address (`OrchardAddress::to_raw_bytes`).
+pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
+
+/// The raw bytes of an Orchard payment address, as `OrchardAddress::to_raw_bytes`
+/// gives them and every FFI surface carries them (`recipient_raw_43`).
+///
+/// The changeset, the tracked locks and the persistence backends are built
+/// without the `shielded` feature, where `dpp::address_funds::OrchardAddress`
+/// does not exist, so they carry the recipient raw. Only shielded code
+/// converts it back into an address, and the resume check compares bytes.
+pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1527,17 +1618,30 @@ pub struct AssetLockEntry {
         serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
     )]
     pub proof: Option<AssetLockProof>,
+    /// The Orchard recipient a shielded funding was built to pay (raw 43-byte
+    /// address); `None` for other funding types and for legacy rows. Like
+    /// `operation_id`, immutable once recorded.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
+        )
+    )]
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association when folding or replaying
-    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
-    /// caller must discard the whole snapshot so its lifecycle cannot be
-    /// attached to a different operation.
+    /// Preserve the immutable operation association and shielded recipient
+    /// when folding or replaying a possibly stale snapshot. Returns false for
+    /// a conflicting UUID or recipient: the caller must discard the whole
+    /// snapshot so its lifecycle cannot be attached to a different operation
+    /// or redirect a pending shielded funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
+        previous_shielded_recipient: Option<ShieldedRecipientRaw>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1548,6 +1652,16 @@ impl AssetLockEntry {
                 return false;
             }
             self.operation_id = Some(previous_id);
+        }
+        if let Some(previous_recipient) = previous_shielded_recipient {
+            if self
+                .shielded_recipient
+                .is_some_and(|incoming| incoming != previous_recipient)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting shielded recipient");
+                return false;
+            }
+            self.shielded_recipient = Some(previous_recipient);
         }
         true
     }
@@ -1570,15 +1684,18 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry
+                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
                     || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
                     // Terminality guards lifecycle state, never the operation
-                    // association carried by a delayed snapshot.
+                    // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
+                    existing.shielded_recipient = entry.shielded_recipient;
                     continue;
                 }
             }
@@ -2512,8 +2629,6 @@ mod serde_compat_tests {
     /// it.
     #[test]
     fn a_populated_sweep_batch_round_trips() {
-        use dashcore::hashes::Hash;
-
         let loser = Txid::from_byte_array([0x11; 32]);
         let winner = Txid::from_byte_array([0x22; 32]);
         let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
@@ -2731,7 +2846,6 @@ mod tests {
     /// Consumed — while Consumed itself must still land over anything.
     #[test]
     fn asset_lock_merge_never_regresses_consumed() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         let outpoint = OutPoint {
@@ -2740,6 +2854,7 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            shielded_recipient: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2807,6 +2922,34 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
+
+        // The recorded shielded recipient survives a later snapshot without
+        // one (reconstruction, a status advance) and vetoes a conflicting one.
+        let recipient = [0x71u8; SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some(recipient);
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].shielded_recipient,
+            Some(recipient)
+        );
+        assert_eq!(
+            recorded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
 
         // Non-terminal transitions stay last-write-wins in both
         // directions (live advances overwrite RecoveredFromChain, and
@@ -3455,6 +3598,7 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            shielded_recipient: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
@@ -3736,7 +3880,6 @@ mod tests {
 #[cfg(test)]
 mod utxo_credit_verdict_merge_tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     fn outpoint(byte: u8) -> OutPoint {
         OutPoint {

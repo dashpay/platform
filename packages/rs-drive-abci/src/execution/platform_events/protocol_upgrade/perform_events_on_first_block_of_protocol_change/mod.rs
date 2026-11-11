@@ -5,18 +5,24 @@ mod v2;
 #[cfg(test)]
 mod credit_pool_backfill_tests;
 #[cfg(test)]
+mod operator_payout_reconciliation_tests;
+#[cfg(test)]
 mod token_history_storage_flags_tests;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Executes protocol-specific events on the first block after a protocol version change.
     ///
     /// This function is triggered when there is a protocol version upgrade detected in the network.
@@ -28,6 +34,9 @@ impl<C> Platform<C> {
     ///
     /// # Parameters
     ///
+    /// * `platform_state`: The committed platform state, still at the previous protocol version.
+    /// * `block_platform_state`: The platform state of the block being executed, for events that
+    ///   repair Platform's copy of Dash Core's masternode list.
     /// * `transaction`: A reference to the transaction context in which the changes should be applied.
     /// * `previous_protocol_version`: The protocol version prior to the upgrade.
     /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
@@ -55,6 +64,7 @@ impl<C> Platform<C> {
     pub fn perform_events_on_first_block_of_protocol_change(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -68,6 +78,7 @@ impl<C> Platform<C> {
         {
             Some(0) => self.perform_events_on_first_block_of_protocol_change_v0(
                 platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -75,6 +86,7 @@ impl<C> Platform<C> {
             ),
             Some(1) => self.perform_events_on_first_block_of_protocol_change_v1(
                 platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -82,6 +94,7 @@ impl<C> Platform<C> {
             ),
             Some(2) => self.perform_events_on_first_block_of_protocol_change_v2(
                 platform_state,
+                block_platform_state,
                 block_info,
                 transaction,
                 previous_protocol_version,
@@ -117,6 +130,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -134,6 +148,7 @@ mod tests {
         // since all transition conditions (previous < X && current >= X) will be false
         let result = platform.perform_events_on_first_block_of_protocol_change(
             &platform_state,
+            &mut PlatformState::clone(&platform_state),
             &block_info,
             &transaction,
             platform_version.protocol_version,
@@ -148,6 +163,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -170,6 +186,7 @@ mod tests {
 
         let result = platform.perform_events_on_first_block_of_protocol_change(
             &platform_state,
+            &mut PlatformState::clone(&platform_state),
             &block_info,
             &transaction,
             platform_version.protocol_version,
@@ -198,6 +215,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let platform_state = platform.state.load();
         let block_info = BlockInfo {
@@ -247,6 +265,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform_state,
+                    &mut PlatformState::clone(&platform_state),
                     &block_info,
                     &transaction,
                     previous_version.protocol_version,
@@ -277,6 +296,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(13)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let platform_state = platform.state.load();
         let block_info = BlockInfo {
@@ -301,6 +321,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform_state,
+                    &mut PlatformState::clone(&platform_state),
                     &block_info,
                     &transaction,
                     13,
@@ -390,6 +411,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let platform_state = platform.state.load();
         let block_info = BlockInfo {
@@ -414,6 +436,7 @@ mod tests {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &platform_state,
+                    &mut PlatformState::clone(&platform_state),
                     &block_info,
                     &transaction,
                     previous_version.protocol_version,

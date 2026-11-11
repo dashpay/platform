@@ -1547,7 +1547,6 @@ mod tests {
                             state.last_block_info(),
                             None,
                             platform_version,
-                            &Default::default(),
                         )
                         .expect("estimate complete event")
                         .into_data()

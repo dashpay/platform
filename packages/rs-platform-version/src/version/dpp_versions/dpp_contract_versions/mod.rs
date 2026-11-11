@@ -152,7 +152,12 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     /// Folds the `refersTo` reference keyword into the parsed property type.
     /// `None` on versions that predate the keyword: they ignore it entirely,
-    /// exactly as they parsed before it existed.
+    /// exactly as they parsed before it existed. 0 (protocol version 14) reads every
+    /// reference that names its target in the schema. 1 (protocol version 15) also reads,
+    /// on an identifier property, a permanent or moderated document reference whose target
+    /// the referring document names (`contractId` and `documentType` written
+    /// `"$self.<property>"`, with `documentTypeRequirements`), and refuses such a
+    /// declaration wherever else a reference sits.
     pub apply_property_reference: OptionalFeatureVersion,
     /// Parses the `requiredSince` property keyword (the contract version from
     /// which a property is required). `None` on versions that predate the
@@ -285,9 +290,12 @@ mod tests {
     }
 
     /// Drive creates a private type's store through `insert_empty_private_document_store_operation`,
-    /// sized from the private document store limits, and reads, proves and verifies a page of
-    /// it through `fetch_private_document_entries`, `prove_private_document_entries` and
-    /// `verify_private_document_entries`: a protocol version parsing private types without
+    /// sized from the private document store limits, reads, proves and verifies a page of it
+    /// through `fetch_private_document_entries`, `prove_private_document_entries` and
+    /// `verify_private_document_entries`, and appends a private document create's entries,
+    /// at most `max_private_document_entries_per_transition` of them, through
+    /// `append_private_document_entries_operations`, after the transition's basic structure: a
+    /// protocol version parsing private types without
     /// them could not register or read one, and one setting them where no type is private
     /// states a rule nothing reads.
     #[test]
@@ -344,6 +352,29 @@ mod tests {
                         .methods
                         .document
                         .prove_private_document_entries
+                        .is_some(),
+                ),
+                (
+                    "append_private_document_entries_operations",
+                    platform_version
+                        .drive
+                        .methods
+                        .document
+                        .append_private_document_entries_operations
+                        .is_some(),
+                ),
+                (
+                    "max_private_document_entries_per_transition",
+                    limits.max_private_document_entries_per_transition.is_some(),
+                ),
+                (
+                    "private_document_create_from_shielded_pool basic_structure",
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .private_document_create_from_shielded_pool_state_transition
+                        .basic_structure
                         .is_some(),
                 ),
                 (

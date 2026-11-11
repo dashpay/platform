@@ -28,7 +28,8 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
 use key_wallet::bip32::{
-    ApplicationKeyPurpose, ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType,
+    ApplicationKeyPurpose, ChildNumber, DerivationPath, Error as Bip32Error, ExtendedPrivKey,
+    KeyDerivationType,
 };
 use key_wallet::dip9::{
     FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_APPLICATION_ENCRYPTION,
@@ -44,6 +45,7 @@ use zeroize::Zeroizing;
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
@@ -237,35 +239,26 @@ impl ConnectKey {
                 contract_id,
                 purpose,
                 rotation,
-            } => {
-                let rotation = hardened_rotation(rotation)?;
-                // Temporary: the pinned rust-dashcore builds only the
-                // pre-rotation path, so the rotation level is appended here.
-                // dashpay/rust-dashcore#1250 adds the level to key-wallet;
-                // once platform bumps to a rev with it, replace this arm with
-                // `DerivationPath::application_encryption_path(network,
-                // identity_id, contract_id, purpose, rotation)` and the
-                // legacy arm with `application_encryption_path_without_rotation`.
-                // `connect_keypairs_match_the_pinned_vectors` keeps that swap
-                // a no-op.
-                Ok(DerivationPath::application_encryption_path(
-                    network,
-                    identity_id.to_buffer(),
-                    contract_id,
-                    purpose,
-                )
-                .extend([rotation]))
-            }
-            ConnectKey::AppEncryptionLegacy {
-                identity_id,
-                contract_id,
-                purpose,
-            } => Ok(DerivationPath::application_encryption_path(
+            } => DerivationPath::application_encryption_path(
                 network,
                 identity_id.to_buffer(),
                 contract_id,
                 purpose,
-            )),
+                rotation,
+            )
+            .map_err(|e| invalid_rotation(rotation, e)),
+            ConnectKey::AppEncryptionLegacy {
+                identity_id,
+                contract_id,
+                purpose,
+            } => Ok(
+                DerivationPath::application_encryption_path_without_rotation(
+                    network,
+                    identity_id.to_buffer(),
+                    contract_id,
+                    purpose,
+                ),
+            ),
         }
     }
 }
@@ -284,11 +277,13 @@ fn app_encryption_purpose(purpose: u32) -> Result<ApplicationKeyPurpose, Platfor
 /// The hardened `rotation'` level; a rotation of `2^31` or more does not fit
 /// one and is refused rather than wrapped onto another key.
 fn hardened_rotation(rotation: u32) -> Result<ChildNumber, PlatformWalletError> {
-    ChildNumber::from_hardened_idx(rotation).map_err(|e| {
-        PlatformWalletError::InvalidParameter(format!(
-            "Invalid app encryption rotation {rotation}: {e}"
-        ))
-    })
+    ChildNumber::from_hardened_idx(rotation).map_err(|e| invalid_rotation(rotation, e))
+}
+
+fn invalid_rotation(rotation: u32, e: Bip32Error) -> PlatformWalletError {
+    PlatformWalletError::InvalidParameter(format!(
+        "Invalid app encryption rotation {rotation}: {e}"
+    ))
 }
 
 /// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure,
@@ -514,6 +509,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// adapter and the DashPay rescan reconcile. See
     /// [`DurableCursors`](crate::changeset::DurableCursors).
     pub(crate) durable_cursors: crate::changeset::DurableCursors,
+    /// The wallet generation this handle belongs to: a public contact
+    /// request is sent only while it is the live one, under its lifecycle
+    /// gate, so a send started on a wallet since removed and re-created under
+    /// the same id never publishes or records on the replacement.
+    pub(crate) generation: Arc<WalletGeneration>,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -557,6 +557,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             sync_fault: Arc::clone(&self.sync_fault),
             durable_cursors: Arc::clone(&self.durable_cursors),
+            generation: Arc::clone(&self.generation),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
@@ -566,6 +567,32 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// This handle's wallet in `wm`, the wallet manager under its write lock,
+    /// while it is still this handle's generation: refused, as not found, once
+    /// the wallet was removed, or re-created under its id, since the handle
+    /// was taken. Work that ran without the wallet's lifecycle gate (network
+    /// reads, host key resolution) applies its results through this, so a
+    /// replacement never receives a stale handle's state: the check and the
+    /// write are under the one lock a removal takes.
+    pub(crate) fn current_wallet_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w mut PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], with the wallet itself.
+    pub(crate) fn current_wallet_and_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<(&'w mut Wallet, &'w mut PlatformWalletInfo), PlatformWalletError> {
+        wm.get_wallet_mut_and_info_mut(&self.wallet_id)
+            .filter(|(_, info)| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
     /// Build the DIP-9 identity authentication derivation path.
     ///
     /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`
@@ -713,7 +740,7 @@ mod tests {
     fn master_for(network: Network) -> ExtendedPrivKey {
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
-        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+        ExtendedPrivKey::new_master(network, &*seed).expect("master xpriv from test seed")
     }
 
     /// (a) The master-based key-hash helper must produce the SAME 20-byte

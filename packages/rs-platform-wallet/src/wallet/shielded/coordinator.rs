@@ -51,10 +51,11 @@
 //!
 //! [`sync_notes_across`]: super::sync::sync_notes_across
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::merge::Merge;
@@ -90,17 +91,22 @@ use super::balance::{
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, ShieldedStore, StalePendingSpend,
-    SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
+    StalePendingSpend, SubwalletId,
 };
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::wallet::identity::network::dashpay_contract;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
+use dash_sdk::platform::private_document_scan::MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
+use futures::StreamExt;
 
 /// Network-scoped shielded coordinator.
 ///
@@ -173,6 +179,16 @@ pub struct NetworkShieldedCoordinator {
     /// network instead of once per wallet. Cleared on any
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+
+    /// The journal records, by wallet and entry commitment, whose entry an
+    /// expiry read found in DashPay's private store
+    /// ([`Self::discharge_expired_private_payments`]): their payments
+    /// executed, so they are no candidates for expiry and no later pass reads
+    /// the store again for them. Each record stays, holding its pair, until a
+    /// private sync reads its entry back and records the request, which
+    /// discharges it; then it leaves this set too. In memory only: a restart
+    /// reads the store for it once more.
+    landed_private_payments: std::sync::Mutex<BTreeSet<(WalletId, [u8; 32])>>,
 
     /// Optional progress callback fired once per chunk inside
     /// `sync_shielded_notes`. Lets the manager translate chunk-level
@@ -400,6 +416,7 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
@@ -468,6 +485,19 @@ impl NetworkShieldedCoordinator {
     /// subsequent calls pass the same path.
     pub fn db_path(&self) -> &std::path::Path {
         &self.db_path
+    }
+
+    /// Whether the store's private payment journal may keep a record of
+    /// `wallet_id`'s: it does, it does not read, or the store is busy, as this
+    /// waits on nothing. A wallet created or loaded under an id another process
+    /// journaled payments under has them unresolved, which only the journal
+    /// shows (`PlatformWalletManager::restore_private_contact_payment_holds`).
+    pub(crate) fn may_journal_private_payments_of(&self, wallet_id: WalletId) -> bool {
+        self.store.try_read().map_or(true, |store| {
+            store
+                .private_payment_journal(wallet_id)
+                .map_or(true, |records| !records.is_empty())
+        })
     }
 
     /// Reference to the shared store. The full sync / spend
@@ -1295,6 +1325,31 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
+    /// Discharge the private payment journal records of the private contact
+    /// requests each registered wallet's private sync read back and recorded
+    /// durably (`WalletPersister::note_read_back_private_entries`).
+    pub(crate) async fn discharge_read_back_private_payments(&self) {
+        let noted: Vec<(WalletId, WalletPersister)> = self
+            .persisters
+            .read()
+            .await
+            .iter()
+            .filter(|(_, persister)| persister.has_read_back_private_entries())
+            .map(|(wallet_id, persister)| (*wallet_id, persister.clone()))
+            .collect();
+        if noted.is_empty() {
+            return;
+        }
+        let mut store = self.store.write().await;
+        for (wallet_id, persister) in &noted {
+            super::operations::discharge_read_back_private_payments(
+                &mut *store,
+                persister,
+                *wallet_id,
+            );
+        }
+    }
+
     /// Run one shielded sync pass for every registered wallet on
     /// this coordinator's network. Returns a per-wallet outcome
     /// summary suitable for emission to UI / persistence layers
@@ -1339,6 +1394,10 @@ impl NetworkShieldedCoordinator {
             tracing::debug!("Coordinator sync cancelled before it started");
             return ShieldedSyncPassSummary::default();
         }
+
+        // Every pass, cooldown or not: the private requests a private sync read
+        // back discharge their journal records.
+        self.discharge_read_back_private_payments().await;
 
         // Network-wide cooldown gate. Snapshot the remaining
         // window into a local before any await — `std::sync::Mutex`
@@ -1472,20 +1531,15 @@ impl NetworkShieldedCoordinator {
         // Runs before the balance read so freed notes are reflected in
         // this pass's balances. Skipped on a cancelled pass: the re-drive
         // broadcasts, and a skipped release simply waits for the next pass.
-        if let Some((snapshot, recorded)) = stranded_release.filter(|_| !cancelled) {
-            // Snapshot the per-wallet persisters BEFORE the loop and drop
-            // the read guard: `redrive_pending_spends` performs network
-            // broadcasts, and holding the persisters lock across those
-            // awaits would block wallet register/unregister for the
-            // duration of the round trips.
-            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
-                let persisters = self.persisters.read().await;
-                subwallets
-                    .iter()
-                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
-                    .collect()
-            };
-            for (id, persister) in &subwallet_persisters {
+        if let Some(PreScanEvidence {
+            stale,
+            journal,
+            recorded,
+            recorded_height,
+            heightless,
+        }) = stranded_release.filter(|_| !cancelled)
+        {
+            for (id, _) in &subwallets {
                 // Network broadcasts: a stop that lands after the scan's
                 // snapshot above stops the loop here, and the helper
                 // checks the token before each request it starts.
@@ -1495,8 +1549,6 @@ impl NetworkShieldedCoordinator {
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
-                    persister.as_ref(),
-                    id.wallet_id,
                     *id,
                     &recorded,
                     cancel,
@@ -1504,7 +1556,15 @@ impl NetworkShieldedCoordinator {
                 .await;
             }
             if !cancel.is_cancelled() {
-                self.release_stranded_spends(snapshot, &recorded).await;
+                let evidence = PrunedAnchorEvidence {
+                    recorded: &recorded,
+                    height: recorded_height,
+                    scan_covered_height: notes.covered_height,
+                    heightless: heightless.as_ref(),
+                };
+                self.release_stranded_spends(stale, evidence).await;
+                self.discharge_expired_private_payments(&journal, evidence)
+                    .await;
             }
         }
 
@@ -1654,30 +1714,40 @@ impl NetworkShieldedCoordinator {
             .unwrap_or(0)
     }
 
-    /// Pre-scan half of the stranded-reservation release: snapshot the
-    /// anchored reservations armed right now and fetch Platform's recorded
-    /// anchor set, or `None` when there is nothing to do.
+    /// Pre-scan half of the stranded-reservation release and of the private
+    /// payment expiry: snapshot the anchored reservations armed right now and
+    /// the wallets' private payment journal records, then fetch Platform's
+    /// recorded anchor set with the height of its proof, or `None` when there
+    /// is nothing to do.
     ///
     /// MUST run before the pass's note scan — the release's fund-safety
     /// argument ([`Self::release_stranded_spends`]) rests on both the
-    /// snapshot and the set predating the scan's spent-note reconcile.
+    /// snapshot and the set predating the scan's spent-note reconcile. The
+    /// journal is read before the set: a payment journaled after the fetch
+    /// may name a newer anchor than the set holds, so it is no candidate this
+    /// pass ([`Self::discharge_expired_private_payments`]). When one of them
+    /// names its anchor without the anchor's height and the store bounds the
+    /// trees such anchors came from, the pool's proved leaf count is fetched
+    /// first, before the set ([`HeightlessAnchorEvidence`]).
     ///
-    /// Skips the network round-trip when no anchored reservation exists (the
-    /// common case), and treats a recorded-anchor fetch failure as
-    /// non-fatal — a sync must not fail because that query hiccupped; the
-    /// release simply waits for the next pass.
+    /// Skips the network round-trip when neither an anchored reservation nor
+    /// a journal record exists (the common case), and treats a
+    /// recorded-anchor fetch failure as non-fatal: a sync must not fail
+    /// because that query hiccupped, and the release simply waits for the
+    /// next pass.
     async fn prefetch_stranded_release(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
-    ) -> Option<(Vec<(SubwalletId, StalePendingSpend)>, HashSet<[u8; 32]>)> {
-        // Gather anchored reservations across every synced subwallet. The
-        // common case is none — then the network round-trip is skipped.
-        let stale: Vec<(SubwalletId, StalePendingSpend)> = {
+    ) -> Option<PreScanEvidence> {
+        // Gather anchored reservations across every synced subwallet, and the
+        // journal records of their wallets. The common case is none, and then
+        // the network round-trip is skipped.
+        let (stale, journal, tree_bounds) = {
             let store = self.store.read().await;
-            let mut acc = Vec::new();
+            let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
             for (id, _) in subwallets {
                 match store.stale_pending_spends(*id) {
-                    Ok(entries) => acc.extend(entries.into_iter().map(|entry| (*id, entry))),
+                    Ok(entries) => stale.extend(entries.into_iter().map(|entry| (*id, entry))),
                     Err(e) => tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
@@ -1686,16 +1756,58 @@ impl NetworkShieldedCoordinator {
                     ),
                 }
             }
-            acc
+            let journal = private_payment_journal_snapshot(
+                &*store,
+                subwallets.iter().map(|(id, _)| id.wallet_id),
+            );
+            let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
+            (stale, journal, tree_bounds)
         };
-        if stale.is_empty() {
+        if stale.is_empty() && journal.is_empty() {
             return None;
         }
 
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-        match dash_sdk::query_types::ShieldedAnchors::fetch_current(&self.sdk).await {
-            Ok(dash_sdk::query_types::ShieldedAnchors(anchors)) => {
-                Some((stale, anchors.into_iter().collect()))
+        // The pool's leaf count, read before the anchor set so that it is
+        // proved at or below the set's height whenever both reads reach
+        // nodes at the same tip. A count proved above that height shows
+        // nothing this pass ([`HeightlessAnchorEvidence::recorded_by`]).
+        let heightless = match tree_bounds {
+            Some((tree_bound, anchor_floors)) => {
+                match dash_sdk::query_types::ShieldedNotesCount::fetch_current_with_metadata(
+                    &self.sdk,
+                )
+                .await
+                {
+                    Ok((dash_sdk::query_types::ShieldedNotesCount(pool_leaves), metadata)) => {
+                        Some(HeightlessAnchorEvidence {
+                            tree_bound,
+                            pool_leaves,
+                            pool_height: metadata.height,
+                            anchor_floors,
+                        })
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "shielded reservation release: failed to fetch the pool's leaf \
+                             count; records without an anchor height stay this pass"
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        match dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(&self.sdk).await {
+            Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
+                Some(PreScanEvidence {
+                    stale,
+                    journal,
+                    recorded: anchors.into_iter().collect(),
+                    recorded_height: metadata.height,
+                    heightless,
+                })
             }
             Err(e) => {
                 tracing::warn!(
@@ -1716,27 +1828,30 @@ impl NetworkShieldedCoordinator {
     /// fact have landed), released only when the tx lands or the app
     /// restarts. A spend accepted but that never lands would otherwise
     /// strand its notes for the whole session. Here, after the pass's
-    /// spent-note reconcile, any reservation from the PRE-scan `snapshot`
-    /// whose anchor is absent from the PRE-scan `recorded` set is provably
-    /// dead: `validate_anchor_exists` accepts a spend only while its anchor
-    /// is retained (`shielded_anchor_retention_blocks = 1000`), so once the
-    /// anchor is pruned the transition can never execute. The notes are
-    /// freed and the linked activity row flipped to Failed so the UI shows
-    /// a clear, retryable failure instead of "Pending" forever. The
-    /// on-chain nullifier set stays the authoritative double-spend guard.
+    /// spent-note reconcile, a reservation from the PRE-scan `snapshot` is
+    /// released once `evidence` proves its anchor pruned
+    /// ([`PrunedAnchorEvidence::proves_pruned`]): `validate_anchor_exists`
+    /// accepts a spend only while its anchor is retained
+    /// (`shielded_anchor_retention_blocks = 1000`), so once the anchor is
+    /// pruned the transition can never execute. The notes are freed and the
+    /// linked activity row flipped to Failed so the UI shows a clear,
+    /// retryable failure instead of "Pending" forever. The on-chain
+    /// nullifier set stays the authoritative double-spend guard.
     ///
-    /// Fund-safe by construction, resting on two ordering facts:
+    /// Fund-safe by construction, resting on two facts:
     ///
-    /// 1. Both inputs predate the scan ([`Self::prefetch_stranded_release`]),
-    ///    and the scan's spent-note reconcile ran to completion in between.
-    ///    An anchor absent from the pre-scan set was pruned before the scan
-    ///    began (a pruned root can never re-enter the set — the tree only
-    ///    grows), so if that spend nevertheless executed, it executed at a
-    ///    height the scan covered — the reconcile already cleared its
-    ///    reservation, which fact 2 catches.
+    /// 1. The evidence is pinned to the anchor set's proved height H: the
+    ///    reservation's anchor was in a set proved at or below H, so the set
+    ///    at H lacks it only once it was pruned (an anchor absent but read
+    ///    above H may be newer than the set), and the pass's note scan,
+    ///    covering H, replayed every nullifier spent at or below H. So if
+    ///    that spend executed, it did so at or below H, and the reconcile
+    ///    already cleared its reservation, which fact 2 catches. Short of
+    ///    that, as with a scan whose proofs are a block behind the set's,
+    ///    nothing is released this pass.
     /// 2. Each release is a check-and-clear under a single store write
     ///    guard: the reservation is cleared only while the nullifier is
-    ///    still armed with the snapshot's exact anchor + activity. A
+    ///    still armed with the snapshot's exact anchor, height + activity. A
     ///    reservation resolved concurrently (the reconcile above, or the
     ///    spend's own result-wait confirming mid-pass) — or cleared and
     ///    re-armed by a retry with a fresh anchor — is skipped, and its
@@ -1744,11 +1859,17 @@ impl NetworkShieldedCoordinator {
     ///
     /// A still-recorded (slow-but-landing) spend is never released, and an
     /// anchor-less reservation (reserved but not yet built) is never in the
-    /// snapshot (`stale_pending_spends` returns only anchored entries).
+    /// snapshot (`stale_pending_spends` returns only anchored entries). A
+    /// reservation whose anchor height is not known (one restored from a
+    /// record saved before heights were kept) gets H once the set at H
+    /// holds its anchor ([`ShieldedStore::note_anchor_recorded`]), and is
+    /// released only on a later set that lacks it, or on a set that lacks it
+    /// with the pool proved, at or below that set's height, to have reached
+    /// the tree the anchor is a root of ([`HeightlessAnchorEvidence`]).
     async fn release_stranded_spends(
         &self,
         snapshot: Vec<(SubwalletId, StalePendingSpend)>,
-        recorded: &HashSet<[u8; 32]>,
+        evidence: PrunedAnchorEvidence<'_>,
     ) {
         // Persister map is only written on wallet register/unregister —
         // one read acquisition covers the whole loop.
@@ -1756,10 +1877,18 @@ impl NetworkShieldedCoordinator {
         // Every note of a multi-note spend carries the same activity id:
         // flip each linked row once, not once per nullifier.
         let mut flipped: HashSet<[u8; 32]> = HashSet::new();
-        for (id, (nullifier, anchor, activity_id)) in snapshot {
-            // Fund-safety invariant: release ONLY when the anchor is absent
-            // from the recorded set. A still-recorded anchor may yet land.
-            if recorded.contains(&anchor) {
+        // Reservations whose anchor height is not known, and whose anchor the
+        // set at H holds: given H, a later set lacking it shows it pruned.
+        let mut seen_recorded: std::collections::BTreeSet<(SubwalletId, [u8; 32])> =
+            std::collections::BTreeSet::new();
+        for (id, (nullifier, anchor, activity_id, anchor_height)) in snapshot {
+            if anchor_height.is_none() && evidence.recorded.contains(&anchor) {
+                seen_recorded.insert((id, anchor));
+            }
+            // Fund-safety invariant: release ONLY on proof the anchor was
+            // pruned with the scan covering it. A still-recorded anchor may
+            // yet land; an absent one read above H may be newer than the set.
+            if !evidence.proves_pruned(&anchor, anchor_height) {
                 continue;
             }
             // Check-and-clear under ONE write acquisition: the snapshot
@@ -1771,9 +1900,12 @@ impl NetworkShieldedCoordinator {
             {
                 let mut store = self.store.write().await;
                 let still_same = match store.stale_pending_spends(id) {
-                    Ok(current) => current
-                        .iter()
-                        .any(|(n, a, act)| *n == nullifier && *a == anchor && *act == activity_id),
+                    Ok(current) => current.iter().any(|(n, a, act, height)| {
+                        *n == nullifier
+                            && *a == anchor
+                            && *act == activity_id
+                            && *height == anchor_height
+                    }),
                     Err(e) => {
                         tracing::warn!(
                             wallet_id = %hex::encode(id.wallet_id),
@@ -1839,6 +1971,222 @@ impl NetworkShieldedCoordinator {
                 .await;
             }
         }
+        if !seen_recorded.is_empty() {
+            let mut store = self.store.write().await;
+            for (id, anchor) in seen_recorded {
+                if let Err(e) = store.note_anchor_recorded(id, &anchor, evidence.height) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "shielded reservation release: the anchor's recorded height was not \
+                         kept; its reservations stay until it is"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Discharge the private payment journal records of payments proven
+    /// expired, durably, and note them on their wallet's persister so the
+    /// wallet releases the pairs they hold
+    /// (`WalletPersister::note_discharged_private_entries`).
+    ///
+    /// The candidates are `journal`, the records the pass read before it
+    /// fetched the anchor set `evidence` holds, proved at H. A payment is
+    /// proven never to execute when:
+    ///
+    /// 1. its record still reads in the journal exactly as `journal` has it:
+    ///    a payment journaled since, or armed again, may name an anchor newer
+    ///    than the set;
+    /// 2. `evidence` proves its anchor pruned
+    ///    ([`PrunedAnchorEvidence::proves_pruned`], the rule the note release
+    ///    judges by): read from a set proved at or below H
+    ///    (`anchor_height`), or, for a record without it, recorded at or
+    ///    below H as the pool's proved leaf count shows
+    ///    ([`HeightlessAnchorEvidence`]), absent from the set at H, and the
+    ///    pass's note scan covering H. A pruned root never re-enters the set, so the
+    ///    transition cannot execute above H
+    ///    (`shielded_anchor_retention_blocks` 1000, pruned every
+    ///    `shielded_anchor_pruning_interval` 100 blocks);
+    /// 3. its entry is absent from DashPay's private contact request store,
+    ///    read raw through its end with every page proved at or above H
+    ///    ([`Self::private_contact_requests_held`]): an entry starts with its
+    ///    commitment, so none needs opening. The transition appends its entry
+    ///    in the block that spends its inputs, so an entry absent at or above
+    ///    H, the transition unable to execute above H, shows it never
+    ///    executed. Whether its inputs are spent does not matter: a competing
+    ///    spend that consumed them does not keep its pair held.
+    ///
+    /// Anything short of that discharges nothing this pass, and the next pass
+    /// retries: a scan or a store read below H, a read that fails, a record
+    /// changed since. A relay refusal or a missing redrive record is never
+    /// taken as proof. Point 1 is checked again under the store write guard
+    /// that discharges the record.
+    pub(crate) async fn discharge_expired_private_payments(
+        &self,
+        journal: &[(WalletId, PrivatePaymentRecord)],
+        evidence: PrunedAnchorEvidence<'_>,
+    ) {
+        let recorded_height = evidence.height;
+        // Entries found landed before are no candidates: their payments
+        // executed. One whose record is gone was read back and leaves.
+        let landed: BTreeSet<(WalletId, [u8; 32])> = {
+            let mut landed = self
+                .landed_private_payments
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            landed.retain(|(wallet_id, commitment)| {
+                journal
+                    .iter()
+                    .any(|(owner, record)| owner == wallet_id && record.commitment == *commitment)
+            });
+            landed.clone()
+        };
+        let pruned: Vec<&(WalletId, PrivatePaymentRecord)> = journal
+            .iter()
+            .filter(|(wallet_id, record)| !landed.contains(&(*wallet_id, record.commitment)))
+            .filter(|(_, record)| evidence.proves_pruned(&record.anchor, record.anchor_height))
+            .collect();
+        if pruned.is_empty() {
+            return;
+        }
+        let candidates: Vec<(WalletId, PrivatePaymentRecord)> = {
+            let store = self.store.read().await;
+            pruned
+                .into_iter()
+                .filter(|(wallet_id, record)| unchanged(&*store, *wallet_id, record))
+                .cloned()
+                .collect()
+        };
+        if candidates.is_empty() {
+            return;
+        }
+        let commitments: BTreeMap<[u8; 32], Option<[u8; 32]>> = candidates
+            .iter()
+            .map(|(_, record)| (record.commitment, record.entry_hash))
+            .collect();
+        // Each entry is appended at or after its sender's read position when
+        // it paid; a record that kept none is read for from the store's start.
+        let start = candidates
+            .iter()
+            .map(|(_, record)| record.store_position)
+            .try_fold(u64::MAX, |lowest, position| position.map(|p| lowest.min(p)))
+            .unwrap_or(0);
+        let held = match self
+            .private_contact_requests_held(&commitments, start, recorded_height)
+            .await
+        {
+            Ok(held) => held,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "private payment expiry: the private contact request store was not read at \
+                     the anchor set's height; retried next pass"
+                );
+                return;
+            }
+        };
+        // An entry the store holds at or above H executed: its record waits
+        // for a private sync to read it back, and no later pass reads the
+        // store again for it.
+        self.landed_private_payments
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(
+                candidates
+                    .iter()
+                    .filter(|(_, record)| held.contains(&record.commitment))
+                    .map(|(wallet_id, record)| (*wallet_id, record.commitment)),
+            );
+        let persisters = self.persisters.read().await;
+        let mut store = self.store.write().await;
+        for (wallet_id, record) in candidates {
+            if held.contains(&record.commitment) || !unchanged(&*store, wallet_id, &record) {
+                continue;
+            }
+            match store.discharge_private_payment(wallet_id, &record.commitment) {
+                Ok(_) => {
+                    tracing::info!(
+                        wallet_id = %hex::encode(wallet_id),
+                        commitment = %hex::encode(record.commitment),
+                        "a private payment's anchor was pruned and its entry is absent from the \
+                         store: it never executed and never can, its pair is freed"
+                    );
+                    if let Some(persister) = persisters.get(&wallet_id) {
+                        persister.note_discharged_private_entries([record.commitment]);
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    %error,
+                    "an expired private payment's journal record was not discharged; retried \
+                     next pass"
+                ),
+            }
+        }
+    }
+
+    /// Which of `candidates` DashPay's private contact request store holds,
+    /// read now from `start` through the end its first page shows, raw: an
+    /// entry starts with its commitment, and is taken as the candidate's only
+    /// when the whole entry hashes to the hash the candidate's journal record
+    /// kept (`PrivatePaymentRecord::entry_hash`), as anyone who saw the
+    /// commitment can append an entry starting with it; a record saved before
+    /// the hash was kept matches on the commitment. Only the matches are kept,
+    /// though every entry is read to show the others absent. Every page must
+    /// be proved at or above `floor`, the first page's end with it: a page
+    /// below fails the read, as the store it shows may predate the floor.
+    pub(crate) async fn private_contact_requests_held(
+        &self,
+        candidates: &BTreeMap<[u8; 32], Option<[u8; 32]>>,
+        start: u64,
+        floor: u64,
+    ) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
+        let contract_id = dashpay_contract()?.id();
+        let mut pages = std::pin::pin!(self.sdk.private_document_pages_with_heights(
+            contract_id,
+            PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+            start,
+            MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES,
+        ));
+        let mut held = HashSet::new();
+        let mut read = false;
+        while let Some(page) = pages.next().await {
+            let (page, heights) = page?;
+            // Every read the page holds, at or above the floor.
+            let height = heights.min;
+            if height < floor {
+                return Err(PlatformWalletError::ShieldedSyncFailed(format!(
+                    "the private contact request store's page from position {} is proved at \
+                     height {height}, below {floor}",
+                    page.start_position
+                )));
+            }
+            read = true;
+            for entry in page.entries.entries {
+                let Some(commitment) = entry
+                    .data
+                    .get(..32)
+                    .and_then(|commitment| <[u8; 32]>::try_from(commitment).ok())
+                else {
+                    continue;
+                };
+                let matches = candidates.get(&commitment).is_some_and(|hash| match hash {
+                    Some(hash) => <[u8; 32]>::from(Sha256::digest(&entry.data)) == *hash,
+                    None => true,
+                });
+                if matches {
+                    held.insert(commitment);
+                }
+            }
+        }
+        if !read {
+            return Err(PlatformWalletError::ShieldedSyncFailed(
+                "the private contact request store returned no page".to_string(),
+            ));
+        }
+        Ok(held)
     }
 
     /// Derive best-effort activity entries from each subwallet's
@@ -2239,6 +2587,238 @@ fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> boo
         .is_some()
 }
 
+/// The evidence a sync pass has that an anchor was pruned: Platform's recorded
+/// anchor set `recorded`, proved at `height` (H) and read before the pass's
+/// note scan, the height that scan covers (`scan_covered_height`,
+/// `MultiSyncNotesResult::covered_height`), and, for records that carry no
+/// anchor height, what bounds the trees their anchors came from
+/// (`heightless`). The one rule the note release
+/// ([`NetworkShieldedCoordinator::release_stranded_spends`]) and the private
+/// payment expiry
+/// ([`NetworkShieldedCoordinator::discharge_expired_private_payments`]) judge
+/// an anchor by.
+#[derive(Clone, Copy)]
+pub(crate) struct PrunedAnchorEvidence<'a> {
+    pub(crate) recorded: &'a HashSet<[u8; 32]>,
+    pub(crate) height: u64,
+    pub(crate) scan_covered_height: Option<u64>,
+    /// `None` when the pass gathered none: a record without an anchor height
+    /// is then never proven pruned, unless a set is seen holding its anchor
+    /// ([`ShieldedStore::note_anchor_recorded`]).
+    pub(crate) heightless: Option<&'a HeightlessAnchorEvidence>,
+}
+
+impl PrunedAnchorEvidence<'_> {
+    /// Whether a spend built on `anchor`, which was in Platform's recorded
+    /// set at `anchor_height`, is proven unable to execute above H, with all
+    /// it could have done at or below H seen by the note scan:
+    ///
+    /// 1. the anchor was recorded at or below H: `anchor_height` is known and
+    ///    at or below H, or, for one not known, the pool is proved to have
+    ///    reached the tree the anchor is a root of at or below H
+    ///    ([`HeightlessAnchorEvidence::recorded_by`]). Then the set at H holds
+    ///    the anchor unless it was pruned, and the set lacks it: a pruned root
+    ///    never re-enters the set, so the spend cannot execute above H. An
+    ///    anchor read above H, or at an unknown height without that proof,
+    ///    may simply be newer than the set.
+    /// 2. the scan covers H: a spend that executed at or below H spent its
+    ///    nullifiers where the scan replayed them.
+    pub(crate) fn proves_pruned(&self, anchor: &[u8; 32], anchor_height: Option<u64>) -> bool {
+        let recorded_by_the_set = match anchor_height {
+            Some(read) => read <= self.height,
+            None => self
+                .heightless
+                .is_some_and(|heightless| heightless.recorded_by(anchor, self.height)),
+        };
+        recorded_by_the_set
+            && !self.recorded.contains(anchor)
+            && self
+                .scan_covered_height
+                .is_some_and(|covered| covered >= self.height)
+    }
+}
+
+/// What shows that an anchor a record names without its height was recorded
+/// by a given height.
+///
+/// Every anchor is the root of the local commitment tree at some size S, and
+/// Platform records a root at the end of the first block its pool's tree ends
+/// at that size (`record_shielded_pool_anchor_if_changed`), the size never
+/// shrinking. So a pool proved to hold S leaves or more at a height has
+/// recorded the anchor by then. S is not kept, but two bounds are:
+///
+/// - S is at most [`Self::tree_bound`], the largest tree the store has held
+///   ([`ShieldedStore::legacy_anchor_tree_bound`]): every record this build
+///   saves keeps its anchor height, so one without was saved by an earlier
+///   build, from a tree no larger than this store held when this build first
+///   opened it, and every reset since kept the size it reset first. A reset
+///   by an earlier build before that is not seen; the floors below still
+///   bound such an anchor's tree. The tree grows only by proved note
+///   batches, so the pool reaches that size.
+/// - S is more than the position of every note spent on the anchor: a
+///   witness to a note proves it in the tree the anchor is a root of
+///   ([`Self::anchor_floors`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeightlessAnchorEvidence {
+    /// The largest commitment tree the store has held.
+    pub(crate) tree_bound: u64,
+    /// The pool's leaf count, proved in this process at [`Self::pool_height`].
+    pub(crate) pool_leaves: u64,
+    /// The height [`Self::pool_leaves`] was proved at.
+    pub(crate) pool_height: u64,
+    /// Per anchor of a record without an anchor height, one past the highest
+    /// tree position among the notes spent on it that the store holds.
+    pub(crate) anchor_floors: BTreeMap<[u8; 32], u64>,
+}
+
+impl HeightlessAnchorEvidence {
+    /// Whether Platform recorded `anchor`, named without its height, at or
+    /// below `height`: the pool was proved at or below `height` to hold at
+    /// least [`Self::tree_bound`] leaves, and at least one more than every
+    /// note spent on it.
+    pub(crate) fn recorded_by(&self, anchor: &[u8; 32], height: u64) -> bool {
+        let floor = self.anchor_floors.get(anchor).copied().unwrap_or(0);
+        self.pool_height <= height && self.pool_leaves >= self.tree_bound.max(floor)
+    }
+}
+
+/// The bounds `store` keeps on the trees of the anchors that `stale` and
+/// `journal` name without their heights: the largest tree it has held
+/// ([`HeightlessAnchorEvidence::tree_bound`]) and the floors of those anchors
+/// ([`HeightlessAnchorEvidence::anchor_floors`]). `None` when no anchor is
+/// named without its height, or the store keeps no such bound.
+pub(crate) fn heightless_tree_bounds<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+) -> Option<(u64, BTreeMap<[u8; 32], u64>)> {
+    let heightless = stale
+        .iter()
+        .any(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
+        || journal
+            .iter()
+            .any(|(_, record)| record.anchor_height.is_none());
+    if !heightless {
+        return None;
+    }
+    let tree_bound = store.legacy_anchor_tree_bound()?;
+    Some((tree_bound, heightless_anchor_floors(store, stale, journal)))
+}
+
+/// Per anchor that a reservation in `stale` or a record in `journal` names
+/// without its height, one past the highest commitment tree position among
+/// the notes spent on it that `store` holds
+/// ([`HeightlessAnchorEvidence::anchor_floors`]). A note the store does not
+/// hold, or a subwallet whose notes do not read, raises no floor.
+fn heightless_anchor_floors<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+) -> BTreeMap<[u8; 32], u64> {
+    let spends = stale
+        .iter()
+        .filter(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
+        .map(|(id, (nullifier, anchor, _, _))| (*id, *anchor, std::slice::from_ref(nullifier)))
+        .chain(
+            journal
+                .iter()
+                .filter(|(_, record)| record.anchor_height.is_none())
+                .map(|(wallet_id, record)| {
+                    (
+                        SubwalletId::new(*wallet_id, record.account_index),
+                        record.anchor,
+                        record.nullifiers.as_slice(),
+                    )
+                }),
+        );
+    let mut positions: BTreeMap<SubwalletId, BTreeMap<[u8; 32], u64>> = BTreeMap::new();
+    let mut floors: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    for (id, anchor, nullifiers) in spends {
+        let notes = positions
+            .entry(id)
+            .or_insert_with(|| match store.get_all_notes(id) {
+                Ok(notes) => notes
+                    .into_iter()
+                    .map(|note| (note.nullifier, note.position))
+                    .collect(),
+                Err(error) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        %error,
+                        "shielded reservation release: the notes do not read; they raise no tree \
+                         floor for anchors without a height"
+                    );
+                    BTreeMap::new()
+                }
+            });
+        for position in nullifiers
+            .iter()
+            .filter_map(|nullifier| notes.get(nullifier))
+        {
+            let floor = floors.entry(anchor).or_insert(0);
+            *floor = (*floor).max(position.saturating_add(1));
+        }
+    }
+    floors
+}
+
+/// What a sync pass reads before its note scan, for the steps after it that
+/// may act only on evidence from before the scan
+/// ([`NetworkShieldedCoordinator::prefetch_stranded_release`]).
+struct PreScanEvidence {
+    /// The anchored reservations, for
+    /// [`NetworkShieldedCoordinator::release_stranded_spends`].
+    stale: Vec<(SubwalletId, StalePendingSpend)>,
+    /// The private payment journal records of the synced wallets, read before
+    /// the anchor set was fetched, for
+    /// [`NetworkShieldedCoordinator::discharge_expired_private_payments`].
+    journal: Vec<(WalletId, PrivatePaymentRecord)>,
+    /// Platform's recorded anchor set.
+    recorded: HashSet<[u8; 32]>,
+    /// The height of the proof the anchor set was read from.
+    recorded_height: u64,
+    /// What bounds the trees of the anchors `stale` and `journal` name
+    /// without their heights, read before the anchor set; `None` when none
+    /// does, or none was needed.
+    heightless: Option<HeightlessAnchorEvidence>,
+}
+
+/// The private payment journal records of `wallet_ids`, each wallet once, in
+/// order. A wallet whose journal does not read has none here: nothing of it is
+/// a candidate for expiry.
+pub(crate) fn private_payment_journal_snapshot<S: ShieldedStore>(
+    store: &S,
+    wallet_ids: impl IntoIterator<Item = WalletId>,
+) -> Vec<(WalletId, PrivatePaymentRecord)> {
+    let wallets: std::collections::BTreeSet<WalletId> = wallet_ids.into_iter().collect();
+    let mut journal = Vec::new();
+    for wallet_id in wallets {
+        match store.private_payment_journal(wallet_id) {
+            Ok(records) => journal.extend(records.into_iter().map(|record| (wallet_id, record))),
+            Err(error) => tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                %error,
+                "private payment expiry: the journal does not read; no payment of the wallet \
+                 is a candidate this pass"
+            ),
+        }
+    }
+    journal
+}
+
+/// Whether `wallet_id`'s journal still holds `record` exactly as a pass's
+/// snapshot read it. A store read that fails says no.
+fn unchanged<S: ShieldedStore>(
+    store: &S,
+    wallet_id: WalletId,
+    record: &PrivatePaymentRecord,
+) -> bool {
+    store
+        .private_payment_journal(wallet_id)
+        .is_ok_and(|records| records.contains(record))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2247,7 +2827,9 @@ mod tests {
 
     use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::activity::compute_activity_id;
-    use crate::wallet::shielded::store::PendingRedrive;
+    use crate::wallet::shielded::store::{
+        InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
+    };
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
@@ -2350,6 +2932,7 @@ mod tests {
                 attempts: 0,
                 identity_nonce_finalized: true,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
             cmxs,
         )
@@ -2923,6 +3506,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         coordinator
             .store()
@@ -3299,6 +3883,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         coordinator
             .store()
@@ -3412,6 +3997,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: true,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .unwrap();
@@ -3758,24 +4344,32 @@ mod tests {
             let mut store = coordinator.store.write().await;
             store.mark_pending(id, &pruned_nf).expect("mark pruned");
             store
-                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act)
+                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act, Some(10))
                 .expect("arm pruned");
             store.mark_pending(id, &live_nf).expect("mark live");
             store
-                .set_pending_spend(id, &live_nf, live_anchor, live_act)
+                .set_pending_spend(id, &live_nf, live_anchor, live_act, Some(10))
                 .expect("arm live");
         }
 
         // Snapshot as the pre-scan prefetch would have produced it; the
         // recorded set holds only the live anchor (the other was "pruned").
         let snapshot = vec![
-            (id, (pruned_nf, pruned_anchor, Some(pruned_act))),
-            (id, (live_nf, live_anchor, Some(live_act))),
+            (id, (pruned_nf, pruned_anchor, Some(pruned_act), Some(10))),
+            (id, (live_nf, live_anchor, Some(live_act), Some(10))),
         ];
         let recorded: HashSet<[u8; 32]> = [live_anchor].into_iter().collect();
 
         coordinator
-            .release_stranded_spends(snapshot, &recorded)
+            .release_stranded_spends(
+                snapshot,
+                PrunedAnchorEvidence {
+                    recorded: &recorded,
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
             .await;
 
         let remaining = coordinator
@@ -3795,6 +4389,464 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The whole sync pass, its note scan proved a block below the anchor set
+    /// (within the SDK's one-block tolerance): a spend built on an anchor the
+    /// set lacks may have executed in that block, which the scan has not
+    /// shown, so its note stays reserved, its saved record stays and its
+    /// activity stays Pending. Once the scan covers the set's height, the
+    /// pass releases it. An anchor read above the set's height, absent from
+    /// it, may be newer than the set and is never released by it.
+    #[tokio::test]
+    async fn should_release_a_stranded_spend_only_once_the_scan_covers_the_anchor_set() {
+        use super::super::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+        };
+        use crate::wallet::shielded::ShieldedNote;
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        // The scan's window of 16 chunk fetches, all of an empty pool.
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![[0xEE; 32]])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT - 1);
+
+        let dir = temp_dir("release_scan_below_set");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk.clone()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store"),
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        let id = SubwalletId::new(wallet_id, 0);
+        // Two broadcast spends whose anchors the set lacks: one read below
+        // the set's height, one above it.
+        let spends = [
+            ([0x21; 32], [0x22; 32], [0x23; 32], SET_HEIGHT - 5),
+            ([0x31; 32], [0x32; 32], [0x33; 32], SET_HEIGHT + 1),
+        ];
+        {
+            let mut store = coordinator.store().write().await;
+            for (index, (nullifier, anchor, activity, anchor_height)) in spends.iter().enumerate() {
+                let note = ShieldedNote {
+                    position: index as u64,
+                    cmx: [0x40 + index as u8; 32],
+                    nullifier: *nullifier,
+                    block_height: 1,
+                    is_spent: false,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                };
+                store.save_note(id, &note).expect("note");
+                store.mark_pending(id, nullifier).expect("reserved");
+                store
+                    .set_pending_spend(id, nullifier, *anchor, *activity, Some(*anchor_height))
+                    .expect("anchored");
+                store
+                    .arm_redrive(
+                        id,
+                        PendingRedrive {
+                            activity_id: *activity,
+                            anchor: *anchor,
+                            nullifiers: vec![*nullifier],
+                            st_bytes: vec![0xDE, 0xAD],
+                            attempts: 0,
+                            identity_nonce_finalized: false,
+                            identity_user_abandoned: false,
+                            anchor_height: Some(*anchor_height),
+                        },
+                    )
+                    .expect("record");
+                store
+                    .save_activity(
+                        id,
+                        &ShieldedActivityEntry {
+                            id: *activity,
+                            kind: ShieldedActivityKind::Unshield,
+                            direction: ShieldedDirection::Out,
+                            amount: 900,
+                            fee: None,
+                            counterparty: None,
+                            memo: None,
+                            block_height: None,
+                            status: ShieldedActivityStatus::Pending,
+                            created_at_ms: 1,
+                            min_note_position: None,
+                            note_cmxs: vec![],
+                            spent_nullifiers: vec![*nullifier],
+                        },
+                    )
+                    .expect("activity");
+            }
+        }
+        let state = |store: &FileBackedShieldedStore, nullifier: [u8; 32], activity: [u8; 32]| {
+            let reserved = !store
+                .get_unspent_notes(id)
+                .expect("notes")
+                .iter()
+                .any(|note| note.nullifier == nullifier);
+            let saved = store
+                .pending_redrives(id)
+                .expect("records")
+                .iter()
+                .any(|record| record.activity_id == activity);
+            let status = store
+                .get_activity_by_entry_id(id, &activity)
+                .expect("activity")
+                .map(|entry| entry.status);
+            (reserved, saved, status)
+        };
+        let held = (true, true, Some(ShieldedActivityStatus::Pending));
+
+        coordinator.sync(true, &CancellationToken::new()).await;
+        {
+            let store = coordinator.store().read().await;
+            for (nullifier, _, activity, _) in &spends {
+                assert_eq!(
+                    state(&store, *nullifier, *activity),
+                    held,
+                    "a scan a block below the set releases nothing"
+                );
+            }
+        }
+
+        sdk.mock()
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+        coordinator.sync(true, &CancellationToken::new()).await;
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            state(&store, spends[0].0, spends[0].2),
+            (false, false, Some(ShieldedActivityStatus::Failed)),
+            "proven pruned once the scan covers the set"
+        );
+        assert_eq!(
+            state(&store, spends[1].0, spends[1].2),
+            held,
+            "an anchor read above the set may be newer than it"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A reservation restored from a record saved before anchor heights were
+    /// kept has no known height: its anchor absent from a set may be newer
+    /// than it, so it is not released. A set holding the anchor gives it that
+    /// set's height, durably, and a later set lacking it, with the scan
+    /// covering that set, releases it.
+    #[tokio::test]
+    async fn should_release_a_heightless_reservation_only_after_a_set_held_its_anchor() {
+        let dir = temp_dir("release_heightless");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let nullifier = [0x51; 32];
+        let anchor = [0x52; 32];
+        let activity = [0x53; 32];
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, activity, None)
+                .expect("anchored, no height");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: None,
+                    },
+                )
+                .expect("record");
+        }
+        let stale = |coordinator: &NetworkShieldedCoordinator| {
+            let store = coordinator.store.clone();
+            async move { store.read().await.stale_pending_spends(id).expect("stale") }
+        };
+        let release = |recorded: HashSet<[u8; 32]>, height: u64| {
+            let snapshot_store = coordinator.store.clone();
+            let coordinator = &coordinator;
+            async move {
+                let snapshot: Vec<(SubwalletId, StalePendingSpend)> = snapshot_store
+                    .read()
+                    .await
+                    .stale_pending_spends(id)
+                    .expect("stale")
+                    .into_iter()
+                    .map(|entry| (id, entry))
+                    .collect();
+                coordinator
+                    .release_stranded_spends(
+                        snapshot,
+                        PrunedAnchorEvidence {
+                            recorded: &recorded,
+                            height,
+                            scan_covered_height: Some(height),
+                            heightless: None,
+                        },
+                    )
+                    .await;
+            }
+        };
+
+        // Absent from the first set seen: perhaps newer than it.
+        release(HashSet::new(), 10).await;
+        assert_eq!(
+            stale(&coordinator).await,
+            vec![(nullifier, anchor, Some(activity), None)],
+            "not proven pruned"
+        );
+        // A set holding it gives it the set's height.
+        release(HashSet::from([anchor]), 20).await;
+        assert_eq!(
+            stale(&coordinator).await,
+            vec![(nullifier, anchor, Some(activity), Some(20))],
+        );
+        let reopened =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopened");
+        assert_eq!(
+            reopened.pending_redrives(id).expect("records")[0].anchor_height,
+            Some(20),
+            "kept durably"
+        );
+        drop(reopened);
+        // A later set lacking it releases it.
+        release(HashSet::new(), 30).await;
+        assert!(stale(&coordinator).await.is_empty(), "proven pruned");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A note spend an earlier process saved before anchor heights were kept,
+    /// from a tree of `TREE` leaves. Reopened, its height stays unknown, and a
+    /// set lacking its anchor shows it pruned only with the pool proved, at or
+    /// below the set's height, to hold `TREE` leaves or more, and the scan
+    /// covering the set. Evidence a block behind the anchor, with every proof
+    /// at H - 1 and the pool short of its tree, releases nothing: the anchor
+    /// may postdate that set.
+    #[tokio::test]
+    async fn should_release_a_reopened_heightless_reservation_only_once_the_pool_reached_its_tree()
+    {
+        const TREE: u64 = 4;
+        const H: u64 = 10;
+        let dir = temp_dir("release_reopened_heightless");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let (nullifier, anchor, activity) = ([0x61; 32], [0x62; 32], [0x63; 32]);
+        {
+            // An earlier process, before heights were kept.
+            let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open");
+            for leaf in 0..TREE {
+                store
+                    .append_commitment(&[leaf as u8 + 1; 32], true)
+                    .expect("appended");
+            }
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: None,
+                    },
+                )
+                .expect("record");
+        }
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened"),
+        );
+        let stale = || async {
+            coordinator
+                .store
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .expect("stale")
+        };
+        assert_eq!(
+            stale().await,
+            vec![(nullifier, anchor, Some(activity), None)],
+            "its height stays unknown"
+        );
+        let recorded = HashSet::new();
+        // (set height, scan coverage, pool leaves and their height, released)
+        let cases = [
+            (
+                H - 1,
+                H - 1,
+                Some((TREE - 1, H - 1)),
+                false,
+                "a block behind",
+            ),
+            (H, H, None, false, "no pool count"),
+            (
+                H,
+                H,
+                Some((TREE - 1, H)),
+                false,
+                "the pool short of the tree",
+            ),
+            (
+                H,
+                H,
+                Some((TREE, H + 1)),
+                false,
+                "the pool proved above the set",
+            ),
+            (H, H - 1, Some((TREE, H)), false, "the scan below the set"),
+            (H, H, Some((TREE, H - 1)), true, "proven"),
+        ];
+        for (set_height, covered, pool, released, case) in cases {
+            let snapshot: Vec<(SubwalletId, StalePendingSpend)> =
+                stale().await.into_iter().map(|entry| (id, entry)).collect();
+            let heightless = {
+                let store = coordinator.store.read().await;
+                let (tree_bound, anchor_floors) =
+                    heightless_tree_bounds(&*store, &snapshot, &[]).expect("bounded");
+                assert_eq!(tree_bound, TREE, "the tree the earlier process held");
+                pool.map(|(pool_leaves, pool_height)| HeightlessAnchorEvidence {
+                    tree_bound,
+                    pool_leaves,
+                    pool_height,
+                    anchor_floors,
+                })
+            };
+            coordinator
+                .release_stranded_spends(
+                    snapshot,
+                    PrunedAnchorEvidence {
+                        recorded: &recorded,
+                        height: set_height,
+                        scan_covered_height: Some(covered),
+                        heightless: heightless.as_ref(),
+                    },
+                )
+                .await;
+            assert_eq!(stale().await.is_empty(), released, "{case}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The floor of an anchor named without its height is one past the
+    /// highest position of the notes spent on it that the store holds, over
+    /// every reservation and journal record naming it, and a pool count
+    /// shows the anchor recorded only once it reaches both that floor and the
+    /// tree bound. A note the store does not hold raises no floor.
+    #[test]
+    fn should_bound_a_heightless_anchor_s_tree_by_the_notes_spent_on_it() {
+        let (anchor, other, dated) = ([0x51; 32], [0x52; 32], [0x53; 32]);
+        let wallet_id = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let note = |position: u64, nullifier: u8| ShieldedNote {
+            position,
+            cmx: [nullifier; 32],
+            nullifier: [nullifier; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1,
+            note_data: vec![],
+        };
+        let mut store = InMemoryShieldedStore::new();
+        for (position, nullifier) in [(3, 0x61), (8, 0x62), (20, 0x63)] {
+            store
+                .save_note(id, &note(position, nullifier))
+                .expect("saved");
+        }
+        let stale = vec![
+            (id, ([0x61; 32], anchor, None, None)),
+            (id, ([0x64; 32], other, None, None)),
+            // A dated reservation raises no floor.
+            (id, ([0x63; 32], dated, None, Some(5))),
+        ];
+        let journal = vec![(
+            wallet_id,
+            PrivatePaymentRecord {
+                account_index: 0,
+                activity_id: [0x71; 32],
+                anchor,
+                anchor_height: None,
+                commitment: [0x72; 32],
+                payment: PrivateContactPayment {
+                    sender: [1; 32],
+                    recipient: [2; 32],
+                    account_reference: 0,
+                },
+                nullifiers: vec![[0x62; 32], [0x65; 32]],
+                entry_hash: None,
+                store_position: None,
+            },
+        )];
+        let floors = heightless_anchor_floors(&store, &stale, &journal);
+        assert_eq!(floors, BTreeMap::from([(anchor, 9)]));
+        let evidence = |pool_leaves| HeightlessAnchorEvidence {
+            tree_bound: 6,
+            pool_leaves,
+            pool_height: 10,
+            anchor_floors: floors.clone(),
+        };
+        assert!(!evidence(8).recorded_by(&anchor, 10), "below its floor");
+        assert!(evidence(9).recorded_by(&anchor, 10), "at its floor");
+        assert!(!evidence(5).recorded_by(&other, 10), "below the bound");
+        assert!(evidence(6).recorded_by(&other, 10), "at the bound");
+        assert!(!evidence(9).recorded_by(&anchor, 9), "proved above the set");
     }
 
     /// A token cancelled before the pass starts: no network call (the

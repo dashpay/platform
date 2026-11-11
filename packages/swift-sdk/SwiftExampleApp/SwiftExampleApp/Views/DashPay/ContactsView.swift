@@ -226,6 +226,69 @@ func kickDashPaySync(_ walletManager: PlatformWalletManager) {
     Task { _ = try? await walletManager.dashPaySyncNow() }
 }
 
+/// The wallet's two holds on `identityId`'s pairs with `contactIds`, one
+/// read of each per contact: held for a private request, as a send decides
+/// it (`ManagedPlatformWallet.privatePairHeld`: a private request in flight,
+/// paid and not yet read back, or kept by the shielded store's journal), and
+/// held for a public request whose broadcast may have been delivered
+/// (`ManagedPlatformWallet.publicContactRequestUnconfirmed`), which a DashPay
+/// sync settles. While either holds a pair, Rust refuses another send or
+/// reply to it, so the views offer neither. Empty when the wallet does not
+/// manage the identity, as it then holds nothing for it. Nil when the wallet
+/// could not be read (no loaded wallet, or a read failed), which the views
+/// keep apart from "nothing held" (`PrivateRepliesPendingSnapshot`).
+@MainActor
+func contactRequestHolds(
+    wallet: ManagedPlatformWallet?,
+    identityId: Data,
+    contactIds: [Data]
+) -> ContactRequestHolds? {
+    guard !contactIds.isEmpty else { return ContactRequestHolds() }
+    guard let wallet else { return nil }
+    return contactRequestHolds(
+        contactIds: contactIds,
+        privatePairHeld: { try wallet.privatePairHeld(senderId: identityId, recipientId: $0) },
+        publicUnconfirmed: {
+            try wallet.publicContactRequestUnconfirmed(senderId: identityId, recipientId: $0)
+        }
+    )
+}
+
+/// The wallet's readiness for `identityId`'s contact requests and, when it
+/// flags a failed restoration, why it failed; a nil readiness when it could
+/// not be read (`PrivateRepliesPendingSnapshot.recordReadiness` keeps the
+/// last one then).
+@MainActor
+func privateContactReadiness(
+    wallet: ManagedPlatformWallet?,
+    identityId: Data
+) -> (readiness: PrivateContactReadiness?, restoreFailure: String?) {
+    guard let readiness = try? wallet?.privateContactReadiness(identityId: identityId) else {
+        return (nil, nil)
+    }
+    guard readiness.privatePaymentsRestoreFailed else { return (readiness, nil) }
+    let reason = (try? wallet?.privatePaymentsRestoreFailure(identityId: identityId)) ?? nil
+    return (readiness, reason)
+}
+
+/// Read DashPay's private contact request store (protocol version 15) for
+/// `wallet`, returning what the refresh should tell the user, or nil.
+/// Private requests reach the wallet only through this read, so it runs with
+/// every pull-to-refresh of the request list. A network before protocol
+/// version 15 does not serve the store yet, which is expected and quiet; any
+/// other failure, or requests read but not saved, is reported.
+@MainActor
+func syncPrivateContactRequests(_ wallet: ManagedPlatformWallet) async -> String? {
+    do {
+        let result = try await wallet.syncPrivateContactRequests()
+        return PrivateContactRefreshNotice.notice(
+            unpersistedIdentityCount: result.unpersistedIdentityCount
+        )
+    } catch {
+        return PrivateContactRefreshNotice.notice(for: error)
+    }
+}
+
 // MARK: - Row model + view
 
 /// UI model for one established contact row, resolved from the
