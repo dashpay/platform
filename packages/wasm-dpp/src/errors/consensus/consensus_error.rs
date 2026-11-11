@@ -152,6 +152,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::signature::{
     PublicKeyBudgetExhaustedError, PublicKeyExpiredError,
+    PublicKeyWithLimitsCannotSignDataContractTransitionError,
     PublicKeyWithLimitsCannotUpdateKeyLimitsError,
 };
 use dpp::consensus::state::identity::identity_public_key_already_expired_error::IdentityPublicKeyAlreadyExpiredError;
@@ -1529,6 +1530,10 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         }
         SignatureError::PublicKeyWithLimitsCannotUpdateKeyLimitsError(e) => {
             generic_consensus_error!(PublicKeyWithLimitsCannotUpdateKeyLimitsError, e).into()
+        }
+        SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(e) => {
+            generic_consensus_error!(PublicKeyWithLimitsCannotSignDataContractTransitionError, e)
+                .into()
         }
     }
 }
