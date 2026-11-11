@@ -1326,7 +1326,7 @@ fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
     // moderation can remove, is the case the keyword exists for.
     for platform_version in forfeiting_protocol_versions() {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let mut contract = contract_with(true, false, &[], PlatformVersion::latest());
+        let mut contract = contract_with(true, false, &[], platform_version);
         let mut schema = post_schema(true);
         schema
             .insert("canBeDeleted".to_string(), Value::Bool(false))

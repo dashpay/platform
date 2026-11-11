@@ -121,6 +121,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
@@ -128,9 +129,13 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-    use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevelTypeInfo};
+    use dpp::data_contract::DataContract;
+    use dpp::data_contract::DataContractFactory;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::Document;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::platform_value;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::version::PlatformVersion;
     use grovedb::batch::KeyInfoPath;
@@ -140,20 +145,20 @@ mod tests {
     use grovedb::EstimatedSumTrees::NoSumTrees;
     use grovedb::TreeType;
 
-    /// The description a delete's estimate gives the `[0]` layer of the index of
-    /// `document_type_name` on `properties` (its entries for `document`'s values, keyed by
-    /// document id), every layer the delete climbs through described before, as the index
-    /// walkers do before they reach the reference.
-    fn entries_layer(
-        contract_path: &str,
+    /// Removes `document`'s reference from the index of `document_type_name` on `properties`
+    /// for an estimate, every layer the delete climbs through described before, as the index
+    /// walkers do before they reach the reference. `adjust_index_type` may change the index's
+    /// level info first. Returns the estimate, the removal's operations, and the index path the
+    /// reference sits under.
+    fn estimate_reference_removal(
+        contract: &DataContract,
         document_type_name: &str,
         properties: &[&str],
         document: impl Fn(DocumentTypeRef) -> Document,
+        adjust_index_type: impl Fn(&mut IndexLevelTypeInfo),
         platform_version: &PlatformVersion,
-    ) -> EstimatedLayerInformation {
+    ) -> (EstimatedLayers, Vec<LowLevelDriveOperation>, Vec<Vec<u8>>) {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected the contract");
         let document_type = contract
             .document_type_for_name(document_type_name)
             .expect("expected the document type");
@@ -184,11 +189,14 @@ mod tests {
             );
             estimate.insert(KeyInfoPath::from_known_owned_path(path.clone()), described);
         }
-        let index_type = index_level
+        let mut index_type = index_level
             .has_index_with_type()
-            .expect("expected the index to end here");
+            .expect("expected the index to end here")
+            .clone();
+        adjust_index_type(&mut index_type);
 
         let mut estimate = Some(estimate);
+        let mut operations = vec![];
         drive
             .remove_reference_for_index_level_for_contract_operations(
                 &DocumentAndContractInfo {
@@ -196,11 +204,11 @@ mod tests {
                         document_info: DocumentRefInfo((&document, None)),
                         owner_id: None,
                     },
-                    contract: &contract,
+                    contract,
                     document_type,
                 },
                 PathInfo::PathAsVec(path.clone()),
-                index_type,
+                &index_type,
                 false,
                 false,
                 &None,
@@ -209,14 +217,35 @@ mod tests {
                 false,
                 [0; 32],
                 None,
-                &mut vec![],
+                &mut operations,
                 platform_version,
             )
             .expect("expected the reference removal");
+        (estimate.expect("expected the estimate"), operations, path)
+    }
 
+    /// The description a delete's estimate gives the `[0]` layer of the index of
+    /// `document_type_name` on `properties` (its entries for `document`'s values, keyed by
+    /// document id).
+    fn entries_layer(
+        contract_path: &str,
+        document_type_name: &str,
+        properties: &[&str],
+        document: impl Fn(DocumentTypeRef) -> Document,
+        platform_version: &PlatformVersion,
+    ) -> EstimatedLayerInformation {
+        let contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected the contract");
+        let (estimate, _, mut path) = estimate_reference_removal(
+            &contract,
+            document_type_name,
+            properties,
+            document,
+            |_| {},
+            platform_version,
+        );
         path.push(vec![0]);
         estimate
-            .expect("expected the estimate")
             .get(&KeyInfoPath::from_known_owned_path(path))
             .copied()
             .expect("expected the entries layer to be described")
@@ -298,6 +327,96 @@ mod tests {
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: entries,
                 },
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// A unique index keeps a document's reference at its value's key `[0]`, under a summable
+    /// index as a reference with a sum item, 10 bytes larger. From protocol version 15 a
+    /// delete's estimate reads the deleted reference at that size, 10 bytes more than the same
+    /// delete with the index's `summable` cleared; protocol version 14 reads it as a plain
+    /// reference either way.
+    #[test]
+    fn should_read_a_unique_summable_index_deleted_reference_with_its_sum_item_from_protocol_version_15(
+    ) {
+        for (platform_version, sum_item_bytes) in [
+            (
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                0,
+            ),
+            (PlatformVersion::latest(), 10),
+        ] {
+            let contract = DataContractFactory::new(platform_version.protocol_version)
+                .expect("expected a contract factory")
+                .create_with_value_config(
+                    Identifier::from([7; 32]),
+                    0,
+                    platform_value!({
+                        "receipt": {
+                            "type": "object",
+                            "indices": [{
+                                "name": "byTxId",
+                                "properties": [{ "txId": "asc" }],
+                                "unique": true,
+                                "summable": "amount",
+                            }],
+                            "properties": {
+                                "txId": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 32,
+                                    "maxItems": 32,
+                                    "position": 0,
+                                },
+                                "amount": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 4294967295u64,
+                                    "position": 1,
+                                },
+                            },
+                            "required": ["txId", "amount"],
+                            "additionalProperties": false,
+                        },
+                    }),
+                    None,
+                    None,
+                )
+                .expect("expected the contract")
+                .data_contract_owned();
+            let loaded_bytes = |summable: bool| -> u64 {
+                let (_, operations, _) = estimate_reference_removal(
+                    &contract,
+                    "receipt",
+                    &["txId"],
+                    |document_type| {
+                        document_type
+                            .random_document(Some(5), platform_version)
+                            .expect("expected a receipt")
+                    },
+                    |index_type| {
+                        assert_eq!(index_type.summable.as_deref(), Some("amount"));
+                        if !summable {
+                            index_type.summable = None;
+                        }
+                    },
+                    platform_version,
+                );
+                operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        LowLevelDriveOperation::CalculatedCostOperation(cost) => {
+                            Some(cost.storage_loaded_bytes)
+                        }
+                        _ => None,
+                    })
+                    .sum()
+            };
+            assert_eq!(
+                loaded_bytes(true) - loaded_bytes(false),
+                sum_item_bytes,
                 "protocol version {}",
                 platform_version.protocol_version
             );
