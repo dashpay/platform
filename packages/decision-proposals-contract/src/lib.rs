@@ -229,8 +229,8 @@ mod tests {
         // that a moderator's removal takes away and that its author writes
         let taken_with_the_document = serde_json::json!({
             "allOf": [
-                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
-                { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+                { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
             ]
         });
         assert_eq!(
@@ -238,10 +238,14 @@ mod tests {
                 ["refersTo"],
             serde_json::json!({
                 "type": "moderatedDocument",
-                "contractIdProperty":
-                    multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
-                "documentTypeProperty":
-                    multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+                "contractId": format!(
+                    "$self.{}",
+                    multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID
+                ),
+                "documentType": format!(
+                    "$self.{}",
+                    multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE
+                ),
                 "documentTypeRequirements": {
                     "properties": {
                         "body": {

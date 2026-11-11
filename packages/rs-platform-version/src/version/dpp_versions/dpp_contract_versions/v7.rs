@@ -22,7 +22,7 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   private document type, which only the native schema check of registration admits;
 /// - `apply_property_reference`, `Some(1)` rather than `Some(0)`: a permanent or moderated
 ///   document reference on an identifier property may name its target through the
-///   referring document (`contractIdProperty`, `documentTypeProperty`), with what the named
+///   referring document (`contractId` and `documentType` written `"$self.<property>"`), with what the named
 ///   document type must look like (`documentTypeRequirements`);
 /// - `parse_contested_documents_resolution`, `Some(0)` rather than `None`: a contested index
 ///   may declare `"resolution": 2`, a masternode vote among documents, where each document

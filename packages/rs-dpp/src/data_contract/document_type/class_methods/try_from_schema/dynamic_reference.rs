@@ -1,5 +1,5 @@
-//! Parsing of a `refersTo` whose target the referring document names
-//! (`contractIdProperty`, `documentTypeProperty`, `documentTypeRequirements`), which
+//! Parsing of a `refersTo` whose target the referring document names (`contractId` and
+//! `documentType` written `"$self.<property>"`, with `documentTypeRequirements`), which
 //! version 1 of `apply_property_reference` reads (protocol version 15). See
 //! [`DynamicDocumentReference`].
 
@@ -8,9 +8,9 @@ use crate::data_contract::document_type::property::{
     DocumentPropertyType, DocumentTypeRequirements, DynamicDocumentReference,
     DynamicDocumentReferenceKind, PropertyReference, ReferenceHolder, RequiredPropertySlot,
     SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions, SlotPropertyName,
-    SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME,
+    SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
     SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND,
-    SLOT_CONDITION_SELF,
+    SLOT_CONDITION_PROPERTY,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -19,12 +19,21 @@ use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 
-/// The keys only a dynamic reference carries.
+/// The keys of a dynamic reference beside its `type`.
 const DYNAMIC_KEYS: [&str; 3] = [
-    property_names::CONTRACT_ID_PROPERTY,
-    property_names::DOCUMENT_TYPE_PROPERTY,
+    property_names::CONTRACT_ID,
+    property_names::DOCUMENT_TYPE,
     property_names::DOCUMENT_TYPE_REQUIREMENTS,
 ];
+
+/// The two keys a dynamic reference reads from the referring document.
+const TARGET_KEYS: [&str; 2] = [property_names::CONTRACT_ID, property_names::DOCUMENT_TYPE];
+
+/// What `"$self.<rest>"` reads from the referring document: `<rest>`. `None` for a value
+/// that is not written with the prefix, a literal contract id or document type among them.
+fn read_from_referring_document(value: &Value) -> Option<&str> {
+    value.as_text()?.strip_prefix(REFERRING_DOCUMENT_PREFIX)
+}
 
 /// The keys of a slot of `documentTypeRequirements.properties`.
 const SLOT_KEYS: [&str; 6] = [
@@ -49,15 +58,19 @@ fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
-/// Whether a `refersTo` declaration names its target through the referring document: it
-/// carries one of the keys only a dynamic reference does.
+/// Whether a `refersTo` declaration names its target through the referring document: its
+/// `contractId` or its `documentType` is read from it (`"$self.<property>"`), or it
+/// carries `documentTypeRequirements`, which describe a type the schema does not name.
 pub(super) fn declares_dynamic_target(refers_to_value: &Value) -> bool {
     refers_to_value
         .to_btree_ref_string_map()
         .is_ok_and(|declaration| {
-            DYNAMIC_KEYS
-                .iter()
-                .any(|key| declaration.contains_key(*key))
+            declaration.contains_key(property_names::DOCUMENT_TYPE_REQUIREMENTS)
+                || TARGET_KEYS.iter().any(|key| {
+                    declaration
+                        .get(*key)
+                        .is_some_and(|value| read_from_referring_document(value).is_some())
+                })
         })
 }
 
@@ -87,7 +100,7 @@ pub(super) fn refuse_dynamic_target(
 ) -> Result<(), DataContractError> {
     if refers_to_value.is_some_and(declares_dynamic_target_anywhere) {
         return Err(refused(format!(
-            "a refersTo naming its target through contractIdProperty and documentTypeProperty \
+            "a refersTo reading its contractId and documentType from the referring document \
              is not allowed {place}: it sits on an identifier property, alone"
         )));
     }
@@ -103,18 +116,6 @@ fn is_word_name(name: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
-fn word_name(value: &Value, what: &str) -> Result<String, DataContractError> {
-    value
-        .as_text()
-        .filter(|name| is_word_name(name))
-        .map(str::to_string)
-        .ok_or_else(|| {
-            refused(format!(
-                "{what} must be a name of 1 to 64 letters, digits or underscores"
-            ))
-        })
-}
-
 /// Parses a declaration [`declares_dynamic_target`] holds for, on an identifier property.
 pub(super) fn parse_dynamic_document_reference(
     refers_to_map: &BTreeMap<String, &Value>,
@@ -127,10 +128,11 @@ pub(super) fn parse_dynamic_document_reference(
             "moderatedDocument" => (DynamicDocumentReferenceKind::Moderated, "moderatedDocument"),
             other => {
                 return Err(refused(format!(
-                    "{other} refersTo does not take contractIdProperty, documentTypeProperty \
-                     or documentTypeRequirements: only a permanentDocument or a \
-                     moderatedDocument reference names its target through the referring \
-                     document, since only those document types promise their documents stay"
+                    "{other} refersTo reads no contractId or documentType from the referring \
+                     document and takes no documentTypeRequirements: only a \
+                     permanentDocument or a moderatedDocument reference names its target \
+                     through the referring document, since only those document types \
+                     promise their documents stay"
                 )))
             }
         },
@@ -167,27 +169,40 @@ pub(super) fn parse_dynamic_document_reference(
         .find(|key| key.as_str() != property_names::TYPE && !DYNAMIC_KEYS.contains(&key.as_str()))
     {
         return Err(refused(format!(
-            "{reference_type} refersTo naming its target through contractIdProperty and \
-             documentTypeProperty does not take {key}: the referenced document type is not \
-             known until a document is written"
+            "{reference_type} refersTo naming its target through the referring document does \
+             not take {key}: the referenced document type is not known until a document is \
+             written"
         )));
     }
 
+    // Both come from the document: a declaration names its target in the schema or
+    // through the referring document, not half of each
     let property = |key: &str| -> Result<String, DataContractError> {
-        let value = refers_to_map.get(key).ok_or_else(|| {
-            refused(format!(
-                "{reference_type} refersTo naming its target through the referring document \
-                 needs both contractIdProperty and documentTypeProperty: {key} is missing"
-            ))
-        })?;
-        word_name(value, &format!("{reference_type} refersTo {key}"))
+        let read = refers_to_map
+            .get(key)
+            .and_then(|value| read_from_referring_document(value))
+            .ok_or_else(|| {
+                refused(format!(
+                    "{reference_type} refersTo naming its target through the referring \
+                     document reads both contractId and documentType from it: {key} must be \
+                     \"{REFERRING_DOCUMENT_PREFIX}<a top-level property>\""
+                ))
+            })?;
+        if !is_word_name(read) {
+            return Err(refused(format!(
+                "{reference_type} refersTo {key} must read a top-level property, \
+                 \"{REFERRING_DOCUMENT_PREFIX}\" followed by a name of 1 to 64 letters, digits \
+                 or underscores"
+            )));
+        }
+        Ok(read.to_string())
     };
-    let contract_id_property = property(property_names::CONTRACT_ID_PROPERTY)?;
-    let document_type_property = property(property_names::DOCUMENT_TYPE_PROPERTY)?;
+    let contract_id_property = property(property_names::CONTRACT_ID)?;
+    let document_type_property = property(property_names::DOCUMENT_TYPE)?;
     if contract_id_property == document_type_property {
         return Err(refused(format!(
-            "{reference_type} refersTo contractIdProperty and documentTypeProperty name the \
-             same property, \"{contract_id_property}\""
+            "{reference_type} refersTo contractId and documentType read the same property, \
+             \"{contract_id_property}\""
         )));
     }
 
@@ -287,35 +302,25 @@ fn parse_slot(
         return Err(refused(format!("{} does not take {key}", at())));
     }
 
-    let name = match slot.get("name") {
-        Some(Value::Text(name)) if name == ANY_PROPERTY_NAME => SlotPropertyName::Any,
-        Some(Value::Text(name)) if is_word_name(name) => SlotPropertyName::Named(name.clone()),
-        Some(from_property @ Value::Map(_)) => {
-            let from_property = from_property
-                .to_btree_ref_string_map()
-                .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
-            match (from_property.len(), from_property.get("property")) {
-                (1, Some(property)) => SlotPropertyName::FromProperty(word_name(
-                    property,
-                    &format!("{} name property", at()),
-                )?),
-                _ => {
-                    return Err(refused(format!(
-                        "{} name must be \"$any\", a property name, or {{ \"property\": <a \
-                         string property of the referring document> }}",
-                        at()
-                    )))
-                }
-            }
-        }
-        _ => {
-            return Err(refused(format!(
-                "{} needs a name: \"$any\", a property name of 1 to 64 letters, digits or \
-                 underscores, or {{ \"property\": <a string property of the referring \
-                 document> }}",
-                at()
-            )))
-        }
+    let named_wrongly = || {
+        refused(format!(
+            "{} needs a name: \"$any\", a property name of 1 to 64 letters, digits or \
+             underscores, or \"{REFERRING_DOCUMENT_PREFIX}<a string property of the referring \
+             document>\"",
+            at()
+        ))
+    };
+    let name = match slot.get("name").and_then(|name| name.as_text()) {
+        Some(ANY_PROPERTY_NAME) => SlotPropertyName::Any,
+        Some(name) if is_word_name(name) => SlotPropertyName::Named(name.to_string()),
+        // The name the referring document gives in a string property of its own
+        Some(name) => SlotPropertyName::FromProperty(
+            name.strip_prefix(REFERRING_DOCUMENT_PREFIX)
+                .filter(|property| is_word_name(property))
+                .ok_or_else(named_wrongly)?
+                .to_string(),
+        ),
+        None => return Err(named_wrongly()),
     };
 
     let byte_array = match slot.get("byteArray") {
@@ -419,18 +424,18 @@ fn parse_slot(
     })
 }
 
-/// A string a slot's `when` compares: `$kind`, `$self` or `{ "const": <string> }`.
+/// A string a slot's `when` compares: `$kind`, `$property` or `{ "const": <string> }`.
 fn slot_condition_value(value: &Value, at: &str) -> Result<SlotConditionValue, DataContractError> {
     let shape = || {
         refused(format!(
-            "{at} when compares \"{SLOT_CONDITION_KIND}\", \"{SLOT_CONDITION_SELF}\" or {{ \
+            "{at} when compares \"{SLOT_CONDITION_KIND}\", \"{SLOT_CONDITION_PROPERTY}\" or {{ \
              \"const\": <a string of 1 to {MAX_SLOT_CONDITION_CONSTANT_LENGTH} characters> }}, \
              got {value}"
         ))
     };
     match value {
         Value::Text(operand) if operand == SLOT_CONDITION_KIND => Ok(SlotConditionValue::Kind),
-        Value::Text(operand) if operand == SLOT_CONDITION_SELF => {
+        Value::Text(operand) if operand == SLOT_CONDITION_PROPERTY => {
             Ok(SlotConditionValue::PropertyName)
         }
         Value::Map(_) => {
@@ -528,7 +533,7 @@ fn parse_slot_condition(
                 _ => {
                     return Err(refused(format!(
                         "{at} when {key} compares \"{SLOT_CONDITION_KIND}\" or \
-                         \"{SLOT_CONDITION_SELF}\" with a {{ \"const\": ... }}"
+                         \"{SLOT_CONDITION_PROPERTY}\" with a {{ \"const\": ... }}"
                     )))
                 }
             }
@@ -574,7 +579,7 @@ fn parse_slot_condition(
                 SlotConditionValue::Constant(_) => {
                     return Err(refused(format!(
                         "{at} when {key} looks for \"{SLOT_CONDITION_KIND}\" or \
-                         \"{SLOT_CONDITION_SELF}\" in the list, not for a constant"
+                         \"{SLOT_CONDITION_PROPERTY}\" in the list, not for a constant"
                     )))
                 }
             }
@@ -600,7 +605,7 @@ fn parse_slot_condition(
             let needle = slot_condition_value(&pair[1], at)?;
             if needle == SlotConditionValue::Kind {
                 return Err(refused(format!(
-                    "{at} when contains looks for \"{SLOT_CONDITION_SELF}\" or a {{ \"const\": \
+                    "{at} when contains looks for \"{SLOT_CONDITION_PROPERTY}\" or a {{ \"const\": \
                      ... }} in {}, which lists properties, not for the kind of the type",
                     list.wire_name()
                 )));
@@ -838,7 +843,7 @@ pub(super) fn validate_dynamic_reference_sources(
         };
 
         source(
-            property_names::CONTRACT_ID_PROPERTY,
+            property_names::CONTRACT_ID,
             &dynamic.contract_id_property,
             "an identifier",
             |property_type| {
@@ -850,7 +855,7 @@ pub(super) fn validate_dynamic_reference_sources(
             },
         )?;
         let string_sources = std::iter::once((
-            property_names::DOCUMENT_TYPE_PROPERTY,
+            property_names::DOCUMENT_TYPE,
             dynamic.document_type_property.as_str(),
         ))
         .chain(
@@ -858,7 +863,7 @@ pub(super) fn validate_dynamic_reference_sources(
                 .requirements
                 .iter()
                 .flat_map(|requirements| requirements.name_properties())
-                .map(|name| ("documentTypeRequirements slot name property", name)),
+                .map(|name| ("documentTypeRequirements slot name", name)),
         );
         for (key, name) in string_sources {
             source(key, name, "a string", |property_type| {

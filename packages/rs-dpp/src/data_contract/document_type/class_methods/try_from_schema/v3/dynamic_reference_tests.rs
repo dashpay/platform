@@ -1,5 +1,5 @@
-//! References whose target the referring document names (`contractIdProperty`,
-//! `documentTypeProperty`, `documentTypeRequirements`, protocol version 15): the parse of
+//! References whose target the referring document names (`contractId` and `documentType`
+//! written `"$self.<property>"`, `documentTypeRequirements`, protocol version 15): the parse of
 //! the declaration, where it may sit, the checks of the properties it reads, the protocol
 //! version gate, what a document type must look like to meet the requirements, a `type`
 //! listing both kinds, a slot's `when`, and the platform serialization round trip.
@@ -39,8 +39,8 @@ fn string(position: u32) -> serde_json::Value {
 fn text_or_bytes() -> serde_json::Value {
     json!({
         "type": "moderatedDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": {
             "properties": {
                 "body": { "name": "$any", "type": "string" },
@@ -55,8 +55,8 @@ fn text_or_bytes() -> serde_json::Value {
 fn requiring(requirements: serde_json::Value) -> serde_json::Value {
     json!({
         "type": "moderatedDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": requirements
     })
 }
@@ -164,8 +164,8 @@ fn slot(name: SlotPropertyName, value: SlotValue) -> RequiredPropertySlot {
 fn either_kind_requiring(requirements: serde_json::Value) -> serde_json::Value {
     json!({
         "type": ["permanentDocument", "moderatedDocument"],
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": requirements
     })
 }
@@ -176,8 +176,8 @@ fn removed_with_the_document() -> serde_json::Value {
         "ifThen": [
             { "equal": ["$kind", { "const": "moderatedDocument" }] },
             { "allOf": [
-                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
-                { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+                { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+                { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
             ] }
         ]
     })
@@ -285,8 +285,8 @@ fn should_parse_a_reference_naming_its_target_through_the_referring_document() {
     // A permanent document, with no requirements
     let parsed = contract(note_contract(json!({
         "type": "permanentDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType"
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType"
     })))
     .expect("parses");
     let reference = dynamic_reference(&parsed);
@@ -300,7 +300,7 @@ fn should_parse_every_form_of_a_slot_and_of_require() {
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": "title"
             },
@@ -374,8 +374,8 @@ fn should_parse_every_form_of_a_slot_and_of_require() {
 #[test]
 fn should_not_read_a_dynamic_target_before_protocol_version_15() {
     let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
-    // Registration refuses the keys it does not know, and the parser of version 14, which
-    // does not read them, refuses the document reference they leave without a documentType
+    // Registration refuses `documentTypeRequirements`, a key it does not know, and the parser
+    // of version 14 a `contractId` that is no contract id: `$self.` reads nothing there
     for full_validation in [true, false] {
         contract_on(
             note_contract(text_or_bytes()),
@@ -384,20 +384,8 @@ fn should_not_read_a_dynamic_target_before_protocol_version_15() {
         )
         .expect_err("protocol version 14 has no dynamic target");
     }
-    // Beside a documentType, version 14's parser reads the reference it always read
-    let mut refers_to = text_or_bytes();
-    refers_to["documentType"] = json!("post");
-    let parsed = contract_on(note_contract(refers_to.clone()), false, platform_version_14)
-        .expect("version 14 does not read the keys");
-    let note = parsed.document_type_for_name("note").expect("note");
-    assert!(matches!(
-        note.properties()["descriptionId"].property_type,
-        DocumentPropertyType::IdentifierWithReference(
-            DocumentPropertyReferenceTarget::ModeratedDocument { .. }
-        )
-    ));
-    // where protocol version 15 refuses the two together
-    assert_refused_by_the_parser(note_contract(refers_to), "does not take documentType");
+    // which protocol version 15 reads
+    contract(note_contract(text_or_bytes())).expect("protocol version 15 reads it");
 }
 
 #[test]
@@ -408,11 +396,6 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
         note_contract(refers_to)
     };
     for (key, value) in [
-        ("documentType", json!("post")),
-        (
-            "contractId",
-            json!(Identifier::from(CONTRACT_ID).to_string(Encoding::Base58)),
-        ),
         ("where", json!({ "$ownerId": "$ownerId" })),
         ("findBy", json!({ "title": "." })),
     ] {
@@ -427,19 +410,53 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
         "only a permanentDocument or a moderatedDocument reference names its target",
     );
 
-    // Both properties, and two different ones
-    let mut missing = text_or_bytes();
-    missing
-        .as_object_mut()
-        .expect("an object")
-        .remove("documentTypeProperty");
+    // The contract and the document type both come from the document: not one of them
+    // from the schema, whether it is given there or left out
+    for (key, value) in [
+        ("documentType", json!("post")),
+        (
+            "contractId",
+            json!(Identifier::from(CONTRACT_ID).to_string(Encoding::Base58)),
+        ),
+    ] {
+        assert_refused_by_the_parser(
+            with(key, value),
+            &format!("reads both contractId and documentType from it: {key} must be"),
+        );
+        let mut missing = text_or_bytes();
+        missing.as_object_mut().expect("an object").remove(key);
+        assert_refused_by_the_parser(
+            note_contract(missing),
+            &format!("reads both contractId and documentType from it: {key} must be"),
+        );
+    }
+    // Requirements describe a type the schema does not name
     assert_refused_by_the_parser(
-        note_contract(missing),
-        "needs both contractIdProperty and documentTypeProperty",
+        note_contract(json!({
+            "type": "moderatedDocument",
+            "documentType": "post",
+            "documentTypeRequirements": {
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            }
+        })),
+        "reads both contractId and documentType from it",
     );
-    let mut same = text_or_bytes();
-    same["documentTypeProperty"] = json!("descriptionContractId");
-    assert_refused_by_the_parser(note_contract(same), "name the same property");
+    // What is read is a top-level property, and two different ones
+    for read in [
+        "$self.",
+        "$self.description.type",
+        "$self.$ownerId",
+        "$self.a-b",
+    ] {
+        assert_refused_by_the_parser(
+            with("documentType", json!(read)),
+            "documentType must read a top-level property",
+        );
+    }
+    assert_refused_by_the_parser(
+        with("documentType", json!("$self.descriptionContractId")),
+        "read the same property",
+    );
 }
 
 #[test]
@@ -451,7 +468,7 @@ fn should_refuse_a_dynamic_target_anywhere_but_on_an_identifier_property() {
     // The whole sentence, which travels in a consensus error: one space between its lines
     assert_refused_by_the_parser(
         on_a_string,
-        "a refersTo naming its target through contractIdProperty and documentTypeProperty is \
+        "a refersTo reading its contractId and documentType from the referring document is \
          only allowed on identifier properties: its value is the referenced document's id",
     );
 
@@ -480,25 +497,25 @@ fn should_refuse_a_dynamic_target_anywhere_but_on_an_identifier_property() {
 fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     let naming = |key: &str, property: &str| {
         let mut refers_to = text_or_bytes();
-        refers_to[key] = json!(property);
+        refers_to[key] = json!(format!("$self.{property}"));
         note_contract(refers_to)
     };
     // The contract id is a top-level identifier property, other than the reference
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "label"),
+        naming("contractId", "label"),
         "which is not an identifier property",
     );
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "missing"),
+        naming("contractId", "missing"),
         "which is not a top-level property",
     );
     assert_refused_by_the_parser(
-        naming("contractIdProperty", "descriptionId"),
+        naming("contractId", "descriptionId"),
         "the property carrying the reference",
     );
     // The document type name is a string property
     assert_refused_by_the_parser(
-        naming("documentTypeProperty", "descriptionId"),
+        naming("documentType", "descriptionId"),
         "the property carrying the reference",
     );
     let mut type_from_an_identifier = note_contract(text_or_bytes());
@@ -507,14 +524,14 @@ fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     assert_refused_by_the_parser(type_from_an_identifier, "which is not a string property");
     // and each is required where the reference is
     assert_refused_by_the_parser(
-        naming("documentTypeProperty", "label"),
+        naming("documentType", "label"),
         "which is not required while the reference is",
     );
     // A slot's name property too
     let named_by = |property: &str| {
         note_contract(requiring(json!({
             "properties": {
-                "body": { "name": { "property": property }, "type": "string" }
+                "body": { "name": format!("$self.{property}"), "type": "string" }
             }
         })))
     };
@@ -529,7 +546,7 @@ fn should_hold_the_properties_a_dynamic_target_reads_to_the_declaring_type() {
     contract(named_by("bodyProperty")).expect("a required string property names the slot's");
 
     // An optional reference reads optional properties
-    let mut optional = naming("documentTypeProperty", "label");
+    let mut optional = naming("documentType", "label");
     optional["documentSchemas"]["note"]["required"] = json!(["descriptionContractId"]);
     contract(optional).expect("nothing is required where the reference is not");
 }
@@ -704,7 +721,7 @@ fn should_fill_a_slot_with_a_property_of_the_described_kind() {
         None
     ));
     // One the referring document names
-    let named = one(json!({ "name": { "property": "bodyProperty" }, "type": "string" }));
+    let named = one(json!({ "name": "$self.bodyProperty", "type": "string" }));
     assert!(post_meets(named.clone(), Some("body")));
     assert!(!post_meets(named.clone(), Some("count")));
     assert!(!post_meets(named.clone(), Some("missing")));
@@ -868,7 +885,7 @@ fn should_round_trip_a_contract_through_platform_serialization_with_a_dynamic_re
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": ["title"]
             },
@@ -917,8 +934,8 @@ fn should_parse_a_type_listing_both_kinds() {
     ] {
         let parsed = contract(note_contract(json!({
             "type": kinds,
-            "contractIdProperty": "descriptionContractId",
-            "documentTypeProperty": "descriptionDocumentType"
+            "contractId": "$self.descriptionContractId",
+            "documentType": "$self.descriptionDocumentType"
         })))
         .expect("parses");
         let reference = dynamic_reference(&parsed);
@@ -957,8 +974,8 @@ fn should_parse_a_type_listing_both_kinds() {
         assert_refused_by_the_parser(
             note_contract(json!({
                 "type": kinds,
-                "contractIdProperty": "descriptionContractId",
-                "documentTypeProperty": "descriptionDocumentType"
+                "contractId": "$self.descriptionContractId",
+                "documentType": "$self.descriptionDocumentType"
             })),
             "holds permanentDocument and moderatedDocument, once each",
         );
@@ -1031,7 +1048,7 @@ fn should_parse_every_form_of_a_slot_condition() {
         SlotCondition::NotEqual(constant("permanentDocument"), SlotConditionValue::Kind)
     );
     assert_eq!(
-        parsed_when(json!({ "in": ["$self", ["body", "summary"]] })),
+        parsed_when(json!({ "in": ["$property", ["body", "summary"]] })),
         SlotCondition::In(
             SlotConditionValue::PropertyName,
             BTreeSet::from(["body".to_string(), "summary".to_string()])
@@ -1060,10 +1077,10 @@ fn should_parse_every_form_of_a_slot_condition() {
         parsed_when(json!({ "ifThenElse": [
             { "equal": ["$kind", { "const": "permanentDocument" }] },
             { "anyOf": [
-                { "equal": ["$self", { "const": "body" }] },
-                { "equal": ["$self", { "const": "summary" }] }
+                { "equal": ["$property", { "const": "body" }] },
+                { "equal": ["$property", { "const": "summary" }] }
             ] },
-            { "notEqual": ["$self", { "const": "title" }] }
+            { "notEqual": ["$property", { "const": "title" }] }
         ] })),
         SlotCondition::IfThenElse(list(vec![
             SlotCondition::Equal(SlotConditionValue::Kind, constant("permanentDocument")),
@@ -1081,50 +1098,60 @@ fn should_refuse_a_malformed_slot_condition() {
     let refused = |when: serde_json::Value, fragment: &str| {
         assert_refused_by_the_parser(note_contract(requiring(body_when(when))), fragment);
     };
-    let is_body = || json!({ "equal": ["$self", { "const": "body" }] });
+    let is_body = || json!({ "equal": ["$property", { "const": "body" }] });
 
     // The shape of a condition
-    refused(json!("$self"), "is an object of one key");
+    refused(json!("$property"), "is an object of one key");
     refused(json!({}), "is an object of one key");
     refused(
-        json!({ "equal": ["$self", { "const": "a" }], "not": is_body() }),
+        json!({ "equal": ["$property", { "const": "a" }], "not": is_body() }),
         "is an object of one key",
     );
-    refused(json!({ "present": "$self" }), "does not take present");
+    refused(json!({ "present": "$property" }), "does not take present");
     refused(
-        json!({ "greaterThan": ["$self", { "const": "a" }] }),
+        json!({ "greaterThan": ["$property", { "const": "a" }] }),
         "does not take greaterThan",
     );
 
     // What a comparison reads
-    refused(json!({ "equal": ["$self"] }), "equal takes two strings");
+    refused(json!({ "equal": ["$property"] }), "equal takes two strings");
     refused(
         json!({ "equal": ["title", { "const": "title" }] }),
-        "when compares \"$kind\", \"$self\" or",
+        "when compares \"$kind\", \"$property\" or",
+    );
+    // `$self` is the referring document, which a condition on the referenced type does not
+    // read: the property tried for the slot is `$property`
+    refused(
+        json!({ "equal": ["$self", { "const": "body" }] }),
+        "when compares \"$kind\", \"$property\" or",
     );
     refused(
-        json!({ "equal": ["$self", { "const": "" }] }),
-        "when compares \"$kind\", \"$self\" or",
+        json!({ "contains": ["$moderatorAbilities.changeFields", "$self.bodyProperty"] }),
+        "when compares \"$kind\", \"$property\" or",
     );
     refused(
-        json!({ "equal": ["$self", { "const": 1 }] }),
-        "when compares \"$kind\", \"$self\" or",
+        json!({ "equal": ["$property", { "const": "" }] }),
+        "when compares \"$kind\", \"$property\" or",
     );
     refused(
-        json!({ "equal": ["$self", { "const": "a", "other": "b" }] }),
-        "when compares \"$kind\", \"$self\" or",
+        json!({ "equal": ["$property", { "const": 1 }] }),
+        "when compares \"$kind\", \"$property\" or",
     );
     refused(
-        json!({ "equal": ["$self", "$kind"] }),
-        "equal compares \"$kind\" or \"$self\" with a",
+        json!({ "equal": ["$property", { "const": "a", "other": "b" }] }),
+        "when compares \"$kind\", \"$property\" or",
+    );
+    refused(
+        json!({ "equal": ["$property", "$kind"] }),
+        "equal compares \"$kind\" or \"$property\" with a",
     );
     refused(
         json!({ "notEqual": [{ "const": "a" }, { "const": "b" }] }),
-        "notEqual compares \"$kind\" or \"$self\" with a",
+        "notEqual compares \"$kind\" or \"$property\" with a",
     );
     refused(
-        json!({ "equal": ["$self", "$self"] }),
-        "equal compares \"$kind\" or \"$self\" with a",
+        json!({ "equal": ["$property", "$property"] }),
+        "equal compares \"$kind\" or \"$property\" with a",
     );
     // The kind is one a reference of this sort admits
     refused(
@@ -1142,15 +1169,15 @@ fn should_refuse_a_malformed_slot_condition() {
 
     // `in` and `notIn`
     refused(
-        json!({ "in": ["$self", ["body"]] }),
+        json!({ "in": ["$property", ["body"]] }),
         "in takes a string and a list of two or more distinct strings",
     );
     refused(
-        json!({ "notIn": ["$self", ["body", "body"]] }),
+        json!({ "notIn": ["$property", ["body", "body"]] }),
         "notIn takes a string and a list of two or more distinct strings",
     );
     refused(
-        json!({ "in": ["$self", ["body", 1]] }),
+        json!({ "in": ["$property", ["body", 1]] }),
         "in takes a string and a list of two or more distinct strings",
     );
     refused(
@@ -1160,11 +1187,11 @@ fn should_refuse_a_malformed_slot_condition() {
 
     // `contains`
     refused(
-        json!({ "contains": ["$self", "$self"] }),
+        json!({ "contains": ["$property", "$property"] }),
         "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
     );
     refused(
-        json!({ "contains": ["$moderatorAbilities.delete", "$self"] }),
+        json!({ "contains": ["$moderatorAbilities.delete", "$property"] }),
         "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
     );
     refused(
@@ -1178,7 +1205,7 @@ fn should_refuse_a_malformed_slot_condition() {
         "not holds a not or a notIn",
     );
     refused(
-        json!({ "not": { "notIn": ["$self", ["a", "b"]] } }),
+        json!({ "not": { "notIn": ["$property", ["a", "b"]] } }),
         "not holds a not or a notIn",
     );
     refused(
@@ -1191,8 +1218,8 @@ fn should_refuse_a_malformed_slot_condition() {
     );
     refused(
         json!({ "anyOf": [is_body(), { "anyOf": [
-            { "equal": ["$self", { "const": "a" }] },
-            { "equal": ["$self", { "const": "b" }] }
+            { "equal": ["$property", { "const": "a" }] },
+            { "equal": ["$property", { "const": "b" }] }
         ] }] }),
         "anyOf holds another anyOf",
     );
@@ -1216,7 +1243,7 @@ fn should_hold_a_slot_condition_to_the_node_limit() {
     // `allOf` over `count - 1` comparisons: `count` conditions
     let of = |count: usize| {
         json!({ "allOf": (1..count)
-            .map(|index| json!({ "notEqual": ["$self", { "const": format!("p{index}") }] }))
+            .map(|index| json!({ "notEqual": ["$property", { "const": format!("p{index}") }] }))
             .collect::<Vec<_>>() })
     };
     assert_eq!(parsed_when(of(max_nodes)).node_count(), max_nodes);
@@ -1226,7 +1253,7 @@ fn should_hold_a_slot_condition_to_the_node_limit() {
     );
 
     // The limit also holds what nests: `not` and `ifThen` in turn, as deep as it allows
-    let mut deepest = json!({ "equal": ["$self", { "const": "body" }] });
+    let mut deepest = json!({ "equal": ["$property", { "const": "body" }] });
     let mut nodes = 1;
     while nodes * 2 + 2 <= max_nodes {
         deepest = json!({ "not": { "ifThen": [deepest.clone(), deepest] } });
@@ -1244,11 +1271,11 @@ fn should_hold_a_slot_condition_to_the_node_limit() {
 fn should_fill_a_slot_only_with_a_property_its_condition_holds_for() {
     // The fixture's `post` is permanent: `title`, `body` and `summary` are its strings
     assert!(post_meets(
-        body_when(json!({ "in": ["$self", ["body", "content"]] })),
+        body_when(json!({ "in": ["$property", ["body", "content"]] })),
         None
     ));
     assert!(!post_meets(
-        body_when(json!({ "in": ["$self", ["content", "text"]] })),
+        body_when(json!({ "in": ["$property", ["content", "text"]] })),
         None
     ));
     // A condition on the kind decides for every property at once
@@ -1263,7 +1290,7 @@ fn should_fill_a_slot_only_with_a_property_its_condition_holds_for() {
     // The condition narrows the candidates distinct slots are filled from: three strings,
     // of which the two slots may not take `summary`
     let two_of = |excluded: &[&str]| {
-        let when = json!({ "notIn": ["$self", excluded] });
+        let when = json!({ "notIn": ["$property", excluded] });
         json!({ "properties": {
             "first": { "name": "$any", "type": "string", "when": when },
             "second": { "name": "$any", "type": "string", "when": when, "distinctFrom": "first" }
@@ -1276,15 +1303,15 @@ fn should_fill_a_slot_only_with_a_property_its_condition_holds_for() {
         json!({ "properties": { "body": {
             "name": "title",
             "type": "string",
-            "when": { "notEqual": ["$self", { "const": "title" }] }
+            "when": { "notEqual": ["$property", { "const": "title" }] }
         } } }),
         None
     ));
     assert!(!post_meets(
         json!({ "properties": { "body": {
-            "name": { "property": "bodyProperty" },
+            "name": "$self.bodyProperty",
             "type": "string",
-            "when": { "notEqual": ["$self", { "const": "title" }] }
+            "when": { "notEqual": ["$property", { "const": "title" }] }
         } } }),
         Some("title")
     ));
@@ -1366,8 +1393,8 @@ fn should_round_trip_a_contract_through_platform_serialization_with_a_slot_condi
                 "byteArray": true,
                 "when": { "ifThenElse": [
                     { "in": ["$kind", ["permanentDocument", "moderatedDocument"]] },
-                    { "notIn": ["$self", ["blob", "raw"]] },
-                    { "notEqual": ["$self", { "const": "blob" }] }
+                    { "notIn": ["$property", ["blob", "raw"]] },
+                    { "notEqual": ["$property", { "const": "blob" }] }
                 ] }
             }
         },
@@ -1405,7 +1432,7 @@ fn moderated_note(abilities: serde_json::Value) -> Result<DocumentType, crate::P
     let mut description_id = identifier(0);
     description_id["refersTo"] = requiring(json!({
         "properties": {
-            "body": { "name": { "property": "bodyProperty" }, "type": "string" }
+            "body": { "name": "$self.bodyProperty", "type": "string" }
         }
     }));
     let schema = json!({
@@ -1477,7 +1504,7 @@ fn should_write_requirements_as_a_schema_declares_them() {
         "properties": {
             "title": { "name": "$any", "type": "string", "maxBytes": 256 },
             "body": {
-                "name": { "property": "bodyProperty" },
+                "name": "$self.bodyProperty",
                 "type": "string",
                 "distinctFrom": ["title"]
             },
@@ -1487,8 +1514,8 @@ fn should_write_requirements_as_a_schema_declares_them() {
                 "byteArray": true,
                 "when": { "ifThenElse": [
                     { "in": ["$kind", ["moderatedDocument", "permanentDocument"]] },
-                    { "notIn": ["$self", ["blob", "raw"]] },
-                    { "notEqual": [{ "const": "blob" }, "$self"] }
+                    { "notIn": ["$property", ["blob", "raw"]] },
+                    { "notEqual": [{ "const": "blob" }, "$property"] }
                 ] }
             },
             "count": {
@@ -1497,10 +1524,10 @@ fn should_write_requirements_as_a_schema_declares_them() {
                 "when": { "ifThen": [
                     { "equal": ["$kind", { "const": "moderatedDocument" }] },
                     { "allOf": [
-                        { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
+                        { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
                         { "anyOf": [
                             { "contains": ["$moderatorAbilities.changeFields", { "const": "label" }] },
-                            { "notEqual": ["$self", { "const": "count" }] }
+                            { "notEqual": ["$property", { "const": "count" }] }
                         ] }
                     ] }
                 ] }

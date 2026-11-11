@@ -677,12 +677,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 34. **A reference whose target the document names**: `CONTRACT_VERSIONS_V7` selects
 ///     `apply_property_reference` 1: a `permanentDocument` or `moderatedDocument` `refersTo`
-///     on an identifier property may name `contractIdProperty` and `documentTypeProperty`,
-///     two top-level properties of the referring document (an identifier and a string), in
-///     place of `contractId` and `documentType`, with `documentTypeRequirements`: up to
+///     on an identifier property may read its `contractId` and its `documentType` from the
+///     referring document, each written `"$self.<property>"` for a top-level property of
+///     it (an identifier and a string), with `documentTypeRequirements`: up to
 ///     `max_document_type_requirement_slots` (4, `SYSTEM_LIMITS_V5`, backfilled) named
 ///     slots, each a top-level property the named type must have (`name`: `"$any"`, a
-///     property name, or `{ "property": <a string property of the referring document> }`;
+///     property name, or `"$self.<a string property of the referring document>"`;
 ///     `type`; `maxBytes`; `distinctFrom`, one or several other slots it is filled by a
 ///     different property than; `when`, a condition on what the named type says of the
 ///     property), and `require`, `anyOf` / `allOf` over slot names, every slot when absent.
@@ -691,7 +691,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     moderated reference into a moderated type, a permanent one into any other). A
 ///     slot's `when` is written like a `propertyConstraints` condition (`equal`,
 ///     `notEqual`, `in`, `notIn`, `contains`, `not`, `anyOf`, `allOf`, `ifThen`,
-///     `ifThenElse`) over `$kind` (the kind of the named type), `$self` (the name of the
+///     `ifThenElse`) over `$kind` (the kind of the named type), `$property` (the name of the
 ///     property tried for the slot), `$moderatorAbilities.deleteKeepsFields` and
 ///     `$moderatorAbilities.changeFields` (the type's lists) and `{ "const": <string> }`,
 ///     of at most `max_document_type_requirement_condition_nodes` conditions (16,

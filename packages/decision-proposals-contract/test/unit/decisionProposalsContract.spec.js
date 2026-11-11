@@ -285,15 +285,15 @@ describe('Decision Proposals Contract', () => {
 
       const takenWithTheDocument = {
         allOf: [
-          { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$self'] } },
-          { not: { contains: ['$moderatorAbilities.changeFields', '$self'] } },
+          { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$property'] } },
+          { not: { contains: ['$moderatorAbilities.changeFields', '$property'] } },
         ],
       };
 
       expect(properties.descriptionId.refersTo).to.deep.equal({
         type: 'moderatedDocument',
-        contractIdProperty: 'descriptionContractId',
-        documentTypeProperty: 'descriptionDocumentType',
+        contractId: '$self.descriptionContractId',
+        documentType: '$self.descriptionDocumentType',
         documentTypeRequirements: {
           properties: {
             body: { name: '$any', type: 'string', when: takenWithTheDocument },

@@ -173,8 +173,8 @@ does, hosted where moderators can remove it:
   "type": "identifier",
   "refersTo": {
     "type": "moderatedDocument",
-    "contractIdProperty": "descriptionContractId",
-    "documentTypeProperty": "descriptionDocumentType",
+    "contractId": "$self.descriptionContractId",
+    "documentType": "$self.descriptionDocumentType",
     "documentTypeRequirements": {
       "properties": {
         "body":      { "name": "$any", "type": "string", "when": <taken with the document> },
@@ -194,8 +194,8 @@ where `<taken with the document>` is
 
 ```json
 { "allOf": [
-  { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
-  { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+  { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+  { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
 ] }
 ```
 

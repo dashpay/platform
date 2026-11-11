@@ -172,15 +172,6 @@ pub(crate) mod property_names {
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
     pub const KEY_ID_PROPERTY: &str = "keyIdProperty";
-    /// `refersTo` on a permanent or moderated document reference: the top-level identifier
-    /// property of the referring document holding the id of the contract the referenced
-    /// document type lives in. Takes the place of [`CONTRACT_ID`], and comes with
-    /// [`DOCUMENT_TYPE_PROPERTY`] (protocol version 15).
-    pub const CONTRACT_ID_PROPERTY: &str = "contractIdProperty";
-    /// The top-level string property of the referring document holding the name of the
-    /// referenced document type. Takes the place of [`DOCUMENT_TYPE`], and comes with
-    /// [`CONTRACT_ID_PROPERTY`] (protocol version 15).
-    pub const DOCUMENT_TYPE_PROPERTY: &str = "documentTypeProperty";
     /// What the document type a dynamic reference names must look like: named slots, each
     /// describing a property it must have, and which of them must be filled (protocol
     /// version 15).
