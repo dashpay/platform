@@ -12,13 +12,15 @@ use grovedb::TransactionArg;
 
 use dpp::version::PlatformVersion;
 
-use crate::drive::RootTree;
+use crate::drive::{non_unique_key_hashes_tree_path_vec, RootTree};
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveOp, KeyInfoPath};
+use grovedb::Element;
+use std::collections::HashMap;
 
 /// The level of the root tree each root key sits on, as `drive/mod.rs` draws the root tree and
 /// `grovedb-structure.json` records it (`layer_shapes.root`, kept in step with a real GroveDB by
@@ -92,7 +94,9 @@ impl Drive {
     /// descriptions name a shallower one (the credit shielded pool's, at level 3, for
     /// `ShieldedBalances` at level 4). The estimate does not depend on the order of the batch's operations, and no
     /// write is priced at a shallower depth than its own description. Applying a batch is
-    /// generation 1's.
+    /// generation 1's, except that the batch creates a hash's tree under the non-unique key hashes
+    /// tree once where several of its identity operations each queue it
+    /// (`retain_one_insert_per_non_unique_key_hash_tree`).
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v2(
         &self,
@@ -132,6 +136,8 @@ impl Drive {
         let forfeits_storage_refunds = operations
             .iter()
             .any(DriveOperation::forfeits_storage_refunds);
+        let owner_handover =
+            DriveOperation::owner_handover(&operations, self, transaction, platform_version)?;
         // The document operations of a moderator's deletion go in a batch of their own only
         // when something else in the batch may free bytes someone is owed.
         let separates_forfeited_operations = forfeits_storage_refunds
@@ -207,6 +213,8 @@ impl Drive {
             .map(|layers| layers.resolve(platform_version))
             .transpose()?;
 
+        retain_one_insert_per_non_unique_key_hash_tree(&mut low_level_operations);
+
         let repaid_identity_debt =
             LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
 
@@ -218,10 +226,11 @@ impl Drive {
             } else {
                 Some(estimated_costs_only_with_layer_info.clone())
             };
-        self.apply_batch_low_level_drive_operations(
+        self.apply_batch_low_level_drive_operations_with_owner_handover(
             estimated_costs_only_with_layer_info,
             transaction,
             low_level_operations,
+            owner_handover,
             &mut cost_operations,
             &platform_version.drive,
         )?;
@@ -288,18 +297,53 @@ impl Drive {
     }
 }
 
+/// Drops an insert creating a hash's tree under the non-unique key hashes tree that repeats the
+/// last operation kept at its key, and keeps every other operation.
+///
+/// Each identity operation is lowered on its own, against stored state. Several identities adding
+/// a key of one hash no identity held before, in one batch (masternodes whose operators share a
+/// payout address, say), therefore each queue the same tree, beside their own entries under it.
+/// One insert creates it; a batch checked for consistency refuses the repeats. A write to the key
+/// between two such inserts keeps both, so the batch ends as it would with every repeat applied.
+fn retain_one_insert_per_non_unique_key_hash_tree(operations: &mut Vec<LowLevelDriveOperation>) {
+    let hashes_tree_path =
+        KeyInfoPath::from_known_owned_path(non_unique_key_hashes_tree_path_vec());
+    let mut last_kept_at_key = HashMap::new();
+    operations.retain(|operation| match operation {
+        LowLevelDriveOperation::GroveOperation(grove_operation)
+            if grove_operation.path == hashes_tree_path =>
+        {
+            let creates_a_tree = matches!(
+                &grove_operation.op,
+                GroveOp::InsertOrReplace { element }
+                    | GroveOp::InsertOrReplaceDontCheckForBackwardsReferences { element }
+                    if matches!(element, Element::Tree(None, _))
+            );
+            let repeat = creates_a_tree
+                && last_kept_at_key.get(&grove_operation.key) == Some(grove_operation);
+            if !repeat {
+                last_kept_at_key.insert(grove_operation.key.clone(), grove_operation.clone());
+            }
+            !repeat
+        }
+        _ => true,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::{deep, estimate, mint, shallow, system_credits};
-    use super::{deepest_root_key_level, ROOT_KEY_LEVELS};
-    use crate::drive::Drive;
+    use super::{
+        deepest_root_key_level, retain_one_insert_per_non_unique_key_hash_tree, ROOT_KEY_LEVELS,
+    };
+    use crate::drive::{non_unique_key_hashes_tree_path_vec, Drive};
     use crate::fees::op::LowLevelDriveOperation;
     use crate::util::batch::DriveOperation;
     use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
-    use grovedb::batch::KeyInfoPath;
+    use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
     use grovedb::Element;
 
     /// The root layer a single operation's estimate is priced with, lowered into an estimate and
@@ -421,5 +465,43 @@ mod tests {
         );
         assert_eq!(deepest_root_key_level([&at(vec![vec![7]], vec![1])]), None);
         assert_eq!(deepest_root_key_level([]), None);
+    }
+
+    /// Under the non-unique key hashes tree, a hash's tree that several identity operations of a
+    /// batch each create is created once. Every other operation there is kept, so a write between
+    /// two creations of a tree, or after one, keeps its place, and the batch ends as it would
+    /// have without the repeats.
+    #[test]
+    fn should_drop_only_a_repeated_creation_of_a_non_unique_key_hash_tree() {
+        let create = |hash: u8| {
+            LowLevelDriveOperation::for_known_path_key_empty_tree(
+                non_unique_key_hashes_tree_path_vec(),
+                vec![hash; 20],
+                None,
+            )
+        };
+        let delete = |hash: u8| {
+            LowLevelDriveOperation::GroveOperation(QualifiedGroveDbOp::delete_op(
+                non_unique_key_hashes_tree_path_vec(),
+                vec![hash; 20],
+            ))
+        };
+        let retained = |mut operations: Vec<LowLevelDriveOperation>| {
+            retain_one_insert_per_non_unique_key_hash_tree(&mut operations);
+            operations
+        };
+
+        assert_eq!(
+            retained(vec![create(1), create(2), create(1), create(1), create(2)]),
+            vec![create(1), create(2)]
+        );
+        assert_eq!(
+            retained(vec![delete(1), create(1), delete(1)]),
+            vec![delete(1), create(1), delete(1)]
+        );
+        assert_eq!(
+            retained(vec![create(1), delete(1), create(1)]),
+            vec![create(1), delete(1), create(1)]
+        );
     }
 }

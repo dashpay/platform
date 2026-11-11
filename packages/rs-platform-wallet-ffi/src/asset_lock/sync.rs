@@ -624,8 +624,8 @@ mod tests {
     /// row is never re-sent, so this code is all the host learns about it.
     /// The row is tracked the way a restored one is, over a transaction
     /// with one input more than the cap. It carries no asset-lock payload:
-    /// the cap is the first thing DPP's structure validator checks, and
-    /// the resume asks it nothing else.
+    /// the resume asks only DPP's input check, which reads the input count
+    /// and nothing else.
     #[test]
     fn should_keep_the_input_cap_refusal_typed_through_the_exported_catch_up() {
         let (manager, handle) = live_manager_handle();

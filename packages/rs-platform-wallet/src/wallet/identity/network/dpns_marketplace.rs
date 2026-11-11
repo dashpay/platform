@@ -3910,6 +3910,12 @@ mod tests {
         let wallet_id = wm
             .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
             .expect("create wallet");
+        // The live generation, as `PlatformWallet::new` takes it.
+        let generation = Arc::clone(
+            &wm.get_wallet_info(&wallet_id)
+                .expect("the wallet's info")
+                .generation,
+        );
         let wallet_manager = Arc::new(RwLock::new(wm));
 
         let persister = WalletPersister::new(wallet_id, mirror);
@@ -3934,6 +3940,7 @@ mod tests {
             persister,
             sync_fault: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             durable_cursors: crate::changeset::DurableCursors::default(),
+            generation,
             broadcaster,
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),

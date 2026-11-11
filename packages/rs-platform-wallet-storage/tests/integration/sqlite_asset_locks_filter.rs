@@ -9,7 +9,10 @@ use crate::common;
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence};
+use platform_wallet::changeset::{
+    AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence, ShieldedRecipientRaw,
+    SHIELDED_RECIPIENT_SIZE,
+};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::error::WalletStorageError;
 use platform_wallet_storage::sqlite::schema::asset_locks;
@@ -35,6 +38,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1000,
         status,
         proof: None,
@@ -338,4 +342,108 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
             before
         );
     }
+}
+
+#[test]
+fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA9);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x35);
+    let recipient = recipient_bytes(0x11);
+    let store = |persister: &platform_wallet_storage::SqlitePersister, row: AssetLockEntry| {
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    let mut recorded = entry(outpoint, AssetLockStatus::Built);
+    recorded.shielded_recipient = Some(recipient);
+    store(&persister, recorded).unwrap();
+    // A later snapshot without the recipient (a status advance) keeps it.
+    store(&persister, entry(outpoint, AssetLockStatus::Broadcast)).unwrap();
+    // A snapshot naming another recipient is refused before any write.
+    let mut redirected = entry(outpoint, AssetLockStatus::ChainLocked);
+    redirected.shielded_recipient = Some(recipient_bytes(0x12));
+    assert!(store(&persister, redirected).is_err());
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(restored.shielded_recipient, Some(recipient));
+    assert_eq!(restored.status, AssetLockStatus::Broadcast);
+    // The column refuses any length but 43 and never changes once set.
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [vec![1_u8; 42]]
+        )
+        .is_err());
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [recipient_bytes(0x13).to_vec()]
+        )
+        .is_err());
+}
+
+#[test]
+fn should_fail_the_load_when_a_stored_shielded_recipient_has_the_wrong_length() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xAB);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x36);
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, entry(outpoint, AssetLockStatus::Built))]
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    // The CHECK constraint stops this at the SQL layer; bypass it to prove
+    // the reader fails closed on its own rather than yielding a row with
+    // no recipient (which a resume would pay to whatever the caller names).
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute(
+        "UPDATE asset_locks SET shielded_recipient = ?1",
+        [vec![0xff_u8; SHIELDED_RECIPIENT_SIZE - 1]],
+    )
+    .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
+}
+
+#[test]
+fn sqlite_advertises_asset_lock_shielded_recipients() {
+    let (persister, _tmp, _) = fresh_persister();
+    assert!(persister.persistence_capabilities().contains(
+        platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS
+    ));
+}
+
+fn recipient_bytes(seed_byte: u8) -> ShieldedRecipientRaw {
+    [seed_byte; SHIELDED_RECIPIENT_SIZE]
 }

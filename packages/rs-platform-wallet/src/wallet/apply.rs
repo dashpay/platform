@@ -234,6 +234,9 @@ impl PlatformWalletInfo {
                 established,
                 ignored,
                 unignored,
+                private_contact_requests_positions,
+                private_shielded_addresses,
+                removed_private_shielded_addresses,
             } = contact_cs;
 
             for (key, entry) in sent_requests {
@@ -303,6 +306,23 @@ impl PlatformWalletInfo {
                     managed.apply_unignored_sender(&sender_id);
                 }
             }
+            // The private contact request scan state: each owner's read
+            // position, and its contacts' shielded addresses, removals last.
+            for (owner_id, position) in private_contact_requests_positions {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_contact_requests_position(position);
+                }
+            }
+            for ((owner_id, contact_id), address) in private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_shielded_address(contact_id, address);
+                }
+            }
+            for (owner_id, contact_id) in removed_private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_removed_private_shielded_address(&contact_id);
+                }
+            }
         }
 
         // 3b. DashPay profile/payment overlays. Applied AFTER identities
@@ -361,13 +381,17 @@ impl PlatformWalletInfo {
         if let Some(al_cs) = asset_locks {
             for (out_point, mut entry) in al_cs.asset_locks {
                 if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
-                    if !entry.preserve_recovery_metadata(existing.operation_id) {
+                    if !entry.preserve_recovery_metadata(
+                        existing.operation_id,
+                        existing.shielded_recipient,
+                    ) {
                         continue;
                     }
                     if existing.status == AssetLockStatus::DrainCompleted
                         || (existing.status.is_consumed() && !entry.status.is_consumed())
                     {
                         existing.operation_id = entry.operation_id;
+                        existing.shielded_recipient = entry.shielded_recipient;
                         continue;
                     }
                 }
@@ -383,6 +407,7 @@ impl PlatformWalletInfo {
                         amount: entry.amount_duffs,
                         status: entry.status,
                         proof: entry.proof,
+                        shielded_recipient: entry.shielded_recipient,
                     },
                 );
             }
@@ -750,6 +775,7 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -827,6 +853,7 @@ mod tests {
             amount_duffs: 5_000,
             status,
             proof: None,
+            shielded_recipient: None,
         }
     }
 
@@ -874,6 +901,34 @@ mod tests {
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.operation_id, operation_id);
         assert_eq!(restored.status, AssetLockStatus::ChainLocked);
+    }
+
+    #[test]
+    fn should_preserve_the_shielded_recipient_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let recipient = [0x81u8; crate::changeset::SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
+        recorded.shielded_recipient = Some(recipient);
+        apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        // A stale snapshot without the recipient keeps it.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        // A snapshot naming another recipient is dropped whole.
+        let mut redirected = recovery_asset_lock(AssetLockStatus::ChainLocked, None);
+        redirected.shielded_recipient = Some([0x82; crate::changeset::SHIELDED_RECIPIENT_SIZE]);
+        apply_recovery_asset_lock(&mut info, &mut wallet, redirected);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.shielded_recipient, Some(recipient));
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
     }
 
     #[test]

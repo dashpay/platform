@@ -188,14 +188,21 @@ pub enum PlatformWalletError {
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
-    /// A core transaction broadcast failed with an **ambiguous** outcome — the
+    /// A Core transaction or Platform state transition has an
+    /// **ambiguous** outcome. Reconcile it before submitting a replacement.
+    ///
+    /// For Core transactions, the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent inputs are
+    /// whose earlier attempt may have succeeded). The spent Core inputs are
     /// intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
-    /// # What actually reconciles this, and what does not
+    /// A Platform state transition may instead have been accepted but its
+    /// result proof could not be verified. Reconcile the original operation
+    /// before retrying; the Core input protections below do not apply to it.
+    ///
+    /// # Core input reconciliation
     ///
     /// The inputs are held by TWO independent things, and only one of them
     /// expires. Key-wallet's `ReservationSet` entry is swept by its own TTL —
@@ -228,9 +235,8 @@ pub enum PlatformWalletError {
     ///
     /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
     #[error(
-        "Transaction broadcast outcome unknown — it may already be on the \
-         network; its inputs stay unspendable until this wallet observes them \
-         spent: {0}"
+        "Transaction outcome unknown — it may already have executed; \
+         sync and reconcile the original operation before submitting another: {0}"
     )]
     TransactionBroadcastUnconfirmed(String),
 
@@ -641,19 +647,128 @@ pub enum PlatformWalletError {
 
     /// An asset lock, whole-balance or of a fixed amount, needs more inputs
     /// than an asset lock may carry (`max_asset_lock_transaction_inputs`, 100:
-    /// Dash Core relay policy and Platform consensus alike). Nothing new was
-    /// sent: a build refuses the lock before tracking it and releases its
-    /// reservation, and a resume of a tracked `Built` / `Broadcast` row over
-    /// the cap is refused instead of re-sent, leaving the row tracked and
-    /// releasing nothing (an earlier attempt may still have reached peers).
+    /// Dash Core relay policy, and Platform consensus for an instant proof).
+    /// Nothing new was sent: a build refuses the lock before tracking it and
+    /// releases its reservation, and a resume of a tracked `Built` /
+    /// `Broadcast` row over the cap is refused instead of re-sent, leaving the
+    /// row tracked and releasing nothing (an earlier attempt may still have
+    /// reached peers).
     /// Reservations do not survive a restart, so after one the row's inputs
     /// are not held and may be spent elsewhere. Consolidating the coins
     /// lets a new lock fit.
     #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
     AssetLockTooManyInputs { count: usize, max: usize },
 
+    /// A shielded funding is being resumed to a different Orchard recipient
+    /// than the one its tracked asset lock recorded when it was built. The
+    /// recorded recipient is the one the user confirmed; the resume pays
+    /// nobody. Resume with the recorded recipient instead. Rows tracked
+    /// before the recipient was recorded carry none and accept the caller's.
+    #[error(
+        "Asset lock {out_point} was built to pay shielded recipient {} and cannot be resumed to {}",
+        hex::encode(recorded),
+        hex::encode(requested)
+    )]
+    AssetLockRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: crate::changeset::ShieldedRecipientRaw,
+        requested: crate::changeset::ShieldedRecipientRaw,
+    },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
+
+    /// The contact requests with this identity came or went privately
+    /// (protocol version 15): a `contactRequest` document to it, in reply or
+    /// as a rotation, would publish the relationship, so it is sent privately.
+    #[error(
+        "the contact requests with {0} came or went privately; reply to or rotate with it privately"
+    )]
+    PrivateContactRequestNeedsPrivateReply(Identifier),
+
+    /// A private contact request to this identity is being paid for, or was
+    /// paid for and is not yet read back from DashPay's store, or a private
+    /// payment the shielded store's journal keeps unresolved holds the pair:
+    /// no other one is sent, privately or publicly, until the private sync
+    /// reads it back or its payment provably never executes, as the store
+    /// keeps every entry appended. Pending, not failed: it is not submitted
+    /// again.
+    #[error(
+        "a private contact request to {0} is in flight or not yet read back from the store; sync \
+         private contact requests to settle it"
+    )]
+    PrivateContactRequestPending(Identifier),
+
+    /// A public contact request to this identity was broadcast and may have
+    /// been delivered, and no proof settled its outcome yet: the wallet keeps
+    /// its signed transition and sends no other contact request to the
+    /// identity, public or private, until a proved read shows the request on
+    /// Platform (it is then recorded as sent) or shows the transition can no
+    /// longer write it. A public contact request sync settles it, broadcasting
+    /// the same transition again while it may still execute. Unconfirmed, not
+    /// failed: it is not submitted again.
+    #[error(
+        "a public contact request to {0} was broadcast and its outcome is not proved yet; sync \
+         contact requests to settle it"
+    )]
+    PublicContactRequestUnconfirmed(Identifier),
+
+    /// DashPay's private contact request store was not read to its end for
+    /// this identity with the keys Platform proves it holds, before a contact
+    /// request from it, public or private, or an acceptance, was decided: a
+    /// request in the store unread could hold the pair. Nothing was reserved,
+    /// sealed, paid or broadcast. Calling again goes on with the read from
+    /// where it stopped (a node behind the store already seen, or keys that
+    /// kept changing, stop it).
+    #[error(
+        "DashPay's private contact request store was not read to its end for {0}; nothing was \
+         sent, and trying again continues the read"
+    )]
+    PrivateContactStoreNotRead(Identifier),
+
+    /// The wallet's private contact request payments from an earlier process
+    /// or wallet generation may hold pairs no reservation shows yet, which
+    /// only a restoration from the shielded store's journal shows: in a build
+    /// with the `shielded` feature, the wallet was published with no shielded
+    /// store configured while its persister keeps the private scan state, it
+    /// bound a shielded account before this process started, or its last
+    /// restoration failed or waits for a busy store; in every build, the
+    /// identity was loaded with its private scan state marking a private
+    /// payment that may be unresolved
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), or was
+    /// added to a wallet whose persister kept such a record after an earlier
+    /// wallet under the id was removed. No contact request, public or
+    /// private, is sent or accepted, nothing signed or broadcast, until they
+    /// are restored. Opening the shielded store
+    /// (`PlatformWalletManager::configure_shielded`) restores them, with no
+    /// keys; so does binding the wallet's shielded account, and a contact
+    /// request retries a restoration once. A private sync does not, and a
+    /// build without the `shielded` feature never does.
+    #[error(
+        "this wallet's unconfirmed private contact request payments from an earlier process are \
+         not restored yet; configure the shielded store or bind the wallet's shielded account, \
+         then try again"
+    )]
+    PrivateContactPaymentsNotRestored,
+
+    /// A private contact request is paid for only with a persister that keeps
+    /// its recovery marker durably
+    /// (`PrivateContactRequestsPosition::private_payments_unresolved`), which
+    /// it declares with
+    /// [`PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+    /// the scan state and atomic changesets:
+    /// without it, a process reopening the wallet, in a build without the
+    /// `shielded` feature or before the shielded store is configured, could
+    /// not tell that the payment may still execute, and would publish the
+    /// pair publicly. Refused before anything is sealed or paid. A host
+    /// persisting the private contact request scan state in changesets it
+    /// commits whole declares both.
+    #[error(
+        "private contact requests are paid for only with a persister that keeps the private \
+         contact request scan state; declare PRIVATE_CONTACT_REQUEST_SCAN_STATE and \
+         ATOMIC_CHANGESETS"
+    )]
+    PrivateContactRecoveryUnsupported,
 
     /// No DPNS `domain` document exists for the requested name (exact
     /// normalized-label lookup came back empty). Distinct from
@@ -958,14 +1073,35 @@ pub enum PlatformWalletError {
     #[error("Shielded build error: {0}")]
     ShieldedBuildError(String),
 
+    /// A shielded transition (a shield from Platform addresses, or a spend
+    /// that consumes notes) never left the wallet: its broadcast was refused
+    /// before anything was sent. It can never execute, so a spend's notes are
+    /// released, its saved record retired, and the caller may retry. Once a
+    /// dispatch may have reached a node the outcome is
+    /// [`Self::ShieldedSpendUnconfirmed`] (or
+    /// [`Self::ShieldedBroadcastUnconfirmed`]) instead.
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
 
-    /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
-    /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a
-    /// transient DAPI/proof error, not a platform rejection). The identity with `identity_id` may
+    /// A shielded spend's broadcast failed in a way that does not prove the
+    /// transition was never delivered, so it may still execute. None of this
+    /// crate's spends returns it: a note spend that may have been delivered
+    /// reports [`Self::ShieldedSpendUnconfirmed`], its notes and redrive record
+    /// kept. A payment a caller makes for a private contact request (the `pay`
+    /// a private send or accept takes) may return it, and is then handled as
+    /// unconfirmed, never as failed: the request stays pending and its pair
+    /// held, as for one paid for and not read back, and the FFI reports it as
+    /// `ErrorShieldedSpendUnconfirmed` (18), so a host does not pay again.
+    #[error("Shielded broadcast failed, but may have been delivered: {0}")]
+    ShieldedBroadcastMaybeDelivered(String),
+
+    /// The shielded identity-create transition was broadcast and accepted by the relay, or may
+    /// have been delivered, but the SDK could not confirm its execution result (a broadcast
+    /// attempt that failed in transport, an endpoint's refusal or verdict, a result-proof
+    /// fetch/verify failure). The identity with `identity_id` may
     /// already exist on chain, so the caller must NOT treat it as unregistered: the slot stays held
-    /// against re-submission and the spent notes' reservations are left in place (the next nullifier
+    /// against re-submission and the spent notes' reservations are left in place, with the
+    /// recovery record saved before the broadcast (the next nullifier
     /// sync reconciles them). `reason` carries the underlying SDK error for diagnostics.
     #[error(
         "Shielded broadcast succeeded but its execution result could not be confirmed; \
@@ -993,16 +1129,19 @@ pub enum PlatformWalletError {
     #[error("shielded account {account_index} is required for payment recovery: {reason}; restore its original viewing keys or inspect the unresolved payment before choosing recovery")]
     ShieldedRecoveryKeysRequired { account_index: u32, reason: String },
 
-    /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
-    /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
-    /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
-    /// error or timeout, not a platform rejection). The operation may already be executed on
-    /// chain, so re-submitting risks a double-execution. For the spend-based operations the spent
+    /// A shielded transition (`operation` names it: `"shield"`, `"unshield"`, `"transfer"`,
+    /// `"withdraw"`, an identity top-up, a private document create) was broadcast and accepted
+    /// by the relay, or may have been delivered, but the SDK could not confirm its execution
+    /// result (a broadcast attempt that failed in transport, an endpoint's refusal or consensus
+    /// verdict, which no proof backs, a result-proof fetch/verify failure or a timeout). The
+    /// operation may already be executed on chain, or may still execute, so re-submitting risks
+    /// a double-execution. For the spend-based operations the spent
     /// notes' reservations are intentionally left in place rather than released — releasing them
-    /// would invite re-selecting notes whose nullifiers may already be consumed; a shield spends
-    /// no notes, so it has nothing reserved. The next sync (or an app restart, since reservations
-    /// are in-memory only) reconciles the outcome either way. `reason` carries the underlying SDK
-    /// error for diagnostics.
+    /// would invite re-selecting notes whose nullifiers may already be consumed. Their recovery
+    /// record is saved before the broadcast, so a restart restores the reservations from it, and
+    /// the next sync reconciles the outcome. A shield from Platform addresses spends no notes and
+    /// keeps no record: its activity row stays pending until the scan sees its note. `reason`
+    /// carries the underlying SDK error for diagnostics.
     ///
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
@@ -1016,11 +1155,13 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
-    /// A masternode (evonode) identity credit withdrawal was **broadcast and
-    /// accepted**, but its execution result could not be confirmed (the
-    /// result-proof fetch/verify failed — transient DAPI/proof error or
-    /// timeout, not a Platform rejection). The claim may already have
-    /// executed, and the SDK's identity-nonce cache was bumped for it, so
+    /// A masternode (evonode) identity credit withdrawal was broadcast and
+    /// accepted, or may have been delivered, but its execution result could
+    /// not be confirmed (a broadcast attempt that failed in transport, an
+    /// endpoint's refusal or consensus verdict, which no proof backs, a
+    /// result-proof fetch/verify failure or a timeout). The claim may already
+    /// have executed, or may still execute, and the SDK's identity-nonce
+    /// cache was bumped for it, so
     /// re-submitting could execute a SECOND withdrawal with the next nonce.
     /// Callers must NOT retry until they have re-read the identity's
     /// claimable balance (and the payout) and reconciled the outcome.
@@ -1242,7 +1383,7 @@ pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
 /// Matches the three `dash_sdk::Error` shapes that can carry a consensus
 /// verdict — `StateTransitionBroadcastError` (wait-stream), `Protocol(
 /// ConsensusError)` (CheckTx), and a `NoAvailableAddressesToRetry` envelope it
-/// recurses into — staying in lockstep with `broadcast_definitely_failed`.
+/// recurses into, staying in lockstep with `carries_consensus_rejection`.
 pub fn as_address_invalid_nonce(error: &dash_sdk::Error) -> Option<&AddressInvalidNonceError> {
     use dpp::consensus::state::state_error::StateError;
 
@@ -1422,12 +1563,14 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// resulting variant reaches the FFI's `_` arm and flattens to
 /// `ErrorUnknown`, losing the host's key-repair routing. This helper keeps the
 /// failure verbatim under [`PlatformWalletError::Sdk`] — the one shape
-/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31 —
-/// and hands every other error to `wrap`, the caller's stringifying wrapper,
-/// unchanged.
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31.
+/// An unconfirmed submission is also preserved under `Sdk`: its
+/// diagnostic source must not become a safe-to-retry refusal or be flattened
+/// into an operation-specific string. Every other error is handed unchanged
+/// to `wrap`, the caller's stringifying wrapper.
 ///
-/// The check is **structural and position-0 only** (the marker must start the
-/// nested `ProtocolError::Generic` payload); it is never a substring sniff of
+/// The signer-marker check is **structural and position-0 only** (it must start
+/// the nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
 /// not misrouted into key repair. This mirrors
 /// the guarded restore already performed by the FFI conversion.
@@ -1435,11 +1578,13 @@ pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
     wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
 ) -> PlatformWalletError {
-    if matches!(
-        &error,
-        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
-            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
-    ) {
+    if error.is_state_transition_result_unconfirmed()
+        || matches!(
+            &error,
+            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+                if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+        )
+    {
         PlatformWalletError::Sdk(error)
     } else {
         wrap(error)
@@ -1752,7 +1897,7 @@ mod address_nonce_tests {
     fn extracts_nonce_error_wrapped_in_no_available_addresses_to_retry() {
         // The dapi-client wraps the last rejection in `NoAvailableAddressesToRetry`
         // when every address is exhausted mid-retry; the extractor must recurse
-        // into it (lockstep with `broadcast_definitely_failed`).
+        // into it (lockstep with `carries_consensus_rejection`).
         let inner = Box::new(protocol_shape(9, 10));
         let wrapped = dash_sdk::Error::NoAvailableAddressesToRetry(inner);
         let got = as_address_invalid_nonce(&wrapped).expect("must unwrap the retry envelope");
@@ -1952,6 +2097,70 @@ mod quorum_lookup_context_error_tests {
         match error.quorum_lookup_context_error() {
             ContextProviderError::Generic(reason) => assert_eq!(reason, error.to_string()),
             other => panic!("expected Generic, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod unconfirmed_submission_tests {
+    use super::*;
+    use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
+    fn diagnostic(kind: usize) -> dash_sdk::Error {
+        let id = Identifier::from([9; 32]);
+        let cause: ConsensusError = match kind {
+            0 => AddressInvalidNonceError::new(PlatformAddress::P2pkh([7; 20]), 1, 2).into(),
+            1 => DocumentIncorrectPurchasePriceError::new(id, 100, 200).into(),
+            2 => IdentityInsufficientBalanceError::new(id, 100, 200).into(),
+            _ => InvalidIdentityRevisionError::new(id, 5).into(),
+        };
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_submission_before_recovery_or_stringification() {
+        for kind in 0..4 {
+            // Definite refusals still reach their existing recovery paths.
+            let definite = diagnostic(kind);
+            assert!(definite.consensus_error().is_some());
+            match kind {
+                0 => assert!(promote_address_nonce_error(&definite).is_some()),
+                1 => assert!(promote_document_trade_error(&definite).is_some()),
+                2 => assert!(promote_identity_insufficient_balance(&definite).is_some()),
+                _ => assert!(as_identity_revision_invalid(&definite).is_some()),
+            }
+            for depth in 0..=2 {
+                for boundary in 0..5 {
+                    let mut error = dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                        diagnostic(kind),
+                    ));
+                    for _ in 0..depth {
+                        error = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(error));
+                    }
+                    let message = error.to_string();
+                    assert!(promote_address_nonce_error(&error).is_none());
+                    assert!(promote_document_trade_error(&error).is_none());
+                    assert!(promote_identity_insufficient_balance(&error).is_none());
+                    assert!(as_identity_revision_invalid(&error).is_none());
+                    let unexpected_fallback = |_| panic!("unconfirmed result was stringified");
+                    let mapped = match boundary {
+                        0 => preserve_signer_key_unavailable_or(error, unexpected_fallback),
+                        1 => promote_identity_insufficient_balance_or(error, unexpected_fallback),
+                        2 => promote_document_trade_error_or(error, unexpected_fallback),
+                        3 => promote_address_nonce_error_or_sdk(error),
+                        _ => PlatformWalletError::token_operation_failed("transfer", error),
+                    };
+                    assert!(mapped.consensus_error().is_none());
+                    match mapped {
+                        PlatformWalletError::Sdk(source) => {
+                            assert!(source.is_state_transition_result_unconfirmed());
+                            assert_eq!(source.to_string(), message);
+                        }
+                        other => panic!("expected preserved SDK submission status, got {other:?}"),
+                    }
+                }
+            }
         }
     }
 }
