@@ -104,7 +104,8 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// `permanentDocument`, `deletableDocument` or `moderatedDocument`
     /// reference without `findBy`, or one with `inList`, whose list's
     /// document is read by its id) names an `indexOnly` document type,
-    /// reported at contract registration. Such a type's documents exist only
+    /// reported at contract registration, or when a document is written for a
+    /// reference whose target the document names. Such a type's documents exist only
     /// as index entries and cannot be fetched by id, so no write could check
     /// the reference.
     ReferencedDocumentTypeIndexOnly = 40146,

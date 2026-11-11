@@ -1295,6 +1295,24 @@ impl DocumentPropertyReferenceTarget {
         }
     }
 
+    /// The target as a consensus error carries it. An error names what was referenced and
+    /// was not there, which a reference naming its target through the referring document
+    /// says with its kind and the two properties it reads: its `documentTypeRequirements`
+    /// describe a document type, say nothing of a missing document, and are as large as a
+    /// contract declared them, where a client decodes an error within a fixed budget. They
+    /// are left out. Every other target is carried whole.
+    pub fn named_in_an_error(self) -> Self {
+        match self {
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+                DocumentPropertyReferenceTarget::DynamicDocument(DynamicDocumentReference {
+                    requirements: None,
+                    ..reference
+                })
+            }
+            other => other,
+        }
+    }
+
     /// The declaration of a reference whose target the referring document names
     /// ([`Self::DynamicDocument`]); `None` for every other target.
     pub fn as_dynamic_document_reference(&self) -> Option<&DynamicDocumentReference> {

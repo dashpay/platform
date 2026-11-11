@@ -350,17 +350,16 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
             &format!("reads both contractId and documentType from it: {key} must be"),
         );
     }
-    // Requirements describe a type the schema does not name
-    assert_refused_by_the_parser(
-        note_contract(json!({
-            "type": "moderatedDocument",
-            "documentType": "post",
-            "documentTypeRequirements": {
-                "properties": { "body": { "name": "$any", "type": "string" } }
-            }
-        })),
-        "reads both contractId and documentType from it",
-    );
+    // Requirements describe a type the schema does not name: registration refuses them
+    // beside one it names (what a stored contract carrying them reads as is tested apart)
+    contract(note_contract(json!({
+        "type": "permanentDocument",
+        "documentType": "post",
+        "documentTypeRequirements": {
+            "properties": { "body": { "name": "$any", "type": "string" } }
+        }
+    })))
+    .expect_err("documentTypeRequirements beside a target the schema names");
     // What is read is a top-level property, and two different ones
     for read in [
         "$self.",
@@ -998,4 +997,113 @@ fn should_write_requirements_as_a_schema_declares_them() {
             .expect("the schema value converts to JSON");
         assert_eq!(requirements(written), parsed);
     }
+}
+
+/// A contract stored before protocol version 15 is read as the version that stored it read
+/// it. That version did not read `documentTypeRequirements`, and through a key its schema
+/// check did not see (a root `properties` given twice: the check read the last entry, the
+/// parser the first) a stored declaration naming its target in the schema may carry one.
+/// It is still that reference: only `$self.` selects the reading this version adds, and no
+/// stored declaration is written with it.
+#[test]
+fn should_read_a_stored_reference_naming_its_target_in_the_schema_as_it_was_registered() {
+    let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+    let text = |value: &str| platform_value::Value::Text(value.to_string());
+    let reference = |stray: bool| {
+        let mut refers_to = json!({ "type": "permanentDocument", "documentType": "post" });
+        if stray {
+            refers_to["documentTypeRequirements"] = json!({
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            });
+        }
+        let mut description_id = identifier(0);
+        description_id["refersTo"] = refers_to;
+        platform_value::to_value(json!({ "descriptionId": description_id }))
+            .expect("the properties should convert")
+    };
+    // `properties` twice: the first entry carries the stray key, the last does not
+    let schema = platform_value::Value::Map(vec![
+        (text("type"), text("object")),
+        (text("properties"), reference(true)),
+        (text("properties"), reference(false)),
+        (
+            text("additionalProperties"),
+            platform_value::Value::Bool(false),
+        ),
+    ]);
+    let parse = |full_validation: bool, platform_version: &PlatformVersion| {
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "note",
+            schema.clone(),
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    };
+    let target = |document_type: &DocumentType| {
+        document_type
+            .properties()
+            .get("descriptionId")
+            .expect("descriptionId")
+            .property_type
+            .clone()
+    };
+
+    // Protocol version 14 registers it, reading the reference of the first entry
+    let registered = parse(true, platform_version_14).expect("protocol version 14 registers it");
+    assert!(matches!(
+        target(&registered),
+        DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        )
+    ));
+    // and this version, loading what was stored, reads the same reference
+    let loaded = parse(false, PlatformVersion::latest()).expect("the stored schema still loads");
+    assert_eq!(target(&loaded), target(&registered));
+    // though it registers no such schema itself
+    parse(true, PlatformVersion::latest())
+        .expect_err("registration refuses the repeated key and the stray one");
+
+    // A whole contract stored that way loads too
+    let stored = contract_on(
+        note_contract(json!({
+            "type": "permanentDocument",
+            "documentType": "post",
+            "documentTypeRequirements": {
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            }
+        })),
+        false,
+        platform_version_14,
+    )
+    .expect("parsed as protocol version 14 stored it");
+    let bytes = stored
+        .serialize_to_bytes_with_platform_version(platform_version_14)
+        .expect("the contract should serialize");
+    let recovered =
+        DataContract::versioned_deserialize_untrusted(&bytes, false, PlatformVersion::latest())
+            .expect("the stored contract loads at the latest protocol version");
+    let note = |contract: &DataContract| {
+        contract
+            .document_type_for_name("note")
+            .expect("note")
+            .properties()["descriptionId"]
+            .property_type
+            .clone()
+    };
+    assert_eq!(note(&recovered), note(&stored));
+    assert!(matches!(
+        note(&recovered),
+        DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        )
+    ));
 }
