@@ -43,14 +43,14 @@ use crate::changeset::{
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
-const WALLET: [u8; 32] = [7; 32];
+pub(super) const WALLET: [u8; 32] = [7; 32];
 const FIRST_VALUE: u64 = 100;
 const SECOND_VALUE: u64 = 200;
 
 /// A host persister that keeps every shielded changeset it was handed,
 /// and can hand them back as the start state a cold bind would restore.
 #[derive(Default)]
-struct RecordingPersistence {
+pub(super) struct RecordingPersistence {
     changesets: Mutex<Vec<ShieldedChangeSet>>,
 }
 
@@ -117,7 +117,7 @@ impl RecordingPersistence {
     }
 }
 
-fn tree_path() -> PathBuf {
+pub(super) fn tree_path() -> PathBuf {
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
     let sequence = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
@@ -150,6 +150,23 @@ fn owned_note_with_nullifier(
     keys: &AccountViewingKeys,
     value: u64,
 ) -> (ShieldedEncryptedNote, [u8; 32]) {
+    let (wire, note) = note_parts_to(keys.default_address, value);
+    (wire, note.nullifier(&keys.full_viewing_key).to_bytes())
+}
+
+/// A note of `value` sent to `recipient` by someone else, as the network
+/// serves it — the same wire form as [`owned_note`], for any address.
+pub(super) fn note_to(
+    recipient: grovedb_commitment_tree::PaymentAddress,
+    value: u64,
+) -> ShieldedEncryptedNote {
+    note_parts_to(recipient, value).0
+}
+
+fn note_parts_to(
+    recipient: grovedb_commitment_tree::PaymentAddress,
+    value: u64,
+) -> (ShieldedEncryptedNote, Note) {
     let mut rng = OsRng;
     let (nf, rho) = loop {
         let mut b = [0u8; 32];
@@ -169,7 +186,7 @@ fn owned_note_with_nullifier(
         }
     };
     let value = NoteValue::from_raw(value);
-    let note = Note::from_parts(keys.default_address, value, rho, rseed)
+    let note = Note::from_parts(recipient, value, rho, rseed)
         .into_option()
         .expect("valid note parts");
     let cmx = ExtractedNoteCommitment::from(note.commitment());
@@ -189,7 +206,6 @@ fn owned_note_with_nullifier(
     encrypted_note.extend_from_slice(&epk.0);
     encrypted_note.extend_from_slice(enc.as_ref());
     encrypted_note.extend_from_slice(&out);
-    let own_nullifier = note.nullifier(&keys.full_viewing_key).to_bytes();
     (
         ShieldedEncryptedNote {
             cmx: cmx.to_bytes().to_vec(),
@@ -197,7 +213,7 @@ fn owned_note_with_nullifier(
             cv_net: cv.to_bytes().to_vec(),
             encrypted_note,
         },
-        own_nullifier,
+        note,
     )
 }
 
@@ -231,7 +247,7 @@ async fn two_chunk_pool(
 /// A pool of full chunks, each opening with the given notes and padded
 /// with opaque ones, except the last chunk, which holds its notes alone
 /// and so ends the pool. Returns the SDK and the chunk size.
-async fn chunked_pool(leading: &[Vec<ShieldedEncryptedNote>]) -> (Arc<Sdk>, u64) {
+pub(super) async fn chunked_pool(leading: &[Vec<ShieldedEncryptedNote>]) -> (Arc<Sdk>, u64) {
     let mut sdk = Sdk::new_mock();
     let count = 2048
         * u64::from(
@@ -293,7 +309,7 @@ async fn coordinator_at(
     coordinator
 }
 
-async fn coordinator_over(
+pub(super) async fn coordinator_over(
     sdk: Arc<Sdk>,
     keys: &AccountViewingKeys,
 ) -> (NetworkShieldedCoordinator, Arc<RecordingPersistence>) {
@@ -337,7 +353,7 @@ fn host_synced_index(host: &RecordingPersistence, sub: SubwalletId) -> Option<u6
         .max()
 }
 
-fn host_note_values(host: &RecordingPersistence, sub: SubwalletId) -> Vec<u64> {
+pub(super) fn host_note_values(host: &RecordingPersistence, sub: SubwalletId) -> Vec<u64> {
     let mut values: Vec<u64> = host
         .recorded()
         .iter()
