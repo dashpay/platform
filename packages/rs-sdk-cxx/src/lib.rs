@@ -73,7 +73,8 @@ pub mod ffi {
         /// A proof shows the object does not exist.
         NotFound = 1,
         /// Nothing was proved: transport failure, timeout, proxy failure,
-        /// no usable endpoint, or the client is shut down.
+        /// no usable endpoint, the client is shut down, or a submitted
+        /// transition's result is unconfirmed.
         Unavailable = 2,
         /// A response failed verification (proof, quorum, staleness) or a
         /// node refused the request.

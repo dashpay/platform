@@ -126,7 +126,8 @@ pub fn classify(error: &Error) -> Status {
         Error::DapiClientError(_)
         | Error::TimeoutReached(..)
         | Error::Cancelled(_)
-        | Error::StaleNode(_) => StatusKind::Unavailable,
+        | Error::StaleNode(_)
+        | Error::StateTransitionResultUnconfirmed(_) => StatusKind::Unavailable,
         Error::Proof(_)
         | Error::DriveProofError(..)
         | Error::InvalidProvedResponse(_)
@@ -1048,6 +1049,31 @@ mod tests {
                 .contains("is not proved used up: its record could not be read"),
             "{unread:?}"
         );
+
+        // A submission whose result is unconfirmed proves nothing, even when
+        // its diagnostic cause is a consensus error.
+        let consensus = || {
+            Box::new(Error::Protocol(ProtocolError::ConsensusError(Box::new(
+                ConsensusError::DefaultError,
+            ))))
+        };
+        for error in [
+            Error::StateTransitionResultUnconfirmed(Box::new(Error::TimeoutReached(
+                std::time::Duration::from_secs(1),
+                "t".into(),
+            ))),
+            Error::StateTransitionResultUnconfirmed(consensus()),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::StateTransitionResultUnconfirmed(
+                consensus(),
+            ))),
+        ] {
+            let status = classify(&error);
+            assert_eq!(
+                (status.kind, status.consensus_code),
+                (StatusKind::Unavailable, 0),
+                "{error}"
+            );
+        }
     }
 
     /// Tor stream isolation; the C++ smoke covers the refusals.
