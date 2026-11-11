@@ -409,50 +409,53 @@ pub fn document_create_cost(
 /// Refuses a platform version whose insert methods are not the ones the
 /// estimate mirrors (those of protocol version 14): another version of any
 /// of them may write other elements.
+/// `add_reference_for_index_level_for_contract_operations` 1 (protocol version
+/// 15) writes the elements 0 does and differs only in how Drive's own fee
+/// estimate describes a summable index's entries, so both are mirrored.
 fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
     let document = &platform_version.drive.methods.document;
     for (method, known, received) in [
         (
             "add_document_for_contract_operations",
-            1,
+            &[1][..],
             document.insert.add_document_for_contract_operations,
         ),
         (
             "add_document_to_primary_storage",
-            0,
+            &[0][..],
             document.insert.add_document_to_primary_storage,
         ),
         (
             "add_indices_for_top_index_level_for_contract_operations",
-            2,
+            &[2][..],
             document
                 .insert
                 .add_indices_for_top_index_level_for_contract_operations,
         ),
         (
             "add_indices_for_index_level_for_contract_operations",
-            2,
+            &[2][..],
             document
                 .insert
                 .add_indices_for_index_level_for_contract_operations,
         ),
         (
             "add_reference_for_index_level_for_contract_operations",
-            0,
+            &[0, 1][..],
             document
                 .insert
                 .add_reference_for_index_level_for_contract_operations,
         ),
         (
             "add_document_expiration_operations",
-            0,
+            &[0][..],
             document.expiration.add_document_expiration_operations,
         ),
     ] {
-        if received != known {
+        if !known.contains(&received) {
             return Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: format!("document_create_cost ({method})"),
-                known_versions: vec![known],
+                known_versions: known.to_vec(),
                 received,
             }));
         }

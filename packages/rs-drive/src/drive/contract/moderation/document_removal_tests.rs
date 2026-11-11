@@ -64,8 +64,12 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
 
 /// The fixture contract, declaring moderation when `moderated`, and with each of
 /// `deletable_types` as a document type moderators can delete documents of.
-fn contract_with(moderated: bool, banlist: bool, deletable_types: &[&str]) -> DataContract {
-    let platform_version = PlatformVersion::latest();
+fn contract_with(
+    moderated: bool,
+    banlist: bool,
+    deletable_types: &[&str],
+    platform_version: &PlatformVersion,
+) -> DataContract {
     let mut contract =
         get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
     let moderation = moderated.then_some(ContractModerationConfig {
@@ -76,32 +80,20 @@ fn contract_with(moderated: bool, banlist: bool, deletable_types: &[&str]) -> Da
     });
     contract.set_config(contract.config().clone().with_moderation(moderation));
     for name in deletable_types {
-        add_deletable_type(&mut contract, name);
+        add_deletable_type(&mut contract, name, platform_version);
     }
     contract
 }
 
-fn add_deletable_type(contract: &mut DataContract, name: &str) {
+fn add_deletable_type(contract: &mut DataContract, name: &str, platform_version: &PlatformVersion) {
     contract
-        .set_document_schema(
-            name,
-            post_schema(true),
-            true,
-            &mut vec![],
-            PlatformVersion::latest(),
-        )
+        .set_document_schema(name, post_schema(true), true, &mut vec![], platform_version)
         .expect("expected to add a document type moderators can delete from");
 }
 
-fn insert(drive: &Drive, contract: &DataContract) {
+fn insert(drive: &Drive, contract: &DataContract, platform_version: &PlatformVersion) {
     drive
-        .insert_contract(
-            contract,
-            BlockInfo::default(),
-            true,
-            None,
-            PlatformVersion::latest(),
-        )
+        .insert_contract(contract, BlockInfo::default(), true, None, platform_version)
         .expect("expected to insert the contract");
 }
 
@@ -186,14 +178,19 @@ fn replace_record<'a>(
     })
 }
 
-fn apply(drive: &Drive, operations: Vec<DriveOperation>, apply: bool) -> FeeResult {
+fn apply(
+    drive: &Drive,
+    operations: Vec<DriveOperation>,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> FeeResult {
     drive
         .apply_drive_operations(
             operations,
             apply,
             &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
             None,
-            PlatformVersion::latest(),
+            platform_version,
         )
         .expect("expected to apply the operations")
 }
@@ -218,8 +215,8 @@ fn assert_removals(
     contract_id: Identifier,
     query: &ContractDocumentRemovalsQuery,
     expected: Vec<ContractDocumentRemovalEntry>,
+    platform_version: &PlatformVersion,
 ) {
-    let platform_version = PlatformVersion::latest();
     let fetched = drive
         .fetch_contract_document_removals(contract_id, query, None, platform_version)
         .expect("expected to fetch the removals");
@@ -251,8 +248,8 @@ fn should_create_the_removal_trees_with_the_contract() {
 
     // Moderated, with a document type moderators can delete from: the tree and the type's.
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, false, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     assert!(has_removals_root(&drive, contract.id()));
     assert!(has_removals_tree_of(&drive, contract.id(), POST));
     // A document type that does not set the keyword gets none.
@@ -261,14 +258,14 @@ fn should_create_the_removal_trees_with_the_contract() {
     // Moderated with lists only: nothing, so its other tree keeps the shape it had. The
     // update that adds the first such document type brings the tree.
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, true, &[]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, true, &[], platform_version);
+    insert(&drive, &contract, platform_version);
     assert!(!has_removals_root(&drive, contract.id()));
 
     // Not moderated: nothing.
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(false, false, &[]);
-    insert(&drive, &contract);
+    let contract = contract_with(false, false, &[], platform_version);
+    insert(&drive, &contract, platform_version);
     assert!(!has_removals_root(&drive, contract.id()));
 }
 
@@ -276,8 +273,8 @@ fn should_create_the_removal_trees_with_the_contract() {
 fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let mut contract = contract_with(true, true, &[POST]);
-    insert(&drive, &contract);
+    let mut contract = contract_with(true, true, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     let document_id = identity(0x31);
     apply(
         &drive,
@@ -287,9 +284,10 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             removal(1, 2, "spam", 10),
         )],
         true,
+        platform_version,
     );
 
-    add_deletable_type(&mut contract, "reply");
+    add_deletable_type(&mut contract, "reply", platform_version);
     contract.increment_version();
     // The estimate creates the same tree, and costs at least what the update then pays.
     let estimated = drive
@@ -322,6 +320,7 @@ fn should_create_the_removal_tree_of_a_document_type_an_update_adds() {
             document_id,
             removal: removal(1, 2, "spam", 10),
         }],
+        platform_version,
     );
 }
 
@@ -330,11 +329,11 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     // Lists only: no document type moderators can delete from, so no removals tree.
-    let mut contract = contract_with(true, true, &[]);
-    insert(&drive, &contract);
+    let mut contract = contract_with(true, true, &[], platform_version);
+    insert(&drive, &contract, platform_version);
     assert!(!has_removals_root(&drive, contract.id()));
 
-    add_deletable_type(&mut contract, POST);
+    add_deletable_type(&mut contract, POST, platform_version);
     contract.increment_version();
     drive
         .update_contract(
@@ -358,6 +357,7 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
             removal(1, 2, "spam", 10),
         )],
         true,
+        platform_version,
     );
     assert_removals(
         &drive,
@@ -367,6 +367,7 @@ fn should_create_the_removals_tree_with_the_first_document_type_an_update_adds()
             document_id,
             removal: removal(1, 2, "spam", 10),
         }],
+        platform_version,
     );
 }
 
@@ -395,8 +396,8 @@ fn should_keep_the_banlist_on_top_of_the_other_tree_when_every_tree_is_created_a
                 warnings: false,
             },
         )));
-        add_deletable_type(&mut contract, POST);
-        insert(&drive, &contract);
+        add_deletable_type(&mut contract, POST, platform_version);
+        insert(&drive, &contract, platform_version);
 
         let contracts_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
         let other = drive
@@ -440,8 +441,8 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
             warnings: false,
         },
     )));
-    add_deletable_type(&mut contract, POST);
-    insert(&drive, &contract);
+    add_deletable_type(&mut contract, POST, platform_version);
+    insert(&drive, &contract, platform_version);
 
     let top_of_other = |drive: &Drive| {
         let contracts_root: &[u8] = Into::<&[u8; 1]>::into(RootTree::DataContractDocuments);
@@ -478,6 +479,7 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
                 },
             )],
             true,
+            platform_version,
         );
     };
     claim(ContractFeePot::Owner);
@@ -492,13 +494,25 @@ fn should_lose_the_top_of_the_other_tree_to_the_version_item_once_both_fee_pots_
 fn should_record_read_and_prove_removals() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, false, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     let contract_id = contract.id();
 
     // Nothing yet: every id absent, the page empty.
-    assert_removals(&drive, contract_id, &by_ids(&[identity(0x31)]), vec![]);
-    assert_removals(&drive, contract_id, &page(None, 10), vec![]);
+    assert_removals(
+        &drive,
+        contract_id,
+        &by_ids(&[identity(0x31)]),
+        vec![],
+        platform_version,
+    );
+    assert_removals(
+        &drive,
+        contract_id,
+        &page(None, 10),
+        vec![],
+        platform_version,
+    );
 
     let entries: Vec<ContractDocumentRemovalEntry> = [0x31u8, 0x32, 0x33]
         .into_iter()
@@ -516,6 +530,7 @@ fn should_record_read_and_prove_removals() {
                 entry.removal.clone(),
             )],
             true,
+            platform_version,
         );
     }
 
@@ -526,17 +541,31 @@ fn should_record_read_and_prove_removals() {
         contract_id,
         &by_ids(&[identity(0x33), identity(0x99), identity(0x31)]),
         vec![entries[0].clone(), entries[2].clone()],
+        platform_version,
     );
 
     // Pages, in id order, continuing after the cursor.
-    assert_removals(&drive, contract_id, &page(None, 2), entries[..2].to_vec());
+    assert_removals(
+        &drive,
+        contract_id,
+        &page(None, 2),
+        entries[..2].to_vec(),
+        platform_version,
+    );
     assert_removals(
         &drive,
         contract_id,
         &page(Some(identity(0x32)), 2),
         entries[2..].to_vec(),
+        platform_version,
     );
-    assert_removals(&drive, contract_id, &page(Some(identity(0x33)), 2), vec![]);
+    assert_removals(
+        &drive,
+        contract_id,
+        &page(Some(identity(0x33)), 2),
+        vec![],
+        platform_version,
+    );
 
     // A contract nobody has, and a document type that keeps no records, read as none.
     assert_eq!(
@@ -569,8 +598,8 @@ fn should_record_read_and_prove_removals() {
 fn should_refuse_a_read_out_of_bounds() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, false, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     let max = platform_version.drive_abci.query.max_returned_elements;
 
     let too_many: Vec<Identifier> = (0..=max)
@@ -600,8 +629,8 @@ fn should_refuse_a_read_out_of_bounds() {
 fn should_estimate_a_record_at_no_less_than_it_costs() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, false, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     let longest = "x".repeat(
         platform_version
             .system_limits
@@ -616,8 +645,8 @@ fn should_estimate_a_record_at_no_less_than_it_costs() {
                 removal(1, 2, text, 10),
             )]
         };
-        let estimated = apply(&drive, operations(), false);
-        let applied = apply(&drive, operations(), true);
+        let estimated = apply(&drive, operations(), false, platform_version);
+        let applied = apply(&drive, operations(), true, platform_version);
         assert!(
             estimated.storage_fee >= applied.storage_fee,
             "a {}-byte reason: estimated {} < applied {}",
@@ -633,7 +662,7 @@ fn should_estimate_a_record_at_no_less_than_it_costs() {
 /// The fixture contract with a `post` type whose moderators' removal records keep its long
 /// text, an object of tags and a note, and its creation time
 fn contract_keeping_fields() -> DataContract {
-    let mut contract = contract_with(true, false, &[]);
+    let mut contract = contract_with(true, false, &[], PlatformVersion::latest());
     contract
         .set_document_schema(
             POST,
@@ -680,7 +709,7 @@ fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
     let contract = contract_keeping_fields();
-    insert(&drive, &contract);
+    insert(&drive, &contract, platform_version);
     let document_type = contract
         .document_type_for_name(POST)
         .expect("expected the post type");
@@ -744,6 +773,7 @@ fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
                 },
             )],
             true,
+            platform_version,
         );
     }
 
@@ -753,8 +783,8 @@ fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
             ..removal(1, 2, "spam", 50)
         };
         let operations = || vec![keeping(identity(seed), removal.clone())];
-        let estimated = apply(&drive, operations(), false);
-        let applied = apply(&drive, operations(), true);
+        let estimated = apply(&drive, operations(), false, platform_version);
+        let applied = apply(&drive, operations(), true, platform_version);
         assert!(
             estimated.storage_fee >= applied.storage_fee,
             "a fresh record: estimated storage {} < applied {}",
@@ -791,8 +821,8 @@ fn should_estimate_records_keeping_fields_at_no_less_than_they_cost() {
                 },
             )]
         };
-        let estimated = apply(&drive, operations(), false);
-        let applied = apply(&drive, operations(), true);
+        let estimated = apply(&drive, operations(), false, platform_version);
+        let applied = apply(&drive, operations(), true, platform_version);
         assert!(
             estimated.storage_fee >= applied.storage_fee,
             "a restore: estimated storage {} < applied {}",
@@ -814,8 +844,8 @@ fn should_estimate_a_replacement_by_what_it_adds() {
     // the bytes it adds, never less than the replace costs, and not the text again.
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
+    let contract = contract_with(true, false, &[POST], platform_version);
+    insert(&drive, &contract, platform_version);
     let document_id = identity(9);
     let restorer = identity(3);
     let kept = ContractDocumentRemoval {
@@ -826,6 +856,7 @@ fn should_estimate_a_replacement_by_what_it_adds() {
         &drive,
         vec![record(contract.id(), document_id, kept.clone())],
         true,
+        platform_version,
     );
     let restored = ContractDocumentRemoval {
         restoration: Some(ContractDocumentRestoration {
@@ -847,9 +878,10 @@ fn should_estimate_a_replacement_by_what_it_adds() {
         &drive,
         vec![record(contract.id(), identity(10), restored.clone())],
         false,
+        platform_version,
     );
-    let estimated = apply(&drive, operations(), false);
-    let applied = apply(&drive, operations(), true);
+    let estimated = apply(&drive, operations(), false, platform_version);
+    let applied = apply(&drive, operations(), true, platform_version);
     assert!(
         estimated.storage_fee >= applied.storage_fee,
         "estimated {} < applied {}",
@@ -864,8 +896,12 @@ fn should_estimate_a_replacement_by_what_it_adds() {
     );
 }
 
-fn add_post(drive: &Drive, contract: &DataContract, owner_id: Identifier) -> Document {
-    let platform_version = PlatformVersion::latest();
+fn add_post(
+    drive: &Drive,
+    contract: &DataContract,
+    owner_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Document {
     let document_type = contract
         .document_type_for_name(POST)
         .expect("expected the post document type");
@@ -916,48 +952,115 @@ fn delete_post_by_moderator<'a>(
     })
 }
 
+/// The protocol versions a moderated deletion's storage refund forfeiture is run at: protocol
+/// version 14, whose `apply_drive_operations` 1 applies a forfeiting batch that also frees
+/// moderation storage as two GroveDB batches and any other as one, forfeiting whole, and the
+/// latest version.
+fn forfeiting_protocol_versions() -> [&'static PlatformVersion; 2] {
+    [
+        PlatformVersion::get(14).expect("expected protocol version 14"),
+        PlatformVersion::latest(),
+    ]
+}
+
 fn forfeit<'a>() -> DriveOperation<'a> {
     ContractModerationOperation(ContractModerationOperationType::ForfeitStorageRefunds)
 }
 
 #[test]
 fn should_refund_nobody_for_a_document_a_moderator_deletes() {
-    let platform_version = PlatformVersion::latest();
-    let author = identity(0x41);
-    let moderator = identity(0x42);
+    for platform_version in forfeiting_protocol_versions() {
+        let author = identity(0x41);
+        let moderator = identity(0x42);
 
-    // The author's own deletion: the author is refunded for the storage the post frees.
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, author);
-    // An estimate carries no refund, the owner's own deletion included: refunds are computed
-    // from the flags of what is really removed. The forfeiture therefore only shows once
-    // applied, and the mempool's fee check is the same with or without it.
-    let own_estimate = apply(&drive, vec![delete_post(&contract, post.id())], false);
-    assert!(own_estimate.fee_refunds.0.is_empty());
-    let own = apply(&drive, vec![delete_post(&contract, post.id())], true);
-    let refunded: u64 = own
-        .fee_refunds
-        .get(author.as_bytes())
-        .expect("expected the author to be refunded")
-        .values()
-        .sum();
-    assert!(refunded > 0);
-    assert_eq!(own.removed_bytes_from_system, 0);
+        // The author's own deletion: the author is refunded for the storage the post frees.
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = contract_with(true, false, &[POST], platform_version);
+        insert(&drive, &contract, platform_version);
+        let post = add_post(&drive, &contract, author, platform_version);
+        // An estimate carries no refund, the owner's own deletion included: refunds are computed
+        // from the flags of what is really removed. The forfeiture therefore only shows once
+        // applied, and the mempool's fee check is the same with or without it.
+        let own_estimate = apply(
+            &drive,
+            vec![delete_post(&contract, post.id())],
+            false,
+            platform_version,
+        );
+        assert!(own_estimate.fee_refunds.0.is_empty());
+        let own = apply(
+            &drive,
+            vec![delete_post(&contract, post.id())],
+            true,
+            platform_version,
+        );
+        let refunded: u64 = own
+            .fee_refunds
+            .get(author.as_bytes())
+            .expect("expected the author to be refunded")
+            .values()
+            .sum();
+        assert!(refunded > 0);
+        assert_eq!(own.removed_bytes_from_system, 0);
 
-    // A moderator's deletion of the same post: the same bytes leave the system, nobody is
-    // refunded, and the moderator pays for the record.
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, author);
-    let operations = || {
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            record(
-                contract.id(),
-                post.id(),
-                ContractDocumentRemoval {
+        // A moderator's deletion of the same post: the same bytes leave the system, nobody is
+        // refunded, and the moderator pays for the record.
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        insert(&drive, &contract, platform_version);
+        let post = add_post(&drive, &contract, author, platform_version);
+        let operations = || {
+            vec![
+                delete_post_by_moderator(&contract, post.id()),
+                record(
+                    contract.id(),
+                    post.id(),
+                    ContractDocumentRemoval {
+                        document_owner_id: author,
+                        moderator_id: moderator,
+                        reason: ContractModerationReason::from_text("spam"),
+                        removed_at: 10,
+                        document_hash: [0x43; 32],
+                        restoration: None,
+                        kept_fields: Default::default(),
+                    },
+                ),
+                forfeit(),
+            ]
+        };
+        let estimated = apply(&drive, operations(), false, platform_version);
+        assert!(estimated.fee_refunds.0.is_empty());
+
+        let moderated = apply(&drive, operations(), true, platform_version);
+        assert!(
+            moderated.fee_refunds.0.is_empty(),
+            "nobody is refunded: {:?}",
+            moderated.fee_refunds
+        );
+        assert!(moderated.removed_bytes_from_system > 0);
+        assert!(
+            moderated.storage_fee > 0,
+            "the moderator pays for the record"
+        );
+
+        // The post is gone and its record is there.
+        let post_is_stored = drive
+            .grove_has_raw(
+                (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
+                post.id().as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to query the posts");
+        assert!(!post_is_stored);
+        assert_removals(
+            &drive,
+            contract.id(),
+            &by_ids(&[post.id()]),
+            vec![ContractDocumentRemovalEntry {
+                document_id: post.id(),
+                removal: ContractDocumentRemoval {
                     document_owner_id: author,
                     moderator_id: moderator,
                     reason: ContractModerationReason::from_text("spam"),
@@ -966,54 +1069,10 @@ fn should_refund_nobody_for_a_document_a_moderator_deletes() {
                     restoration: None,
                     kept_fields: Default::default(),
                 },
-            ),
-            forfeit(),
-        ]
-    };
-    let estimated = apply(&drive, operations(), false);
-    assert!(estimated.fee_refunds.0.is_empty());
-
-    let moderated = apply(&drive, operations(), true);
-    assert!(
-        moderated.fee_refunds.0.is_empty(),
-        "nobody is refunded: {:?}",
-        moderated.fee_refunds
-    );
-    assert!(moderated.removed_bytes_from_system > 0);
-    assert!(
-        moderated.storage_fee > 0,
-        "the moderator pays for the record"
-    );
-
-    // The post is gone and its record is there.
-    let post_is_stored = drive
-        .grove_has_raw(
-            (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
-            post.id().as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            None,
-            &mut vec![],
-            &platform_version.drive,
-        )
-        .expect("expected to query the posts");
-    assert!(!post_is_stored);
-    assert_removals(
-        &drive,
-        contract.id(),
-        &by_ids(&[post.id()]),
-        vec![ContractDocumentRemovalEntry {
-            document_id: post.id(),
-            removal: ContractDocumentRemoval {
-                document_owner_id: author,
-                moderator_id: moderator,
-                reason: ContractModerationReason::from_text("spam"),
-                removed_at: 10,
-                document_hash: [0x43; 32],
-                restoration: None,
-                kept_fields: Default::default(),
-            },
-        }],
-    );
+            }],
+            platform_version,
+        );
+    }
 }
 
 /// The insert that brings `post` back: the document as it was, its storage flags naming its
@@ -1036,7 +1095,12 @@ fn restore_post<'a>(contract: &'a DataContract, post: &Document) -> DriveOperati
     })
 }
 
-fn post_is_stored(drive: &Drive, contract: &DataContract, document_id: Identifier) -> bool {
+fn post_is_stored(
+    drive: &Drive,
+    contract: &DataContract,
+    document_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> bool {
     drive
         .grove_has_raw(
             (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
@@ -1044,122 +1108,142 @@ fn post_is_stored(drive: &Drive, contract: &DataContract, document_id: Identifie
             DirectQueryType::StatefulDirectQuery,
             None,
             &mut vec![],
-            &PlatformVersion::latest().drive,
+            &platform_version.drive,
         )
         .expect("expected to query the posts")
 }
 
 #[test]
 fn should_restore_a_document_mark_its_record_and_replace_the_record_on_a_second_deletion() {
-    let platform_version = PlatformVersion::latest();
-    let author = identity(0x41);
-    let moderator = identity(0x42);
-    let restorer = identity(0x43);
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, author);
-    let removal = ContractDocumentRemoval {
-        document_owner_id: author,
-        moderator_id: moderator,
-        reason: ContractModerationReason::from_text("spam"),
-        removed_at: 10,
-        document_hash: [0x44; 32],
-        restoration: None,
-        kept_fields: Default::default(),
-    };
-    apply(
-        &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            record(contract.id(), post.id(), removal.clone()),
-            forfeit(),
-        ],
-        true,
-    );
-    assert!(!post_is_stored(&drive, &contract, post.id()));
+    for platform_version in forfeiting_protocol_versions() {
+        let author = identity(0x41);
+        let moderator = identity(0x42);
+        let restorer = identity(0x43);
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = contract_with(true, false, &[POST], platform_version);
+        insert(&drive, &contract, platform_version);
+        let post = add_post(&drive, &contract, author, platform_version);
+        let removal = ContractDocumentRemoval {
+            document_owner_id: author,
+            moderator_id: moderator,
+            reason: ContractModerationReason::from_text("spam"),
+            removed_at: 10,
+            document_hash: [0x44; 32],
+            restoration: None,
+            kept_fields: Default::default(),
+        };
+        apply(
+            &drive,
+            vec![
+                delete_post_by_moderator(&contract, post.id()),
+                record(contract.id(), post.id(), removal.clone()),
+                forfeit(),
+            ],
+            true,
+            platform_version,
+        );
+        assert!(!post_is_stored(
+            &drive,
+            &contract,
+            post.id(),
+            platform_version
+        ));
 
-    // The restore: the document back, the record marked in place. The restorer pays for the
-    // document and for the bytes the mark adds; nobody is refunded anything.
-    let restored = ContractDocumentRemoval {
-        restoration: Some(ContractDocumentRestoration {
+        // The restore: the document back, the record marked in place. The restorer pays for the
+        // document and for the bytes the mark adds; nobody is refunded anything.
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: restorer,
+                restored_at: 20,
+            }),
+            ..removal.clone()
+        };
+        let operations = || {
+            vec![
+                restore_post(&contract, &post),
+                replace_record(
+                    contract.id(),
+                    post.id(),
+                    restored.clone(),
+                    &removal,
+                    restorer,
+                ),
+            ]
+        };
+        let estimated = apply(&drive, operations(), false, platform_version);
+        let applied = apply(&drive, operations(), true, platform_version);
+        assert!(
+            applied.storage_fee > 0,
+            "the restorer pays for the document"
+        );
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "estimated {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+        assert!(applied.fee_refunds.0.is_empty());
+        assert!(post_is_stored(
+            &drive,
+            &contract,
+            post.id(),
+            platform_version
+        ));
+        assert_removals(
+            &drive,
+            contract.id(),
+            &by_ids(&[post.id()]),
+            vec![ContractDocumentRemovalEntry {
+                document_id: post.id(),
+                removal: restored.clone(),
+            }],
+            platform_version,
+        );
+
+        // Deleted again by a moderator: a fresh record in place of the restored one, the author
+        // refunded nothing again. The fresh record is shorter than the restored one it replaces,
+        // and the restorer, who paid for the bytes that frees, keeps that refund: the forfeiture
+        // takes the document's removals alone.
+        let again = ContractDocumentRemoval {
             moderator_id: restorer,
-            restored_at: 20,
-        }),
-        ..removal.clone()
-    };
-    let operations = || {
-        vec![
-            restore_post(&contract, &post),
-            replace_record(
-                contract.id(),
-                post.id(),
-                restored.clone(),
-                &removal,
-                restorer,
-            ),
-        ]
-    };
-    let estimated = apply(&drive, operations(), false);
-    let applied = apply(&drive, operations(), true);
-    assert!(
-        applied.storage_fee > 0,
-        "the restorer pays for the document"
-    );
-    assert!(
-        estimated.storage_fee >= applied.storage_fee,
-        "estimated {} < applied {}",
-        estimated.storage_fee,
-        applied.storage_fee
-    );
-    assert!(applied.fee_refunds.0.is_empty());
-    assert!(post_is_stored(&drive, &contract, post.id()));
-    assert_removals(
-        &drive,
-        contract.id(),
-        &by_ids(&[post.id()]),
-        vec![ContractDocumentRemovalEntry {
-            document_id: post.id(),
-            removal: restored.clone(),
-        }],
-    );
-
-    // Deleted again by a moderator: a fresh record in place of the restored one, the author
-    // refunded nothing again. The fresh record is shorter than the restored one it replaces,
-    // and the restorer, who paid for the bytes that frees, keeps that refund: the forfeiture
-    // takes the document's removals alone.
-    let again = ContractDocumentRemoval {
-        moderator_id: restorer,
-        removed_at: 30,
-        restoration: None,
-        ..removal
-    };
-    let applied = apply(
-        &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            replace_record(contract.id(), post.id(), again.clone(), &restored, restorer),
-            forfeit(),
-        ],
-        true,
-    );
-    assert!(applied.fee_refunds.get(author.as_bytes()).is_none());
-    assert!(
-        applied.fee_refunds.get(restorer.as_bytes()).is_some(),
-        "the restorer is refunded the bytes the record gives up"
-    );
-    assert_eq!(applied.fee_refunds.0.len(), 1);
-    assert!(applied.removed_bytes_from_system > 0);
-    assert!(!post_is_stored(&drive, &contract, post.id()));
-    assert_removals(
-        &drive,
-        contract.id(),
-        &by_ids(&[post.id()]),
-        vec![ContractDocumentRemovalEntry {
-            document_id: post.id(),
-            removal: again,
-        }],
-    );
+            removed_at: 30,
+            restoration: None,
+            ..removal
+        };
+        let applied = apply(
+            &drive,
+            vec![
+                delete_post_by_moderator(&contract, post.id()),
+                replace_record(contract.id(), post.id(), again.clone(), &restored, restorer),
+                forfeit(),
+            ],
+            true,
+            platform_version,
+        );
+        assert!(applied.fee_refunds.get(author.as_bytes()).is_none());
+        assert!(
+            applied.fee_refunds.get(restorer.as_bytes()).is_some(),
+            "the restorer is refunded the bytes the record gives up"
+        );
+        assert_eq!(applied.fee_refunds.0.len(), 1);
+        assert!(applied.removed_bytes_from_system > 0);
+        assert!(!post_is_stored(
+            &drive,
+            &contract,
+            post.id(),
+            platform_version
+        ));
+        assert_removals(
+            &drive,
+            contract.id(),
+            &by_ids(&[post.id()]),
+            vec![ContractDocumentRemovalEntry {
+                document_id: post.id(),
+                removal: again,
+            }],
+            platform_version,
+        );
+    }
 }
 
 #[test]
@@ -1167,116 +1251,128 @@ fn should_refund_the_author_who_deletes_a_restored_document() {
     // The restored document's flags name its author, as they did before the deletion: the
     // refund of the author's own deletion is the author's, though a moderator paid to put
     // the document back.
-    let platform_version = PlatformVersion::latest();
-    let author = identity(0x41);
-    let moderator = identity(0x42);
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with(true, false, &[POST]);
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, author);
-    let removal = removal(0x41, 0x42, "spam", 10);
-    apply(
-        &drive,
-        vec![
-            delete_post_by_moderator(&contract, post.id()),
-            record(contract.id(), post.id(), removal.clone()),
-            forfeit(),
-        ],
-        true,
-    );
-    let restored = ContractDocumentRemoval {
-        restoration: Some(ContractDocumentRestoration {
-            moderator_id: moderator,
-            restored_at: 20,
-        }),
-        ..removal.clone()
-    };
-    apply(
-        &drive,
-        vec![
-            restore_post(&contract, &post),
-            replace_record(
-                contract.id(),
-                post.id(),
-                restored.clone(),
-                &removal,
-                moderator,
-            ),
-        ],
-        true,
-    );
+    for platform_version in forfeiting_protocol_versions() {
+        let author = identity(0x41);
+        let moderator = identity(0x42);
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = contract_with(true, false, &[POST], platform_version);
+        insert(&drive, &contract, platform_version);
+        let post = add_post(&drive, &contract, author, platform_version);
+        let removal = removal(0x41, 0x42, "spam", 10);
+        apply(
+            &drive,
+            vec![
+                delete_post_by_moderator(&contract, post.id()),
+                record(contract.id(), post.id(), removal.clone()),
+                forfeit(),
+            ],
+            true,
+            platform_version,
+        );
+        let restored = ContractDocumentRemoval {
+            restoration: Some(ContractDocumentRestoration {
+                moderator_id: moderator,
+                restored_at: 20,
+            }),
+            ..removal.clone()
+        };
+        apply(
+            &drive,
+            vec![
+                restore_post(&contract, &post),
+                replace_record(
+                    contract.id(),
+                    post.id(),
+                    restored.clone(),
+                    &removal,
+                    moderator,
+                ),
+            ],
+            true,
+            platform_version,
+        );
 
-    let own = apply(&drive, vec![delete_post(&contract, post.id())], true);
-    let refunded: u64 = own
-        .fee_refunds
-        .get(author.as_bytes())
-        .expect("expected the author to be refunded")
-        .values()
-        .sum();
-    assert!(refunded > 0);
-    assert!(own.fee_refunds.get(moderator.as_bytes()).is_none());
-    // The record stays as it was: the author's deletion is not a moderation.
-    assert_removals(
-        &drive,
-        contract.id(),
-        &by_ids(&[post.id()]),
-        vec![ContractDocumentRemovalEntry {
-            document_id: post.id(),
-            removal: restored,
-        }],
-    );
+        let own = apply(
+            &drive,
+            vec![delete_post(&contract, post.id())],
+            true,
+            platform_version,
+        );
+        let refunded: u64 = own
+            .fee_refunds
+            .get(author.as_bytes())
+            .expect("expected the author to be refunded")
+            .values()
+            .sum();
+        assert!(refunded > 0);
+        assert!(own.fee_refunds.get(moderator.as_bytes()).is_none());
+        // The record stays as it was: the author's deletion is not a moderation.
+        assert_removals(
+            &drive,
+            contract.id(),
+            &by_ids(&[post.id()]),
+            vec![ContractDocumentRemovalEntry {
+                document_id: post.id(),
+                removal: restored,
+            }],
+            platform_version,
+        );
+    }
 }
 
 #[test]
 fn should_delete_for_a_moderator_a_document_its_owner_can_not_delete() {
     // `canBeDeleted` rules what a document's own owner may do. A post nobody can retract, but
     // moderation can remove, is the case the keyword exists for.
-    let platform_version = PlatformVersion::latest();
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let mut contract = contract_with(true, false, &[]);
-    let mut schema = post_schema(true);
-    schema
-        .insert("canBeDeleted".to_string(), Value::Bool(false))
-        .expect("expected to set canBeDeleted");
-    contract
-        .set_document_schema(POST, schema, true, &mut vec![], platform_version)
-        .expect("expected to add the post type");
-    insert(&drive, &contract);
-    let post = add_post(&drive, &contract, identity(0x41));
+    for platform_version in forfeiting_protocol_versions() {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let mut contract = contract_with(true, false, &[], platform_version);
+        let mut schema = post_schema(true);
+        schema
+            .insert("canBeDeleted".to_string(), Value::Bool(false))
+            .expect("expected to set canBeDeleted");
+        contract
+            .set_document_schema(POST, schema, true, &mut vec![], platform_version)
+            .expect("expected to add the post type");
+        insert(&drive, &contract, platform_version);
+        let post = add_post(&drive, &contract, identity(0x41), platform_version);
 
-    // The owner's deletion is refused by Drive, as it always was.
-    drive
-        .apply_drive_operations(
-            vec![delete_post(&contract, post.id())],
-            true,
-            &BlockInfo::default(),
-            None,
+        // The owner's deletion is refused by Drive, as it always was.
+        drive
+            .apply_drive_operations(
+                vec![delete_post(&contract, post.id())],
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect_err("expected the owner's deletion to be refused");
+
+        // The moderators' is not, estimated or applied.
+        apply(
+            &drive,
+            vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
+            false,
             platform_version,
-        )
-        .expect_err("expected the owner's deletion to be refused");
-
-    // The moderators' is not, estimated or applied.
-    apply(
-        &drive,
-        vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
-        false,
-    );
-    apply(
-        &drive,
-        vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
-        true,
-    );
-    let post_is_stored = drive
-        .grove_has_raw(
-            (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
-            post.id().as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            None,
-            &mut vec![],
-            &platform_version.drive,
-        )
-        .expect("expected to query the posts");
-    assert!(!post_is_stored);
+        );
+        apply(
+            &drive,
+            vec![delete_post_by_moderator(&contract, post.id()), forfeit()],
+            true,
+            platform_version,
+        );
+        let post_is_stored = drive
+            .grove_has_raw(
+                (&contract_documents_primary_key_path(contract.id_ref().as_bytes(), POST)).into(),
+                post.id().as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to query the posts");
+        assert!(!post_is_stored);
+    }
 }
 
 #[test]
@@ -1302,89 +1398,104 @@ fn should_keep_refunding_a_batch_without_the_forfeiture_before_protocol_version_
             .apply_drive_operations,
         1
     );
-    assert!(
-        PlatformVersion::latest()
+    assert_eq!(
+        PlatformVersion::get(15)
+            .expect("expected protocol version 15")
             .drive
             .methods
             .batch_operations
-            .apply_drive_operations
-            >= 1
+            .apply_drive_operations,
+        2
     );
 }
 
 #[test]
 fn should_price_a_forfeiting_deletion_as_one_batch_when_it_rewrites_no_record() {
-    let platform_version = PlatformVersion::latest();
-    let author = identity(0x41);
-    let moderator = identity(0x42);
-    let contract = contract_with(true, false, &[POST]);
-    // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
-    // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
-    // and costs the same, estimated and applied, apart from the refund and the read of the
-    // storing epoch's record that pricing the refund takes.
-    let fees = |forfeiting: bool| {
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        insert(&drive, &contract);
-        let post = add_post(&drive, &contract, author);
-        let operations = || {
-            let mut operations = vec![
-                delete_post_by_moderator(&contract, post.id()),
-                record(
-                    contract.id(),
-                    post.id(),
-                    ContractDocumentRemoval {
-                        document_owner_id: author,
-                        moderator_id: moderator,
-                        reason: ContractModerationReason::from_text("spam"),
-                        removed_at: 10,
-                        document_hash: [0x43; 32],
-                        restoration: None,
-                        kept_fields: Default::default(),
-                    },
-                ),
-            ];
-            if forfeiting {
-                operations.push(forfeit());
-            }
-            operations
-        };
+    // From protocol version 15 pricing a refund reads the storing epoch's record
+    // (`calculate_fee` 1); protocol version 14 prices it with no read.
+    for (platform_version, refund_reads_the_storing_epoch) in [
         (
-            apply(&drive, operations(), false),
-            apply(&drive, operations(), true),
-        )
-    };
-    let (estimated_forfeiting, forfeiting) = fees(true);
-    let (estimated, refunding) = fees(false);
-    assert_eq!(
-        estimated_forfeiting.processing_fee,
-        estimated.processing_fee
-    );
-    assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
-    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let mut record_read = vec![];
-    drive
-        .get_epoch_protocol_version_operations(
-            &Epoch::new(0).expect("epoch"),
-            None,
-            &mut record_read,
-            platform_version,
-        )
-        .expect("expected the storing epoch's record");
-    let record_read_fee = drive
-        .calculate_fee(
-            None,
-            Some(record_read),
-            &Epoch::new(3).expect("epoch"),
-            platform_version,
-        )
-        .expect("expected to price the read")
-        .processing_fee;
-    assert!(record_read_fee > 0);
-    assert_eq!(
-        forfeiting.processing_fee + record_read_fee,
-        refunding.processing_fee
-    );
-    assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
-    assert!(forfeiting.fee_refunds.0.is_empty());
-    assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+            false,
+        ),
+        (PlatformVersion::latest(), true),
+    ] {
+        let author = identity(0x41);
+        let moderator = identity(0x42);
+        let contract = contract_with(true, false, &[POST], platform_version);
+        // A moderator's deletion with a fresh record, with or without the forfeiture: nothing but
+        // the document frees bytes, so the forfeiting batch is applied as one, as the other is,
+        // and costs the same, estimated and applied, apart from the refund and the read of the
+        // storing epoch's record that pricing the refund takes.
+        let fees = |forfeiting: bool| {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            insert(&drive, &contract, platform_version);
+            let post = add_post(&drive, &contract, author, platform_version);
+            let operations = || {
+                let mut operations = vec![
+                    delete_post_by_moderator(&contract, post.id()),
+                    record(
+                        contract.id(),
+                        post.id(),
+                        ContractDocumentRemoval {
+                            document_owner_id: author,
+                            moderator_id: moderator,
+                            reason: ContractModerationReason::from_text("spam"),
+                            removed_at: 10,
+                            document_hash: [0x43; 32],
+                            restoration: None,
+                            kept_fields: Default::default(),
+                        },
+                    ),
+                ];
+                if forfeiting {
+                    operations.push(forfeit());
+                }
+                operations
+            };
+            (
+                apply(&drive, operations(), false, platform_version),
+                apply(&drive, operations(), true, platform_version),
+            )
+        };
+        let (estimated_forfeiting, forfeiting) = fees(true);
+        let (estimated, refunding) = fees(false);
+        assert_eq!(
+            estimated_forfeiting.processing_fee,
+            estimated.processing_fee
+        );
+        assert_eq!(estimated_forfeiting.storage_fee, estimated.storage_fee);
+        let record_read_fee = if refund_reads_the_storing_epoch {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let mut record_read = vec![];
+            drive
+                .get_epoch_protocol_version_operations(
+                    &Epoch::new(0).expect("epoch"),
+                    None,
+                    &mut record_read,
+                    platform_version,
+                )
+                .expect("expected the storing epoch's record");
+            let record_read_fee = drive
+                .calculate_fee(
+                    None,
+                    Some(record_read),
+                    &Epoch::new(3).expect("epoch"),
+                    platform_version,
+                )
+                .expect("expected to price the read")
+                .processing_fee;
+            assert!(record_read_fee > 0);
+            record_read_fee
+        } else {
+            0
+        };
+        assert_eq!(
+            forfeiting.processing_fee + record_read_fee,
+            refunding.processing_fee
+        );
+        assert_eq!(forfeiting.storage_fee, refunding.storage_fee);
+        assert!(forfeiting.fee_refunds.0.is_empty());
+        assert!(refunding.fee_refunds.get(author.as_bytes()).is_some());
+    }
 }
