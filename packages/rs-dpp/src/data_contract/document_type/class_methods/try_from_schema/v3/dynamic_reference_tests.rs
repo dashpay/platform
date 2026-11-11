@@ -750,6 +750,28 @@ fn should_hold_a_slot_to_its_byte_bound() {
     };
     assert!(post_meets(bytes_of(1024), None));
     assert!(!post_meets(bytes_of(1023), None));
+
+    // A string bounded both ways is held to the tighter bound, whichever it is: `code`
+    // holds at most two characters, eight bytes, though its `maxBytes` allows a hundred,
+    // and `tag` at most six bytes, though its `maxLength` allows a hundred characters
+    let bounded_both_ways = |name: &str, max_bytes: u32| {
+        let mut posts = note_contract(requiring(named(name, max_bytes)));
+        let properties = &mut posts["documentSchemas"]["post"]["properties"];
+        properties["code"] =
+            json!({ "type": "string", "maxLength": 2, "maxBytes": 100, "position": 7 });
+        properties["tag"] =
+            json!({ "type": "string", "maxLength": 100, "maxBytes": 6, "position": 8 });
+        let parsed = contract(posts).expect("parses");
+        let post = parsed.document_type_for_name("post").expect("post");
+        dynamic_reference(&parsed)
+            .requirements
+            .expect("requirements")
+            .met_by(post, |_| None)
+    };
+    assert!(bounded_both_ways("code", 8));
+    assert!(!bounded_both_ways("code", 7));
+    assert!(bounded_both_ways("tag", 6));
+    assert!(!bounded_both_ways("tag", 5));
 }
 
 #[test]
