@@ -131,6 +131,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `core_based_updates.masternode_updates.update_voter_identity` is 1 rather than 0: a
 /// masternode that returns to a voting address it used before has the key of that address's
 /// voter identity re-enabled, where 0 re-enabled the key of the voter identity it was leaving.
+///
+/// `voting.award_document_to_winner` is 1 rather than 0: a contest's winner whose document id or
+/// unique index values a document already holds is not inserted, and the contest ends without a
+/// winner, where 0 inserted unchecked.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         consensus_params_update: 2,
@@ -159,6 +163,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
         keep_record_of_finished_yes_no_vote_poll: Some(0),
         clean_up_after_yes_no_vote_polls_end: Some(0),
         on_yes_no_vote_poll_finished: Some(0),
+        award_document_to_winner: 1, // changed in v15: a winner whose id or unique index values a document already holds is not awarded, and the contest ends without a winner
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.voting
     },
     withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {

@@ -233,15 +233,26 @@ where
                                     ContestedDocumentVotePollWinnerInfo::Locked
                                 } else {
                                     let contender_id = top_contender.identity_id;
-                                    // We award the document to the winner of the vote poll
-                                    self.award_document_to_winner(
+                                    // We award the document to the winner of the vote poll.
+                                    // Changed in place for protocol version 15: the award
+                                    // tells whether it inserted the document, and a contest
+                                    // whose winner the state has no room for ends without
+                                    // one. Protocol version 14 selects award version 0, which
+                                    // always inserts or returns the insert's error, so
+                                    // nothing changes there.
+                                    if self.award_document_to_winner(
                                         block_info,
                                         top_contender,
                                         &resolved_contested_document_resource_vote_poll,
                                         transaction,
                                         platform_version,
-                                    )?;
-                                    ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_id)
+                                    )? {
+                                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(
+                                            contender_id,
+                                        )
+                                    } else {
+                                        ContestedDocumentVotePollWinnerInfo::NoWinner
+                                    }
                                 }
                             } else {
                                 ContestedDocumentVotePollWinnerInfo::NoWinner

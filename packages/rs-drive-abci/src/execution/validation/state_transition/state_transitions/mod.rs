@@ -4239,10 +4239,15 @@ pub(in crate::execution) mod tests {
         use crate::platform_types::platform::PlatformStateRef;
         use dpp::validation::SimpleConsensusValidationResult;
         use dpp::version::DefaultForPlatformVersion;
+        use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
+            ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
+        };
         use drive::error::drive::DriveError as DriveInnerError;
+        use drive::grovedb::Transaction;
         use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{
             DocumentBaseTransitionAction, DocumentBaseTransitionActionV0,
         };
+        use drive::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
         use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
             DocumentCreateTransitionAction, DocumentCreateTransitionActionV0,
         };
@@ -5077,6 +5082,403 @@ pub(in crate::execution) mod tests {
         ) {
             let result = assert_the_contest_lookup_is_billed(false).await;
             assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// The status of the contest of `domain` over `dash` and `normalized_label`, read in
+        /// `transaction`.
+        fn contest_status(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract: &DataContract,
+            normalized_label: &str,
+            transaction: &Transaction,
+            platform_version: &PlatformVersion,
+        ) -> Option<ContestedDocumentVotePollStatus> {
+            let vote_poll = ContestedDocumentResourceVotePoll {
+                contract_id: contract.id(),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec!["dash".into(), normalized_label.into()],
+            }
+            .resolve(&platform.drive, Some(transaction), platform_version)
+            .expect("expected to resolve the vote poll");
+            platform
+                .drive
+                .fetch_contested_document_vote_poll_stored_info(
+                    &vote_poll,
+                    None,
+                    Some(transaction),
+                    platform_version,
+                )
+                .expect("expected to fetch the contest's stored info")
+                .1
+                .map(|stored_info| stored_info.vote_poll_status())
+        }
+
+        /// On a chain at protocol version 14, stores the contract at `contract_path`, opens a
+        /// contest with the `contender`'s label and normalized label and creates a second
+        /// domain with `second`'s without prefunding, both under `dash`. Then runs the first
+        /// block of the latest protocol version, advances past the poll's end date and runs the
+        /// resolver. Returns the two creates' results, the resolver's, the contest's status
+        /// after it and the contender's id.
+        async fn run_across_activation(
+            contract_path: &str,
+            contender_labels: (&str, &str),
+            second: (&str, &str),
+        ) -> (
+            StateTransitionExecutionResult,
+            StateTransitionExecutionResult,
+            Result<(), crate::error::Error>,
+            Option<ContestedDocumentVotePollStatus>,
+            Identifier,
+        ) {
+            let platform_version_14 =
+                PlatformVersion::get(14).expect("expected protocol version 14");
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(14)
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .with_no_core_masternodes()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D00);
+
+            let contender = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let other = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let contract = setup_contract(
+                &platform.drive,
+                contract_path,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version_14),
+            );
+
+            let contested_result = create_domain(
+                &platform,
+                &contract,
+                &contender,
+                &mut rng,
+                contender_labels.0,
+                contender_labels.1,
+                Some("dash"),
+                &[],
+                true,
+                3000,
+                platform_version_14,
+            )
+            .await;
+
+            let second_result = create_domain(
+                &platform,
+                &contract,
+                &other,
+                &mut rng,
+                second.0,
+                second.1,
+                Some("dash"),
+                &[],
+                false,
+                4000,
+                platform_version_14,
+            )
+            .await;
+
+            // The first block of the latest protocol version, through the production dispatcher
+            let platform_state = platform.state.load_full();
+            let mut block_platform_state = PlatformState::clone(&platform_state);
+            block_platform_state
+                .set_current_protocol_version_in_consensus(platform_version.protocol_version);
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &mut block_platform_state,
+                    &BlockInfo {
+                        time_ms: 10_000,
+                        height: 10,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    },
+                    &transaction,
+                    14,
+                    platform_version,
+                )
+                .expect("expected the protocol change events to succeed");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit the protocol change");
+            platform.state.store(Arc::new(block_platform_state));
+
+            let after_vote_poll_end = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_mainnet_ms
+                + 10_000;
+
+            fast_forward_to_block(&platform, after_vote_poll_end, 900, 42, 0, false);
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let resolver_result = platform.check_for_ended_vote_polls(
+                &platform_state,
+                &platform_state,
+                &BlockInfo {
+                    time_ms: after_vote_poll_end,
+                    height: 900,
+                    core_height: 42,
+                    epoch: Default::default(),
+                },
+                Some(&transaction),
+                platform_version,
+            );
+            let status = resolver_result.is_ok().then(|| {
+                contest_status(
+                    &platform,
+                    &contract,
+                    contender_labels.1,
+                    &transaction,
+                    platform_version,
+                )
+            });
+
+            (
+                contested_result,
+                second_result,
+                resolver_result,
+                status.flatten(),
+                contender.0.id(),
+            )
+        }
+
+        /// A document that took a contest's index values while the chain ran protocol version
+        /// 14 still holds them when the contest ends at the latest: the award finds no room for
+        /// the winner, inserts nothing, and the contest ends without a winner.
+        #[tokio::test]
+        async fn should_end_without_a_winner_a_contest_whose_values_were_taken_at_protocol_version_14(
+        ) {
+            let (contested_result, second_result, resolver_result, status, _) =
+                run_across_activation(CONTRACT, ("quantum", "quantum"), ("Quantum", "quantum"))
+                    .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "protocol version 14 creates the second document with the contender's index \
+                 values"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the contest must end; got {:?}",
+                resolver_result
+            );
+            assert_eq!(
+                status,
+                Some(ContestedDocumentVotePollStatus::NotStarted),
+                "the contest must end without a winner"
+            );
+        }
+
+        /// The same for a document that took the contest's index key with other values: `"\0"`
+        /// beside the contender's `""`.
+        #[tokio::test]
+        async fn should_end_without_a_winner_a_contest_whose_index_key_was_taken_at_protocol_version_14(
+        ) {
+            let (contested_result, second_result, resolver_result, status, _) =
+                run_across_activation(EMPTY_STRING_SPLIT_CONTRACT, ("abc", ""), ("abd", "\0"))
+                    .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "protocol version 14 creates the second document under the contender's index key"
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the contest must end; got {:?}",
+                resolver_result
+            );
+            assert_eq!(
+                status,
+                Some(ContestedDocumentVotePollStatus::NotStarted),
+                "the contest must end without a winner"
+            );
+        }
+
+        /// CONTROL: a contest opened at protocol version 14 whose index values no document took
+        /// is awarded at the latest.
+        #[tokio::test]
+        async fn should_award_a_contest_opened_at_protocol_version_14_whose_values_are_free() {
+            let (contested_result, second_result, resolver_result, status, contender_id) =
+                run_across_activation(CONTRACT, ("quantum", "quantum"), ("Quantun", "quantun"))
+                    .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert_matches!(
+                second_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "control: got {:?}",
+                resolver_result
+            );
+            assert_eq!(
+                status,
+                Some(ContestedDocumentVotePollStatus::Awarded(contender_id))
+            );
+        }
+
+        /// A document holding the winner's id leaves the award no room either. No create can
+        /// produce one from protocol version 14, where an id commits to a nonce used once, so
+        /// the document is written straight to Drive.
+        #[tokio::test]
+        async fn should_end_without_a_winner_a_contest_whose_winners_id_a_document_holds_at_the_latest_protocol_version(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let mut rng = StdRng::seed_from_u64(0x0F1E_1D00);
+
+            let contender = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let contract = setup_contract(
+                &platform.drive,
+                CONTRACT,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            // The same random draws give the same entropy, and so the same id, to a domain
+            // with other index values
+            let (document_with_the_id, _) = domain_document(
+                &contract,
+                contender.0.id(),
+                &mut rng.clone(),
+                "other",
+                "other",
+                Some("dash"),
+                &[],
+                platform_version,
+            );
+
+            let contested_result = create_domain(
+                &platform,
+                &contract,
+                &contender,
+                &mut rng,
+                "quantum",
+                "quantum",
+                Some("dash"),
+                &[],
+                true,
+                3000,
+                platform_version,
+            )
+            .await;
+            assert_matches!(
+                contested_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "the contender must join the contest"
+            );
+
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((
+                                &document_with_the_id,
+                                None,
+                            )),
+                            owner_id: Some(contender.0.id().to_buffer()),
+                        },
+                        contract: &contract,
+                        document_type: contract
+                            .document_type_for_name("domain")
+                            .expect("expected a domain document type"),
+                    },
+                    false,
+                    BlockInfo::default_with_time(4000),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to write the document holding the winner's id");
+
+            let after_vote_poll_end = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_mainnet_ms
+                + 10_000;
+
+            fast_forward_to_block(&platform, after_vote_poll_end, 900, 42, 0, false);
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let resolver_result = platform.check_for_ended_vote_polls(
+                &platform_state,
+                &platform_state,
+                &BlockInfo {
+                    time_ms: after_vote_poll_end,
+                    height: 900,
+                    core_height: 42,
+                    epoch: Default::default(),
+                },
+                Some(&transaction),
+                platform_version,
+            );
+            assert!(
+                resolver_result.is_ok(),
+                "the contest must end; got {:?}",
+                resolver_result
+            );
+            assert_eq!(
+                contest_status(
+                    &platform,
+                    &contract,
+                    "quantum",
+                    &transaction,
+                    platform_version
+                ),
+                Some(ContestedDocumentVotePollStatus::NotStarted),
+                "the contest must end without a winner"
+            );
         }
     }
 
