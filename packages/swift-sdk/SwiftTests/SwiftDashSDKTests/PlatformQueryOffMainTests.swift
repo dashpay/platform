@@ -73,12 +73,16 @@ final class PlatformQueryOffMainTests: XCTestCase {
     do {
       _ = try await sdk.identityGet(identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk")
       XCTFail("identityGet should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("identityGet must reach the FFI, not fail on an unavailable SDK handle")
     } catch {}
 
     do {
       _ = try await sdk.dpnsGetUsername(
         identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk", limit: 1)
       XCTFail("dpnsGetUsername should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("dpnsGetUsername must reach the FFI, not fail on an unavailable SDK handle")
     } catch {}
 
     let returnedWhileMainWasHeld = !holdTimedOut.withLock { $0 }
