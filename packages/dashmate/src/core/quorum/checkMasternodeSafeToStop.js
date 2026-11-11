@@ -261,6 +261,12 @@ export default async function checkMasternodeSafeToStop(
 
   second.nonMemberDkgs = new Set([...nonMemberDkgs, ...second.nonMemberDkgs]);
 
+  // Core changed its session records during the confirming read, which then
+  // shows no DKGs: keep the first check's, unconfirmed.
+  if (second.status === 'unsettled') {
+    return { ...second, blockers: first.blockers };
+  }
+
   // A Core restarted into initial block download may no longer announce the
   // DKGs the first check saw.
   if (second.isSyncing) {
