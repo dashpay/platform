@@ -553,6 +553,38 @@ fn should_refuse_malformed_document_type_requirements() {
                 "require": { "anyOf": ["title", { "anyOf": ["title", "body"] }] } }),
         "require must be a slot name",
     );
+
+    // require is judged on every write that checks the reference, so it names nothing
+    // twice: a term, a slot within a group, or a group with its slots in another order.
+    // With at most four slots that leaves it at most fifteen terms
+    let three = || json!({ "a": any_string(), "b": any_string(), "c": any_string() });
+    refused(
+        json!({ "properties": three(), "require": { "allOf": ["a", "b", "c", "a"] } }),
+        "names the slot \"a\" twice",
+    );
+    refused(
+        json!({ "properties": three(),
+                "require": { "anyOf": ["c", { "allOf": ["a", "b", "a"] }] } }),
+        "names a slot in one group twice",
+    );
+    refused(
+        json!({ "properties": three(),
+                "require": { "anyOf": ["c", { "allOf": ["a", "b"] }, { "allOf": ["b", "a"] }] } }),
+        "names a group of slots twice",
+    );
+    // and one repeated thousands of times is refused like one repeated once
+    let mut many = vec![json!("b"), json!("c")];
+    many.extend(std::iter::repeat_n(json!("a"), 5_000));
+    refused(
+        json!({ "properties": three(), "require": { "allOf": many } }),
+        "names the slot \"a\" twice",
+    );
+    // A slot may still stand alone and in a group
+    contract(note_contract(requiring(json!({
+        "properties": three(),
+        "require": { "anyOf": ["a", { "allOf": ["a", "b"] }, { "allOf": ["b", "c"] }] }
+    }))))
+    .expect("a slot named alone and in a group parses");
 }
 
 #[test]
@@ -662,6 +694,32 @@ fn should_fill_distinct_slots_with_different_properties() {
             "b": any(json!("a")),
             "c": any(json!(["a", "b"])),
             "d": any(json!(["a", "b", "c"]))
+        } }),
+        None
+    ));
+
+    // Slots that differ from some of the others, not all: `title` and `body` are the two
+    // strings of at most 4096 bytes, so each of four slots takes one of them. With `a`
+    // differing from `b`, and `d` from `b` and from `c`, giving them out in turn (`title`,
+    // `body`, `title`) leaves `d` nothing, and only taking `c`'s back finds what fills all
+    // four: `title`, `body`, `body`, `title`
+    let bounded = |distinct_from: serde_json::Value| json!({ "name": "$any", "type": "string", "maxBytes": 4096, "distinctFrom": distinct_from });
+    assert!(post_meets(
+        json!({ "properties": {
+            "a": { "name": "$any", "type": "string", "maxBytes": 4096 },
+            "b": bounded(json!("a")),
+            "c": { "name": "$any", "type": "string", "maxBytes": 4096 },
+            "d": bounded(json!(["b", "c"]))
+        } }),
+        None
+    ));
+    // while one more edge, `a` from `d`, leaves three slots that all differ and two strings
+    assert!(!post_meets(
+        json!({ "properties": {
+            "a": bounded(json!("d")),
+            "b": bounded(json!("a")),
+            "c": { "name": "$any", "type": "string", "maxBytes": 4096 },
+            "d": bounded(json!(["b", "c"]))
         } }),
         None
     ));

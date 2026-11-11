@@ -392,27 +392,47 @@ fn parse_require(
         Ok(name.to_string())
     };
 
+    // The condition is judged on every write that checks the reference, so it stays as
+    // small as the slots are few: a slot named twice in a group, or a term given twice
+    // (a group whatever the order of its slots), says nothing the first did not
+    let repeated = |what: &str| {
+        refused(format!(
+            "documentTypeRequirements require names {what} twice: each slot is named once in \
+             a group, and each term once"
+        ))
+    };
     let requirement = if value.is_text() {
         SlotRequirement::Slot(slot(value)?)
     } else {
         let (combinator, operands) = combinator_operands(value).ok_or_else(shape)?;
+        let mut seen: BTreeSet<BTreeSet<String>> = BTreeSet::new();
         let terms = operands
             .iter()
             .map(|operand| {
                 if operand.is_text() {
-                    return Ok(SlotRequirementTerm::Slot(slot(operand)?));
+                    let name = slot(operand)?;
+                    if !seen.insert(BTreeSet::from([name.clone()])) {
+                        return Err(repeated(&format!("the slot \"{name}\"")));
+                    }
+                    return Ok(SlotRequirementTerm::Slot(name));
                 }
                 let (inner, inner_operands) = combinator_operands(operand).ok_or_else(shape)?;
                 // A combinator directly inside itself says what one flat list says
                 if inner == combinator {
                     return Err(shape());
                 }
-                Ok(SlotRequirementTerm::Group(
-                    inner_operands
-                        .iter()
-                        .map(&slot)
-                        .collect::<Result<Vec<_>, _>>()?,
-                ))
+                let group = inner_operands
+                    .iter()
+                    .map(&slot)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let members: BTreeSet<String> = group.iter().cloned().collect();
+                if members.len() != group.len() {
+                    return Err(repeated("a slot in one group"));
+                }
+                if !seen.insert(members) {
+                    return Err(repeated("a group of slots"));
+                }
+                Ok(SlotRequirementTerm::Group(group))
             })
             .collect::<Result<Vec<_>, DataContractError>>()?;
         match combinator {

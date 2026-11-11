@@ -375,7 +375,9 @@ impl Checker<'_> {
                         c.slot_combinator(term, false)
                     })?;
                 }
-                Ok(())
+                // No term twice. A group repeated with its slots in another order is the
+                // parser's to refuse
+                c.unique(terms)
             })?;
         }
         Ok(())
