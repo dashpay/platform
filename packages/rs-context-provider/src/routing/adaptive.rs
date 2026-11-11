@@ -1,51 +1,13 @@
-//! Context providers that choose where quorum keys come from.
-//!
-//! [`SpvContextProvider`] takes quorum keys only from an SPV client.
-//! [`AdaptiveContextProvider`] routes each lookup to an SPV client or to a
-//! trusted provider by a mode that can change while the SDK runs. Both read
-//! data contracts and token configurations from a [`ContractSource`], which has
-//! no quorum keys to fall back on.
-//!
-//! The SPV client is not known when the SDK is built. Each provider owns an
-//! [`SpvSourceSlot`] slot; whoever runs the SPV client claims it with
-//! [`SpvSourceSlot::claim`] and publishes its quorum keys through the
-//! returned [`SpvSourceLease`]. Until then, and once the lease is dropped, an
-//! SPV lookup fails with [`ContextProviderError::QuorumSourceUnavailable`].
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Weak};
-
-use arc_swap::ArcSwapOption;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
+use super::{ContractSource, SpvSourceSlot};
 use crate::{platform_activation_height, ContextProvider, ContextProviderError, QuorumKeyFuture};
-
-/// The data contracts and token configurations a provider resolves locally.
-///
-/// It has no quorum keys, so a provider reading contracts from it cannot answer
-/// a quorum lookup from the same place.
-pub trait ContractSource: Send + Sync {
-    /// The data contract with `id`, if this source has it.
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
-
-    /// The token configuration of `token_id`, if this source has it.
-    fn get_token_configuration(
-        &self,
-        token_id: &Identifier,
-    ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
-
-    /// Keep `contract` so later proofs over it can be verified, unless the
-    /// source holds one of a higher version under its id, as
-    /// [`ContextProvider::register_data_contract`] asks.
-    fn register_data_contract(&self, contract: Arc<DataContract>);
-}
 
 /// Where an [`AdaptiveContextProvider`] takes quorum keys from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,206 +44,6 @@ pub enum AdaptiveContextProviderSource {
     Trusted = 0,
     /// The SPV client.
     Spv = 1,
-}
-
-/// Whether a published SPV client is synced enough to answer quorum lookups.
-pub type Readiness = Arc<dyn Fn() -> Result<bool, ContextProviderError> + Send + Sync>;
-
-/// A published SPV client: its quorum lookups and whether it is synced.
-#[derive(Clone)]
-struct SpvContextSource {
-    provider: Arc<dyn ContextProvider>,
-    is_ready: Readiness,
-}
-
-/// One lease's hold on the slot; `source` is set once the holder publishes.
-struct SlotClaim {
-    lease_id: u64,
-    source: Option<SpvContextSource>,
-}
-
-/// The slot an SPV client publishes its quorum keys into.
-///
-/// Only one lease holds the slot at a time, so two SPV clients can never both
-/// answer for the same SDK.
-pub struct SpvSourceSlot {
-    claim: ArcSwapOption<SlotClaim>,
-    next_lease_id: AtomicU64,
-}
-
-impl Default for SpvSourceSlot {
-    fn default() -> Self {
-        Self {
-            claim: ArcSwapOption::empty(),
-            next_lease_id: AtomicU64::new(1),
-        }
-    }
-}
-
-/// Returned by [`SpvSourceSlot::claim`] when another lease holds the
-/// slot.
-#[derive(Debug, thiserror::Error)]
-#[error("another SPV client already serves this SDK's quorum keys")]
-pub struct SpvSourceSlotTaken;
-
-impl SpvSourceSlot {
-    /// Claim the slot. Only an empty slot can be claimed; the lease empties it
-    /// again when dropped.
-    pub fn claim(self: &Arc<Self>) -> Result<SpvSourceLease, SpvSourceSlotTaken> {
-        let lease_id = self.next_lease_id.fetch_add(1, Ordering::Relaxed);
-        let claim = Arc::new(SlotClaim {
-            lease_id,
-            source: None,
-        });
-        let previous = self
-            .claim
-            .compare_and_swap(std::ptr::null::<SlotClaim>(), Some(claim));
-        if previous.is_some() {
-            return Err(SpvSourceSlotTaken);
-        }
-        Ok(SpvSourceLease {
-            slot: Arc::downgrade(self),
-            lease_id,
-        })
-    }
-
-    fn publish(&self, lease_id: u64, source: SpvContextSource) {
-        self.claim.rcu(|current| match current {
-            Some(claim) if claim.lease_id == lease_id => Some(Arc::new(SlotClaim {
-                lease_id,
-                source: Some(source.clone()),
-            })),
-            _ => current.clone(),
-        });
-    }
-
-    fn release(&self, lease_id: u64) {
-        self.claim.rcu(|current| match current {
-            Some(claim) if claim.lease_id == lease_id => None,
-            _ => current.clone(),
-        });
-    }
-
-    /// The published source, if it is synced.
-    ///
-    /// Every "no usable source" outcome, an unknown readiness included, is
-    /// [`ContextProviderError::QuorumSourceUnavailable`]: it is this side's
-    /// state, so the SDK must not ban the node whose proof it could not check.
-    fn ready_source(&self) -> Result<SpvContextSource, ContextProviderError> {
-        let source = self
-            .claim
-            .load_full()
-            .and_then(|claim| claim.source.clone())
-            .ok_or_else(|| {
-                ContextProviderError::QuorumSourceUnavailable(
-                    "SPV context source is not active".to_string(),
-                )
-            })?;
-        match (source.is_ready)() {
-            Ok(true) => Ok(source),
-            Ok(false) => Err(ContextProviderError::QuorumSourceUnavailable(
-                "SPV context source is not ready".to_string(),
-            )),
-            Err(error) => Err(ContextProviderError::QuorumSourceUnavailable(format!(
-                "SPV context source readiness is unknown: {error}"
-            ))),
-        }
-    }
-
-    fn is_ready(&self) -> bool {
-        self.ready_source().is_ok()
-    }
-}
-
-/// A claim on an [`SpvSourceSlot`] slot. Dropping it empties the slot,
-/// unless a later lease holds it by then.
-pub struct SpvSourceLease {
-    slot: Weak<SpvSourceSlot>,
-    lease_id: u64,
-}
-
-impl SpvSourceLease {
-    /// Serve `provider`'s quorum keys while `is_ready` reports it synced.
-    pub fn publish(&self, provider: Arc<dyn ContextProvider>, is_ready: Readiness) {
-        if let Some(slot) = self.slot.upgrade() {
-            slot.publish(self.lease_id, SpvContextSource { provider, is_ready });
-        }
-    }
-}
-
-impl Drop for SpvSourceLease {
-    fn drop(&mut self) {
-        if let Some(slot) = self.slot.upgrade() {
-            slot.release(self.lease_id);
-        }
-    }
-}
-
-/// Strict SPV: quorum keys come only from the SPV client published into
-/// [`Self::source_slot`]; contracts and tokens come from a [`ContractSource`].
-pub struct SpvContextProvider {
-    spv: Arc<SpvSourceSlot>,
-    contracts: Arc<dyn ContractSource>,
-    network: Network,
-}
-
-impl SpvContextProvider {
-    /// A provider whose quorum lookups fail until an SPV client is published
-    /// into its slot.
-    pub fn new(contracts: Arc<dyn ContractSource>, network: Network) -> Self {
-        Self {
-            spv: Arc::default(),
-            contracts,
-            network,
-        }
-    }
-
-    /// The slot an SPV client publishes its quorum keys into.
-    pub fn source_slot(&self) -> Arc<SpvSourceSlot> {
-        Arc::clone(&self.spv)
-    }
-}
-
-impl ContextProvider for SpvContextProvider {
-    fn get_quorum_public_key(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        self.spv.ready_source()?.provider.get_quorum_public_key(
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height,
-        )
-    }
-
-    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        Ok(platform_activation_height(self.network))
-    }
-
-    fn network(&self) -> Option<Network> {
-        Some(self.network)
-    }
-
-    fn get_data_contract(
-        &self,
-        id: &Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        self.contracts.get_data_contract(id, platform_version)
-    }
-
-    fn register_data_contract(&self, contract: Arc<DataContract>) {
-        self.contracts.register_data_contract(contract)
-    }
-
-    fn get_token_configuration(
-        &self,
-        token_id: &Identifier,
-    ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        self.contracts.get_token_configuration(token_id)
-    }
 }
 
 /// Routes each quorum lookup to an SPV client or a trusted provider by
@@ -458,112 +220,12 @@ mod tests {
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dpp::version::PlatformVersion;
 
-    use super::{
-        AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode,
-        ContractSource, SpvContextProvider, SpvSourceLease, SpvSourceSlot,
+    use super::{AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode};
+    use crate::routing::test_support::{
+        failing_quorums, is_unavailable, publish, quorum_key, quorums, TestContracts,
     };
-    use crate::{ContextProvider, ContextProviderError, QuorumKeyFuture};
-
-    /// A quorum source answering every lookup with `[key_byte; 48]`, or failing.
-    struct TestQuorums {
-        name: &'static str,
-        key_byte: u8,
-        fail: bool,
-    }
-
-    impl ContextProvider for TestQuorums {
-        fn get_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _height: u32,
-        ) -> Result<[u8; 48], ContextProviderError> {
-            if self.fail {
-                return Err(ContextProviderError::InvalidQuorum(format!(
-                    "{} quorum miss",
-                    self.name
-                )));
-            }
-            Ok([self.key_byte; 48])
-        }
-
-        fn fetch_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _height: u32,
-        ) -> Option<QuorumKeyFuture> {
-            let key = [self.key_byte; 48];
-            Some(Box::pin(async move { Ok(Some(key)) }))
-        }
-
-        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-            Ok(999)
-        }
-
-        fn get_data_contract(
-            &self,
-            _id: &Identifier,
-            _platform_version: &PlatformVersion,
-        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-            Err(ContextProviderError::Generic(format!(
-                "{} contract route",
-                self.name
-            )))
-        }
-
-        fn get_token_configuration(
-            &self,
-            _id: &Identifier,
-        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-            Err(ContextProviderError::Generic(format!(
-                "{} token route",
-                self.name
-            )))
-        }
-    }
-
-    /// A contract source whose reads fail with a recognisable message.
-    struct TestContracts;
-
-    impl ContractSource for TestContracts {
-        fn get_data_contract(
-            &self,
-            _id: &Identifier,
-            _platform_version: &PlatformVersion,
-        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-            Err(ContextProviderError::Generic(
-                "local contract route".to_string(),
-            ))
-        }
-
-        fn get_token_configuration(
-            &self,
-            _token_id: &Identifier,
-        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-            Err(ContextProviderError::Generic(
-                "local token route".to_string(),
-            ))
-        }
-
-        fn register_data_contract(&self, _contract: Arc<DataContract>) {}
-    }
-
-    fn quorums(name: &'static str, key_byte: u8) -> Arc<dyn ContextProvider> {
-        Arc::new(TestQuorums {
-            name,
-            key_byte,
-            fail: false,
-        })
-    }
-
-    fn failing_quorums(name: &'static str) -> Arc<dyn ContextProvider> {
-        Arc::new(TestQuorums {
-            name,
-            key_byte: 0,
-            fail: true,
-        })
-    }
+    use crate::routing::{SpvContextProvider, SpvSourceSlot};
+    use crate::{ContextProvider, ContextProviderError};
 
     fn adaptive() -> AdaptiveContextProvider {
         AdaptiveContextProvider::new(
@@ -572,29 +234,6 @@ mod tests {
             Network::Testnet,
         )
         .expect("a trusted provider without a network")
-    }
-
-    fn quorum_key(provider: &impl ContextProvider) -> Result<[u8; 48], ContextProviderError> {
-        provider.get_quorum_public_key(1, [2; 32], 3)
-    }
-
-    /// Claim `slot` and publish `provider` into it, with `ready` as its
-    /// readiness.
-    fn publish(
-        slot: &Arc<SpvSourceSlot>,
-        provider: Arc<dyn ContextProvider>,
-        ready: bool,
-    ) -> SpvSourceLease {
-        let lease = slot.claim().expect("empty slot");
-        lease.publish(provider, Arc::new(move || Ok(ready)));
-        lease
-    }
-
-    fn is_unavailable(result: Result<[u8; 48], ContextProviderError>) -> bool {
-        matches!(
-            result,
-            Err(ContextProviderError::QuorumSourceUnavailable(_))
-        )
     }
 
     #[test]
@@ -668,58 +307,12 @@ mod tests {
     }
 
     #[test]
-    fn should_let_one_lease_hold_the_slot_until_it_is_dropped() {
-        let slot = Arc::new(SpvSourceSlot::default());
-        let lease = publish(&slot, quorums("spv", 0x22), true);
-        assert!(slot.claim().is_err());
-
-        drop(lease);
-        let _replacement = publish(&slot, quorums("other", 0x33), true);
-        assert_eq!(
-            slot.ready_source()
-                .unwrap()
-                .provider
-                .get_quorum_public_key(1, [2; 32], 3)
-                .unwrap(),
-            [0x33; 48]
-        );
-    }
-
-    #[test]
     fn should_not_retry_a_ready_spv_miss_against_trusted() {
         let adaptive = adaptive();
         let _lease = publish(&adaptive.source_slot(), failing_quorums("spv"), true);
 
         let error = quorum_key(&adaptive).unwrap_err().to_string();
         assert!(error.contains("spv quorum miss"));
-    }
-
-    #[test]
-    fn should_answer_strict_spv_lookups_only_from_the_published_source() {
-        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
-        let slot = fixed.source_slot();
-
-        assert!(is_unavailable(quorum_key(&fixed)));
-        let lease = slot.claim().unwrap();
-        assert!(
-            is_unavailable(quorum_key(&fixed)),
-            "a claimed slot serves nothing until it is published"
-        );
-        lease.publish(quorums("spv", 0x22), Arc::new(|| Ok(true)));
-        assert_eq!(quorum_key(&fixed).unwrap(), [0x22; 48]);
-        assert!(fixed.fetch_quorum_public_key(1, [2; 32], 3).is_none());
-
-        let id = Identifier::new([7; 32]);
-        assert!(fixed
-            .get_data_contract(&id, PlatformVersion::latest())
-            .unwrap_err()
-            .to_string()
-            .contains("local contract route"));
-        assert!(fixed
-            .get_token_configuration(&id)
-            .unwrap_err()
-            .to_string()
-            .contains("local token route"));
     }
 
     /// The SDK fetches a quorum key missing from the trusted cache through
@@ -786,42 +379,6 @@ mod tests {
         let _adaptive_lease = failing_readiness(&adaptive.source_slot());
         assert!(is_unavailable(quorum_key(&fixed)));
         assert!(is_unavailable(quorum_key(&adaptive)));
-    }
-
-    /// The empty-slot swap is the only thing keeping two SPV clients from
-    /// answering for one SDK, so concurrent claims must yield exactly one
-    /// lease.
-    #[test]
-    fn should_grant_exactly_one_of_concurrent_claims() {
-        let slot = Arc::new(SpvSourceSlot::default());
-        let barrier = Arc::new(std::sync::Barrier::new(8));
-        let claims: Vec<_> = (0..8)
-            .map(|_| {
-                let slot = Arc::clone(&slot);
-                let barrier = Arc::clone(&barrier);
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    slot.claim().ok()
-                })
-            })
-            .collect();
-        let leases: Vec<_> = claims
-            .into_iter()
-            .filter_map(|claim| claim.join().expect("claim thread"))
-            .collect();
-        assert_eq!(leases.len(), 1);
-    }
-
-    /// An SDK may be destroyed before the wallet manager holding its slot's
-    /// lease; publishing through or dropping that lease must then do nothing.
-    #[test]
-    fn should_ignore_a_lease_whose_slot_is_gone() {
-        let slot = Arc::new(SpvSourceSlot::default());
-        let lease = slot.claim().expect("empty slot");
-        drop(slot);
-
-        lease.publish(quorums("spv", 0x22), Arc::new(|| Ok(true)));
-        drop(lease);
     }
 
     /// A quorum source that states requirements and records the verified
