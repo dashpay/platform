@@ -673,7 +673,8 @@ fn should_report_a_violation_with_the_existing_validators_keyword_paths_and_para
 fn should_build_no_violation_when_only_asking_whether_a_value_matches() {
     let validator = validator_of(&with_value(&json!({ "type": "string", "enum": ["a"] })));
     let mut walk = Walk::new(&validator, true);
-    walk.node(&validator.schema.root, &json!({ "value": 1 }), 0)
+    let instance = json!({ "value": 1 });
+    walk.node(&validator.schema.root, &instance, 0)
         .expect("expected the check to run");
     assert!(walk.failed);
     assert!(walk.violation.is_none());

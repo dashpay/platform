@@ -40,10 +40,13 @@ use once_cell::sync::Lazy;
 use platform_value::Value;
 use regex::Regex;
 use serde_json::{json, Map as JsonMap, Number as JsonNumber, Value as JsonValue};
+use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::net::IpAddr;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use time::format_description::well_known::Rfc3339;
@@ -153,8 +156,11 @@ impl DocumentSchemaValidator {
     }
 }
 
-/// One check of a value against the schema, stopping at the first failure it meets.
-struct Walk<'v> {
+/// One check of a value against the schema, stopping at the first failure it meets. The
+/// lifetime `'i` is the checked value's: every value the walk descends into, and so every
+/// key `held` records, is a borrow of the one value passed to [`Self::validate_v0`], which
+/// outlives the walk, so a key in `held` never outlives what it identifies.
+struct Walk<'v, 'i> {
     validator: &'v DocumentSchemaValidator,
     /// Whether the walk only asks whether the value matches, as the JSON Schema validator
     /// asks of each element against a `contains` schema: it builds no violation, and skips
@@ -169,6 +175,18 @@ struct Walk<'v> {
     /// The failure met, as the JSON Schema error reporting it, unless the walk only asks
     /// whether the value matches.
     violation: Option<JsonSchemaError>,
+    /// The (value, schema node) pairs the walk has shown to hold, by address, shared with
+    /// the walks a `contains` spawns. A value and a schema node are each a tree the walk
+    /// borrows for the whole validation, so their addresses identify them, and a pair holds
+    /// or not whatever path reaches it. `contains` and `items` can lead the walk to the same
+    /// pair, and a schema a `$ref` reaches is one node however many references reach it, so
+    /// without this a value nested `d` deep under both keywords is checked `2^d` times;
+    /// recording each pair that holds checks it once.
+    held: Rc<RefCell<HashSet<(usize, usize)>>>,
+    /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
+    /// value that does not outlive the walk: every address in `held` stays valid while it is
+    /// held, and a temporary can never be checked against the cache.
+    instance: PhantomData<&'i JsonValue>,
 }
 
 /// A step of a path through the document or the schema, rendered only when a violation is
@@ -179,8 +197,22 @@ enum Segment<'v> {
     Index(usize),
 }
 
-impl<'v> Walk<'v> {
+impl<'v, 'i> Walk<'v, 'i> {
     fn new(validator: &'v DocumentSchemaValidator, matching_only: bool) -> Self {
+        Self::with_held(
+            validator,
+            matching_only,
+            Rc::new(RefCell::new(HashSet::new())),
+        )
+    }
+
+    /// A walk sharing `held`, the pairs already shown to hold, with the walk that spawned it,
+    /// so a `contains` walk does not recheck what the enclosing walk has.
+    fn with_held(
+        validator: &'v DocumentSchemaValidator,
+        matching_only: bool,
+        held: Rc<RefCell<HashSet<(usize, usize)>>>,
+    ) -> Self {
         Self {
             validator,
             matching_only,
@@ -189,6 +221,8 @@ impl<'v> Walk<'v> {
             schema_path: Vec::new(),
             reference_sites: Vec::new(),
             violation: None,
+            held,
+            instance: PhantomData,
         }
     }
 
@@ -255,7 +289,32 @@ impl<'v> Walk<'v> {
     fn node(
         &mut self,
         node: &'v SchemaNode,
-        instance: &JsonValue,
+        instance: &'i JsonValue,
+        references_in_a_row: usize,
+    ) -> Result<(), ProtocolError> {
+        // A pair already shown to hold holds again: `contains` and `items`, and the schemas
+        // a `$ref` reaches, can lead the walk back to the same value and schema node, and the
+        // walk's verdict on a pair is the pair's alone, so checking it once is enough. Only a
+        // pair that held is recorded, so this changes no verdict and reports the same first
+        // violation: the walk still reaches each failure the first way it would.
+        let pair = (
+            instance as *const JsonValue as usize,
+            node as *const SchemaNode as usize,
+        );
+        if self.held.borrow().contains(&pair) {
+            return Ok(());
+        }
+        self.node_inner(node, instance, references_in_a_row)?;
+        if !self.failed {
+            self.held.borrow_mut().insert(pair);
+        }
+        Ok(())
+    }
+
+    fn node_inner(
+        &mut self,
+        node: &'v SchemaNode,
+        instance: &'i JsonValue,
         references_in_a_row: usize,
     ) -> Result<(), ProtocolError> {
         if let Some(reference) = &node.reference {
@@ -384,7 +443,7 @@ impl<'v> Walk<'v> {
     fn object(
         &mut self,
         object: &'v ObjectConstraints,
-        map: &JsonMap<String, JsonValue>,
+        map: &'i JsonMap<String, JsonValue>,
     ) -> Result<(), ProtocolError> {
         // The declared properties the value holds: each name is declared once, so when they
         // are all its keys, it holds no other
@@ -490,7 +549,7 @@ impl<'v> Walk<'v> {
     fn array(
         &mut self,
         array: &'v ArrayConstraints,
-        items: &[JsonValue],
+        items: &'i [JsonValue],
     ) -> Result<(), ProtocolError> {
         if let Some(element) = array.items.as_deref() {
             self.schema_path.push(Segment::Name("items"));
@@ -510,7 +569,7 @@ impl<'v> Walk<'v> {
         if let Some(contains) = array.contains.as_deref() {
             let mut matched = false;
             for item in items {
-                let mut walk = Walk::new(self.validator, true);
+                let mut walk = Walk::with_held(self.validator, true, self.held.clone());
                 walk.node(contains, item, 0)?;
                 if !walk.failed {
                     matched = true;
