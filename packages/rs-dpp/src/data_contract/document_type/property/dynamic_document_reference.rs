@@ -377,12 +377,18 @@ impl RequiredPropertySlot {
                 .is_none_or(|bound| declared.is_some_and(|declared| declared <= bound))
         };
         match (self.value, &property.property_type) {
-            // A string that declares no `maxBytes` holds at most four bytes a character
-            (SlotValue::String, DocumentPropertyType::String(sizes)) => within(
-                sizes.max_bytes.map(u32::from).or(sizes
+            // A string holds at most its `maxBytes`, and at most four bytes a character of
+            // its `maxLength`: the smaller of the two when it declares both
+            (SlotValue::String, DocumentPropertyType::String(sizes)) => {
+                let by_bytes = sizes.max_bytes.map(u32::from);
+                let by_length = sizes
                     .max_length
-                    .map(|characters| u32::from(characters).saturating_mul(4))),
-            ),
+                    .map(|characters| u32::from(characters).saturating_mul(4));
+                within(match (by_bytes, by_length) {
+                    (Some(by_bytes), Some(by_length)) => Some(by_bytes.min(by_length)),
+                    (by_bytes, by_length) => by_bytes.or(by_length),
+                })
+            }
             (SlotValue::ByteArray, DocumentPropertyType::ByteArray(sizes)) => {
                 within(sizes.max_size.map(u32::from))
             }
