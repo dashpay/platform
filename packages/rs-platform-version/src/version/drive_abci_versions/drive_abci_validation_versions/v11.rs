@@ -1,6 +1,7 @@
 use super::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use super::{
-    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciStateTransitionValidationVersion,
+    DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciStateTransitionCommonValidationVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciValidationDataTriggerAndBindingVersions,
     DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions,
 };
@@ -66,11 +67,21 @@ use super::{
 /// - the `PrivateDocumentCreateFromShieldedPool` (type 29) `basic_structure`, `Some(0)` rather
 ///   than `None`: the transition, new at protocol version 15, has its entries, value balance,
 ///   proof and anchor checked.
+/// - `validate_state_transition_identity_signed`, 2 rather than 1: v1, then a signing key that
+///   carries a budget or an expiry is refused, unpaid, on a `DataContractCreate` and on a
+///   `DataContractUpdate` (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018): a
+///   data contract commits its owner beyond the transition that sets it up or changes it.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
+            common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
+                validate_state_transition_identity_signed: 2, // a key with a budget or an expiry signs no contract create or update
+                ..DRIVE_ABCI_VALIDATION_VERSIONS_V10
+                    .state_transitions
+                    .common_validation_methods
+            },
             identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(1), // the identity id is checked before the asset lock proof is verified
                 advanced_structure: Some(2), // v1 without the identity id check, which basic structure now makes
