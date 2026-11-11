@@ -51,7 +51,7 @@ describe('migrateConfigFileFactory', () => {
         whitelist.splice(whitelist.indexOf(method), 1);
       };
 
-      if (semver.lt(release, '5.1.0-beta.1')) {
+      if (semver.lt(release, '5.1.0-dev.1')) {
         removeFromWhitelist('protxinfo');
       }
 

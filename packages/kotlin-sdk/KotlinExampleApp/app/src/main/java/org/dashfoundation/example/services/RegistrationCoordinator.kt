@@ -73,7 +73,7 @@ class RegistrationCoordinator(
         fundingKind: IdentityRegistrationController.FundingKind = IdentityRegistrationController.FundingKind.AssetLock,
         body: suspend () -> ByteArray,
         isUnconfirmed: (Throwable) -> ByteArray? = { null },
-        isBroadcastRejected: (Throwable) -> Boolean = { false },
+        isBroadcastNotSent: (Throwable) -> Boolean = { false },
     ): IdentityRegistrationController {
         val key = SlotKey(walletId.toHex(), identityIndex)
         val existing = _controllers.value[key]
@@ -89,7 +89,7 @@ class RegistrationCoordinator(
                 -> {
                     // Legitimate restart: a fresh idle controller, or a retry after failure.
                     existing.enterPreparingKeys()
-                    existing.submit(body, isUnconfirmed, isBroadcastRejected)
+                    existing.submit(body, isUnconfirmed, isBroadcastNotSent)
                     scheduleRetentionSweep(key, existing)
                     return existing
                 }
@@ -98,7 +98,7 @@ class RegistrationCoordinator(
         val controller = IdentityRegistrationController(walletId, identityIndex, fundingKind, scope, now)
         _controllers.update { it + (key to controller) }
         controller.enterPreparingKeys()
-        controller.submit(body, isUnconfirmed, isBroadcastRejected)
+        controller.submit(body, isUnconfirmed, isBroadcastNotSent)
         scheduleRetentionSweep(key, controller)
         return controller
     }

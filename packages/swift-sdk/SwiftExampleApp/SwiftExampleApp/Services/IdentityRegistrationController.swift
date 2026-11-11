@@ -53,11 +53,11 @@ final class IdentityRegistrationController: ObservableObject {
         /// the coordinator's map until the user dismisses it
         /// manually.
         case failed(String)
-        /// Broadcast-succeeded-but-confirmation-failed terminal state
-        /// (shielded Type-20 only). The transition was relayed and
-        /// accepted, but its execution-result proof couldn't be
-        /// confirmed and a direct fetch of the derived id also came
-        /// back empty (Rust already retried). The identity at
+        /// Unconfirmed terminal state (shielded Type-20 only). The
+        /// transition may have reached a node (a node's refusal or
+        /// verdict included), its result is not proved, and a direct
+        /// fetch of the derived id also came back empty (Rust already
+        /// retried). The identity at
         /// `identityId` MAY already be live on chain.
         ///
         /// This is NOT a red failure: treating it as unregistered is
@@ -85,7 +85,7 @@ final class IdentityRegistrationController: ObservableObject {
         /// which the identity-slot anti-join already covers.
         /// `.failed` is NOT active either: the user is expected
         /// to retry, so the lock should resurface for selection.
-        /// `.unconfirmed` IS active: the identity is probably live on
+        /// `.unconfirmed` IS active: the identity may be live on
         /// chain, so the slot must stay held to block a re-submission
         /// that would burn funds against the registered-key-hash check.
         var isActive: Bool {
@@ -102,10 +102,11 @@ final class IdentityRegistrationController: ObservableObject {
     /// `RegistrationProgressView` can attribute the red marker to the
     /// right step. Only meaningful for `fundingKind == .shieldedPool`.
     ///
-    /// Deliberately only ONE case: `.broadcastRejected` is the single
+    /// Deliberately only ONE case: `.broadcastNotSent` is the single
     /// failure shape we can attribute with confidence (a typed
-    /// `PlatformWalletError.shieldedBroadcastFailed`). We cannot honestly
-    /// claim a "before broadcast" stage by elimination — Rust build/proof
+    /// `PlatformWalletError.shieldedBroadcastFailed`: the transition was
+    /// refused before anything was sent). We cannot honestly claim a
+    /// "before broadcast" stage by elimination: Rust build/proof
     /// errors arrive as a generic `.walletOperation`, indistinguishable at
     /// this layer from an invalid handle, a marshalling failure, or any other
     /// non-broadcast error. So `failureStage` is left `nil` for everything
@@ -113,10 +114,10 @@ final class IdentityRegistrationController: ObservableObject {
     /// Extensible: add a case here only when a new typed error actually lets
     /// us attribute the stage with certainty.
     enum FailureStage {
-        /// Platform definitively rejected the broadcast transition (a
-        /// `PlatformWalletError.shieldedBroadcastFailed`). Attributed to
-        /// the "Broadcasting transition" step.
-        case broadcastRejected
+        /// The transition was refused before anything was sent (a
+        /// `PlatformWalletError.shieldedBroadcastFailed`), so it never left
+        /// the wallet. Attributed to the "Broadcasting transition" step.
+        case broadcastNotSent
     }
 
     /// Current phase. Updates flow:
@@ -126,7 +127,7 @@ final class IdentityRegistrationController: ObservableObject {
 
     /// Stage attribution for a shielded `.failed` phase. `nil` means
     /// "unattributed" — either the phase isn't a shielded failure, or the
-    /// failure wasn't a confidently-attributable broadcast rejection. On a
+    /// failure wasn't a confidently-attributable refusal before sending. On a
     /// `nil` shielded failure the progress view falls back to its
     /// elapsed-time heuristic (note-selection vs Halo 2 proof). Reset at the
     /// start of every `submit` so a retry doesn't inherit the previous
@@ -192,7 +193,7 @@ final class IdentityRegistrationController: ObservableObject {
     ///   - `.completed`: re-submitting after success would flip the
     ///     UI from "Done" back to a spinner before failing on the
     ///     consumed lock.
-    ///   - `.unconfirmed`: the identity is probably already live on
+    ///   - `.unconfirmed`: the identity may already be live on
     ///     chain; re-submitting the same keys would fail the
     ///     registered-key-hash stateful check and burn the funds.
     /// `.idle`, `.preparingKeys`, and `.failed` are allowed — the
@@ -204,10 +205,11 @@ final class IdentityRegistrationController: ObservableObject {
     /// background priority and reports the identity id on success
     /// or rethrows on failure. The controller flips `phase` to
     /// `.completed` / `.unconfirmed` / `.failed` accordingly. On a shielded
-    /// `.failed` it records `failureStage = .broadcastRejected` ONLY for a
-    /// `PlatformWalletError.shieldedBroadcastFailed`; every other error leaves
-    /// `failureStage` nil (unattributed — the progress view uses its
-    /// elapsed-time heuristic) rather than guessing a stage by elimination.
+    /// `.failed` it records `failureStage = .broadcastNotSent` ONLY for a
+    /// `PlatformWalletError.shieldedBroadcastFailed` (refused before anything
+    /// was sent); every other error leaves `failureStage` nil (unattributed:
+    /// the progress view uses its elapsed-time heuristic) rather than
+    /// guessing a stage by elimination.
     func submit(body: @escaping () async throws -> Data) {
         switch phase {
         case .idle, .preparingKeys, .failed:
@@ -229,9 +231,9 @@ final class IdentityRegistrationController: ObservableObject {
                     self?.phase = .completed(identityId: identityId)
                 }
             } catch let unconfirmed as ShieldedIdentityCreateUnconfirmedError {
-                // Broadcast landed but its result couldn't be confirmed and
-                // Rust's direct fetch came back empty. Hold the slot; the
-                // identity probably exists and will surface on the next sync.
+                // The transition may have reached a node; its result is not
+                // proved and Rust's direct fetch came back empty. Hold the slot;
+                // the identity may exist and would surface on a later sync.
                 await MainActor.run {
                     self?.terminalAt = Date()
                     self?.phase = .unconfirmed(
@@ -240,15 +242,15 @@ final class IdentityRegistrationController: ObservableObject {
                     )
                 }
             } catch {
-                // Only a `shieldedBroadcastFailed` is a confidently-attributable
-                // broadcast rejection → mark the broadcast step. Everything else
-                // (Rust build / Halo 2 proof errors, which surface as a generic
+                // Only a `shieldedBroadcastFailed` (refused before anything was
+                // sent) is confidently attributable: mark the broadcast step.
+                // Everything else (Rust build / Halo 2 proof errors, which surface as a generic
                 // `.walletOperation`, plus invalid-handle / marshalling failures)
                 // is indistinguishable at this layer, so leave `failureStage` nil
                 // and let the progress view's elapsed-time heuristic place it.
                 let stage: FailureStage?
                 if case PlatformWalletError.shieldedBroadcastFailed = error {
-                    stage = .broadcastRejected
+                    stage = .broadcastNotSent
                 } else {
                     stage = nil
                 }

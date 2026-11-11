@@ -10,16 +10,22 @@
 //!   rejection (the proof's ChainLock is ahead of Platform's Core view).
 //! - [`as_state_transition_max_size_exceeded`] — the transition is over
 //!   `max_state_transition_size`.
+//! - [`as_asset_lock_transaction_too_many_inputs`] — Platform's consensus
+//!   10534 rejection (the asset lock transaction has more inputs than
+//!   `max_asset_lock_transaction_inputs`).
 //! - [`needs_chain_lock_proof`] — whether a failed submit should be retried
 //!   with a ChainLock proof for the same outpoint: a stale islock, or an
-//!   InstantSend proof that made the transition too large.
+//!   InstantSend proof that made the transition too large or whose
+//!   transaction has more inputs than an InstantSend proof may carry.
 //! - [`submit_with_cl_height_retry`] — retry-on-10506 wrapper that bumps
 //!   `user_fee_increase` between attempts so Tenderdash's invalid-tx hash
 //!   cache (24h on mainnet/testnet) can't silently drop resubmits.
 
 use std::time::Duration;
 
-use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
+use dpp::consensus::basic::identity::{
+    IdentityAssetLockTransactionTooManyInputsError, InvalidAssetLockProofCoreChainHeightError,
+};
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -150,10 +156,29 @@ pub fn as_state_transition_max_size_exceeded(
     }
 }
 
+/// The `IdentityAssetLockTransactionTooManyInputsError` (DPP consensus code
+/// 10534) an SDK error carries, if any: Platform refused the asset lock
+/// transaction for having more inputs than `max_asset_lock_transaction_inputs`.
+///
+/// From protocol version 15 Platform applies the cap only to the transaction
+/// an InstantSend proof embeds; before it, also to the transaction Drive
+/// fetches from Core for a ChainLock proof.
+pub fn as_asset_lock_transaction_too_many_inputs(
+    error: &Error,
+) -> Option<&IdentityAssetLockTransactionTooManyInputsError> {
+    match error.consensus_error() {
+        Some(ConsensusError::BasicError(
+            BasicError::IdentityAssetLockTransactionTooManyInputsError(e),
+        )) => Some(e),
+        _ => None,
+    }
+}
+
 /// Whether a failed submit with `proof` should be retried with a ChainLock
-/// proof for the same outpoint: Platform could not verify the IS lock, or
-/// the IS proof made the transition too large and a ChainLock proof in its
-/// place brings it under the limit.
+/// proof for the same outpoint: Platform could not verify the IS lock, the
+/// IS proof made the transition too large and a ChainLock proof in its
+/// place brings it under the limit, or Platform refused the IS proof's
+/// transaction for having more inputs than the input cap.
 ///
 /// For the size case: an InstantSend proof embeds the whole funding
 /// transaction and its InstantLock, so it grows with every funding input,
@@ -163,11 +188,32 @@ pub fn as_state_transition_max_size_exceeded(
 /// with a ChainLock proof, so it is not retried: the retry waits for a
 /// ChainLock first, which would only delay the same error.
 ///
-/// Only an InstantSend `proof` qualifies: a ChainLock proof has no smaller
-/// proof to give way to, whatever the error says.
+/// For the input cap case: from protocol version 15 the cap holds only the
+/// transaction an InstantSend proof embeds, so a lock with more inputs than
+/// the cap can be consumed with a ChainLock proof. Before protocol 15 the
+/// ChainLock proof is refused with the same error, so there the retry only
+/// delays that refusal by one ChainLock wait.
+///
+/// Only an InstantSend `proof` qualifies: a ChainLock proof has no other
+/// proof kind to give way to, whatever the error says.
 pub fn needs_chain_lock_proof(error: &Error, proof: &AssetLockProof) -> bool {
     matches!(proof, AssetLockProof::Instant(_))
-        && (is_instant_lock_proof_invalid(error) || chain_lock_proof_fits(error, proof))
+        && (is_instant_lock_proof_invalid(error)
+            || chain_lock_proof_fits(error, proof)
+            || is_instant_proof_over_the_input_cap(error, proof))
+}
+
+/// Whether `error` is the input cap refusal of `proof`'s own transaction. The
+/// transaction is measured against the cap the error names, as the size
+/// case measures the proof itself, so a refusal that does not match the
+/// proof does not start a ChainLock wait.
+fn is_instant_proof_over_the_input_cap(error: &Error, proof: &AssetLockProof) -> bool {
+    let (Some(too_many_inputs), AssetLockProof::Instant(instant)) =
+        (as_asset_lock_transaction_too_many_inputs(error), proof)
+    else {
+        return false;
+    };
+    instant.transaction().input.len() > usize::from(too_many_inputs.max_inputs())
 }
 
 /// Bytes a transition sheds when it carries a ChainLock proof for the same
@@ -585,6 +631,7 @@ mod asset_lock_already_consumed_tests {
 
 #[cfg(test)]
 mod chain_lock_fallback_tests {
+    use dpp::consensus::basic::identity::IdentityAssetLockTransactionTooManyInputsError;
     use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::{InstantLock, ScriptBuf, Transaction, TxIn};
@@ -718,6 +765,63 @@ mod chain_lock_fallback_tests {
 
         assert!(needs_chain_lock_proof(&stale_islock, &instant_proof(1)));
         assert!(!needs_chain_lock_proof(&stale_islock, &chain_proof()));
+    }
+
+    /// Platform's refusal of an asset lock transaction with more inputs than
+    /// `max_inputs` (consensus 10534).
+    fn too_many_inputs_error(actual_inputs: u16, max_inputs: u16) -> Error {
+        ConsensusError::from(IdentityAssetLockTransactionTooManyInputsError::new(
+            actual_inputs,
+            max_inputs,
+        ))
+        .into()
+    }
+
+    /// From protocol 15 the input cap holds only the transaction an InstantSend
+    /// proof embeds, so a lock of more inputs than the cap that still fits the
+    /// size limit is consumed with a ChainLock proof for the same outpoint.
+    #[test]
+    fn should_retry_an_instant_proof_refused_for_too_many_inputs_with_a_chain_lock_proof() {
+        assert!(needs_chain_lock_proof(
+            &too_many_inputs_error(101, 100),
+            &instant_proof(101)
+        ));
+    }
+
+    /// The proof's transaction is measured against the cap the refusal names,
+    /// not a cap the SDK assumes, so the retry does not depend on the protocol
+    /// version the SDK runs at.
+    #[test]
+    fn should_measure_the_proofs_transaction_against_the_cap_the_refusal_names() {
+        assert!(needs_chain_lock_proof(
+            &too_many_inputs_error(51, 50),
+            &instant_proof(51)
+        ));
+        assert!(!needs_chain_lock_proof(
+            &too_many_inputs_error(51, 50),
+            &instant_proof(50)
+        ));
+    }
+
+    /// The refusal is checked against the proof's own transaction: a 10534 for
+    /// a proof whose transaction is within the cap it names is not about that
+    /// proof, and waiting for a ChainLock would not change it.
+    #[test]
+    fn should_not_retry_a_too_many_inputs_refusal_of_a_proof_within_the_cap() {
+        assert!(!needs_chain_lock_proof(
+            &too_many_inputs_error(101, 100),
+            &instant_proof(100)
+        ));
+    }
+
+    /// Before protocol 15 a ChainLock proof is held to the cap too, and it has no
+    /// smaller proof to give way to: the refusal is surfaced, not retried.
+    #[test]
+    fn should_not_retry_a_chain_proof_refused_for_too_many_inputs() {
+        assert!(!needs_chain_lock_proof(
+            &too_many_inputs_error(101, 100),
+            &chain_proof()
+        ));
     }
 
     #[test]

@@ -276,6 +276,298 @@ class Dashpay internal constructor(private val walletHandle: Long,
         }
     }
 
+    // ── DashPay private contact requests (protocol version 15) ────────
+    //
+    // ← Swift `PrivateContactRequests.swift`
+    // (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+    // A private request is sealed to one of the recipient's DashPay keys and
+    // paid for from the shielded pool, so nothing on chain names either
+    // side; it is signed by the same identity signer as a public request.
+    // The wallet records it as an ordinary contact request, so the Room rows
+    // and [contacts] read it. The send and the private-reply accept are
+    // shielded spends and live on `PlatformWalletManager`.
+
+    /**
+     * How an identity and one contact exchanged private contact requests.
+     * ← Swift `PrivateContactInfo`.
+     */
+    data class PrivateContactInfo(
+        /** The contact's request came privately, so accepting it replies privately. */
+        val receivedPrivately: Boolean,
+        /** This identity's request to the contact went privately. */
+        val sentPrivately: Boolean,
+        /** The 43-byte Orchard address the contact asked to be paid at privately. */
+        val shieldedAddress: ByteArray?,
+    ) {
+        override fun equals(other: Any?): Boolean =
+            other is PrivateContactInfo && receivedPrivately == other.receivedPrivately &&
+                sentPrivately == other.sentPrivately &&
+                (shieldedAddress?.contentEquals(other.shieldedAddress) ?: (other.shieldedAddress == null))
+
+        override fun hashCode(): Int =
+            (31 * receivedPrivately.hashCode() + sentPrivately.hashCode()) * 31 +
+                (shieldedAddress?.contentHashCode() ?: 0)
+
+        internal companion object {
+            /** Decode the JSON object `DashpayNative.managedIdentityPrivateContact` returns. */
+            fun fromJson(json: String): PrivateContactInfo {
+                val obj = org.json.JSONObject(json)
+                val address = if (obj.isNull("shieldedAddress")) {
+                    null
+                } else {
+                    obj.getString("shieldedAddress").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                }
+                return PrivateContactInfo(
+                    receivedPrivately = obj.getBoolean("receivedPrivately"),
+                    sentPrivately = obj.getBoolean("sentPrivately"),
+                    shieldedAddress = address,
+                )
+            }
+        }
+    }
+
+    /**
+     * What a contact request from one of the wallet's identities waits for,
+     * as the wallet decides it, so a host shows "restoring private payments"
+     * apart from "reading the private store" and from a contact's pending
+     * request rather than inferring them from the refusals it got.
+     * ← Swift `PrivateContactReadiness`.
+     */
+    data class PrivateContactReadiness(
+        /**
+         * Whether the wallet's private payments are restored for the
+         * identity. While false, its contact requests and acceptances, public
+         * or private, are refused with
+         * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored]
+         * until the shielded store is configured or the wallet's shielded
+         * account bound, or a contact request's own retry of a failed
+         * restoration succeeds; no private sync lifts it.
+         */
+        val privatePaymentsRestored: Boolean,
+        /**
+         * Whether a private sync read DashPay's private contact request store
+         * to its end for the identity with its current keys. Every contact
+         * request and acceptance reads it again from the cursor before it is
+         * decided, and is refused with
+         * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.PrivateContactStoreNotRead]
+         * while that read cannot finish.
+         */
+        val privateStoreRead: Boolean,
+        /**
+         * Whether a private contact request the identity paid for may still
+         * be unresolved: the marker its private scan state stores, or a
+         * payment the shielded store's journal keeps unresolved. One pair's
+         * hold is [privateRepliesPending].
+         */
+        val unresolvedPrivatePayment: Boolean,
+        /**
+         * Whether the last restoration of the wallet's private payments
+         * failed while [privatePaymentsRestored] is false: the hold then
+         * lasts until one succeeds. [privatePaymentsRestoreFailure] reads why.
+         */
+        val privatePaymentsRestoreFailed: Boolean = false,
+    )
+
+    /** What one pass over DashPay's private contact request store did. */
+    data class PrivateContactSyncResult(
+        /** The requests the pass ingested, received and sent, including ones already held. */
+        val requestCount: Long,
+        /** The store pages read. */
+        val pagesRead: Long,
+        /** Entries that opened for one of the wallet's identities but were refused. */
+        val rejectedCount: Long,
+        /** The store position the pass stopped at. */
+        val nextPosition: Long,
+        /** Whether the pass read to the store's last entry. When false, sync again to read on. */
+        val complete: Boolean,
+        /** Identities whose ingest did not reach disk; the next pass reads their entries again. */
+        val unpersistedIdentityCount: Long,
+    )
+
+    /**
+     * Read DashPay's private contact request store for every identity of
+     * this wallet, at most [maxPages] pages (the default reads to the end),
+     * and ingest what it holds for them: requests to them, each sender's
+     * signature checked, and requests they sent, recovered from the store
+     * alone. The ingested requests reach Room through the persister.
+     *
+     * The store is opened with keys derived inside [coreSignerHandle], the
+     * manager's `MnemonicResolverHandle`. Where the persister attests
+     * `PRIVATE_CONTACT_REQUEST_SCAN_STATE` (the Room handler does), each
+     * identity's read position is stored with the requests read before it
+     * and restored at load, so a pass after launch reads on from there;
+     * otherwise the first pass after launch reads the store from its start.
+     * Private requests reach the wallet only through this read.
+     * ← Swift `ManagedPlatformWallet.syncPrivateContactRequests(maxPages:)`.
+     */
+    suspend fun syncPrivateContactRequests(
+        coreSignerHandle: Long,
+        maxPages: Int = Int.MAX_VALUE,
+    ): PrivateContactSyncResult = gate.op {
+        val counters = mapNativeErrors {
+            DashpayNative.syncPrivateContactRequests(walletHandle, coreSignerHandle, maxPages)
+        }
+        checkNotNull(counters) { "native syncPrivateContactRequests returned no report" }
+        check(counters.size == 6) { "expected 6 sync counters, got ${counters.size}" }
+        PrivateContactSyncResult(
+            requestCount = counters[0],
+            pagesRead = counters[1],
+            rejectedCount = counters[2],
+            nextPosition = counters[4],
+            complete = counters[5] != 0L,
+            unpersistedIdentityCount = counters[3],
+        )
+    }
+
+    /**
+     * How [ourIdentityId] and [contactId] exchanged private contact
+     * requests: whether the contact's request came privately, whether ours
+     * went privately, and the shielded address the contact asked to be paid
+     * at (only when its request came privately, and only once a private
+     * sync this launch has read it). Null when neither tracked request
+     * between them came or went privately, or the identity isn't managed by
+     * this wallet. Read from a fresh managed-identity snapshot; local read.
+     * ← Swift `ManagedIdentity.privateContact(contactId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun privateContact(
+        ourIdentityId: ByteArray,
+        contactId: ByteArray,
+    ): PrivateContactInfo? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(ourIdentityId) { handle ->
+                DashpayNative.managedIdentityPrivateContact(handle, contactId)
+            }?.let(PrivateContactInfo::fromJson)
+        }
+    }
+
+    /**
+     * What a contact request from [ourIdentityId] waits for, as the wallet
+     * decides it ([PrivateContactReadiness]). Not a pure read: a journal
+     * record discharged since (a payment proven never to execute) is applied
+     * first, briefly taking the wallet's write lock, as a send would see it;
+     * then it reads live wallet state. Read it again after the shielded store
+     * is configured or the wallet binds its shielded account to see the
+     * restore. Throws for an identity the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privateContactReadiness(identityId:)`.
+     */
+    suspend fun privateContactReadiness(ourIdentityId: ByteArray): PrivateContactReadiness =
+        withContext(Dispatchers.IO) {
+            val flags = mapNativeErrors { DashpayNative.privateContactReadiness(walletHandle, ourIdentityId) }
+            checkNotNull(flags) { "native privateContactReadiness returned no flags" }
+            check(flags.size == 4) { "expected 4 readiness flags, got ${flags.size}" }
+            PrivateContactReadiness(
+                privatePaymentsRestored = flags[0],
+                privateStoreRead = flags[1],
+                unresolvedPrivatePayment = flags[2],
+                privatePaymentsRestoreFailed = flags[3],
+            )
+        }
+
+    /**
+     * Why the last restoration of the wallet's private payments failed,
+     * while they are not restored for [ourIdentityId] and none succeeded
+     * since, or null when none failed (restored, or only not restored yet).
+     * What [PrivateContactReadiness.privatePaymentsRestoreFailed] flags.
+     * Throws for an identity the wallet does not hold.
+     * ← Swift `ManagedPlatformWallet.privatePaymentsRestoreFailure(identityId:)`.
+     */
+    suspend fun privatePaymentsRestoreFailure(ourIdentityId: ByteArray): String? =
+        withContext(Dispatchers.IO) {
+            mapNativeErrors { DashpayNative.privatePaymentsRestoreFailure(walletHandle, ourIdentityId) }
+        }
+
+    /**
+     * The contacts among [contactIds] whose pair with [ourIdentityId] the
+     * wallet holds for a private contact request, as a send decides it
+     * (`DashPayView::private_pair_held`, one read per contact): a private
+     * request in flight, paid and not yet read back from the store, or kept
+     * by the shielded store's journal, also after the identity was removed
+     * and added again. While a pair is held, Rust refuses another private
+     * send or reply to it
+     * ([DashSdkError.PlatformWallet.PrivateContactRequestPending]) and holds
+     * a public one, so a host shows it as pending and offers neither. A
+     * private sync that reads the entry back frees it, as does the payment
+     * proven never to execute (its anchor pruned, which the shielded sync
+     * judges); an endpoint's refusal of the payment does not. A journal
+     * record discharged since is applied first. Empty when the identity
+     * isn't managed.
+     * ← Swift `ManagedPlatformWallet.privatePairHeld(senderId:recipientId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun privateRepliesPending(
+        ourIdentityId: ByteArray,
+        contactIds: List<ByteArray>,
+    ): List<ByteArray> = withContext(Dispatchers.IO) {
+        if (contactIds.isEmpty()) return@withContext emptyList()
+        mapNativeErrors {
+            // An identity the wallet does not manage holds nothing.
+            val managed = withManagedIdentity(ourIdentityId) { true } ?: false
+            if (!managed) {
+                emptyList()
+            } else {
+                contactIds.filter { DashpayNative.privatePairHeld(walletHandle, ourIdentityId, it) }
+            }
+        }
+    }
+
+    /**
+     * The contacts among [contactIds] to which a public contact request from
+     * [ourIdentityId] was broadcast and may have been delivered, with no
+     * proof settling its outcome yet (`DashPayView::public_contact_request_unconfirmed`,
+     * one read per contact). The send or accept that broadcast it threw
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] (20);
+     * while it stands, the wallet refuses every contact request or acceptance
+     * to the contact, public or private
+     * ([DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed], 76), so
+     * a host shows the pair as unconfirmed and offers neither. A DashPay sync
+     * settles it: a request found is recorded as sent, a nonce proved used
+     * frees the pair, and otherwise the same signed bytes are broadcast
+     * again. Read it beside [privateRepliesPending]. Empty when the identity
+     * isn't managed.
+     * ← Swift `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift).
+     */
+    suspend fun publicContactRequestsUnconfirmed(
+        ourIdentityId: ByteArray,
+        contactIds: List<ByteArray>,
+    ): List<ByteArray> = withContext(Dispatchers.IO) {
+        if (contactIds.isEmpty()) return@withContext emptyList()
+        mapNativeErrors {
+            // An identity the wallet does not manage holds nothing.
+            val managed = withManagedIdentity(ourIdentityId) { true } ?: false
+            if (!managed) {
+                emptyList()
+            } else {
+                contactIds.filter {
+                    DashpayNative.publicContactRequestUnconfirmed(walletHandle, ourIdentityId, it)
+                }
+            }
+        }
+    }
+
+    /**
+     * The incoming contact request from [senderId] to [ourIdentityId] in
+     * local state, or null when there is none (or the identity isn't
+     * managed by this wallet). Close the returned ref when done. This is
+     * the request `PlatformWalletManager.acceptContactRequestReplyingInKind`
+     * takes: the accept that replies privately to a request that came
+     * privately, and with a document otherwise. Local read; no network I/O.
+     * ← Swift `ManagedIdentity.getIncomingContactRequest(senderId:)`.
+     */
+    suspend fun incomingContactRequest(
+        ourIdentityId: ByteArray,
+        senderId: ByteArray,
+    ): ContactRequestRef? = withContext(Dispatchers.IO) {
+        mapNativeErrors {
+            withManagedIdentity(ourIdentityId) { identityHandle ->
+                val requestHandle =
+                    TokensNative.getIncomingContactRequest(identityHandle, senderId)
+                if (requestHandle == 0L) null else ContactRequestRef(requestHandle)
+            }
+        }
+    }
+
     // ── DashPay read surface (upstream #3841 parity) ───────────────────
     //
     // JSON-string reads over the managed-identity snapshot, following the
