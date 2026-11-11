@@ -36,6 +36,9 @@ impl TokenTransitionActionTypeGetter for TokenTransitionAction {
             TokenTransitionAction::DirectPurchaseToPoolAction(_) => {
                 TokenTransitionActionType::DirectPurchaseToPool
             }
+            TokenTransitionAction::PlaceAskAction(_) => TokenTransitionActionType::PlaceAsk,
+            TokenTransitionAction::FillAskAction(_) => TokenTransitionActionType::FillAsk,
+            TokenTransitionAction::CancelOrderAction(_) => TokenTransitionActionType::CancelOrder,
         }
     }
 }

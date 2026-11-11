@@ -157,5 +157,7 @@ verify = [
   "dpp/state-transitions",
   "dpp/system_contracts",
   "dpp/token-history-contract",
+  # The token marketplace's proofs read the token market contract's orders.
+  "dpp/token-market-contract",
   "dpp/withdrawals-contract",
 ]

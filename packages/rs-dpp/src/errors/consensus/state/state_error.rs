@@ -5,6 +5,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
+use crate::consensus::state::token::{TokenNotTradeableError, TokenOrderNotFoundError, TokenOrderFillAmountError, TokenOrderPriceLimitError, TokenOrderNotOwnedError, TokenOrderSelfFillError, TokenOrderDecimalsMismatchError};
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use crate::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
@@ -777,6 +778,34 @@ pub enum StateError {
     // document type that does not meet its `documentTypeRequirements` (protocol version 15).
     #[error(transparent)]
     ReferencedDocumentTypeRequirementNotMetError(ReferencedDocumentTypeRequirementNotMetError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenNotTradeableError(TokenNotTradeableError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderNotFoundError(TokenOrderNotFoundError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderFillAmountError(TokenOrderFillAmountError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderPriceLimitError(TokenOrderPriceLimitError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderNotOwnedError(TokenOrderNotOwnedError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderSelfFillError(TokenOrderSelfFillError),
+
+    // The token marketplace (protocol version 15).
+    #[error(transparent)]
+    TokenOrderDecimalsMismatchError(TokenOrderDecimalsMismatchError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -804,6 +833,7 @@ mod tests {
         LookupKeySource,
     };
     use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use crate::tokens::token_order_side::TokenOrderSide;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use crate::voting::vote_info_storage::yes_no_vote_poll_stored_info::YesNoVotePollStatus;
     use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -1737,8 +1767,7 @@ mod tests {
             )),
             178
         );
-        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15): the tail of
-        // the enum.
+        // A `PrivateDocumentCreateFromShieldedPool`'s target (protocol version 15).
         assert_eq!(
             discriminant_of(StateError::DocumentTypeNotPrivateError(
                 DocumentTypeNotPrivateError::new(identity_id, "contactRequest".to_string())
@@ -1757,7 +1786,7 @@ mod tests {
             180
         );
         // A dynamic document reference's unmet `documentTypeRequirements` (protocol version
-        // 15): the tail of the enum.
+        // 15).
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentTypeRequirementNotMetError(
                 ReferencedDocumentTypeRequirementNotMetError::new(
@@ -1767,6 +1796,59 @@ mod tests {
                 )
             )),
             181
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenNotTradeableError(
+                TokenNotTradeableError::new(Identifier::from([1; 32]))
+            )),
+            182
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderNotFoundError(
+                TokenOrderNotFoundError::new(Identifier::from([1; 32]), TokenOrderSide::Ask)
+            )),
+            183
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderFillAmountError(
+                TokenOrderFillAmountError::new(Identifier::from([1; 32]), 1, 2, 3, 4)
+            )),
+            184
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderPriceLimitError(
+                TokenOrderPriceLimitError::new(Identifier::from([1; 32]), 2, 1)
+            )),
+            185
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderNotOwnedError(
+                TokenOrderNotOwnedError::new(
+                    Identifier::from([1; 32]),
+                    Identifier::from([1; 32]),
+                    Identifier::from([1; 32])
+                )
+            )),
+            186
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderSelfFillError(
+                TokenOrderSelfFillError::new(Identifier::from([1; 32]), Identifier::from([1; 32]))
+            )),
+            187
+        );
+        // The token marketplace (protocol version 15).
+        assert_eq!(
+            discriminant_of(StateError::TokenOrderDecimalsMismatchError(
+                TokenOrderDecimalsMismatchError::new(Identifier::from([1; 32]), 8, 2)
+            )),
+            188
         );
     }
 }

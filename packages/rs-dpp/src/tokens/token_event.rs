@@ -34,6 +34,7 @@ pub type TokenEventPersonalEncryptedNote = Option<(
 )>;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::tokens::emergency_action::TokenEmergencyAction;
+use crate::tokens::token_order_side::TokenOrderSide;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::tokens::SharedEncryptedNote;
 use crate::ProtocolError;
@@ -208,6 +209,29 @@ pub enum TokenEvent {
     /// - `TokenAmount`: The amount of tokens purchased.
     /// - `Credits`: The number of credits paid.
     DirectPurchaseToPool(TokenAmount, Credits),
+
+    /// Event representing a token marketplace order placed (protocol version 15).
+    ///
+    /// - `Identifier`: The order id.
+    /// - `TokenOrderSide`: Whether the order is a listing or an offer.
+    /// - `TokenAmount`: The amount listed or wanted, in base units.
+    /// - `Credits`: The price, in credits per whole token.
+    OrderPlaced(Identifier, TokenOrderSide, TokenAmount, Credits),
+
+    /// Event representing a fill of a token marketplace order (protocol version 15).
+    ///
+    /// - `Identifier`: The order id.
+    /// - `TokenOrderSide`: The side of the order filled.
+    /// - `Identifier`: The order's maker.
+    /// - `TokenAmount`: The amount the fill took, in base units.
+    /// - `Credits`: The credits the fill moved between buyer and seller.
+    OrderFilled(Identifier, TokenOrderSide, Identifier, TokenAmount, Credits),
+
+    /// Event representing a cancel of a token marketplace order (protocol version 15).
+    ///
+    /// - `Identifier`: The order id.
+    /// - `TokenOrderSide`: The side of the order cancelled.
+    OrderCancelled(Identifier, TokenOrderSide),
 }
 
 // Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
@@ -372,6 +396,32 @@ impl serde::Serialize for TokenEvent {
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
             }
+            TokenEvent::OrderPlaced(order_id, side, amount, price) => {
+                let mut m = serializer.serialize_map(Some(5))?;
+                m.serialize_entry("$type", "orderPlaced")?;
+                m.serialize_entry("orderId", order_id)?;
+                m.serialize_entry("side", side)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("price", &SafeU64(price))?;
+                m.end()
+            }
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => {
+                let mut m = serializer.serialize_map(Some(6))?;
+                m.serialize_entry("$type", "orderFilled")?;
+                m.serialize_entry("orderId", order_id)?;
+                m.serialize_entry("side", side)?;
+                m.serialize_entry("maker", maker)?;
+                m.serialize_entry("amount", &SafeU64(amount))?;
+                m.serialize_entry("credits", &SafeU64(credits))?;
+                m.end()
+            }
+            TokenEvent::OrderCancelled(order_id, side) => {
+                let mut m = serializer.serialize_map(Some(3))?;
+                m.serialize_entry("$type", "orderCancelled")?;
+                m.serialize_entry("orderId", order_id)?;
+                m.serialize_entry("side", side)?;
+                m.end()
+            }
         }
     }
 }
@@ -423,6 +473,10 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                 let mut action: Option<TokenEmergencyAction> = None;
                 let mut configuration_change: Option<TokenConfigurationChangeItem> = None;
                 let mut pricing_schedule: Option<TokenPricingSchedule> = None;
+                let mut order_id: Option<Identifier> = None;
+                let mut side: Option<TokenOrderSide> = None;
+                let mut maker: Option<Identifier> = None;
+                let mut price: Option<u64> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
@@ -444,6 +498,10 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         "action" => action = Some(map.next_value()?),
                         "configurationChange" => configuration_change = Some(map.next_value()?),
                         "pricingSchedule" => pricing_schedule = map.next_value()?,
+                        "orderId" => order_id = Some(map.next_value()?),
+                        "side" => side = Some(map.next_value()?),
+                        "maker" => maker = Some(map.next_value()?),
+                        "price" => price = Some(map.next_value::<U64Safe>()?.0),
                         _ => {
                             let _: IgnoredAny = map.next_value()?;
                         }
@@ -530,6 +588,23 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         credits.ok_or_else(|| A::Error::missing_field("credits"))?,
                     )),
+                    "orderPlaced" => Ok(TokenEvent::OrderPlaced(
+                        order_id.ok_or_else(|| A::Error::missing_field("orderId"))?,
+                        side.ok_or_else(|| A::Error::missing_field("side"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        price.ok_or_else(|| A::Error::missing_field("price"))?,
+                    )),
+                    "orderFilled" => Ok(TokenEvent::OrderFilled(
+                        order_id.ok_or_else(|| A::Error::missing_field("orderId"))?,
+                        side.ok_or_else(|| A::Error::missing_field("side"))?,
+                        maker.ok_or_else(|| A::Error::missing_field("maker"))?,
+                        amount.ok_or_else(|| A::Error::missing_field("amount"))?,
+                        credits.ok_or_else(|| A::Error::missing_field("credits"))?,
+                    )),
+                    "orderCancelled" => Ok(TokenEvent::OrderCancelled(
+                        order_id.ok_or_else(|| A::Error::missing_field("orderId"))?,
+                        side.ok_or_else(|| A::Error::missing_field("side"))?,
+                    )),
                     other => Err(A::Error::unknown_variant(
                         other,
                         &[
@@ -551,6 +626,9 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                             "burnFromPool",
                             "claimToPool",
                             "directPurchaseToPool",
+                            "orderPlaced",
+                            "orderFilled",
+                            "orderCancelled",
                         ],
                     )),
                 }
@@ -779,6 +857,19 @@ impl fmt::Display for TokenEvent {
                 "Direct purchase of {} into the token pool for {} credits",
                 amount, credits
             ),
+            TokenEvent::OrderPlaced(order_id, side, amount, price) => write!(
+                f,
+                "Order {} placed: {} of {} at {} credits per whole token",
+                order_id, side, amount, price
+            ),
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => write!(
+                f,
+                "Order {} ({}) of {} filled: {} for {} credits",
+                order_id, side, maker, amount, credits
+            ),
+            TokenEvent::OrderCancelled(order_id, side) => {
+                write!(f, "Order {} ({}) cancelled", order_id, side)
+            }
         }
     }
 }
@@ -811,6 +902,9 @@ impl TokenEvent {
             TokenEvent::BurnFromPool(..) => "burnFromPool",
             TokenEvent::ClaimToPool(..) => "claimToPool",
             TokenEvent::DirectPurchaseToPool(..) => "directPurchaseToPool",
+            TokenEvent::OrderPlaced(..) => "orderPlaced",
+            TokenEvent::OrderFilled(..) => "orderFilled",
+            TokenEvent::OrderCancelled(..) => "orderCancelled",
         }
     }
 
@@ -839,7 +933,10 @@ impl TokenEvent {
             | TokenEvent::Unshield(_, _)
             | TokenEvent::ShieldedTransfer
             | TokenEvent::ClaimToPool(_)
-            | TokenEvent::DirectPurchaseToPool(_, _) => None,
+            | TokenEvent::DirectPurchaseToPool(_, _)
+            | TokenEvent::OrderPlaced(..)
+            | TokenEvent::OrderFilled(..)
+            | TokenEvent::OrderCancelled(..) => None,
         }
     }
 
@@ -1067,6 +1164,26 @@ impl TokenEvent {
                 ("tokenId".to_string(), token_id.into()),
                 ("tokenAmount".to_string(), amount.into()),
                 ("purchaseCost".to_string(), total_cost.into()),
+            ]),
+            TokenEvent::OrderPlaced(order_id, side, amount, price) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("orderId".to_string(), order_id.into()),
+                ("side".to_string(), (side as u8).into()),
+                ("amount".to_string(), amount.into()),
+                ("price".to_string(), price.into()),
+            ]),
+            TokenEvent::OrderFilled(order_id, side, maker, amount, credits) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("orderId".to_string(), order_id.into()),
+                ("side".to_string(), (side as u8).into()),
+                ("makerId".to_string(), maker.into()),
+                ("amount".to_string(), amount.into()),
+                ("credits".to_string(), credits.into()),
+            ]),
+            TokenEvent::OrderCancelled(order_id, side) => BTreeMap::from([
+                ("tokenId".to_string(), token_id.into()),
+                ("orderId".to_string(), order_id.into()),
+                ("side".to_string(), (side as u8).into()),
             ]),
         };
 

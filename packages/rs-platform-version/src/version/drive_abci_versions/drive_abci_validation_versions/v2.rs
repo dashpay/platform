@@ -206,6 +206,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
                 token_unshield_transition_state_validation: 0,
                 token_shielded_transfer_transition_structure_validation: 0,
                 token_shielded_transfer_transition_state_validation: 0,
+                token_place_ask_transition_structure_validation: 0,
+                token_place_ask_transition_state_validation: 0,
+                token_fill_ask_transition_structure_validation: 0,
+                token_fill_ask_transition_state_validation: 0,
+                token_cancel_order_transition_structure_validation: 0,
+                token_cancel_order_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {

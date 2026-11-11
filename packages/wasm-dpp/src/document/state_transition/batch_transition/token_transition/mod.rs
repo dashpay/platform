@@ -51,6 +51,9 @@ pub enum TokenTransitionType {
     BurnFromPool,
     ClaimToPool,
     DirectPurchaseToPool,
+    PlaceAsk,
+    FillAsk,
+    CancelOrder,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -76,6 +79,9 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::BurnFromPool(_) => TokenTransitionType::BurnFromPool,
             TokenTransition::ClaimToPool(_) => TokenTransitionType::ClaimToPool,
             TokenTransition::DirectPurchaseToPool(_) => TokenTransitionType::DirectPurchaseToPool,
+            TokenTransition::PlaceAsk(_) => TokenTransitionType::PlaceAsk,
+            TokenTransition::FillAsk(_) => TokenTransitionType::FillAsk,
+            TokenTransition::CancelOrder(_) => TokenTransitionType::CancelOrder,
         }
     }
 }
@@ -175,6 +181,12 @@ impl TokenTransitionWasm {
             | TokenTransition::ClaimToPool(_)
             | TokenTransition::DirectPurchaseToPool(_) => Err(JsValue::from_str(
                 "shielded and pool-backed token transitions are not supported in wasm-dpp TokenTransition; use wasm-dpp2",
+            )),
+            // The token marketplace kinds likewise: wasm-dpp2 is the binding that exposes them.
+            TokenTransition::PlaceAsk(_)
+            | TokenTransition::FillAsk(_)
+            | TokenTransition::CancelOrder(_) => Err(JsValue::from_str(
+                "token marketplace transitions are not supported in wasm-dpp TokenTransition; use wasm-dpp2",
             )),
         }
     }

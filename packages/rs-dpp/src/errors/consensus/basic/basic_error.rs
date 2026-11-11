@@ -117,6 +117,9 @@ use crate::consensus::basic::state_transition::{
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
 };
+use crate::consensus::basic::token::{
+    InvalidTokenOrderFillRangeError, InvalidTokenOrderPriceError, InvalidTokenOrderValueError,
+};
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
 };
@@ -903,6 +906,18 @@ pub enum BasicError {
 
     #[error(transparent)]
     DuplicatePrivateDocumentEntryError(DuplicatePrivateDocumentEntryError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderPriceError(InvalidTokenOrderPriceError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderFillRangeError(InvalidTokenOrderFillRangeError),
+
+    // A token order's structure (protocol version 15).
+    #[error(transparent)]
+    InvalidTokenOrderValueError(InvalidTokenOrderValueError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1149,8 +1164,7 @@ mod tests {
             )),
             210
         );
-        // A `PrivateDocumentCreateFromShieldedPool`'s entries (protocol version 15): the tail
-        // of the enum.
+        // A `PrivateDocumentCreateFromShieldedPool`'s entries (protocol version 15).
         assert_eq!(
             discriminant_of(BasicError::InvalidPrivateDocumentEntryCountError(
                 InvalidPrivateDocumentEntryCountError::new(17, 16)
@@ -1168,6 +1182,27 @@ mod tests {
                 DuplicatePrivateDocumentEntryError::new(0, 3)
             )),
             213
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderPriceError(
+                InvalidTokenOrderPriceError::new(0, 1)
+            )),
+            214
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderFillRangeError(
+                InvalidTokenOrderFillRangeError::new(0, 1)
+            )),
+            215
+        );
+        // A token order's structure (protocol version 15).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidTokenOrderValueError(
+                InvalidTokenOrderValueError::new(u64::MAX, u64::MAX, 0)
+            )),
+            216
         );
     }
 

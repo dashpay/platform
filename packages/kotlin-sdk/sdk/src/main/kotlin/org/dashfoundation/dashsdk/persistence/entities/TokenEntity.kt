@@ -92,7 +92,12 @@ data class TokenEntity(
     val mintingAllowChoosingDestination: Boolean = true,
     /** JSON `TokenDistributionChangeRules` (UI-only). */
     val distributionChangeRules: String? = null,
-    /** `TokenTradeMode.rawValue` ("NotTradeable"). */
+    /**
+     * `TokenTradeMode.rawValue`: "NotTradeable" or "Tradeable" (protocol
+     * version 15). Contract JSON carries `Tradeable` as an object holding its
+     * `minFill` (`{"Tradeable":{"minFill":1000}}`); only the variant name is
+     * kept, `minFill` is not persisted.
+     */
     val tradeMode: String = "NotTradeable",
     val tradeModeChangeRules: String? = null,
     val mainControlGroupPosition: Int? = null,

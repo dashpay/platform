@@ -23,6 +23,10 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_place_ask_transition_action::TokenPlaceAskTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_fill_ask_transition_action::TokenFillAskTransitionActionAccessorsV0;
+use crate::state_transition_action::batch::batched_transition::token_transition::token_cancel_order_transition_action::TokenCancelOrderTransitionActionAccessorsV0;
+use dpp::tokens::token_order_side::TokenOrderSide;
 use dpp::shielded::serialized_actions_digest;
 
 impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
@@ -92,6 +96,14 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
                     platform_version,
                 )
             }
+            TokenTransitionAction::PlaceAskAction(place_ask) => {
+                place_ask.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::FillAskAction(fill_ask) => {
+                fill_ask.into_high_level_batch_drive_operations(epoch, owner_id, platform_version)
+            }
+            TokenTransitionAction::CancelOrderAction(cancel_order) => cancel_order
+                .into_high_level_batch_drive_operations(epoch, owner_id, platform_version),
         }
     }
 }
@@ -185,6 +197,22 @@ impl TokenTransitionAction {
             }
             TokenTransitionAction::DirectPurchaseToPoolAction(action) => {
                 TokenEvent::DirectPurchaseToPool(action.token_count(), action.total_agreed_price())
+            }
+            TokenTransitionAction::PlaceAskAction(action) => TokenEvent::OrderPlaced(
+                action.order_id(),
+                TokenOrderSide::Ask,
+                action.amount(),
+                action.price(),
+            ),
+            TokenTransitionAction::FillAskAction(action) => TokenEvent::OrderFilled(
+                action.order().id,
+                TokenOrderSide::Ask,
+                action.order().maker_id,
+                action.fill_amount(),
+                action.credits(),
+            ),
+            TokenTransitionAction::CancelOrderAction(action) => {
+                TokenEvent::OrderCancelled(action.order().id, action.order().side)
             }
         }
     }

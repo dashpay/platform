@@ -68,7 +68,10 @@ impl TokenPoolNullifiers {
                 | TokenTransitionAction::DestroyFrozenFundsAction(_)
                 | TokenTransitionAction::ConfigUpdateAction(_)
                 | TokenTransitionAction::DirectPurchaseAction(_)
-                | TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => return None,
+                | TokenTransitionAction::SetPriceForDirectPurchaseAction(_)
+                | TokenTransitionAction::PlaceAskAction(_)
+                | TokenTransitionAction::FillAskAction(_)
+                | TokenTransitionAction::CancelOrderAction(_) => return None,
             },
             BatchedTransitionAction::DocumentAction(document) => {
                 let base = match document {
