@@ -317,7 +317,7 @@ where
 
 /// Whether `error` refused a dispatch before anything was sent: no address,
 /// or the SDK's own refusal of a kind the network does not serve yet.
-fn refused_before_sending(error: &dash_sdk::Error) -> bool {
+pub(crate) fn refused_before_sending(error: &dash_sdk::Error) -> bool {
     use dash_sdk::dapi_client::DapiClientError;
 
     matches!(

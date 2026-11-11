@@ -34,7 +34,7 @@ use super::store::{
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_tracking_endpoint, broadcast_was_refused,
-    carries_consensus_rejection, BroadcastDelivery,
+    carries_consensus_rejection, refused_before_sending, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -3704,6 +3704,12 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
                 return Vec::new();
             }
         };
+        if !redrives
+            .iter()
+            .any(PendingRedrive::held_for_identity_outcome)
+        {
+            return Vec::new();
+        }
         let spent: HashSet<[u8; 32]> = match store.get_all_notes(id) {
             Ok(notes) => notes
                 .into_iter()
@@ -5097,7 +5103,9 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 /// stay reserved until the spend lands or the prune backstop releases them.
 ///
 /// A held identity create is re-broadcast only to the node it was
-/// delivered to, through an SDK scoped to it, and not at all once the scan
+/// delivered to, through an SDK scoped to it; one no node was kept for goes
+/// to one node, kept with its record once the dispatch may have reached it;
+/// and none is re-broadcast once the scan
 /// saw its notes spent or its outcome is proven:
 /// [`settle_held_identity_creates`] settles it then.
 ///
@@ -5124,7 +5132,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
             return;
         }
     };
-    for redrive in redrives {
+    for mut redrive in redrives {
         // A stop ends the pass between records: no new re-broadcast starts
         // once cancelled. One already submitted is left to finish and is
         // classified as usual — its outcome handling stays conservative.
@@ -5174,7 +5182,13 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         if held_at.is_some() && notes_seen_spent(store, id, &redrive.nullifiers).await {
             continue;
         }
-        let broadcaster = match &held_at {
+        // A held identity create no node was kept for goes to one node, kept with its record
+        // once the dispatch may have reached it, so its outcome can be read there.
+        let unkept_node = match &held_at {
+            None if redrive.held_for_identity_outcome() => sdk.address_list().get_live_address(),
+            _ => None,
+        };
+        let broadcaster = match held_at.as_ref().or(unkept_node.as_ref()) {
             Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
             None => Arc::clone(sdk),
         };
@@ -5182,6 +5196,14 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
             continue;
         };
         let broadcast_result = st.broadcast(&broadcaster, None).await;
+        let held_at = match unkept_node {
+            Some(endpoint) if !matches!(&broadcast_result, Err(e) if refused_before_sending(e)) => {
+                keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await;
+                redrive.outcome_endpoint = Some(endpoint.to_string());
+                Some(endpoint)
+            }
+            _ => held_at,
+        };
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -8725,6 +8747,49 @@ mod redrive_tests {
                 records[0].outcome_endpoint.as_deref(),
                 held.then_some(ENDPOINT),
                 "held {held}"
+            );
+        }
+    }
+
+    /// A held identity create whose node was never kept (its process stopped before its first
+    /// dispatch's node was kept) is re-broadcast to one node, kept with its record for its
+    /// outcome read, across a restart too. With no node to send to, nothing is sent and no node
+    /// is kept.
+    #[tokio::test(start_paused = true)]
+    async fn should_keep_the_node_a_redrive_of_a_create_with_no_kept_node_reached() {
+        let wallet_id = [0x77; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x80; 32];
+        for reachable in [true, false] {
+            let sdk = Arc::new(if reachable {
+                let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+                let mut addresses = sdk.address_list().clone();
+                addresses.add(ENDPOINT.parse().expect("an address"));
+                sdk
+            } else {
+                sdk_without_addresses()
+            });
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let (store, _) = saved_identity_create(&path, id, activity_id, false).await;
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+            redrive_pending_spends(&sdk, &store, None, id, &recorded, &CancellationToken::new())
+                .await;
+            drop(store);
+            let records = FileBackedShieldedStore::open_path(&path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records");
+            assert_eq!(records.len(), 1, "reachable {reachable}");
+            assert_eq!(
+                records[0].identity_outcome,
+                Some(IdentityCreateOutcome::Awaiting),
+                "reachable {reachable}"
+            );
+            assert_eq!(
+                records[0].outcome_endpoint.is_some(),
+                reachable,
+                "reachable {reachable}"
             );
         }
     }
