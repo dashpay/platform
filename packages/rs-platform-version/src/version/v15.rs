@@ -349,18 +349,25 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     layer's 33 estimated nodes, at 420 credits a byte), and a delete 200 more for reading the
 ///     deleted reference: the tip jar fixture's tip, under three summable indexes, from
 ///     28,499,880 to 28,915,680 to create and from 27,754,220 to 28,170,620 to delete.
-///     `stateless_delete_of_non_tree_for_costs` 1 gives
-///     each height of a delete's climb the layer GroveDB deletes in there, where 0 gave the one
-///     above it; and `for_total_system_credits_update` 1 describes `Misc` with its expirations
-///     and token supplies trees beside the credits item, where 0 described the credits item
-///     alone, which generation 1 could not price after a token mint in the same batch.
+///     `stateless_delete_of_non_tree_for_costs` 1 gives each height of a delete's climb the
+///     layer GroveDB deletes in there, where 0 gave the one above it. And
+///     `for_total_system_credits_update` 1 describes `Misc` with its expirations and token
+///     supplies trees beside the credits item, where 0 described the credits item alone, which
+///     generation 1 could not price after a token mint in the same batch. GroveDB prices
+///     `Misc`'s subtree nodes cheaper than the credits item's, so this one estimate falls:
+///     every batch that adds to or removes from the total system credits (an asset lock
+///     funding, a withdrawal, a move between an identity and the shielded pool) is estimated
+///     7,980 credits lower (19 replaced bytes at 420 credits a byte), still above what it
+///     costs. A lone addition of 5 credits is estimated at 332,800 at protocol v14 and 324,820
+///     here, and costs 265,200 at both.
 ///
 ///     The estimate is consensus: `validate_fees_of_event` checks a payer's balance against it,
 ///     decides whether a gas sponsor or the signer pays (a strict sponsorship is refused), checks
 ///     a budgeted signing key's remaining budget against its user fee increase (refusing the
 ///     transition, unpaid, with `IdentityPublicKeyBudgetExceededError`), and checks a shield's
 ///     pool fee and a shielded spend's denomination against it; check_tx reports it as
-///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted. The fee a
+///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted, and the lower
+///     system credits estimate admit what it refused near a balance or budget threshold. The fee a
 ///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
 ///     `apply_drive_operations` 1 and the estimators' earlier versions, and protocol v13 and
 ///     earlier keep `apply_drive_operations` 0; neither resolves an estimate.
