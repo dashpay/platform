@@ -26,8 +26,9 @@
 //! are the same; a value breaking several can get another violation first.
 
 use super::super::{
-    structure_error, validator_regex, ArrayConstraints, JsonType, JsonTypes, NumberConstraints,
-    ObjectConstraints, SchemaNode, StringConstraints, ValidationSchema, ValidatorFormat,
+    structure_error, validator_regex, validator_regex_parses, ArrayConstraints, JsonType,
+    JsonTypes, NumberConstraints, ObjectConstraints, SchemaNode, StringConstraints,
+    ValidationSchema, ValidatorFormat,
 };
 use super::DocumentSchemaValidator;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
@@ -1055,11 +1056,12 @@ fn format_admits(format: ValidatorFormat, value: &str) -> bool {
                 && IpAddr::from_str(value).is_ok_and(|address| address.is_ipv4())
         }
         ValidatorFormat::Ipv6 => IpAddr::from_str(value).is_ok_and(|address| address.is_ipv6()),
-        // Under the `regex` crate's default size limit, as generation 1 compiles a document's
-        // `format: regex` value: document validation checks a contract read from state, whose
-        // validator `compile_and_validate` builds with the default engine. The 5 MiB limit of
-        // `JsonSchemaValidator::compile` applies only where registration compiles the schema.
-        ValidatorFormat::Regex => validator_regex(value).is_some(),
+        // `format: regex` checks the value's syntax only: whether it parses as a regular
+        // expression, not whether it compiles. No consensus path compiles a document's
+        // `format: regex` value or matches anything against it, so parsing its syntax is all
+        // that is needed. A future path that used such a value as a pattern would have to
+        // check that it compiles within a limit, which parsing the syntax alone does not.
+        ValidatorFormat::Regex => validator_regex_parses(value),
         ValidatorFormat::Time => TIME.is_match(value),
         ValidatorFormat::Uri => Url::from_str(value).is_ok(),
     }

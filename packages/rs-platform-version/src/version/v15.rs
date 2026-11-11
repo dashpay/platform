@@ -143,8 +143,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `validate_document` 2, which checks a document against its type's typed
 ///    validation schema (`document_type::schema::validation_schema`, built by
 ///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
-///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
-///    value however long the list. A document type whose schema the validation
+///    two rules of its own. First, in a `uniqueItems` list, `0.0` and `-0.0` are
+///    one value however long the list. Second, a `format: regex` value is
+///    checked for its syntax alone: whether it parses as a regular expression,
+///    not whether it compiles, since no consensus path uses the value as a
+///    pattern. This accepts a value that parses but that the engine does not
+///    compile, and one that names a Unicode property the engine holds no
+///    character class for; a value that is not valid regular-expression syntax
+///    is still refused. A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
