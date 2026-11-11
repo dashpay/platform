@@ -174,7 +174,7 @@ rebuilt `libdash_sdk_jni.so` and a network at protocol version 15.
 | QRScannerView.swift | ui/scanner/QrScannerScreen.kt · `QrScanner` | ported |
 | ReceiveAddressView.swift | ui/wallet/ReceiveAddressSheet.kt | ported |
 | SeedBackupView.swift | ui/wallet/SeedBackupScreen.kt · `SeedBackup` | ported |
-| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — `ManagedPlatformWallet.sendToAddresses` drives the atomic finalized-transaction path (`CoreTransactionBuilder.finalizeAtomic` → `core_wallet_tx_builder_finalize` → `core_wallet_broadcast_signed_transaction`); shared Rust owns selection, reservation, signing, and broadcast classification |
+| SendTransactionView.swift | ui/wallet/SendTransactionScreen.kt · `SendTransaction` | ported — `ManagedPlatformWallet.sendToAddresses` drives the atomic finalized-transaction path (`CoreTransactionBuilder.finalizeAtomic` → `core_wallet_tx_builder_finalize` → `core_wallet_broadcast_signed_transaction`); shared Rust owns selection, reservation, signing, and broadcast classification. The SDK also bridges Swift's `shieldedShieldToRecipient` (Platform credits → a third party's Orchard address) as `PlatformWalletManager.shieldedShieldToRecipient` (JNI `FundingNative.shieldedShieldToRecipient` → `platform_wallet_manager_shielded_shield_to_recipient`); SDK only, no UI: like SwiftExampleApp, the screen does not call it, and its caller is the Android wallet |
 | ShieldedActivityView.swift | ui/shielded/ShieldedActivityScreen.kt · `ShieldedActivity` | ported |
 | TransactionDetailView.swift | ui/wallet/TransactionDetailScreen.kt · `WalletTransactionDetail` | ported |
 | TransactionListView.swift | ui/wallet/TransactionListScreen.kt · `WalletTransactions` | ported |

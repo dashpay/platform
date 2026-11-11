@@ -1774,7 +1774,7 @@ class PlatformWalletManager(
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in
-     * ascending derivation order) into its own bound shielded pool
+     * lexicographic Platform-address order) into its own bound shielded pool
      * ([shieldedAccount]). Signed by the Keystore address signer
      * ([signerHandle]); self-shield only (Rust always targets this wallet's
      * own default Orchard address, so there is no recipient parameter).
@@ -1817,11 +1817,11 @@ class PlatformWalletManager(
      *
      * This is the same Type 15 shield as [shieldedShield], with the same
      * input selection (the [paymentAccount] Platform-Payment addresses,
-     * ascending derivation order), the same fees, the same error shapes and
-     * the same Keystore address signer ([signerHandle]). The only difference
-     * is that the note is assigned to [recipientRaw43], a third party's raw
-     * 43-byte Orchard payment address, instead of this wallet's own default
-     * address.
+     * lexicographic Platform-address order), the same fees, the same error
+     * shapes and the same Keystore address signer ([signerHandle]). The only
+     * difference is that the note is assigned to [recipientRaw43], a third
+     * party's raw 43-byte Orchard payment address, instead of this wallet's
+     * own default address.
      *
      * The recipient must actually be a third party: Rust rejects an address
      * the account's own IVK recognizes (default or any diversified index).
@@ -1843,6 +1843,12 @@ class PlatformWalletManager(
      * retry: a retry rebuilds the bundle and could double-pay. The next sync
      * reconciles the outcome. A shield spends no notes, so nothing is
      * reserved wallet-side.
+     *
+     * Cancelling the calling coroutine does not stop the native call: the
+     * shield can still be broadcast and land after this function has thrown
+     * `CancellationException`. Treat a cancelled call like
+     * `ShieldedSpendUnconfirmed`: let the next sync reconcile the outcome
+     * before retrying.
      *
      * Blocks for the ~30s Halo 2 proof.
      *
