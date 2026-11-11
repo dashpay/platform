@@ -40,6 +40,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 pub mod array;
+pub mod dynamic_document_reference;
 pub mod encrypted_for;
 pub mod generated_from;
 pub mod list_element_reference;
@@ -48,6 +49,11 @@ pub mod reference_expression;
 pub mod reference_lookup;
 pub mod reference_where;
 
+pub use dynamic_document_reference::{
+    DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
+    RequiredPropertySlot, SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue,
+    ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
+};
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
     GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
@@ -1052,6 +1058,21 @@ pub enum DocumentPropertyReferenceTarget {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         where_conditions: BTreeMap<String, WhereCondition>,
     },
+    /// A document of a document type the referring document names
+    /// (`contractId` and `documentType` read from it with `$self.`), permanent or moderated, found by the
+    /// value as its id (protocol version 15). The contract and the document type are read
+    /// from the referring document when it is written, so nothing about the target is
+    /// checked at contract registration: that the type exists, is of the declared kind and
+    /// meets the declaration's `documentTypeRequirements` is checked on every write that
+    /// checks the reference.
+    ///
+    /// The id form only, on an identifier property: no `findBy`, no `inList`, no `where`,
+    /// no operand of a reference expression, no typed array element, and no rule or index
+    /// reads through it, since each of those needs to know the referenced type when the
+    /// contract is registered. Appended, so every earlier variant keeps its consensus
+    /// encoding.
+    #[serde(rename = "dynamicDocument")]
+    DynamicDocument(DynamicDocumentReference),
 }
 
 /// Which of the three document reference kinds a declaration is, and so what
@@ -1261,12 +1282,43 @@ impl DocumentPropertyReferenceTarget {
                     in_list: Some(&reference.in_list),
                 })
             }
+            // A dynamic reference names no contract and no document type: the referring
+            // document does, when it is written. It has no declaration to give the code
+            // that resolves a reference's target from the schema
             DocumentPropertyReferenceTarget::Identity
             | DocumentPropertyReferenceTarget::Contract { .. }
             | DocumentPropertyReferenceTarget::Token
             | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
             | DocumentPropertyReferenceTarget::AnyOf(_)
-            | DocumentPropertyReferenceTarget::AllOf(_) => None,
+            | DocumentPropertyReferenceTarget::AllOf(_)
+            | DocumentPropertyReferenceTarget::DynamicDocument(_) => None,
+        }
+    }
+
+    /// The target as a consensus error carries it. An error names what was referenced and
+    /// was not there, which a reference naming its target through the referring document
+    /// says with its kind and the two properties it reads: its `documentTypeRequirements`
+    /// describe a document type, say nothing of a missing document, and are as large as a
+    /// contract declared them, where a client decodes an error within a fixed budget. They
+    /// are left out. Every other target is carried whole.
+    pub fn named_in_an_error(self) -> Self {
+        match self {
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+                DocumentPropertyReferenceTarget::DynamicDocument(DynamicDocumentReference {
+                    requirements: None,
+                    ..reference
+                })
+            }
+            other => other,
+        }
+    }
+
+    /// The declaration of a reference whose target the referring document names
+    /// ([`Self::DynamicDocument`]); `None` for every other target.
+    pub fn as_dynamic_document_reference(&self) -> Option<&DynamicDocumentReference> {
+        match self {
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => Some(reference),
+            _ => None,
         }
     }
 
@@ -1683,6 +1735,16 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 ..
             } => write_document_reference(f, "moderated", *contract_id, document_type_name, None),
             DocumentPropertyReferenceTarget::ListElement(reference) => reference.fmt(f),
+            DocumentPropertyReferenceTarget::DynamicDocument(reference) => write!(
+                f,
+                "{} document (contract named by {}, document type named by {})",
+                match reference.kind {
+                    DynamicDocumentReferenceKind::Permanent => "permanent",
+                    DynamicDocumentReferenceKind::Moderated => "moderated",
+                },
+                reference.contract_id_property,
+                reference.document_type_property
+            ),
             DocumentPropertyReferenceTarget::AnyOf(operands)
             | DocumentPropertyReferenceTarget::AllOf(operands) => {
                 let (name, joiner) = match self {
@@ -11283,6 +11345,12 @@ mod tests {
                 where_conditions: Default::default(),
                 property_agreement: Default::default(),
             },
+            DocumentPropertyReferenceTarget::DynamicDocument(DynamicDocumentReference {
+                kind: DynamicDocumentReferenceKind::Moderated,
+                contract_id_property: "postContractId".to_string(),
+                document_type_property: "postDocumentType".to_string(),
+                requirements: None,
+            }),
         ];
 
         for target in &targets {
@@ -11301,6 +11369,10 @@ mod tests {
                     "deletableDocument"
                 }
                 DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
+                // The `type` it is declared with, permanent or moderated
+                DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+                    reference.wire_name()
+                }
                 // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
                 DocumentPropertyReferenceTarget::AnyOf(_) => "anyOf",

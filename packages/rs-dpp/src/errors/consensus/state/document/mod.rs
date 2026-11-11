@@ -41,6 +41,7 @@ pub mod referenced_document_type_not_deletable_error;
 pub mod referenced_document_type_not_found_error;
 pub mod referenced_document_type_not_moderated_error;
 pub mod referenced_document_type_private_error;
+pub mod referenced_document_type_requirement_not_met_error;
 pub mod referenced_entity_not_found_error;
 pub mod referenced_identity_key_disabled_error;
 pub mod referenced_identity_key_not_found_error;
