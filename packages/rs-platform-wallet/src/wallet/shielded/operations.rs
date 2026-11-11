@@ -2986,9 +2986,9 @@ where
 /// Settle the notes, saved record and activity row of an identity create that ended with
 /// `failure`, and return the error it reports. A create proven unable to execute without its
 /// identity ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]) has its `notes`
-/// marked spent, its record retired and its activity row failed
-/// ([`settle_inputs_consumed_identity_create`]); every other failure is settled as any spend's
-/// ([`settle_failed_spend`], [`identity_create_failure`]).
+/// marked spent, its proven outcome kept with its record until durable settlement, and its
+/// activity row failed ([`settle_inputs_consumed_identity_create`]); every other failure is
+/// settled as any spend's ([`settle_failed_spend`], [`identity_create_failure`]).
 #[allow(clippy::too_many_arguments)]
 async fn settle_failed_identity_create<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
@@ -3455,10 +3455,13 @@ pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
     .await;
 }
 
-/// Drop the recovery record `activity_id` of an identity create whose outcome is known. A
-/// create held for its outcome read ([`PendingRedrive::held_for_identity_outcome`]) keeps its
-/// record when its notes are marked spent, so the code that learns its outcome drops it. A
-/// failure is logged: the record stays held, and the next pass reads the outcome again.
+/// Drop the recovery record `activity_id` of an identity create whose outcome is known. Two
+/// callers: the result wait, for a create whose identity it proved created, whose row it
+/// confirms itself; and, for a create held for its outcome read
+/// ([`PendingRedrive::held_for_identity_outcome`]), the sync pass once the host holds that
+/// create's row and spent notes durably ([`retire_settled_identity_creates`]). A create proven
+/// unable to execute is never dropped where its outcome is learnt. A failure is logged: the
+/// record stays, and the next pass settles it again from its kept outcome.
 async fn retire_identity_create_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3677,10 +3680,11 @@ pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
 ///   never read;
 /// - a create whose outcome is proven, now or by an earlier pass or result wait, gets its
 ///   activity row written with that outcome (Confirmed, or Failed at `consumed_by_height`) in
-///   place of any row `changeset` already carries for it.
+///   place of any row `changeset` already carries for it, and every note it consumed put on
+///   `changeset` as spent ([`replay_identity_create_spends`]).
 ///
-/// Returns the activity ids of the creates whose row is on `changeset` (or that have no row to
-/// write). Their records are dropped only once the host holds `changeset` durably
+/// Returns the activity ids of the creates whose row and spent notes are on `changeset`. Their
+/// records are dropped only once the host holds `changeset` durably
 /// ([`retire_settled_identity_creates`]); until then the next pass, after a restart included,
 /// writes the row again from the outcome kept with the record.
 pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
@@ -3742,9 +3746,11 @@ pub(super) async fn settle_held_identity_creates<S: ShieldedStore>(
                 }
             }
         };
-        if write_proven_identity_create_row(store, id, &redrive.activity_id, outcome, changeset)
-            .await
-        {
+        let replayed = replay_identity_create_spends(store, id, &redrive, changeset).await;
+        let written =
+            write_proven_identity_create_row(store, id, &redrive.activity_id, outcome, changeset)
+                .await;
+        if replayed && written {
             settled.push(redrive.activity_id);
         }
     }
@@ -3773,8 +3779,9 @@ async fn count_unproven_identity_create_read<S: ShieldedStore>(
 
 /// Write identity create `activity_id`'s row with its proven `outcome` into the in-memory store
 /// and onto `changeset`, in place of any row `changeset` already carries for it. True when the
-/// row is on `changeset`, or when there is no row to write; false, logged, when the row did not
-/// read or save.
+/// row is on `changeset`; false, logged, when there is no row of that id, or it did not read or
+/// save. A create without its row keeps its record: the record is the only evidence of its
+/// outcome, and it never goes without a terminal row written for it.
 async fn write_proven_identity_create_row<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -3792,7 +3799,13 @@ async fn write_proven_identity_create_row<S: ShieldedStore>(
     let mut store = store.write().await;
     let stored = match store.get_activity_by_entry_id(id, activity_id) {
         Ok(Some(stored)) => stored,
-        Ok(None) => return true,
+        Ok(None) => {
+            warn!(
+                entry_id = %hex::encode(activity_id),
+                "held identity create: no row of its id to write its outcome on; its record stays"
+            );
+            return false;
+        }
         Err(e) => {
             warn!(
                 entry_id = %hex::encode(activity_id),
@@ -3814,6 +3827,39 @@ async fn write_proven_identity_create_row<S: ShieldedStore>(
     let entries = changeset.activity_entries.entry(id).or_default();
     entries.retain(|entry| entry.id != next.id);
     entries.push(next);
+    true
+}
+
+/// Mark every note held identity create `redrive` consumed spent in the in-memory store, and put
+/// each onto `changeset` as spent whether or not the store already had it so. A spent-note delta
+/// queued earlier, by its result wait or its outcome read, may never have reached the host, and
+/// a scan that finds a note already spent emits none: the pass that settles the create's row is
+/// the last chance to write them. False, logged, when a note did not mark.
+async fn replay_identity_create_spends<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    redrive: &PendingRedrive,
+    changeset: &mut ShieldedChangeSet,
+) -> bool {
+    {
+        let mut store = store.write().await;
+        for nullifier in &redrive.nullifiers {
+            if let Err(e) = store.mark_spent(id, nullifier) {
+                warn!(
+                    activity_id = %hex::encode(redrive.activity_id),
+                    error = %e,
+                    "held identity create: a spent note did not mark; settled next pass"
+                );
+                return false;
+            }
+        }
+    }
+    let spent = changeset.nullifiers_spent.entry(id).or_default();
+    for nullifier in &redrive.nullifiers {
+        if !spent.contains(nullifier) {
+            spent.push(*nullifier);
+        }
+    }
     true
 }
 
