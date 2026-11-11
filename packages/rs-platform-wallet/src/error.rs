@@ -1076,6 +1076,12 @@ pub enum PlatformWalletError {
         fresh_note_count: usize,
     },
 
+    /// The notes cover the spend only with more notes than one shielded transition can spend
+    /// (`max_shielded_transition_actions`). Refused before any note was reserved or anything
+    /// built; a smaller amount, or merging notes first, fits.
+    #[error("Shielded spend needs {needed} notes, more than the {max} one transition can spend")]
+    ShieldedSpendTooManyNotes { needed: usize, max: usize },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),

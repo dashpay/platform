@@ -807,6 +807,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedSpendTooManyNotes` (native code 78). The wallet's
+         * notes cover a shielded spend, or its plan, only with more notes
+         * than one shielded transition spends
+         * (`max_shielded_transition_actions`). Nothing was reserved, built or
+         * broadcast: a smaller amount fits, or the notes can be merged first.
+         * ← Swift `PlatformWalletError.shieldedSpendTooManyNotes`.
+         */
+        class ShieldedSpendTooManyNotes(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1016,6 +1027,7 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
+            78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

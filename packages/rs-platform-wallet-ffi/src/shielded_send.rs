@@ -316,7 +316,11 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// and the plan's `digest`, which refuses with `ErrorShieldedPlanChanged`
 /// when the notes moved since. An unknown `kind`, or a sweep with an amount,
 /// returns `ErrorInvalidParameter`; notes that cannot pay the amount and its
-/// fee, or a zero amount, return `ErrorWalletOperation`, as the spends do.
+/// fee, or a zero amount, return `ErrorWalletOperation`, and an amount only
+/// more notes than one transition spends would cover returns
+/// `ErrorShieldedSpendTooManyNotes`, as the spends do. A sweep plans the most
+/// the notes one transition spends can send. A panic inside returns
+/// `ErrorWalletOperation`: planning reserves and sends nothing.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -353,22 +357,24 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(p) => p,
-        Err(result) => return result,
-    };
-    let result = block_on_worker(async move {
-        wallet
-            .shielded_plan_spend(&coordinator, account, kind, amount)
-            .await
-    });
-    match result {
-        Ok(plan) => {
-            *out_plan = ShieldedSpendPlanFFI::from(&plan);
-            PlatformWalletFFIResult::ok()
+    catch_plan_panic("shielded spend plan", || {
+        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+            Ok(p) => p,
+            Err(result) => return result,
+        };
+        let result = block_on_worker(async move {
+            wallet
+                .shielded_plan_spend(&coordinator, account, kind, amount)
+                .await
+        });
+        match result {
+            Ok(plan) => {
+                *out_plan = ShieldedSpendPlanFFI::from(&plan);
+                PlatformWalletFFIResult::ok()
+            }
+            Err(e) => map_spend_result(Err(e), "shielded spend plan"),
         }
-        Err(e) => map_spend_result(Err(e), "shielded spend plan"),
-    }
+    })
 }
 
 /// Encode an optional host-supplied memo string into the on-chain
@@ -473,16 +479,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer_with_plan(
     expected_plan_digest: *const u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(expected_plan_digest);
-    shielded_transfer_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        recipient_raw_43,
-        amount,
-        memo_text,
-        Some(read_plan_digest(expected_plan_digest)),
-    )
+    let expected_plan = read_plan_digest(expected_plan_digest);
+    catch_spend_panic("shielded transfer", || {
+        shielded_transfer_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            recipient_raw_43,
+            amount,
+            memo_text,
+            Some(expected_plan),
+        )
+    })
 }
 
 /// Body of the transfer exports; `expected_plan` is the plan digest, if any.
@@ -627,15 +636,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield_with_plan(
     expected_plan_digest: *const u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(expected_plan_digest);
-    shielded_unshield_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        to_platform_addr_cstr,
-        amount,
-        Some(read_plan_digest(expected_plan_digest)),
-    )
+    let expected_plan = read_plan_digest(expected_plan_digest);
+    catch_spend_panic("shielded unshield", || {
+        shielded_unshield_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_platform_addr_cstr,
+            amount,
+            Some(expected_plan),
+        )
+    })
 }
 
 /// Body of the unshield exports; `expected_plan` is the plan digest, if any.
@@ -757,16 +769,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw_with_plan(
     expected_plan_digest: *const u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(expected_plan_digest);
-    shielded_withdraw_inner(
-        handle,
-        wallet_id_bytes,
-        mnemonic_resolver_handle,
-        account,
-        to_core_address_cstr,
-        amount,
-        core_fee_per_byte,
-        Some(read_plan_digest(expected_plan_digest)),
-    )
+    let expected_plan = read_plan_digest(expected_plan_digest);
+    catch_spend_panic("shielded withdraw", || {
+        shielded_withdraw_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            to_core_address_cstr,
+            amount,
+            core_fee_per_byte,
+            Some(expected_plan),
+        )
+    })
 }
 
 /// Body of the withdraw exports; `expected_plan` is the plan digest, if any.
@@ -942,6 +957,9 @@ pub(crate) fn map_spend_result(
         // The notes moved since the spend was planned: nothing was reserved
         // or built; the host plans again and confirms the new fee.
         Err(e @ PlatformWalletError::ShieldedPlanChanged { .. }) => e.into(),
+        // More notes than one transition spends: nothing was reserved or
+        // built; a smaller amount fits.
+        Err(e @ PlatformWalletError::ShieldedSpendTooManyNotes { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -1087,6 +1105,21 @@ pub(crate) fn catch_spend_panic(
         operation,
         PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
         SPEND_PANIC_GUIDANCE,
+        body,
+    )
+}
+
+/// [`catch_panic_to_code`] for planning a shielded spend, which only reads the store: a panic
+/// there is a failed read ([`PlatformWalletFFIResultCode::ErrorWalletOperation`]), with nothing
+/// reserved or sent.
+fn catch_plan_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Planning only reads the notes: nothing was reserved or sent; plan again.",
         body,
     )
 }
@@ -3331,6 +3364,48 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResult::from(changed()).code,
             PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+        );
+    }
+
+    /// A spend that needs more notes than one transition spends keeps its own code through
+    /// the spend contract, the planning export and the blanket conversion alike.
+    #[test]
+    fn should_keep_a_spend_of_too_many_notes_at_its_own_code() {
+        let too_many = || PlatformWalletError::ShieldedSpendTooManyNotes {
+            needed: 17,
+            max: 16,
+        };
+        let result = map_spend_result(Err(too_many()), "shielded spend plan");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendTooManyNotes
+        );
+        assert_eq!(result.code as i32, 78);
+        assert!(message_of(&result).contains("needs 17 notes"));
+        assert_eq!(PlatformWalletFFIResult::from(too_many()).code as i32, 78);
+    }
+
+    /// A panic while planning is caught and reported as a failed read: planning reserves and
+    /// sends nothing, so it is not the spend's do-not-retry contract.
+    #[test]
+    fn should_report_a_panic_while_planning_as_a_failed_read() {
+        let result = catch_plan_panic("shielded spend plan", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded spend plan panicked")
+                && message.contains("nothing was reserved or sent"),
+            "{message}"
+        );
+        assert_eq!(
+            catch_plan_panic("test", PlatformWalletFFIResult::ok).code,
+            PlatformWalletFFIResultCode::Success
         );
     }
 

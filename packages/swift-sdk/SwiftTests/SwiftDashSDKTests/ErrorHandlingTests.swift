@@ -620,6 +620,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A spend the notes cover only with more notes than one transition spends
+    /// keeps its own code and typed case, apart from a balance shortfall (41).
+    func testShouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_TOO_MANY_NOTES
+        )
+        XCTAssertEqual(code, .errorShieldedSpendTooManyNotes)
+        XCTAssertEqual(code.rawValue, 78)
+        let detail = "Shielded spend needs 17 notes, more than the 16 one transition can spend"
+        guard case .shieldedSpendTooManyNotes(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed too-many-notes error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

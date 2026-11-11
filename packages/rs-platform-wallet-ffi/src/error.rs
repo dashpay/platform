@@ -776,6 +776,13 @@ pub enum PlatformWalletFFIResultCode {
     /// or broadcast. Plan again and have the new fee confirmed.
     ErrorShieldedPlanChanged = 77,
 
+    /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
+    /// notes cover a shielded spend (or its plan) only with more notes than
+    /// one shielded transition can spend (`max_shielded_transition_actions`).
+    /// Nothing was reserved, built or broadcast. A smaller amount fits, or the
+    /// notes can be merged first.
+    ErrorShieldedSpendTooManyNotes = 78,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1112,6 +1119,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedPlanChanged { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+            }
+            PlatformWalletError::ShieldedSpendTooManyNotes { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedSpendTooManyNotes
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code

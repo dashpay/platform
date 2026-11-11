@@ -416,6 +416,22 @@ class DashSdkErrorTest {
         assertFalse("plan again and confirm, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A shielded spend the notes cover only with more notes than one
+     * transition spends has its own code: nothing was sent, and a smaller
+     * amount fits, so it is neither a retry nor a balance shortfall (41).
+     */
+    @Test
+    fun shouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
+        val detail = "Shielded spend needs 17 notes, more than the 16 one transition can spend"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 78, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(detail, mapped.message)
+        assertFalse("a smaller amount fits, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

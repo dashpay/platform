@@ -129,6 +129,54 @@ final class ShieldedSpendPlanTests: XCTestCase {
         await manager.shutdown()
     }
 
+    // MARK: - Source compatibility
+
+    /// The spends keep their signatures from before plans, so method references to them still
+    /// resolve; spending against a plan is a separate overload taking an explicit plan.
+    func testShouldKeepTheOriginalSpendSignaturesBesidePlanOverloads() async {
+        let manager = makeManager()
+        let transfer: (Data, MnemonicResolver, UInt32, Data, UInt64, String?) async throws -> Void =
+            manager.shieldedTransfer(walletId:resolver:account:recipientRaw43:amount:memo:)
+        let unshield: (Data, MnemonicResolver, UInt32, String, UInt64) async throws -> Void =
+            manager.shieldedUnshield(walletId:resolver:account:toPlatformAddress:amount:)
+        let topUp: (Data, MnemonicResolver, UInt32, Data, UInt64) async throws -> Void =
+            manager.shieldedIdentityTopUpFromPool(walletId:resolver:account:identityId:amount:)
+        let withdraw: (Data, MnemonicResolver, UInt32, String, UInt64, UInt32) async throws -> Void =
+            manager.shieldedWithdraw(walletId:resolver:account:toCoreAddress:amount:coreFeePerByte:)
+        let planned: [Any] = [
+            manager.shieldedTransfer(walletId:resolver:account:recipientRaw43:amount:memo:plan:)
+                as (Data, MnemonicResolver, UInt32, Data, UInt64, String?, ShieldedSpendPlan)
+                async throws -> Void,
+            manager.shieldedUnshield(walletId:resolver:account:toPlatformAddress:amount:plan:)
+                as (Data, MnemonicResolver, UInt32, String, UInt64, ShieldedSpendPlan)
+                async throws -> Void,
+            manager.shieldedIdentityTopUpFromPool(walletId:resolver:account:identityId:amount:plan:)
+                as (Data, MnemonicResolver, UInt32, Data, UInt64, ShieldedSpendPlan)
+                async throws -> Void,
+            manager.shieldedWithdraw(
+                walletId:resolver:account:toCoreAddress:amount:coreFeePerByte:plan:)
+                as (Data, MnemonicResolver, UInt32, String, UInt64, UInt32, ShieldedSpendPlan)
+                async throws -> Void
+        ]
+        XCTAssertEqual(planned.count, 4)
+
+        // The originals still reach the FFI with no plan.
+        let resolver = MnemonicResolver()
+        await assertThrows("transfer", Self.isInvalidHandle) {
+            try await transfer(Self.walletId, resolver, 0, Data(repeating: 1, count: 43), 1, nil)
+        }
+        await assertThrows("unshield", Self.isInvalidHandle) {
+            try await unshield(Self.walletId, resolver, 0, "tdash1x", 1)
+        }
+        await assertThrows("top up", Self.isInvalidHandle) {
+            try await topUp(Self.walletId, resolver, 0, Data(repeating: 2, count: 32), 1)
+        }
+        await assertThrows("withdraw", Self.isInvalidHandle) {
+            try await withdraw(Self.walletId, resolver, 0, "yX", 1, 1)
+        }
+        await manager.shutdown()
+    }
+
     // MARK: - Spending against a plan
 
     private func spends(

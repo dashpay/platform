@@ -806,10 +806,29 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
-    ///
-    /// With `plan` (from `shieldedPlanSpend`), the spend runs exactly that
-    /// plan or throws `PlatformWalletError.shieldedPlanChanged`, with nothing
-    /// reserved or sent, when the wallet's notes no longer select it.
+    public func shieldedTransfer(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil
+    ) async throws {
+        try await spendShieldedTransfer(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            recipientRaw43: recipientRaw43,
+            amount: amount,
+            memo: memo,
+            plan: nil
+        )
+    }
+
+    /// `shieldedTransfer` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
     public func shieldedTransfer(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -817,7 +836,27 @@ extension PlatformWalletManager {
         recipientRaw43: Data,
         amount: UInt64,
         memo: String? = nil,
-        plan: ShieldedSpendPlan? = nil
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedTransfer(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            recipientRaw43: recipientRaw43,
+            amount: amount,
+            memo: memo,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedTransfer(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String?,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -1226,17 +1265,52 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
-    ///
-    /// With `plan` (from `shieldedPlanSpend`), the spend runs exactly that
-    /// plan or throws `PlatformWalletError.shieldedPlanChanged`, with nothing
-    /// reserved or sent, when the wallet's notes no longer select it.
+    public func shieldedUnshield(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        toPlatformAddress: String,
+        amount: UInt64
+    ) async throws {
+        try await spendShieldedUnshield(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toPlatformAddress: toPlatformAddress,
+            amount: amount,
+            plan: nil
+        )
+    }
+
+    /// `shieldedUnshield` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
     public func shieldedUnshield(
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         toPlatformAddress: String,
         amount: UInt64,
-        plan: ShieldedSpendPlan? = nil
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedUnshield(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toPlatformAddress: toPlatformAddress,
+            amount: amount,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedUnshield(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        toPlatformAddress: String,
+        amount: UInt64,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -1302,17 +1376,52 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
-    ///
-    /// With `plan` (from `shieldedPlanSpend`), the spend runs exactly that
-    /// plan or throws `PlatformWalletError.shieldedPlanChanged`, with nothing
-    /// reserved or sent, when the wallet's notes no longer select it.
+    public func shieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64
+    ) async throws {
+        try await spendShieldedIdentityTopUpFromPool(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            identityId: identityId,
+            amount: amount,
+            plan: nil
+        )
+    }
+
+    /// `shieldedIdentityTopUpFromPool` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
     public func shieldedIdentityTopUpFromPool(
         walletId: Data,
         resolver: MnemonicResolver,
         account: UInt32 = 0,
         identityId: Data,
         amount: UInt64,
-        plan: ShieldedSpendPlan? = nil
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedIdentityTopUpFromPool(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            identityId: identityId,
+            amount: amount,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        identityId: Data,
+        amount: UInt64,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -1380,10 +1489,29 @@ extension PlatformWalletManager {
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
     /// until a later shielded sync resolves them).
-    ///
-    /// With `plan` (from `shieldedPlanSpend`), the spend runs exactly that
-    /// plan or throws `PlatformWalletError.shieldedPlanChanged`, with nothing
-    /// reserved or sent, when the wallet's notes no longer select it.
+    public func shieldedWithdraw(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        toCoreAddress: String,
+        amount: UInt64,
+        coreFeePerByte: UInt32 = 1
+    ) async throws {
+        try await spendShieldedWithdraw(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toCoreAddress: toCoreAddress,
+            amount: amount,
+            coreFeePerByte: coreFeePerByte,
+            plan: nil
+        )
+    }
+
+    /// `shieldedWithdraw` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
     public func shieldedWithdraw(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1391,7 +1519,27 @@ extension PlatformWalletManager {
         toCoreAddress: String,
         amount: UInt64,
         coreFeePerByte: UInt32 = 1,
-        plan: ShieldedSpendPlan? = nil
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedWithdraw(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toCoreAddress: toCoreAddress,
+            amount: amount,
+            coreFeePerByte: coreFeePerByte,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedWithdraw(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        toCoreAddress: String,
+        amount: UInt64,
+        coreFeePerByte: UInt32,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

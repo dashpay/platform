@@ -1997,7 +1997,7 @@
           "sdk": "supported",
           "example_app": "unsupported",
           "restart": "not_applicable",
-          "reason": "PlatformWalletManager.shieldedPlanSpend returns a ShieldedSpendPlan (kind, amount, exact fee, total input and debited, note count, digest) for an exact amount or a sweep, and shieldedTransfer, shieldedUnshield, shieldedWithdraw and shieldedIdentityTopUpFromPool take an optional plan whose digest goes to the _with_plan export; code 77 is typed as PlatformWalletError.shieldedPlanChanged (ErrorHandlingTests pin). A plan is read-only, so there is nothing to resume after a restart. SwiftExampleApp does not plan its shielded spends."
+          "reason": "PlatformWalletManager.shieldedPlanSpend returns a ShieldedSpendPlan (kind, amount, exact fee, total input and debited, note count, digest) for an exact amount or a sweep, and shieldedTransfer, shieldedUnshield, shieldedWithdraw and shieldedIdentityTopUpFromPool each have an overload taking an explicit plan, whose digest goes to the _with_plan export, beside their unchanged original signatures; code 77 is typed as PlatformWalletError.shieldedPlanChanged and code 78 (a spend of more notes than one transition spends) as PlatformWalletError.shieldedSpendTooManyNotes (ErrorHandlingTests pins). A plan is read-only, so there is nothing to resume after a restart. SwiftExampleApp does not plan its shielded spends."
         },
         "kotlin": {
           "sdk": "unsupported",

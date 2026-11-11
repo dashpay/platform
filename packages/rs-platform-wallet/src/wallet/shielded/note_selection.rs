@@ -164,14 +164,15 @@ pub fn select_notes(
     Ok(selected)
 }
 
-/// Select notes with iterative fee convergence.
+/// Select the fewest largest notes that cover `amount` plus their own fee.
 ///
-/// The fee depends on the number of actions, which depends on the number of
-/// selected notes. This function iterates:
-/// 1. Estimate fee for `min_actions` (the builder's minimum action count)
-/// 2. Select notes for amount + estimated fee
-/// 3. Compute exact fee from actual note count
-/// 4. If insufficient, re-select with exact fee; repeat (converges in 2-3 iterations)
+/// The fee depends on the number of actions, which depends on the number of selected notes, so
+/// the largest-first prefixes are tried in turn and the first whose sum covers `amount` plus the
+/// fee for its own action count (at least `min_actions`) is selected.
+///
+/// One transition spends at most `max_shielded_transition_actions` notes: an amount that only
+/// more notes than that would cover is refused with
+/// [`PlatformWalletError::ShieldedSpendTooManyNotes`].
 ///
 /// `fee_kind` selects which consensus fee formula to reserve against: pass
 /// [`ShieldedFeeKind::Withdrawal`] for a ShieldedWithdrawal (so the flat Core
@@ -188,41 +189,105 @@ pub fn select_notes_with_fee<'a>(
     fee_kind: ShieldedFeeKind,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
-    let mut fee_estimate = fee_kind
-        .compute(min_actions, platform_version)
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-    for _ in 0..5 {
-        let selected = select_notes(unspent, amount, fee_estimate)?;
-        let total: u64 = selected.iter().map(|n| n.value).sum();
-        let num_actions = selected.len().max(min_actions);
-        let exact_fee = fee_kind
-            .compute(num_actions, platform_version)
+    let sorted = spendable_largest_first(unspent)?;
+    let max_notes = max_notes_per_transition(platform_version);
+    let mut total = 0u64;
+    let mut required = amount;
+    for (index, note) in sorted.iter().enumerate() {
+        // Checked: a corrupt/crafted store could otherwise overflow u64.
+        total = total.checked_add(note.value).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "shielded note values sum overflows u64".to_string(),
+            )
+        })?;
+        let count = index + 1;
+        let fee = fee_kind
+            .compute(count.max(min_actions), platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-        if total >= amount.saturating_add(exact_fee) {
-            return Ok((selected, total, exact_fee));
+        required = amount.checked_add(fee).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError("amount + fee overflows u64".to_string())
+        })?;
+        if total >= required {
+            if count > max_notes {
+                return Err(PlatformWalletError::ShieldedSpendTooManyNotes {
+                    needed: count,
+                    max: max_notes,
+                });
+            }
+            let mut sorted = sorted;
+            sorted.truncate(count);
+            return Ok((sorted, total, fee));
         }
-
-        fee_estimate = exact_fee;
     }
+    Err(PlatformWalletError::ShieldedInsufficientBalance {
+        available: total,
+        required,
+    })
+}
 
-    // Final attempt with last computed fee
-    let selected = select_notes(unspent, amount, fee_estimate)?;
-    let total: u64 = selected.iter().map(|n| n.value).sum();
-    let num_actions = selected.len().max(min_actions);
-    let exact_fee = fee_kind
-        .compute(num_actions, platform_version)
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-    if total < amount.saturating_add(exact_fee) {
-        return Err(PlatformWalletError::ShieldedInsufficientBalance {
-            available: total,
-            required: amount.saturating_add(exact_fee),
-        });
+/// The unspent notes of `unspent`, largest first; [`PlatformWalletError::ShieldedNoUnspentNotes`]
+/// when there are none.
+fn spendable_largest_first(
+    unspent: &[ShieldedNote],
+) -> Result<Vec<&ShieldedNote>, PlatformWalletError> {
+    // Filter out any spent notes defensively (callers pass unspent notes only).
+    let mut sorted: Vec<&ShieldedNote> = unspent.iter().filter(|n| !n.is_spent).collect();
+    if sorted.is_empty() {
+        return Err(PlatformWalletError::ShieldedNoUnspentNotes);
     }
+    sorted.sort_by_key(|note| std::cmp::Reverse(note.value));
+    Ok(sorted)
+}
 
-    Ok((selected, total, exact_fee))
+/// How many notes one shielded transition spends at most: one action per note.
+fn max_notes_per_transition(platform_version: &PlatformVersion) -> usize {
+    usize::from(
+        platform_version
+            .system_limits
+            .max_shielded_transition_actions,
+    )
+}
+
+/// The most a sweep of `unspent` can send: over the largest-first prefixes one transition can
+/// spend, the greatest sum minus the fee for that prefix. A note joins only when it adds more
+/// than the fee for its action, and the fewest notes win a tie, so [`select_notes_with_fee`]
+/// for the returned amount selects exactly that prefix.
+fn sweep_amount(
+    unspent: &[ShieldedNote],
+    fee_kind: ShieldedFeeKind,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, PlatformWalletError> {
+    let sorted = spendable_largest_first(unspent)?;
+    let max_notes = max_notes_per_transition(platform_version);
+    let mut total = 0u64;
+    let mut best: Option<Credits> = None;
+    for (index, note) in sorted.iter().take(max_notes).enumerate() {
+        total = total.checked_add(note.value).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "shielded note values sum overflows u64".to_string(),
+            )
+        })?;
+        let fee = fee_kind
+            .compute((index + 1).max(SPEND_MIN_ACTIONS), platform_version)
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        if let Some(sent) = total.checked_sub(fee).filter(|sent| *sent > 0) {
+            if best.is_none_or(|best| sent > best) {
+                best = Some(sent);
+            }
+        }
+    }
+    match best {
+        Some(amount) => Ok(amount),
+        None => {
+            let fee = fee_kind
+                .compute(SPEND_MIN_ACTIONS, platform_version)
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+            Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available: total,
+                required: fee.saturating_add(1),
+            })
+        }
+    }
 }
 
 /// The minimum Orchard action count of an amount-based spend: one spend plus the recipient
@@ -271,7 +336,8 @@ impl ShieldedSpendKind {
 pub enum ShieldedSpendAmount {
     /// Exactly this many credits reach the recipient; the fee comes on top.
     Exact(Credits),
-    /// Every spendable note: the recipient gets their sum minus the fee for all of them.
+    /// As much as the notes can send: the largest notes that add more than their action's fee,
+    /// up to what one transition spends; the recipient gets their sum minus their fee.
     Sweep,
 }
 
@@ -337,8 +403,8 @@ impl ShieldedSpendPlan {
 /// Plan a `kind` spend of `amount` from `unspent`: the notes the spend would select
 /// ([`select_notes_with_fee`] at [`SPEND_MIN_ACTIONS`]) and their exact fee.
 ///
-/// A [`ShieldedSpendAmount::Sweep`] sends the sum of every spendable note minus the fee for all
-/// of them.
+/// A [`ShieldedSpendAmount::Sweep`] sends the most the notes one transition can spend send after
+/// their fee ([`sweep_amount`]); the plan selects exactly those notes.
 pub fn plan_spend(
     unspent: &[ShieldedNote],
     kind: ShieldedSpendKind,
@@ -348,32 +414,7 @@ pub fn plan_spend(
     let fee_kind = kind.fee_kind();
     let amount = match amount {
         ShieldedSpendAmount::Exact(amount) => amount,
-        ShieldedSpendAmount::Sweep => {
-            let spendable: Vec<&ShieldedNote> = unspent.iter().filter(|n| !n.is_spent).collect();
-            if spendable.is_empty() {
-                return Err(PlatformWalletError::ShieldedNoUnspentNotes);
-            }
-            let balance = spendable
-                .iter()
-                .try_fold(0u64, |acc, n| acc.checked_add(n.value))
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(
-                        "shielded note values sum overflows u64".to_string(),
-                    )
-                })?;
-            let fee = fee_kind
-                .compute(spendable.len().max(SPEND_MIN_ACTIONS), platform_version)
-                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-            match balance.checked_sub(fee) {
-                Some(amount) if amount > 0 => amount,
-                _ => {
-                    return Err(PlatformWalletError::ShieldedInsufficientBalance {
-                        available: balance,
-                        required: fee.saturating_add(1),
-                    })
-                }
-            }
-        }
+        ShieldedSpendAmount::Sweep => sweep_amount(unspent, fee_kind, platform_version)?,
     };
     ensure_positive_amount(amount)?;
     let (selected, total_input, fee) = select_notes_with_fee(
@@ -393,14 +434,15 @@ pub fn plan_spend(
 }
 
 /// Refuse a spend whose fresh selection (`selected`, `total_input`, `fee` for `kind` and
-/// `amount`) does not match the plan whose digest is `expected`.
+/// `amount`) does not match the plan whose digest is `expected`. Reads the borrowed selection
+/// only, so nothing is cloned for a selection it refuses.
 pub(crate) fn ensure_plan_holds(
     expected: &[u8; 32],
     kind: ShieldedSpendKind,
     amount: Credits,
     fee: Credits,
     total_input: Credits,
-    selected: &[ShieldedNote],
+    selected: &[&ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let fresh = ShieldedSpendPlan::new(
         kind,
@@ -982,21 +1024,24 @@ mod tests {
         let notes: Vec<ShieldedNote> = (0..3).map(|i| test_note(NOTE, i)).collect();
         let amount = ShieldedSpendAmount::Exact(2 * NOTE);
         let plan = plan_spend(&notes, kind, amount, platform_version).expect("plans");
-        let selected = |notes: &[ShieldedNote]| -> (Vec<ShieldedNote>, u64, u64) {
-            let (refs, total, fee) =
-                select_notes_with_fee(notes, 2 * NOTE, 2, kind.fee_kind(), platform_version)
-                    .expect("selects");
-            (refs.into_iter().cloned().collect(), total, fee)
-        };
+        // The plan is checked against the borrowed selection, before any note is cloned.
+        fn selected<'a>(
+            notes: &'a [ShieldedNote],
+            kind: ShieldedSpendKind,
+            platform_version: &PlatformVersion,
+        ) -> (Vec<&'a ShieldedNote>, u64, u64) {
+            select_notes_with_fee(notes, 2 * NOTE, 2, kind.fee_kind(), platform_version)
+                .expect("selects")
+        }
 
-        let (same, total, fee) = selected(&notes);
+        let (same, total, fee) = selected(&notes, kind, platform_version);
         ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &same)
             .expect("an unchanged selection holds");
 
         // A larger note arrives: one note now covers it, at a different fee.
         let mut grown = notes.clone();
         grown.push(test_note(10 * NOTE, 7));
-        let (moved, total, fee) = selected(&grown);
+        let (moved, total, fee) = selected(&grown, kind, platform_version);
         let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &moved)
             .expect_err("a moved selection must not hold");
         assert!(
@@ -1029,5 +1074,180 @@ mod tests {
             err,
             PlatformWalletError::ShieldedPlanChanged { .. }
         ));
+    }
+
+    /// Dust that costs more than it adds stays out of a sweep: the large note alone pays its
+    /// two-action fee, although the fee for every note is more than the balance.
+    #[test]
+    fn should_sweep_the_large_note_when_dust_costs_more_than_it_adds() {
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![
+            test_note(150_000_000, 0),
+            test_note(1, 1),
+            test_note(1, 2),
+            test_note(1, 3),
+        ];
+        let two_action_fee = compute_minimum_shielded_fee(2, platform_version).expect("fee");
+        assert!(
+            compute_minimum_shielded_fee(4, platform_version).expect("fee") > 150_000_003,
+            "the fee for every note eats the balance"
+        );
+
+        let plan = plan_spend(
+            &notes,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Sweep,
+            platform_version,
+        )
+        .expect("the large note pays its own fee");
+
+        // A second note is free: one note is already charged for two actions.
+        assert_eq!(plan.note_count(), 2);
+        assert!(
+            plan.nullifiers.contains(&[0; 32]),
+            "the large note is swept"
+        );
+        assert_eq!(plan.fee, two_action_fee);
+        assert_eq!(plan.amount, 150_000_001 - two_action_fee);
+        assert_eq!(
+            plan.total_debited(),
+            plan.total_input,
+            "a sweep leaves no change"
+        );
+    }
+
+    /// A note worth less than the fee for its action is left out of a sweep, and the amount is
+    /// what the notes the spend selects send, with no change.
+    #[test]
+    fn should_sweep_fewer_notes_than_all_when_one_costs_more_than_it_adds() {
+        let platform_version = PlatformVersion::latest();
+        let dust = 1_000;
+        let notes = vec![
+            test_note(NOTE, 0),
+            test_note(NOTE, 1),
+            test_note(NOTE, 2),
+            test_note(dust, 3),
+        ];
+        let fee = |actions| compute_minimum_shielded_fee(actions, platform_version).expect("fee");
+        assert!(fee(4) - fee(3) > dust, "the dust costs more than it adds");
+
+        let plan = plan_spend(
+            &notes,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Sweep,
+            platform_version,
+        )
+        .expect("plans");
+
+        assert_eq!(plan.note_count(), 3);
+        assert_eq!(plan.fee, fee(3));
+        assert_eq!(plan.amount, 3 * NOTE - fee(3));
+        assert_eq!(
+            plan.total_debited(),
+            plan.total_input,
+            "a sweep leaves no change"
+        );
+        // The spend run with the plan's amount selects exactly the planned notes.
+        let (selected, total, selected_fee) = select_notes_with_fee(
+            &notes,
+            plan.amount,
+            SPEND_MIN_ACTIONS,
+            ShieldedFeeKind::Base,
+            platform_version,
+        )
+        .expect("selects");
+        let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
+        nullifiers.sort_unstable();
+        assert_eq!(
+            (nullifiers, total, selected_fee),
+            (plan.nullifiers, plan.total_input, plan.fee)
+        );
+    }
+
+    /// One transition spends at most `max_shielded_transition_actions` notes: a sweep of 17
+    /// equal notes sweeps 16 of them.
+    #[test]
+    fn should_sweep_no_more_notes_than_one_transition_spends() {
+        let platform_version = PlatformVersion::latest();
+        let max = usize::from(
+            platform_version
+                .system_limits
+                .max_shielded_transition_actions,
+        );
+        let notes: Vec<ShieldedNote> = (0..=max as u64).map(|i| test_note(NOTE, i)).collect();
+
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let plan = plan_spend(&notes, kind, ShieldedSpendAmount::Sweep, platform_version)
+                .expect("plans");
+            let fee = kind.fee_kind().compute(max, platform_version).expect("fee");
+            assert_eq!(plan.note_count(), max, "{kind:?}");
+            assert_eq!(plan.fee, fee, "{kind:?}");
+            assert_eq!(plan.amount, max as u64 * NOTE - fee, "{kind:?}");
+        }
+    }
+
+    /// An exact amount the notes cover only with more notes than one transition spends is
+    /// refused, by the selection every spend runs and by planning alike; one that fits is not.
+    #[test]
+    fn should_refuse_an_amount_that_needs_more_notes_than_one_transition_spends() {
+        let platform_version = PlatformVersion::latest();
+        let max = usize::from(
+            platform_version
+                .system_limits
+                .max_shielded_transition_actions,
+        );
+        let notes: Vec<ShieldedNote> = (0..=max as u64).map(|i| test_note(NOTE, i)).collect();
+        let too_many = max as u64 * NOTE;
+
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let planned = plan_spend(
+                &notes,
+                kind,
+                ShieldedSpendAmount::Exact(too_many),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    planned,
+                    Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed, max: limit })
+                        if needed == max + 1 && limit == max
+                ),
+                "{kind:?}: got {planned:?}"
+            );
+            let selected = select_notes_with_fee(
+                &notes,
+                too_many,
+                SPEND_MIN_ACTIONS,
+                kind.fee_kind(),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    selected,
+                    Err(PlatformWalletError::ShieldedSpendTooManyNotes { .. })
+                ),
+                "{kind:?}: got {:?}",
+                selected.map(|(notes, ..)| notes.len())
+            );
+
+            let fits = plan_spend(
+                &notes,
+                kind,
+                ShieldedSpendAmount::Exact((max as u64 - 1) * NOTE),
+                platform_version,
+            )
+            .expect("fits one transition");
+            assert_eq!(fits.note_count(), max, "{kind:?}");
+        }
     }
 }
