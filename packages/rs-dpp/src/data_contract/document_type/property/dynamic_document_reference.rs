@@ -2,18 +2,19 @@
 //!
 //! Every other document reference names its target in the schema: a `contractId` (or the
 //! declaring contract) and a `documentType`, so the referenced document type is known when
-//! the contract is registered and is checked then. A dynamic reference names two properties
-//! of the referring document instead (`contractIdProperty`, `documentTypeProperty`), and the
-//! document says, when it is written, which contract and which document type its value
-//! points into:
+//! the contract is registered and is checked then. A dynamic reference reads both from the
+//! referring document instead (`"contractId": "$self.<property>"`,
+//! `"documentType": "$self.<property>"`, `$self` being the document that is written, as
+//! `$old` is the stored one in a rule), and the document says, when it is written, which
+//! contract and which document type its value points into:
 //!
 //! ```json
 //! "descriptionId": {
 //!   "type": "identifier",
 //!   "refersTo": {
 //!     "type": "moderatedDocument",
-//!     "contractIdProperty": "descriptionContractId",
-//!     "documentTypeProperty": "descriptionDocumentType",
+//!     "contractId": "$self.descriptionContractId",
+//!     "documentType": "$self.descriptionDocumentType",
 //!     "documentTypeRequirements": {
 //!       "properties": {
 //!         "body":      { "name": "$any", "type": "string" },
@@ -51,6 +52,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The name a slot takes for "any property": `"name": "$any"`.
 pub const ANY_PROPERTY_NAME: &str = "$any";
+
+/// The prefix through which a `refersTo` reads a value from the referring document, the
+/// document being written: `"$self.descriptionContractId"` is its top-level property
+/// `descriptionContractId`. A `contractId` and a `documentType` written with it name the
+/// target through the document, and a slot's `name` written with it names the property the
+/// document says. No contract id, document type or property can take such a name: none
+/// holds a `$` or a dot.
+pub const REFERRING_DOCUMENT_PREFIX: &str = "$self.";
 
 /// Which kind of document a dynamic reference points at. A `deletableDocument` reference is
 /// never dynamic: a dynamic target is trusted for what its type promises about its
@@ -99,8 +108,9 @@ impl DynamicDocumentReferenceKind {
     }
 }
 
-/// A `refersTo` with `contractIdProperty` and `documentTypeProperty`: the value is the id of
-/// a document of the document type the referring document names.
+/// A `refersTo` whose `contractId` and `documentType` are read from the referring document
+/// (`"$self.<property>"`): the value is the id of a document of the document type the
+/// referring document names.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
 pub struct DynamicDocumentReference {
     /// What the named document type must promise about its documents leaving state.
@@ -117,6 +127,16 @@ pub struct DynamicDocumentReference {
 }
 
 impl DynamicDocumentReference {
+    /// `contractId` as a contract schema declares it: `"$self.<the property read>"`.
+    pub fn contract_id_schema_value(&self) -> String {
+        format!("{REFERRING_DOCUMENT_PREFIX}{}", self.contract_id_property)
+    }
+
+    /// `documentType` as a contract schema declares it: `"$self.<the property read>"`.
+    pub fn document_type_schema_value(&self) -> String {
+        format!("{REFERRING_DOCUMENT_PREFIX}{}", self.document_type_property)
+    }
+
     /// The `refersTo` `type` the declaration is written with: one name, or the two of a
     /// list.
     pub fn wire_names(&self) -> &'static [&'static str] {
@@ -178,8 +198,8 @@ pub enum SlotPropertyName {
     Any,
     /// A literal name: the property called this.
     Named(String),
-    /// `{ "property": "<path>" }`: the property the referring document names in this
-    /// top-level string property of its own.
+    /// `"$self.<property>"`: the property the referring document names in this top-level
+    /// string property of its own.
     FromProperty(String),
 }
 
@@ -323,7 +343,7 @@ impl RequiredPropertySlot {
             SlotPropertyName::Any => Value::Text(ANY_PROPERTY_NAME.to_string()),
             SlotPropertyName::Named(name) => Value::Text(name.clone()),
             SlotPropertyName::FromProperty(property) => {
-                schema_object(vec![("property", Value::Text(property.clone()))])
+                Value::Text(format!("{REFERRING_DOCUMENT_PREFIX}{property}"))
             }
         };
         let mut members = vec![

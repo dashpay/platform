@@ -53,7 +53,7 @@ pub mod slot_condition;
 pub use dynamic_document_reference::{
     DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
     RequiredPropertySlot, SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue,
-    ANY_PROPERTY_NAME,
+    ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
 };
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{
@@ -80,7 +80,7 @@ pub use reference_where::{
 pub use slot_condition::{
     SlotCondition, SlotConditionList, SlotConditionSubject, SlotConditionValue, SlotConditions,
     MAX_SLOT_CONDITION_DECODE_DEPTH, SLOT_CONDITION_CHANGE_FIELDS,
-    SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND, SLOT_CONDITION_SELF,
+    SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
 };
 
 #[cfg(test)]
@@ -1065,7 +1065,7 @@ pub enum DocumentPropertyReferenceTarget {
         where_conditions: BTreeMap<String, WhereCondition>,
     },
     /// A document of a document type the referring document names
-    /// (`contractIdProperty`, `documentTypeProperty`), permanent or moderated, found by the
+    /// (`contractId` and `documentType` read from it with `$self.`), permanent or moderated, found by the
     /// value as its id (protocol version 15). The contract and the document type are read
     /// from the referring document when it is written, so nothing about the target is
     /// checked at contract registration: that the type exists, is of the declared kind and

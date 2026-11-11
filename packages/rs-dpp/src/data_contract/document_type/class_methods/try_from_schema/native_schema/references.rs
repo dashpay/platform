@@ -3,20 +3,34 @@
 
 use super::*;
 
-/// The keys only a `refersTo` naming its target through the referring document carries
+/// The prefix a `refersTo` reads a value from the referring document with: a `contractId`
+/// and a `documentType` written `"$self.<property>"` name the target through the document
 /// (protocol version 15).
-const DYNAMIC_TARGET_KEYS: [&str; 3] = [
-    "contractIdProperty",
-    "documentTypeProperty",
-    "documentTypeRequirements",
-];
+const REFERRING_DOCUMENT_PREFIX: &str = "$self.";
+
+/// Whether `value` is written with the prefix that reads from the referring document.
+fn is_read_from_referring_document(value: &JsonValue) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| text.starts_with(REFERRING_DOCUMENT_PREFIX))
+}
+
+/// Whether a `refersTo` declaration names its target through the referring document: its
+/// `contractId` or its `documentType` is read from it, or it carries
+/// `documentTypeRequirements`.
+fn names_its_target(map: &JsonMap<String, JsonValue>) -> bool {
+    map.contains_key("documentTypeRequirements")
+        || ["contractId", "documentType"]
+            .iter()
+            .any(|key| map.get(*key).is_some_and(is_read_from_referring_document))
+}
 
 /// The kinds of document a `refersTo` naming its target through the referring document
 /// points at.
 const DYNAMIC_TARGET_KINDS: [&str; 2] = ["permanentDocument", "moderatedDocument"];
 
 /// The operands a slot's `when` reads as a string, and the two lists it looks into.
-const SLOT_CONDITION_STRINGS: [&str; 2] = ["$kind", "$self"];
+const SLOT_CONDITION_STRINGS: [&str; 2] = ["$kind", "$property"];
 const SLOT_CONDITION_LISTS: [&str; 2] = [
     "$moderatorAbilities.deleteKeepsFields",
     "$moderatorAbilities.changeFields",
@@ -37,14 +51,12 @@ const SLOT_CONDITION_KEYS: [&str; 10] = [
 ];
 
 /// The keys of a `refersTo` declaration.
-const REFERS_TO_KEYS: [&str; 17] = [
+const REFERS_TO_KEYS: [&str; 15] = [
     "type",
     "anyOf",
     "allOf",
     "contractId",
     "documentType",
-    "contractIdProperty",
-    "documentTypeProperty",
     "documentTypeRequirements",
     "contractRequirements",
     "keyIdProperty",
@@ -68,12 +80,12 @@ impl Checker<'_> {
         } else {
             self.required(map, &["type"])?;
         }
-        let names_its_target = DYNAMIC_TARGET_KEYS.iter().any(|key| has(key));
+        let reads_its_target = names_its_target(map);
         for (key, keyword) in map {
             self.at(key, |c| {
                 // Both kinds, which only a reference naming its target through the
                 // referring document lists
-                if key == "type" && names_its_target && keyword.is_array() {
+                if key == "type" && reads_its_target && keyword.is_array() {
                     return c.reference_kind_list(keyword);
                 }
                 c.refers_to_keyword(key, keyword)
@@ -100,23 +112,19 @@ impl Checker<'_> {
         // A reference naming its target through the referring document: a permanent or
         // moderated document found by its id, with nothing beside it that needs the
         // referenced type at registration
-        if names_its_target {
-            self.required(map, &["type", "contractIdProperty", "documentTypeProperty"])?;
+        if names_its_target(map) {
+            self.required(map, &["type", "contractId", "documentType"])?;
             self.member(map, "type", |c, target| {
                 if target.is_array() {
                     return Ok(());
                 }
                 c.one_of_strings(target, &DYNAMIC_TARGET_KINDS)
             })?;
-            for name in [
-                "contractId",
-                "documentType",
-                "findBy",
-                "where",
-                "inList",
-                "consume",
-                "constraints",
-            ] {
+            // Both are read from the referring document, or neither
+            for key in ["contractId", "documentType"] {
+                self.member(map, key, |c, value| c.read_from_referring_document(value))?;
+            }
+            for name in ["findBy", "where", "inList", "consume", "constraints"] {
                 self.absent(map, name)?;
             }
         } else if matches!(
@@ -186,6 +194,33 @@ impl Checker<'_> {
         self.unique(kinds)
     }
 
+    /// Refuses a declaration naming its target through the referring document where a
+    /// reference names it in the schema: an operand of an expression, `ownerRefersTo` and
+    /// `creatorRefersTo`.
+    fn names_its_target_in_the_schema(&self, map: &JsonMap<String, JsonValue>) -> Checked {
+        self.absent(map, "documentTypeRequirements")?;
+        if names_its_target(map) {
+            return Err(self.fail(
+                "not",
+                "a refersTo here names its contract and document type in the schema, not \
+                 through the referring document",
+            ));
+        }
+        Ok(())
+    }
+
+    /// `"$self.<property>"`: a top-level property of the referring document, a name of 1 to
+    /// 64 letters, digits or underscores after the prefix.
+    fn read_from_referring_document(&self, value: &JsonValue) -> Checked {
+        let property = self
+            .string(value)?
+            .strip_prefix(REFERRING_DOCUMENT_PREFIX)
+            .map(|property| json!(property))
+            .ok_or_else(|| self.no_branch(value))?;
+        self.string_of_length(&property, 1, Some(64))?;
+        self.word(&property)
+    }
+
     fn refers_to_keyword(&self, key: &str, value: &JsonValue) -> Checked {
         match key {
             "type" => self.one_of_strings(
@@ -202,6 +237,9 @@ impl Checker<'_> {
             ),
             "anyOf" | "allOf" => self.reference_operands(key, value),
             "contractId" => {
+                if is_read_from_referring_document(value) {
+                    return self.read_from_referring_document(value);
+                }
                 if let Some(text) = value.as_str() {
                     let length = text.chars().count();
                     let base58 = text
@@ -225,7 +263,10 @@ impl Checker<'_> {
                 }
                 Err(self.fail("oneOfNotValid", format!("{value} is not a contract id")))
             }
-            "documentType" | "contractIdProperty" | "documentTypeProperty" => {
+            "documentType" => {
+                if is_read_from_referring_document(value) {
+                    return self.read_from_referring_document(value);
+                }
                 self.string_of_length(value, 1, Some(64))?;
                 self.word(value)
             }
@@ -371,17 +412,13 @@ impl Checker<'_> {
             ],
         )?;
         self.required(map, &["name", "type"])?;
+        // `$any`, a property name, or `$self.<property>` for the name the referring
+        // document gives: which of the three a string is, the parser tells
         self.member(map, "name", |c, name| {
-            if name.is_string() {
-                return c.string_of_length(name, 1, Some(64)).map(drop);
+            if is_read_from_referring_document(name) {
+                return c.read_from_referring_document(name);
             }
-            let from_property = c.object(name)?;
-            c.closed(from_property, &["property"])?;
-            c.required(from_property, &["property"])?;
-            c.member(from_property, "property", |c, property| {
-                c.string_of_length(property, 1, Some(64))?;
-                c.word(property)
-            })
+            c.string_of_length(name, 1, Some(64)).map(drop)
         })?;
         self.member(map, "type", |c, value_type| {
             c.one_of_strings(
@@ -440,7 +477,7 @@ impl Checker<'_> {
                     if index == 0 {
                         c.one_of_strings(item, &SLOT_CONDITION_LISTS)
                     } else {
-                        c.slot_condition_string(item, &["$self"])
+                        c.slot_condition_string(item, &["$property"])
                     }
                 }),
                 "anyOf" | "allOf" => {
@@ -531,9 +568,7 @@ impl Checker<'_> {
                 let map = c.object(operand)?;
                 c.absent(map, combinator)?;
                 c.absent(map, "identityProperty")?;
-                for key in DYNAMIC_TARGET_KEYS {
-                    c.absent(map, key)?;
-                }
+                c.names_its_target_in_the_schema(map)?;
                 c.member(map, "type", |c, target| {
                     c.one_of_strings(
                         target,
@@ -554,9 +589,7 @@ impl Checker<'_> {
     pub(super) fn owner_refers_to(&self, value: &JsonValue) -> Checked {
         self.refers_to(value)?;
         let map = self.object(value)?;
-        for key in DYNAMIC_TARGET_KEYS {
-            self.absent(map, key)?;
-        }
+        self.names_its_target_in_the_schema(map)?;
         self.member(map, "type", |c, target| {
             c.one_of_strings(
                 target,

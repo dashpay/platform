@@ -13,8 +13,8 @@
 //!     "ifThen": [
 //!       { "equal": ["$kind", { "const": "moderatedDocument" }] },
 //!       { "allOf": [
-//!         { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
-//!         { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+//!         { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+//!         { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
 //!       ] }
 //!     ]
 //!   }
@@ -26,7 +26,7 @@
 //! does not fill the slot.
 //!
 //! The operands are `$kind` (the kind of the referenced type, by the `refersTo` `type` it
-//! is referred to with), `$self` (the name of the property tried for the slot),
+//! is referred to with), `$property` (the name of the property tried for the slot),
 //! `$moderatorAbilities.deleteKeepsFields` and `$moderatorAbilities.changeFields` (the
 //! type's lists, empty where it declares none) and `{ "const": <string> }`.
 
@@ -42,7 +42,7 @@ use std::collections::BTreeSet;
 /// The operand reading the kind of the referenced document type.
 pub const SLOT_CONDITION_KIND: &str = "$kind";
 /// The operand reading the name of the property tried for the slot.
-pub const SLOT_CONDITION_SELF: &str = "$self";
+pub const SLOT_CONDITION_PROPERTY: &str = "$property";
 /// The operand reading the referenced type's `moderatorAbilities.deleteKeepsFields`.
 pub const SLOT_CONDITION_DELETE_KEEPS_FIELDS: &str = "$moderatorAbilities.deleteKeepsFields";
 /// The operand reading the referenced type's `moderatorAbilities.changeFields`.
@@ -64,7 +64,7 @@ pub enum SlotConditionValue {
     /// `$kind`: `permanentDocument`, `moderatedDocument` or `deletableDocument`, as the
     /// referenced type's documents leave state.
     Kind,
-    /// `$self`: the name of the property tried for the slot.
+    /// `$property`: the name of the property tried for the slot.
     PropertyName,
     /// `{ "const": <string> }`.
     Constant(String),
@@ -140,12 +140,12 @@ impl SlotConditionValue {
 }
 
 impl SlotConditionValue {
-    /// The operand as a contract schema declares it: `$kind`, `$self` or
+    /// The operand as a contract schema declares it: `$kind`, `$property` or
     /// `{ "const": <string> }`.
     pub fn to_schema_value(&self) -> Value {
         match self {
             SlotConditionValue::Kind => Value::Text(SLOT_CONDITION_KIND.to_string()),
-            SlotConditionValue::PropertyName => Value::Text(SLOT_CONDITION_SELF.to_string()),
+            SlotConditionValue::PropertyName => Value::Text(SLOT_CONDITION_PROPERTY.to_string()),
             SlotConditionValue::Constant(constant) => Value::Map(vec![(
                 Value::Text("const".to_string()),
                 Value::Text(constant.clone()),

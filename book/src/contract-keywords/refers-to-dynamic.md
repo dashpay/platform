@@ -1,11 +1,11 @@
 # A Target the Document Names
 
-A document reference normally names its target in the schema: a `documentType`, and a `contractId` when the type is in another contract. A reference with `contractIdProperty` and `documentTypeProperty` leaves both to the document: two of its own properties say which contract and which document type the value points into. `documentTypeRequirements` then says what that document type must look like. Reach for it when a contract should accept a document of any contract that qualifies: a proposal described by a moderated text someone else hosts, a listing attached to a record of whichever registry issued it.
+A document reference normally names its target in the schema: a `documentType`, and a `contractId` when the type is in another contract. A reference whose `contractId` and `documentType` are written `"$self.<property>"` leaves both to the document: two of its own properties say which contract and which document type the value points into. `$self` is the document being written, as [`$old`](property-constraints.md) is the stored one in a rule. `documentTypeRequirements` then says what that document type must look like. Reach for it when a contract should accept a document of any contract that qualifies: a proposal described by a moderated text someone else hosts, a listing attached to a record of whichever registry issued it.
 
 | | |
 |---|---|
 | **Where** | `refersTo` on an identifier property, at the top level or inside an object. Not on the `items` of a typed array, not an operand of an [expression](refers-to-expressions.md), not [`ownerRefersTo` or `creatorRefersTo`](owner-refers-to.md). |
-| **Value** | `contractIdProperty` and `documentTypeProperty`, both required, and optionally `documentTypeRequirements`, in a `"type": "permanentDocument"` or `"type": "moderatedDocument"` declaration, or one [listing both](#either-kind), that carries nothing else. |
+| **Value** | `"contractId": "$self.<property>"` and `"documentType": "$self.<property>"`, both required, and optionally `documentTypeRequirements`, in a `"type": "permanentDocument"` or `"type": "moderatedDocument"` declaration, or one [listing both](#either-kind), that carries nothing else. |
 | **Since** | protocol version 15 |
 | **On update** | Fixed, like the rest of `refersTo` (`IncompatibleDocumentTypeSchemaError`, 10246). |
 | **Errors** | When a document is written: `ReferencedDocumentTypeNotFoundError` (40121), `ReferencedDocumentTypePrivateError` (40150), `ReferencedDocumentTypeIndexOnlyError` (40146), `ReferencedDocumentTypeRequirementNotMetError` (40153), `ReferencedDocumentTypeDeletableError` (40122), `ReferencedDocumentTypeNotModeratedError` (40143), `ReferencedDocumentTypeModeratedError` (40144), `ReferencedEntityNotFoundError` (40120). At registration: `InvalidContractStructure` (10231), `JsonSchemaError` (10101). |
@@ -20,8 +20,8 @@ A document reference normally names its target in the schema: a `documentType`, 
       "type": "identifier",
       "refersTo": {
         "type": "moderatedDocument",
-        "contractIdProperty": "descriptionContractId",
-        "documentTypeProperty": "descriptionDocumentType",
+        "contractId": "$self.descriptionContractId",
+        "documentType": "$self.descriptionDocumentType",
         "documentTypeRequirements": {
           "properties": {
             "body":      { "name": "$any", "type": "string" },
@@ -46,11 +46,11 @@ A note is described by a document its author points at: `descriptionContractId` 
 
 | Key | Value | What it does |
 |---|---|---|
-| `contractIdProperty` | the name of a top-level identifier property of the document type, 1 to 64 letters, digits or underscores | The property holding the id of the contract the referenced document type lives in. Takes the place of `contractId`. |
-| `documentTypeProperty` | the name of a top-level string property | The property holding the name of the referenced document type. Takes the place of `documentType`. |
+| `contractId` | `"$self."` followed by the name of a top-level identifier property of the document type, 1 to 64 letters, digits or underscores | The property holding the id of the contract the referenced document type lives in, where a reference naming its target in the schema writes the id itself. |
+| `documentType` | `"$self."` followed by the name of a top-level string property | The property holding the name of the referenced document type, where a reference naming its target in the schema writes the name itself. |
 | `documentTypeRequirements` | object: `properties` (required), `require` | What the named document type must look like. Absent, the type is held to its kind alone. |
 
-The two properties come together: a declaration names its target in the schema or through the document, never half of each. The declaring contract is named like any other: a document pointing into its own contract writes that contract's id.
+The two come together: a declaration names its target in the schema or through the document, never half of each, so a `$self.` `contractId` beside a literal `documentType` is refused, as is one beside none. The declaring contract is named like any other: a document pointing into its own contract writes that contract's id. Nothing a schema could write literally starts with `$self.`: a contract id is base58 and a document type name holds no `$`.
 
 ## documentTypeRequirements
 
@@ -58,7 +58,7 @@ The two properties come together: a declaration names its target in the schema o
 
 | Slot key | Value | Meaning |
 |---|---|---|
-| `name` | `"$any"`, a property name, or `{ "property": "<a string property of the referring document>" }` | Which property may fill the slot: any property matching the rest; the one called this; or the one the referring document names in that property of its own. |
+| `name` | `"$any"`, a property name, or `"$self.<a string property of the referring document>"` | Which property may fill the slot: any property matching the rest; the one called this; or the one the referring document names in that property of its own. |
 | `type` | `"string"`, `"identifier"`, `"integer"`, `"boolean"`, or `"array"` with `"byteArray": true` | What the property holds. A byte array slot is not filled by an identifier, nor an identifier slot by a byte array. |
 | `maxBytes` | integer, 1 to 4294967295 | On a string or byte array slot: the property can never hold more bytes than this. A string's bound is its `maxBytes`, or four times its `maxLength`; a byte array's is its `maxItems`. A property declaring no bound meets none. |
 | `distinctFrom` | a slot name, or a list of slot names | This slot is filled by a different property than each of them. Saying it on one side is enough. |
@@ -78,7 +78,7 @@ Every slot is named by `require` when there is one: a slot it never names could 
 "documentTypeRequirements": {
   "properties": {
     "title":     { "name": "$any", "type": "string", "maxBytes": 512 },
-    "body":      { "name": { "property": "bodyProperty" }, "type": "string", "distinctFrom": "title" },
+    "body":      { "name": "$self.bodyProperty", "type": "string", "distinctFrom": "title" },
     "bodyBytes": { "name": "$any", "type": "array", "byteArray": true }
   },
   "require": { "allOf": ["title", { "anyOf": ["body", "bodyBytes"] }] }
@@ -101,8 +101,8 @@ Take the first example of this page, `body` or `bodyBytes`: a type holding a str
 ```json
 "refersTo": {
   "type": ["permanentDocument", "moderatedDocument"],
-  "contractIdProperty": "descriptionContractId",
-  "documentTypeProperty": "descriptionDocumentType"
+  "contractId": "$self.descriptionContractId",
+  "documentType": "$self.descriptionDocumentType"
 }
 ```
 
@@ -122,8 +122,8 @@ A slot's `name`, `type` and `maxBytes` describe the property. `when` adds a cond
         "ifThen": [
           { "equal": ["$kind", { "const": "moderatedDocument" }] },
           { "allOf": [
-            { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$self"] } },
-            { "not": { "contains": ["$moderatorAbilities.changeFields", "$self"] } }
+            { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+            { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
           ] }
         ]
       }
@@ -137,16 +137,16 @@ When the type is a moderated one, the string filling `body` is one a moderator's
 | Operand | Reads |
 |---|---|
 | `"$kind"` | The kind of the referenced type, by the `refersTo` `type` it is referred to with: `permanentDocument` or `moderatedDocument`. |
-| `"$self"` | The name of the property tried for the slot. |
+| `"$property"` | The name of the property tried for the slot. |
 | `"$moderatorAbilities.deleteKeepsFields"` | The referenced type's [`deleteKeepsFields`](moderator-abilities.md): the property paths a removal record keeps. Empty when the type lists none. |
 | `"$moderatorAbilities.changeFields"` | The referenced type's [`changeFields`](moderator-abilities.md): the properties only moderators write. Empty when the type lists none. |
 | `{ "const": "<string>" }` | The string, 1 to 256 characters. |
 
 | Condition | Holds when |
 |---|---|
-| `{ "equal": [a, b] }`, `{ "notEqual": [a, b] }` | `$kind` or `$self` is, or is not, the constant on the other side. Compared with `$kind`, the constant is `permanentDocument` or `moderatedDocument`. |
-| `{ "in": [a, [...]] }`, `{ "notIn": [a, [...]] }` | `$kind` or `$self` is, or is not, one of two or more distinct strings. |
-| `{ "contains": [list, a] }` | One of the two lists holds `$self` or a constant, as a whole entry. |
+| `{ "equal": [a, b] }`, `{ "notEqual": [a, b] }` | `$kind` or `$property` is, or is not, the constant on the other side. Compared with `$kind`, the constant is `permanentDocument` or `moderatedDocument`. |
+| `{ "in": [a, [...]] }`, `{ "notIn": [a, [...]] }` | `$kind` or `$property` is, or is not, one of two or more distinct strings. |
+| `{ "contains": [list, a] }` | One of the two lists holds `$property` or a constant, as a whole entry. |
 | `{ "not": c }`, `{ "anyOf": [...] }`, `{ "allOf": [...] }` | As in `propertyConstraints`: `anyOf` and `allOf` take two or more conditions, none listed twice and none the same combinator; `not` holds no `not` and no `notIn`. |
 | `{ "ifThen": [c, then] }`, `{ "ifThenElse": [c, then, else] }` | `then` holds whenever `c` does; with an `else`, it holds when `c` does not. |
 
@@ -156,7 +156,7 @@ One `when` is made of at most 16 conditions (`max_document_type_requirement_cond
 
 Nothing about the target is known when the contract is registered, so registration checks the declaration alone. Everything about the target is checked when a document is written, in this order, the first failure refusing the write:
 
-1. The document names a contract and a document type. A document that holds the reference but leaves out `contractIdProperty`'s or `documentTypeProperty`'s property points nowhere: `ReferencedEntityNotFoundError` (40120).
+1. The document names a contract and a document type. A document that holds the reference but leaves out the property its `contractId` or its `documentType` is read from points nowhere: `ReferencedEntityNotFoundError` (40120).
 2. The contract exists and has a document type of that name: `ReferencedDocumentTypeNotFoundError` (40121) otherwise. Another contract costs a billed fetch, once per write.
 3. The type is not [private](../contract-keywords.md#document-type), `ReferencedDocumentTypePrivateError` (40150), and not `indexOnly`, `ReferencedDocumentTypeIndexOnlyError` (40146): the documents of such a type are index entries, and none can be found by its id.
 4. The type meets `documentTypeRequirements`, each slot filled by a property its `when` holds for: `ReferencedDocumentTypeRequirementNotMetError` (40153).
@@ -169,10 +169,10 @@ Nothing about the target is known when the contract is registered, so registrati
 
 ## Rules at registration
 
-- Both `contractIdProperty` and `documentTypeProperty` are present, name two different properties, and `type` is `permanentDocument`, `moderatedDocument` or the list of both. A `deletableDocument` reference always names its type in the schema: a dynamic target is trusted for what its type promises about its documents staying, and a deletable type promises nothing.
-- The declaration carries nothing else: no `contractId`, `documentType`, `findBy`, `where`, `inList`, `consume` or `constraints`. Each needs the referenced type when the contract is registered.
+- Both `contractId` and `documentType` are present and read from the document (`"$self.<property>"`), from two different properties, and `type` is `permanentDocument`, `moderatedDocument` or the list of both. A `deletableDocument` reference always names its type in the schema: a dynamic target is trusted for what its type promises about its documents staying, and a deletable type promises nothing.
+- The declaration carries nothing else: no `findBy`, `where`, `inList`, `consume` or `constraints`. Each needs the referenced type when the contract is registered. `documentTypeRequirements` comes only with a target read from the document: a type the schema names needs no description.
 - It sits on a single identifier property: not on the elements of a typed array, in a reference expression, or in `ownerRefersTo` and `creatorRefersTo`.
-- `contractIdProperty` names a top-level identifier property, and `documentTypeProperty` and every slot's `{ "property": ... }` a top-level string property. None is transient or the reference property itself, and each is required wherever the reference property is, so a document that must hold the reference always says where it points. None is listed under [`moderatorAbilities.changeFields`](moderator-abilities.md), like the reference property itself: a moderator's change checks no reference again, so it could point a stored one somewhere nobody checked.
+- `contractId` reads a top-level identifier property, and `documentType` and every slot's `"$self.<property>"` name a top-level string property. None is transient or the reference property itself, and each is required wherever the reference property is, so a document that must hold the reference always says where it points. None is listed under [`moderatorAbilities.changeFields`](moderator-abilities.md), like the reference property itself: a moderator's change checks no reference again, so it could point a stored one somewhere nobody checked.
 - `documentTypeRequirements` holds 1 to 4 slots (`max_document_type_requirement_slots`), each well formed; `distinctFrom` names other slots of the same `properties`; `require` names slots, and all of them.
 - A slot's `when` is a condition of at most 16 conditions (`max_document_type_requirement_condition_nodes`) over the operands above, each comparison pairing what it may pair.
 - No [`propertyConstraints` rule](property-constraints.md#values-of-a-referenced-document) reads a value through the reference, no [index](derived-index-properties.md) holds one, and no chained query joins through it: each resolves the referenced type from the schema.

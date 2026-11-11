@@ -131,7 +131,7 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// reads, so no write could check the reference.
     ReferencedDocumentTypePrivate = 40150,
     /// A reference naming its target through the referring document
-    /// (`contractIdProperty`, `documentTypeProperty`, protocol version 15)
+    /// (`contractId` and `documentType` written `$self.<property>`, protocol version 15)
     /// points at a document type that does not meet the reference's
     /// `documentTypeRequirements`: its properties do not fill the slots the
     /// reference requires.

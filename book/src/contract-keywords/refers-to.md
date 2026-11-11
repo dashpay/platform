@@ -57,7 +57,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 A key that belongs to another target is refused when the contract is registered.
 
-From protocol version 15 a `permanentDocument` or `moderatedDocument` reference may leave its target to the document: `contractIdProperty` and `documentTypeProperty` name the properties holding the contract and the document type, in place of `contractId` and `documentType`, and `documentTypeRequirements` says what that type must look like. See [A Target the Document Names](refers-to-dynamic.md).
+From protocol version 15 a `permanentDocument` or `moderatedDocument` reference may leave its target to the document: a `contractId` and a `documentType` written `"$self.<property>"` are read from the properties of the referring document that hold the contract and the document type, and `documentTypeRequirements` says what that type must look like. See [A Target the Document Names](refers-to-dynamic.md).
 
 ### `identity`
 
@@ -424,7 +424,7 @@ The registration errors name the declaration as `<documentType>.<property>`, `<d
 - [findBy](refers-to-lookup.md): a `permanentDocument` or `deletableDocument` found through the unique index of its type over exactly the properties `findBy` names, with the value as one part of the key. The value can be an identity (a member, an author) instead of a document id.
 - [Expressions](refers-to-expressions.md): `anyOf` and `allOf`, several targets combined in one declaration.
 - [List Elements](refers-to-list-element.md): `inList` on a `permanentDocument`, a value that must be one of the identifiers a list on another document holds.
-- [A Target the Document Names](refers-to-dynamic.md): `contractIdProperty` and `documentTypeProperty` on a `permanentDocument` or `moderatedDocument`, a document of whichever contract and document type the referring document names, held to `documentTypeRequirements` (protocol version 15).
+- [A Target the Document Names](refers-to-dynamic.md): `contractId` and `documentType` read from the referring document (`"$self.<property>"`) on a `permanentDocument` or `moderatedDocument`, a document of whichever contract and document type the referring document names, held to `documentTypeRequirements` (protocol version 15).
 - [Writer and Creator References](owner-refers-to.md): `ownerRefersTo` and `creatorRefersTo`, the same declaration applied to the document's writer or creator instead of a property.
 - [References on the elements](../data-model/documents.md#references-on-the-elements) of a typed array: a declaration on `items`, checked for every element.
 
