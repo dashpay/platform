@@ -75,6 +75,12 @@ pub enum TokenTransitionActionType {
 
     /// Indicates an open token marketplace order cancelled by its maker.
     CancelOrder,
+
+    /// Indicates an offer for a token on the token marketplace.
+    PlaceBid,
+
+    /// Indicates a sale into an open offer on the token marketplace.
+    FillBid,
 }
 
 impl fmt::Display for TokenTransitionActionType {
@@ -101,6 +107,8 @@ impl fmt::Display for TokenTransitionActionType {
             TokenTransitionActionType::PlaceAsk => "PlaceAsk",
             TokenTransitionActionType::FillAsk => "FillAsk",
             TokenTransitionActionType::CancelOrder => "CancelOrder",
+            TokenTransitionActionType::PlaceBid => "PlaceBid",
+            TokenTransitionActionType::FillBid => "FillBid",
         };
         write!(f, "{}", action_str)
     }
@@ -138,6 +146,8 @@ impl TokenTransitionActionTypeGetter for TokenTransition {
             TokenTransition::PlaceAsk(_) => TokenTransitionActionType::PlaceAsk,
             TokenTransition::FillAsk(_) => TokenTransitionActionType::FillAsk,
             TokenTransition::CancelOrder(_) => TokenTransitionActionType::CancelOrder,
+            TokenTransition::PlaceBid(_) => TokenTransitionActionType::PlaceBid,
+            TokenTransition::FillBid(_) => TokenTransitionActionType::FillBid,
         }
     }
 }
@@ -178,6 +188,8 @@ impl TryFrom<&str> for TokenTransitionActionType {
             "place_ask" | "placeAsk" => Ok(TokenTransitionActionType::PlaceAsk),
             "fill_ask" | "fillAsk" => Ok(TokenTransitionActionType::FillAsk),
             "cancel_order" | "cancelOrder" => Ok(TokenTransitionActionType::CancelOrder),
+            "place_bid" | "placeBid" => Ok(TokenTransitionActionType::PlaceBid),
+            "fill_bid" | "fillBid" => Ok(TokenTransitionActionType::FillBid),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown token transition action type {action_type}"
             ))),

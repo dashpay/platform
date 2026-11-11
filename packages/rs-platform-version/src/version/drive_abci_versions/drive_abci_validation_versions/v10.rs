@@ -313,6 +313,10 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_fill_ask_transition_state_validation: 0,
                 token_cancel_order_transition_structure_validation: 0,
                 token_cancel_order_transition_state_validation: 0,
+                token_place_bid_transition_structure_validation: 0,
+                token_place_bid_transition_state_validation: 0,
+                token_fill_bid_transition_structure_validation: 0,
+                token_fill_bid_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {

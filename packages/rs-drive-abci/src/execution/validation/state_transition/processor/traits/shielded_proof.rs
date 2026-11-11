@@ -1202,7 +1202,9 @@ fn validate_batch_token_shielded_proofs(
                 | TokenTransition::SetPriceForDirectPurchase(_)
                 | TokenTransition::PlaceAsk(_)
                 | TokenTransition::FillAsk(_)
-                | TokenTransition::CancelOrder(_),
+                | TokenTransition::CancelOrder(_)
+                | TokenTransition::PlaceBid(_)
+                | TokenTransition::FillBid(_),
             ) => continue,
         };
         if let Err(e) = result {

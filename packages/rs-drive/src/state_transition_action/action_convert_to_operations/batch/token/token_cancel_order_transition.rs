@@ -55,9 +55,20 @@ impl DriveHighLevelBatchOperationConverter for TokenCancelOrderTransitionAction 
                         ));
                     }
                     TokenOrderSide::Bid => {
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "an offer cannot be cancelled before offers can be placed",
-                        )));
+                        if order.escrow > 0 {
+                            ops.push(IdentityOperation(
+                                IdentityOperationType::AddToIdentityBalance {
+                                    identity_id: owner_id.to_buffer(),
+                                    added_balance: order.escrow,
+                                },
+                            ));
+                        }
+                        ops.push(TokenOperation(
+                            TokenOperationType::TokenSetCreditsInOrderEscrow {
+                                order_id: order.id,
+                                credits_after: 0,
+                            },
+                        ));
                     }
                 }
 

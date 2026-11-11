@@ -22,7 +22,7 @@ use crate::ProtocolError;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenShieldedTransferTransition, TokenUnshieldTransition,
     TokenMintToPoolTransition, TokenBurnFromPoolTransition, TokenClaimToPoolTransition,
     TokenDirectPurchaseToPoolTransition, TokenPlaceAskTransition, TokenFillAskTransition,
-    TokenCancelOrderTransition,
+    TokenCancelOrderTransition, TokenPlaceBidTransition, TokenFillBidTransition,
 };
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 use crate::serialization::JsonConvertible;
@@ -60,6 +60,8 @@ use crate::tokens::token_order_side::TokenOrderSide;
 use crate::state_transition::batch_transition::token_place_ask_transition::v0::v0_methods::TokenPlaceAskTransitionV0Methods;
 use crate::state_transition::batch_transition::token_fill_ask_transition::v0::v0_methods::TokenFillAskTransitionV0Methods;
 use crate::state_transition::batch_transition::token_cancel_order_transition::v0::v0_methods::TokenCancelOrderTransitionV0Methods;
+use crate::state_transition::batch_transition::token_place_bid_transition::v0::v0_methods::TokenPlaceBidTransitionV0Methods;
+use crate::state_transition::batch_transition::token_fill_bid_transition::v0::v0_methods::TokenFillBidTransitionV0Methods;
 
 pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
     45, 67, 89, 21, 34, 216, 145, 78, 156, 243, 17, 58, 202, 190, 13, 92, 61, 40, 122, 201, 84, 99,
@@ -143,6 +145,14 @@ pub enum TokenTransition {
     /// Cancels one of the signer's open orders (the token marketplace, protocol version 15).
     #[display("TokenCancelOrderTransition({})", "_0")]
     CancelOrder(TokenCancelOrderTransition),
+
+    /// Offers credits for a tradeable token (the token marketplace, protocol version 15).
+    #[display("TokenPlaceBidTransition({})", "_0")]
+    PlaceBid(TokenPlaceBidTransition),
+
+    /// Sells into an open offer (the token marketplace, protocol version 15).
+    #[display("TokenFillBidTransition({})", "_0")]
+    FillBid(TokenFillBidTransition),
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
@@ -588,6 +598,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::PlaceAsk(t) => t.base(),
             TokenTransition::FillAsk(t) => t.base(),
             TokenTransition::CancelOrder(t) => t.base(),
+            TokenTransition::PlaceBid(t) => t.base(),
+            TokenTransition::FillBid(t) => t.base(),
         }
     }
 
@@ -614,6 +626,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::PlaceAsk(t) => t.base_mut(),
             TokenTransition::FillAsk(t) => t.base_mut(),
             TokenTransition::CancelOrder(t) => t.base_mut(),
+            TokenTransition::PlaceBid(t) => t.base_mut(),
+            TokenTransition::FillBid(t) => t.base_mut(),
         }
     }
 
@@ -660,7 +674,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             // An order is an identity's own: it is never a group action.
             TokenTransition::PlaceAsk(_)
             | TokenTransition::FillAsk(_)
-            | TokenTransition::CancelOrder(_) => None,
+            | TokenTransition::CancelOrder(_)
+            | TokenTransition::PlaceBid(_)
+            | TokenTransition::FillBid(_) => None,
         }
     }
 
@@ -686,7 +702,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::DirectPurchaseToPool(_)
             | TokenTransition::PlaceAsk(_)
             | TokenTransition::FillAsk(_)
-            | TokenTransition::CancelOrder(_) => false,
+            | TokenTransition::CancelOrder(_)
+            | TokenTransition::PlaceBid(_)
+            | TokenTransition::FillBid(_) => false,
         }
     }
 
@@ -712,7 +730,9 @@ impl TokenTransitionV0Methods for TokenTransition {
             | TokenTransition::SetPriceForDirectPurchase(_)
             | TokenTransition::PlaceAsk(_)
             | TokenTransition::FillAsk(_)
-            | TokenTransition::CancelOrder(_) => None,
+            | TokenTransition::CancelOrder(_)
+            | TokenTransition::PlaceBid(_)
+            | TokenTransition::FillBid(_) => None,
         }
     }
 
@@ -720,7 +740,9 @@ impl TokenTransitionV0Methods for TokenTransition {
         match self {
             TokenTransition::PlaceAsk(_)
             | TokenTransition::FillAsk(_)
-            | TokenTransition::CancelOrder(_) => true,
+            | TokenTransition::CancelOrder(_)
+            | TokenTransition::PlaceBid(_)
+            | TokenTransition::FillBid(_) => true,
             TokenTransition::Burn(_)
             | TokenTransition::Mint(_)
             | TokenTransition::Transfer(_)
@@ -786,6 +808,8 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::PlaceAsk(_) => "orderPlaced",
             TokenTransition::FillAsk(_) => "orderFilled",
             TokenTransition::CancelOrder(_) => "orderCancelled",
+            TokenTransition::PlaceBid(_) => "orderPlaced",
+            TokenTransition::FillBid(_) => "orderFilled",
         }
     }
 
@@ -978,6 +1002,25 @@ impl TokenTransitionV0Methods for TokenTransition {
             TokenTransition::CancelOrder(cancel_order) => {
                 TokenEvent::OrderCancelled(cancel_order.order_id(), cancel_order.side())
             }
+            TokenTransition::PlaceBid(place_bid) => TokenEvent::OrderPlaced(
+                TokenOrderSide::Bid.order_id(
+                    place_bid.base().token_id(),
+                    owner_id,
+                    place_bid.base().identity_contract_nonce(),
+                ),
+                TokenOrderSide::Bid,
+                place_bid.amount(),
+                place_bid.price(),
+            ),
+            // we do not know the maker, nor how much the fill takes and pays, before the order is
+            // read
+            TokenTransition::FillBid(fill_bid) => TokenEvent::OrderFilled(
+                fill_bid.order_id(),
+                TokenOrderSide::Bid,
+                Identifier::default(),
+                fill_bid.max_amount(),
+                fill_bid.min_total_received(),
+            ),
         })
     }
 }

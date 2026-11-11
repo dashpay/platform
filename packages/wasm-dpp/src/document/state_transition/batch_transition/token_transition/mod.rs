@@ -54,6 +54,8 @@ pub enum TokenTransitionType {
     PlaceAsk,
     FillAsk,
     CancelOrder,
+    PlaceBid,
+    FillBid,
 }
 
 impl From<&TokenTransition> for TokenTransitionType {
@@ -82,6 +84,8 @@ impl From<&TokenTransition> for TokenTransitionType {
             TokenTransition::PlaceAsk(_) => TokenTransitionType::PlaceAsk,
             TokenTransition::FillAsk(_) => TokenTransitionType::FillAsk,
             TokenTransition::CancelOrder(_) => TokenTransitionType::CancelOrder,
+            TokenTransition::PlaceBid(_) => TokenTransitionType::PlaceBid,
+            TokenTransition::FillBid(_) => TokenTransitionType::FillBid,
         }
     }
 }
@@ -185,7 +189,9 @@ impl TokenTransitionWasm {
             // The token marketplace kinds likewise: wasm-dpp2 is the binding that exposes them.
             TokenTransition::PlaceAsk(_)
             | TokenTransition::FillAsk(_)
-            | TokenTransition::CancelOrder(_) => Err(JsValue::from_str(
+            | TokenTransition::CancelOrder(_)
+            | TokenTransition::PlaceBid(_)
+            | TokenTransition::FillBid(_) => Err(JsValue::from_str(
                 "token marketplace transitions are not supported in wasm-dpp TokenTransition; use wasm-dpp2",
             )),
         }
