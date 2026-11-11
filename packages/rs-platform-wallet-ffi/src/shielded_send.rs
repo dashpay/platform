@@ -1356,6 +1356,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
 /// shielded account. The identity is debited `amount` plus the metered fee plus
 /// the shielded compute fee. The memo is empty.
 ///
+/// A shielded sub-wallet must still be bound at `shielded_account`: its outgoing
+/// viewing key enables outgoing-note recovery, and the activity is recorded
+/// under that account. A recipient recognized by the account's incoming viewing
+/// key is rejected with `ErrorWalletOperation` (code 6); self-shields use
+/// [`platform_wallet_manager_shielded_shield_from_identity`].
+///
 /// `identity_id` is the 32-byte identity id; the identity must be managed by
 /// this wallet. `recipient_raw_43` is the recipient's raw 43-byte Orchard
 /// address. `signer_identity_handle` is a `*const SignerHandle` produced by
