@@ -5,15 +5,35 @@
 //! - Receiving contact requests (incoming)
 //! - Automatically establishing contacts when both parties send requests
 
+use super::dashpay::{PendingPrivateReply, UnconfirmedPublicRequest};
 use super::ManagedIdentity;
 use crate::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, PrivateContactRequestsPosition,
+    ReceivedContactRequestKey, SentContactRequestKey,
 };
 use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{KeyType, Purpose};
 use dpp::prelude::Identifier;
+use dpp::state_transition::StateTransition;
+use key_wallet::bip32::ExtendedPubKey;
 use platform_encryption::account_reference_version;
+use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// The attempt id the next private request reservation or public request
+/// claim takes. Process-wide, so a handle that outlived its wallet's removal
+/// and re-creation under the same id cannot release a reservation or a claim
+/// the new wallet made.
+static NEXT_CONTACT_REQUEST_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+
+/// A new attempt id ([`NEXT_CONTACT_REQUEST_ATTEMPT`]).
+fn next_contact_request_attempt() -> u64 {
+    NEXT_CONTACT_REQUEST_ATTEMPT.fetch_add(1, Ordering::Relaxed)
+}
 
 impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
@@ -376,6 +396,11 @@ impl ManagedIdentity {
         // Rewind the receive cursor so the next sweep re-fetches the
         // now-un-ignored sender's on-chain requests.
         self.dashpay.high_water_received_ms = None;
+        // A pass that read the store to its end passed over the sender's
+        // private requests: the store is not read for this identity until a
+        // pass reads it again from the rewound position, so a send reads it
+        // first.
+        self.rewind_private_store_read();
 
         let mut cs = ContactChangeSet::default();
         cs.unignored.insert((owner_id, *sender_id));
@@ -791,6 +816,463 @@ impl ManagedIdentity {
             advance_if_unchanged(self.dashpay.high_water_received_ms, snapshot, max_fetched);
     }
 
+    /// Note that a private sync read DashPay's private contact request store
+    /// to its end for this identity, with nothing held back, the page that
+    /// reached the end proved at `end_height` or above (the lowest height of
+    /// its reads): counted only when that is at or above the height a rewind
+    /// left as its floor (`DashPayState::private_store_read_floor`), so a read
+    /// whose end comes from a node behind the store already seen does not
+    /// count, whatever the heights of the pages before it. Returns whether it
+    /// counted.
+    pub(crate) fn note_private_contact_requests_read(&mut self, end_height: u64) -> bool {
+        let dashpay = &mut self.dashpay;
+        let counted = dashpay
+            .private_store_read_floor
+            .is_none_or(|floor| end_height >= floor);
+        if counted {
+            dashpay.private_contact_requests_read = true;
+        }
+        counted
+    }
+
+    /// Rewind this identity's read of DashPay's private contact request
+    /// store to its start: the position goes back to 0, the read is no longer
+    /// read to the end, and the height it rested on is reset, kept as the
+    /// floor a read since must reach (`DashPayState::private_store_read_floor`).
+    fn rewind_private_store_read(&mut self) {
+        let dashpay = &mut self.dashpay;
+        dashpay.private_contact_requests_position = 0;
+        dashpay.private_contact_requests_read = false;
+        if let Some(read) = dashpay.private_store_read_height.take() {
+            dashpay.private_store_read_floor = Some(
+                dashpay
+                    .private_store_read_floor
+                    .map_or(read, |floor| floor.max(read)),
+            );
+        }
+    }
+
+    /// Rewind this identity's read of DashPay's private contact request
+    /// store to `position` when it is past it, as
+    /// [`Self::rewind_private_store_read`] rewinds it to 0: the read is no
+    /// longer to the end, and the height it rested on becomes the floor a
+    /// read since must reach. Returns whether it moved. A restoration rewinds
+    /// to the position a journal record kept, so a private payment whose
+    /// request the identity does not track has its entry read again.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn rewind_private_store_read_to(&mut self, position: u64) -> bool {
+        if self.dashpay.private_contact_requests_position <= position {
+            return false;
+        }
+        self.rewind_private_store_read();
+        self.dashpay.private_contact_requests_position = position;
+        true
+    }
+
+    /// Note that a private sync read a page of DashPay's private contact
+    /// request store, proved at `height`, for this identity
+    /// (`DashPayState::private_store_read_height`).
+    pub(crate) fn note_private_store_page_read(&mut self, height: u64) {
+        let read = &mut self.dashpay.private_store_read_height;
+        *read = Some(read.map_or(height, |read| read.max(height)));
+    }
+
+    /// [`Self::note_private_contact_requests_read`], for tests outside this
+    /// crate that read an identity's state after a private sync.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn note_private_contact_requests_read_for_tests(&mut self) {
+        self.dashpay.private_contact_requests_read = true;
+    }
+
+    /// Advance the private contact request cursor to `next_position` once
+    /// every entry before it was read and what it held for this identity
+    /// ingested. Never moves it back, and leaves it where a concurrent
+    /// [`Self::unignore_sender`] rewound it from `snapshot`.
+    pub(crate) fn advance_private_contact_requests_position(
+        &mut self,
+        snapshot: u64,
+        next_position: u64,
+    ) {
+        let position = &mut self.dashpay.private_contact_requests_position;
+        if *position == snapshot && next_position > snapshot {
+            *position = next_position;
+        }
+    }
+
+    /// Restore the position of DashPay's private contact request store this
+    /// identity reads from next, as a backend persisted it
+    /// (`ContactChangeSet::private_contact_requests_positions`): the loader's
+    /// replay, for a backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// The record replayed last decides the identity's load-time hold, so a
+    /// later record cleared lifts an earlier marked one; the live
+    /// per-recipient reservations are left alone, and a restoration from
+    /// the shielded store's journal holds every pair whose payment may still
+    /// execute whatever the marker says.
+    pub fn apply_private_contact_requests_position(
+        &mut self,
+        position: PrivateContactRequestsPosition,
+    ) {
+        self.dashpay.private_contact_requests_position = position.position;
+        self.dashpay.private_scan_keys = Some(position.key_fingerprint);
+        self.dashpay.private_payments_unrestored = position.private_payments_unresolved;
+    }
+
+    /// Hold this identity as a load holds one whose position record is
+    /// marked (`DashPayState::private_payments_unrestored`): a persister kept
+    /// its record marked though the identity was added afresh, with no
+    /// reservation or record of the payment the marker stands for, as after
+    /// its wallet was removed and registered again. Only the hold is taken:
+    /// the record's read position covers requests that went with the wallet's
+    /// other rows, so the store is read for the identity from its start.
+    pub(crate) fn hold_for_retained_private_payment_marker(&mut self) {
+        self.dashpay.private_payments_unrestored = true;
+    }
+
+    /// The reservations of this identity's private payments from an earlier
+    /// process are restored from the shielded store: release the hold a load
+    /// set ([`DashPayState::private_payments_unrestored`]). Returns whether it
+    /// was set, so the caller stores the record it changed.
+    ///
+    /// [`DashPayState::private_payments_unrestored`]: super::DashPayState::private_payments_unrestored
+    #[cfg(feature = "shielded")]
+    pub(crate) fn note_private_payments_restored(&mut self) -> bool {
+        std::mem::take(&mut self.dashpay.private_payments_unrestored)
+    }
+
+    /// The fingerprint of the keys a private sync scans DashPay's private
+    /// contact request store with for this identity: SHA-256 over its HD
+    /// index and each `ECDSA_SECP256K1` `ENCRYPTION` or `DECRYPTION` key, by
+    /// id, purpose and data, in key id order. Disabled keys count, as an
+    /// entry sealed before a key was disabled still opens with it.
+    pub fn private_scan_key_fingerprint(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        match self.identity_index {
+            Some(index) => {
+                hasher.update([1]);
+                hasher.update(index.to_le_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        for (key_id, key) in self.identity.public_keys() {
+            if key.key_type() != KeyType::ECDSA_SECP256K1
+                || !matches!(key.purpose(), Purpose::ENCRYPTION | Purpose::DECRYPTION)
+            {
+                continue;
+            }
+            let data = key.data().as_slice();
+            hasher.update(key_id.to_le_bytes());
+            hasher.update([key.purpose() as u8]);
+            hasher.update((data.len() as u64).to_le_bytes());
+            hasher.update(data);
+        }
+        hasher.finalize().into()
+    }
+
+    /// Tie the private read position and the read-to-the-end flag to the
+    /// identity's scanning keys: when the keys no longer match the ones they
+    /// hold for, entries to or from a key added since were never opened, so
+    /// both are rewound to read the store again from 0. Returns the position
+    /// record to store when it changed.
+    pub(crate) fn reconcile_private_scan_keys(&mut self) -> Option<PrivateContactRequestsPosition> {
+        let key_fingerprint = self.private_scan_key_fingerprint();
+        if self.dashpay.private_scan_keys == Some(key_fingerprint) {
+            return None;
+        }
+        if self.dashpay.private_scan_keys.is_some()
+            || self.dashpay.private_contact_requests_position > 0
+        {
+            self.rewind_private_store_read();
+        }
+        self.dashpay.private_scan_keys = Some(key_fingerprint);
+        Some(self.private_contact_requests_position_record())
+    }
+
+    /// The private read position as a backend stores it: with the
+    /// fingerprint of the keys it holds for, and whether a private payment of
+    /// this identity may be unresolved
+    /// ([`DashPayState::private_payments_unresolved`]).
+    ///
+    /// [`DashPayState::private_payments_unresolved`]: super::DashPayState::private_payments_unresolved
+    pub(crate) fn private_contact_requests_position_record(
+        &self,
+    ) -> PrivateContactRequestsPosition {
+        PrivateContactRequestsPosition {
+            position: self.dashpay.private_contact_requests_position,
+            key_fingerprint: self
+                .dashpay
+                .private_scan_keys
+                .unwrap_or_else(|| self.private_scan_key_fingerprint()),
+            private_payments_unresolved: self.dashpay.private_payments_unresolved(),
+        }
+    }
+
+    /// Restore the shielded address `contact`'s tracked private request to
+    /// this identity carries, as a backend persisted it
+    /// (`ContactChangeSet::private_shielded_addresses`): the loader's replay.
+    pub fn apply_private_shielded_address(&mut self, contact: Identifier, address: [u8; 43]) {
+        self.dashpay
+            .private_shielded_addresses
+            .insert(contact, address);
+    }
+
+    /// Replay a persisted removal of `contact`'s shielded address
+    /// (`ContactChangeSet::removed_private_shielded_addresses`).
+    pub fn apply_removed_private_shielded_address(&mut self, contact: &Identifier) {
+        self.dashpay.private_shielded_addresses.remove(contact);
+    }
+
+    /// Drop the private contact request scan state a load restored, for a
+    /// backend that does not attest it persists it: the store is read from
+    /// its start, and the addresses come back with the requests that carry
+    /// them. A restored hold on an unresolved private payment
+    /// ([`DashPayState::private_payments_unrestored`]) is kept: a backend that
+    /// handed one back kept it when it attested the capability, and dropping
+    /// it would let the identity publish the pair while the payment may still
+    /// execute. Kept, it holds until a restoration clears it.
+    ///
+    /// [`DashPayState::private_payments_unrestored`]: super::DashPayState::private_payments_unrestored
+    pub(crate) fn forget_private_contact_scan_state(&mut self) {
+        self.dashpay.private_contact_requests_position = 0;
+        self.dashpay.private_scan_keys = None;
+        self.dashpay.private_shielded_addresses.clear();
+    }
+
+    /// Record the shielded address `request`, a private request from
+    /// `request.sender_id`, carries, when it is the request tracked from that
+    /// contact: an older request ingest passed over does not replace the
+    /// address of the newer one.
+    pub(crate) fn note_private_shielded_address(
+        &mut self,
+        request: &ContactRequest,
+        shielded_address: Option<[u8; 43]>,
+    ) {
+        let tracked = self
+            .dashpay
+            .incoming_request(&request.sender_id)
+            .is_some_and(|tracked| {
+                tracked.came_privately()
+                    && tracked.account_reference == request.account_reference
+                    && tracked.encrypted_public_key == request.encrypted_public_key
+            });
+        if !tracked {
+            return;
+        }
+        match shielded_address {
+            Some(address) => {
+                self.dashpay
+                    .private_shielded_addresses
+                    .insert(request.sender_id, address);
+            }
+            None => {
+                self.dashpay
+                    .private_shielded_addresses
+                    .remove(&request.sender_id);
+            }
+        }
+    }
+
+    /// Reserve the one private request to `recipient` that may be in flight,
+    /// returning the attempt that holds it; `None` when one already is. See
+    /// [`DashPayState::private_reply_pending`](super::DashPayState::private_reply_pending).
+    pub(crate) fn reserve_private_reply(&mut self, recipient: Identifier) -> Option<u64> {
+        // A public request being sent to the recipient, or one unconfirmed,
+        // holds the pair too.
+        if self
+            .dashpay
+            .pending_private_replies
+            .contains_key(&recipient)
+            || self
+                .dashpay
+                .public_contact_request_claims
+                .contains_key(&recipient)
+            || self
+                .dashpay
+                .unconfirmed_public_requests
+                .contains_key(&recipient)
+        {
+            return None;
+        }
+        Some(self.insert_private_reply(recipient, None))
+    }
+
+    /// Claim the pair with `recipient` for a public request about to be
+    /// sent, under a new attempt it returns: until that attempt releases it
+    /// ([`Self::release_public_contact_request`]), no private request to the
+    /// recipient is reserved. Concurrent public sends each hold their own.
+    pub(crate) fn claim_public_contact_request(&mut self, recipient: Identifier) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay
+            .public_contact_request_claims
+            .entry(recipient)
+            .or_default()
+            .insert(attempt);
+        attempt
+    }
+
+    /// Release the claim `attempt` took ([`Self::claim_public_contact_request`]);
+    /// another attempt's claim on the pair stays.
+    pub(crate) fn release_public_contact_request(&mut self, recipient: &Identifier, attempt: u64) {
+        if let Some(claims) = self
+            .dashpay
+            .public_contact_request_claims
+            .get_mut(recipient)
+        {
+            claims.remove(&attempt);
+            if claims.is_empty() {
+                self.dashpay.public_contact_request_claims.remove(recipient);
+            }
+        }
+    }
+
+    /// Hold the pair with `recipient` for the public request `transition`
+    /// signs, whose broadcast may have been delivered, under a new attempt it
+    /// returns: until that attempt settles it
+    /// ([`Self::settle_unconfirmed_public_request`]), no other request to the
+    /// recipient is signed, public or private. A request already held for the
+    /// recipient is replaced, as only one can be signed while another is held.
+    pub(crate) fn hold_unconfirmed_public_request(
+        &mut self,
+        recipient: Identifier,
+        transition: StateTransition,
+        account_reference: u32,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay.unconfirmed_public_requests.insert(
+            recipient,
+            UnconfirmedPublicRequest {
+                attempt,
+                transition,
+                account_reference,
+                account_index,
+                contact_xpub,
+            },
+        );
+        attempt
+    }
+
+    /// Settle the unconfirmed public request `attempt` holds to `recipient`:
+    /// a proved read showed its document on Platform, or showed the
+    /// transition can no longer write it. Nothing when another attempt holds
+    /// the recipient by now.
+    pub(crate) fn settle_unconfirmed_public_request(
+        &mut self,
+        recipient: &Identifier,
+        attempt: u64,
+    ) {
+        if self
+            .dashpay
+            .unconfirmed_public_requests
+            .get(recipient)
+            .is_some_and(|held| held.attempt == attempt)
+        {
+            self.dashpay.unconfirmed_public_requests.remove(recipient);
+        }
+    }
+
+    /// Reserve `recipient` under a new attempt, `commitment` its entry's.
+    fn insert_private_reply(&mut self, recipient: Identifier, commitment: Option<[u8; 32]>) -> u64 {
+        let attempt = next_contact_request_attempt();
+        self.dashpay.pending_private_replies.insert(
+            recipient,
+            PendingPrivateReply {
+                attempt,
+                commitment,
+            },
+        );
+        attempt
+    }
+
+    /// Note the commitment of the entry `attempt` sealed its request to
+    /// `recipient` as, which the private sync settles it by. Nothing when the
+    /// recipient is not reserved by that attempt.
+    pub(crate) fn note_private_reply_commitment(
+        &mut self,
+        recipient: Identifier,
+        attempt: u64,
+        commitment: [u8; 32],
+    ) {
+        if let Some(pending) = self
+            .dashpay
+            .pending_private_replies
+            .get_mut(&recipient)
+            .filter(|pending| pending.attempt == attempt)
+        {
+            pending.commitment = Some(commitment);
+        }
+    }
+
+    /// Drop the reservation `attempt` holds on `recipient`: its request was
+    /// never paid for, or its payment definitely failed. Nothing when another
+    /// attempt holds the recipient by now.
+    pub(crate) fn release_private_reply(&mut self, recipient: &Identifier, attempt: u64) {
+        if self
+            .dashpay
+            .pending_private_replies
+            .get(recipient)
+            .is_some_and(|pending| pending.attempt == attempt)
+        {
+            self.dashpay.pending_private_replies.remove(recipient);
+        }
+    }
+
+    /// Release every pending request sealed as one of `commitments`, whose
+    /// payments' journal records were discharged (read back elsewhere, never
+    /// delivered, or proven expired), whichever attempt holds it.
+    pub(crate) fn release_discharged_private_replies(
+        &mut self,
+        commitments: &std::collections::BTreeSet<[u8; 32]>,
+    ) {
+        self.dashpay.pending_private_replies.retain(|_, pending| {
+            pending
+                .commitment
+                .is_none_or(|commitment| !commitments.contains(&commitment))
+        });
+    }
+
+    /// Settle the pending request to `recipient` sealed as `commitment`: the
+    /// private sync read that entry back and recorded it.
+    pub(crate) fn settle_private_reply(&mut self, recipient: &Identifier, commitment: &[u8; 32]) {
+        if self
+            .dashpay
+            .pending_private_replies
+            .get(recipient)
+            .is_some_and(|pending| pending.commitment == Some(*commitment))
+        {
+            self.dashpay.pending_private_replies.remove(recipient);
+        }
+    }
+
+    /// Reserve `recipient` again for the entry sealed as `commitment`, whose
+    /// payment is unconfirmed since before a restart. A recipient already
+    /// reserved keeps its attempt, and gets the commitment only when it has
+    /// none yet.
+    pub(crate) fn restore_private_reply(&mut self, recipient: Identifier, commitment: [u8; 32]) {
+        match self.dashpay.pending_private_replies.get_mut(&recipient) {
+            Some(pending) => {
+                pending.commitment.get_or_insert(commitment);
+            }
+            None => {
+                self.insert_private_reply(recipient, Some(commitment));
+            }
+        }
+    }
+
+    /// Hold `recipient` for the entry sealed as `commitment`, whose payment is
+    /// unconfirmed since before a restart, instead of the one the attempt
+    /// reserving it sealed: that one is not paid for, so only this entry can
+    /// settle the reservation.
+    pub(crate) fn retarget_private_reply(&mut self, recipient: Identifier, commitment: [u8; 32]) {
+        match self.dashpay.pending_private_replies.get_mut(&recipient) {
+            Some(pending) => pending.commitment = Some(commitment),
+            None => {
+                self.insert_private_reply(recipient, Some(commitment));
+            }
+        }
+    }
+
     /// Sent-direction counterpart of [`Self::advance_high_water_received`];
     /// same compare-and-advance semantics and caller contract.
     pub fn advance_high_water_sent(&mut self, snapshot: Option<u64>, max_fetched: Option<u64>) {
@@ -944,6 +1426,26 @@ mod tests {
             }
         }
         WalletPersister::new([0u8; 32], Arc::new(Failing))
+    }
+
+    /// The private scan state replayed last decides an identity's load-time
+    /// hold: a later record cleared lifts an earlier marked one.
+    #[test]
+    fn should_take_the_last_replayed_private_payment_marker() {
+        let mut managed = create_test_identity([0x31; 32]);
+        let marked = |unresolved: bool| PrivateContactRequestsPosition {
+            private_payments_unresolved: unresolved,
+            ..managed_position()
+        };
+        managed.apply_private_contact_requests_position(marked(true));
+        assert!(managed.dashpay().private_payments_unrestored());
+        managed.apply_private_contact_requests_position(marked(false));
+        assert!(!managed.dashpay().private_payments_unrestored());
+    }
+
+    /// A private scan state record with nothing marked.
+    fn managed_position() -> PrivateContactRequestsPosition {
+        create_test_identity([0x32; 32]).private_contact_requests_position_record()
     }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {
@@ -2139,5 +2641,75 @@ mod tests {
             Some(100),
             "replay un-ignore must not rewind the live cursor"
         );
+    }
+
+    /// A reservation belongs to the attempt that made it: once attempt A's
+    /// request is read back and settled and B reserves the recipient, A's
+    /// late cleanup neither releases B's reservation nor notes a commitment
+    /// on it.
+    #[test]
+    fn should_keep_a_later_attempts_reservation_from_an_earlier_attempts_cleanup() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let bob = Identifier::from([2u8; 32]);
+
+        let a = managed.reserve_private_reply(bob).expect("A reserves");
+        assert_eq!(managed.reserve_private_reply(bob), None, "one at a time");
+        managed.note_private_reply_commitment(bob, a, [0xA; 32]);
+        managed.settle_private_reply(&bob, &[0xA; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+
+        let b = managed.reserve_private_reply(bob).expect("B reserves");
+        assert_ne!(a, b);
+        managed.release_private_reply(&bob, a);
+        managed.note_private_reply_commitment(bob, a, [0xA; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&bob),
+            "A's cleanup leaves B's reservation"
+        );
+        managed.settle_private_reply(&bob, &[0xA; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&bob),
+            "A's entry does not settle B's request"
+        );
+
+        managed.note_private_reply_commitment(bob, b, [0xB; 32]);
+        managed.settle_private_reply(&bob, &[0xB; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+    }
+
+    /// A reservation restored from an unconfirmed payment takes the entry's
+    /// commitment; one already held keeps its attempt and gets a commitment
+    /// only when it has none, unless it is retargeted to the restored entry.
+    #[test]
+    fn should_restore_a_reservation_without_taking_over_a_held_one() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let bob = Identifier::from([2u8; 32]);
+        let carol = Identifier::from([3u8; 32]);
+
+        managed.restore_private_reply(bob, [0xB; 32]);
+        assert!(managed.dashpay().private_reply_pending(&bob));
+        assert_eq!(managed.reserve_private_reply(bob), None);
+        managed.settle_private_reply(&bob, &[0xB; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&bob));
+
+        let held = managed.reserve_private_reply(carol).expect("Carol is free");
+        managed.restore_private_reply(carol, [0xC; 32]);
+        managed.restore_private_reply(carol, [0xD; 32]);
+        managed.release_private_reply(&carol, held + 1);
+        assert!(
+            managed.dashpay().private_reply_pending(&carol),
+            "the attempt holding it is kept"
+        );
+        managed.settle_private_reply(&carol, &[0xD; 32]);
+        assert!(
+            managed.dashpay().private_reply_pending(&carol),
+            "only a missing commitment is filled in"
+        );
+
+        managed.retarget_private_reply(carol, [0xD; 32]);
+        managed.settle_private_reply(&carol, &[0xC; 32]);
+        assert!(managed.dashpay().private_reply_pending(&carol));
+        managed.settle_private_reply(&carol, &[0xD; 32]);
+        assert!(!managed.dashpay().private_reply_pending(&carol));
     }
 }

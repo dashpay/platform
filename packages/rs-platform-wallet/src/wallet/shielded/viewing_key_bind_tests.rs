@@ -528,6 +528,7 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
         )
         .expect("persist pending reservation");
@@ -1080,6 +1081,7 @@ async fn should_keep_wallet_and_coordinator_keys_when_guarded_registration_is_re
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                anchor_height: None,
             },
         )
         .unwrap();

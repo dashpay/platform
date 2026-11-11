@@ -8,9 +8,10 @@ use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
-    compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
-    compute_shielded_withdrawal_fee, is_allowed_identity_create_denomination,
+    compute_minimum_shielded_fee, compute_private_document_create_from_shielded_pool_fee,
+    compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
+    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    is_allowed_identity_create_denomination,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -50,6 +51,15 @@ pub enum ShieldedFeeKind {
     /// `compute_shielded_identity_top_up_fee`: IdentityTopUpFromShieldedPool (base plus the flat
     /// identity-balance write cost, the Unshield model with an identity as the output).
     IdentityTopUp,
+    /// `compute_private_document_create_from_shielded_pool_fee`:
+    /// PrivateDocumentCreateFromShieldedPool (base plus, per entry, its storage and the flat
+    /// processing fee). Nothing leaves the pool but the fee, so the amount selected for is 0.
+    PrivateDocumentCreate {
+        /// How many entries the transition appends.
+        entry_count: usize,
+        /// The bytes of each, the private type's `entrySize`.
+        entry_size: u32,
+    },
 }
 
 impl ShieldedFeeKind {
@@ -73,6 +83,15 @@ impl ShieldedFeeKind {
             ShieldedFeeKind::IdentityTopUp => {
                 compute_shielded_identity_top_up_fee(num_actions, platform_version)
             }
+            ShieldedFeeKind::PrivateDocumentCreate {
+                entry_count,
+                entry_size,
+            } => compute_private_document_create_from_shielded_pool_fee(
+                num_actions,
+                entry_count,
+                entry_size,
+                platform_version,
+            ),
         }
     }
 }
@@ -333,6 +352,34 @@ mod tests {
                 .expect("a member denomination with enough value must select");
         assert_eq!(selected.len(), 1);
         assert!(total >= denomination);
+    }
+
+    /// A private document create selects notes for its fee alone, the fee consensus pins for
+    /// its action count and its entries' number and size: one DashPay entry from two actions is
+    /// the 114,140,000-credit base plus the entry's storage and its processing fee.
+    #[test]
+    fn test_select_for_a_private_document_create_covers_its_fee_alone() {
+        let platform_version = PlatformVersion::latest();
+        let kind = ShieldedFeeKind::PrivateDocumentCreate {
+            entry_count: 1,
+            entry_size: 589,
+        };
+        let fee = kind.compute(2, platform_version).expect("the fee");
+        assert_eq!(
+            fee,
+            compute_private_document_create_from_shielded_pool_fee(2, 1, 589, platform_version)
+                .expect("the consensus fee")
+        );
+        assert_eq!(fee, 114_140_000 + (589 + 32) * 27_400 + 10_000_000);
+
+        let notes = vec![test_note(fee, 0), test_note(fee - 1, 1)];
+        let (selected, total, exact_fee) =
+            select_notes_with_fee(&notes, 0, 2, kind, platform_version).expect("covers the fee");
+        assert_eq!((selected.len(), total, exact_fee), (1, fee, fee));
+        assert!(matches!(
+            select_notes_with_fee(&notes[1..], 0, 2, kind, platform_version),
+            Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
+        ));
     }
 
     #[test]

@@ -6,6 +6,7 @@ use crate::drive::shielded::paths::{
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
@@ -97,7 +98,7 @@ impl Drive {
             },
             |batch| {
                 self.grove_apply_batch(
-                    GroveDbOpBatch { operations: batch },
+                    GroveDbOpBatch::from_operations(batch),
                     false,
                     Some(transaction),
                     &platform_version.drive,

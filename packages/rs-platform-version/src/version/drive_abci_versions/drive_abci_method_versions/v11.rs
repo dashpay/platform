@@ -4,7 +4,7 @@ use super::{
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciVotingMethodVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -98,11 +98,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// move the chain locked Core height record, the first time they see it, that Core's V24 is
 /// active there (the coinbase of that Core block has payload version 4 or higher), and
 /// `update_core_info` does not ask Core again once it is recorded (the masternode list's
-/// operator key normalization still asks when Core re-reports an operator key unchanged or
-/// re-encoded); in the asset unlocks it emits for withdrawals, described
-/// below; in the voter key of a masternode that returns to a voting address, described below; in
-/// the consensus evidence policy; and in the chain lock verification. The chain lock
-/// changes only work as a whole:
+/// operator key normalization reads the record too, as described below); in the asset unlocks
+/// it emits for withdrawals, described below; in the voter key of a masternode that returns to a
+/// voting address, described below; in the consensus evidence policy; and in the chain lock
+/// verification. The chain lock changes only work as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may
@@ -114,6 +113,16 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   above. `verify_chain_lock_locally` 1 leaves to Core chain locks that 0 rejected, so it is
 ///   only safe together with this check.
 /// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes.
+///
+/// The operator payouts: `core_based_updates.update_masternode_list` is 2 rather than 1, which
+/// keeps the operator payout and the revived height of an updated masternode's Core diff, reads
+/// from Core (`protx info` at the block's chain locked height) the payout of an operator key
+/// change Core prints without one, and reads whether Core's V24 is active from the record
+/// `update_core_info` 1 writes before it; and
+/// `core_based_updates.masternode_updates.update_operator_identity` is 1 rather than 0, which
+/// reconciles every TRANSFER key of the operator identity it updates with the payout. The two only
+/// work together: version 0 adds a second key with the data of a payout Core re-sends, which fails
+/// the block.
 ///
 /// The asset unlocks: `withdrawals.build_untied_withdrawal_transactions_from_documents` is 1
 /// rather than 0: a withdrawal pooled once `update_core_info` 1 has recorded Dash Core's V24 as
@@ -136,7 +145,9 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 1, // changed in v15: records the chain locked Core height at which V24 is first seen active
+        update_masternode_list: 2, // changed in v15: keeps a diff's operator payouts and revived heights, reads from Core the payout of an operator key change printed without one, reads V24 from the Core fork record
         masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+            update_operator_identity: 1, // changed in v15: reconciles the TRANSFER keys of the identity it updates with the operator payout, without fallbacks
             update_voter_identity: 1, // changed in v15: re-enables the voter key of the address a masternode returns to
             ..DRIVE_ABCI_METHOD_VERSIONS_V10
                 .core_based_updates
@@ -154,6 +165,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMet
     withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
         build_untied_withdrawal_transactions_from_documents: 1, // changed in v15: asset unlock payload version 2 once V24 is recorded as active
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.withdrawals
+    },
+    state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
+        execute_event: 2, // changed in v15: a paying gas sponsor owns the storage its batch writes
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.state_transition_processing
     },
     ..DRIVE_ABCI_METHOD_VERSIONS_V10
 };

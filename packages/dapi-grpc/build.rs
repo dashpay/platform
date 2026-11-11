@@ -111,7 +111,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 72] = [
+    const VERSIONED_REQUESTS: [&str; 75] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -142,6 +142,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
         "WaitForStateTransitionResultRequest",
+        "GetRecentStateTransitionStatusRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
@@ -184,6 +185,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
         "GetPrivateDocumentEntriesRequest",
+        "GetOwnerTransactionsInBlockRequest",
+        "GetBlocksRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -193,8 +196,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
+    // - "GetRecentStateTransitionStatusResponse"
     //
     // The following responses are excluded as they need custom proof handling:
+    // - "GetOwnerTransactionsInBlockResponse" (a Tenderdash block proof, not a GroveDB one)
+    // - "GetBlocksResponse" (a Tenderdash block proof in each block)
     // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests

@@ -246,9 +246,9 @@ mod tests {
     /// refuses to tell the coinbase payload version commits the same chain as a node whose Core
     /// answers. Only the V24 question fails here; the withdrawal scan still reads Core's credit
     /// pool in the blocks that move the chain locked height, as it does at protocol version 14.
-    /// The masternode list's operator key normalization still asks Core about V24 when Core
-    /// re-reports an operator key unchanged or re-encoded; this chain never does, so a node
-    /// whose Core refuses would fail such a block, as at protocol version 14.
+    /// The masternode list's operator key normalization reads the record too, which
+    /// `should_take_v24_from_the_core_fork_record` covers; this chain never re-reports an
+    /// operator key.
     #[stack_size(4 * 1024 * 1024)]
     #[test]
     async fn should_never_ask_core_about_v24_again_once_it_is_recorded_even_after_a_restart() {

@@ -226,6 +226,19 @@ impl CanRetry for dapi_grpc::tonic::Status {
             secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
         ))
     }
+
+    fn is_node_busy(&self) -> bool {
+        use dapi_grpc::tonic::Code;
+
+        match self.code() {
+            Code::ResourceExhausted => true,
+            // A node that asks to be tried again later is working: what was asked is not
+            // ready yet, such as the results of a block rs-dapi's node has just stored.
+            // A node that is down, or a proxy in front of one, sends no such header.
+            Code::Unavailable => self.metadata().contains_key("retry-after"),
+            _ => false,
+        }
+    }
 }
 
 /// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.
@@ -526,13 +539,34 @@ impl_transport_request_grpc!(
     get_document_history
 );
 
-impl_transport_request_grpc!(
-    platform_proto::BroadcastStateTransitionRequest,
-    platform_proto::BroadcastStateTransitionResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    broadcast_state_transition
-);
+impl TransportRequest for platform_proto::BroadcastStateTransitionRequest {
+    type Client = PlatformGrpcClient;
+    type Response = platform_proto::BroadcastStateTransitionResponse;
+    const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+    fn method_name(&self) -> &'static str {
+        "broadcast_state_transition"
+    }
+    fn classify_error(&self, error: &TransportError) -> super::RequestErrorClassification {
+        broadcast::classify_error(error)
+    }
+    fn execute_transport<'c>(
+        self,
+        client: &'c mut Self::Client,
+        settings: &AppliedRequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+        let mut request = self.into_request();
+        if !settings.timeout.is_zero() {
+            request.set_timeout(settings.timeout);
+        }
+        client
+            .broadcast_state_transition(request)
+            .map_err(TransportError::Grpc)
+            .map_ok(|response| response.into_inner())
+            .boxed()
+    }
+}
+
+mod broadcast;
 
 impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultRequest,
@@ -542,10 +576,22 @@ impl_transport_request_grpc!(
         timeout: Some(Duration::from_secs(30)),
         retries: Some(3),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         max_decoding_message_size: None,
     },
     wait_for_state_transition_result
+);
+
+// rpc getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetRecentStateTransitionStatusRequest,
+    platform_proto::GetRecentStateTransitionStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_state_transition_status
 );
 
 impl_transport_request_grpc!(
@@ -767,6 +813,44 @@ impl_transport_request_grpc!(
     get_private_document_entries
 );
 
+// rpc getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetOwnerTransactionsInBlockRequest,
+    platform_proto::GetOwnerTransactionsInBlockResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A block can hold 2 MiB, and every transition in it can belong to the one owner.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // rs-dapi refuses this method when too many are in progress. A busy node is not a
+        // failed one, and a ban would take it away from the client's other requests too.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_owner_transactions_in_block
+);
+
+// rpc getBlocks(GetBlocksRequest) returns (GetBlocksResponse);
+impl_transport_request_grpc!(
+    // A 5.0 node does not know the method.
+    needs_protocol_version: |_| Some(PROTOCOL_VERSION_OF_5_1);
+    platform_proto::GetBlocksRequest,
+    platform_proto::GetBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // A response can reach about 4 MB.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        // The gateway limits this method far below every other one. A ban lasts until the
+        // limit resets and would take the node away from the client's other requests too.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
+        ..RequestSettings::default()
+    },
+    get_blocks
+);
+
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
     names_nothing: |request| match &request.version {
@@ -951,6 +1035,7 @@ impl_transport_request_grpc!(
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
         ban_failed_address: None,
+        ban_busy_address: None,
         connect_timeout: None,
         retries: None,
         max_decoding_message_size: None,
