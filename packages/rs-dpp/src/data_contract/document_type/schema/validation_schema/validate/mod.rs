@@ -71,9 +71,13 @@ impl DocumentSchemaValidator {
         &self.schema
     }
 
-    /// The first violation of `instance` as the consensus error reporting it, with a value
-    /// nested past `max_value_depth` refused as the document validator's depth check refuses
-    /// it (`None` for no limit). The generation that built the validator checks it.
+    /// The first violation of `instance` as the consensus error reporting it. The walk's
+    /// recursion is bounded at `max_value_depth` value-nesting levels (`None` for no bound):
+    /// the walk refuses a value it descends past that depth, with the error the document
+    /// validator's depth check gives a too-deep value. That check, which runs before the
+    /// walk, is what bounds a document's own value depth; this bound guards the walk's
+    /// recursion for a caller that reaches it another way. The generation that built the
+    /// validator checks it.
     pub fn validate(
         &self,
         instance: &JsonValue,
