@@ -78,6 +78,35 @@ final class ExternalIdentityTopUpTests: XCTestCase {
         }
     }
 
+    // MARK: - Export selection
+
+    /// Each public wrapper hands its arguments to its own export: the
+    /// external top-up never reaches the managed one, which would refuse an
+    /// identity the wallet does not manage.
+    func testEachWrapperDispatchesToItsOwnExport() async throws {
+        let wallet = ManagedPlatformWallet(handle: 42, walletId: Data())
+        wallet.addressTopUpExports = .init(
+            managed: { _, _, _, _, _, outBalance in
+                outBalance!.pointee = 1
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            },
+            external: { _, _, _, _, _, outBalance in
+                outBalance!.pointee = 2
+                return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+            }
+        )
+
+        let external = try await wallet.topUpExternalIdentityFromAddresses(
+            identityId: identityId, inputs: [input], addressSigner: try signer()
+        )
+        let managed = try await wallet.topUpFromAddresses(
+            identityId: identityId, inputs: [input], addressSigner: try signer()
+        )
+
+        XCTAssertEqual(external, 2, "the external wrapper must call the external export")
+        XCTAssertEqual(managed, 1, "the managed wrapper must call the managed export")
+    }
+
     // MARK: - Marshalling through the shared helper
 
     func testMarshalsArgumentsAndReturnsTheBalanceTheExportWrites() async throws {

@@ -779,7 +779,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             identityId: identityId,
             inputs: inputs,
             addressSigner: addressSigner,
-            call: platform_wallet_top_up_from_addresses_with_signer
+            call: addressTopUpExports.managed
         )
     }
 
@@ -803,9 +803,20 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             identityId: identityId,
             inputs: inputs,
             addressSigner: addressSigner,
-            call: platform_wallet_top_up_external_identity_from_addresses_with_signer
+            call: addressTopUpExports.external
         )
     }
+
+    /// The two address-funded top-up exports each public wrapper hands its
+    /// arguments to. A stored property so tests can swap in fakes and see
+    /// which export a wrapper dispatches to.
+    struct AddressTopUpExports {
+        var managed: AddressTopUpCall = platform_wallet_top_up_from_addresses_with_signer
+        var external: AddressTopUpCall =
+            platform_wallet_top_up_external_identity_from_addresses_with_signer
+    }
+
+    var addressTopUpExports = AddressTopUpExports()
 
     /// Signature shared by the two address-funded top-up exports.
     typealias AddressTopUpCall = @Sendable (
@@ -859,11 +870,6 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let addressSignerHandle = addressSigner.handle
 
         return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
-            // Keepalive — see `registerIdentityFromAddresses` for
-            // rationale. The trampoline ctx pointer dangles unless
-            // the Swift owner stays alive across this detached work.
-            _ = addressSigner
-
             var idTuple: IdentityIdBytes = (
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -893,16 +899,24 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             var newBalance: UInt64 = 0
 
-            let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
-                withUnsafePointer(to: &idTuple) { idPtr in
-                    call(
-                        handle,
-                        idPtr,
-                        inputsBuf.baseAddress,
-                        UInt(inputsBuf.count),
-                        addressSignerHandle,
-                        &newBalance
-                    )
+            // `KeychainSigner` registers itself with the Rust signer as a
+            // `passUnretained` ctx and destroys the handle in `deinit`, and
+            // Swift lifetimes end at last use, not at scope end — a bare
+            // `_ = addressSigner` is no fence. `withExtendedLifetime` pins
+            // it across the whole synchronous FFI call (lookup, signing,
+            // broadcast and wait) and its buffer pinning.
+            let result = withExtendedLifetime(addressSigner) {
+                ffiInputs.withUnsafeBufferPointer { inputsBuf in
+                    withUnsafePointer(to: &idTuple) { idPtr in
+                        call(
+                            handle,
+                            idPtr,
+                            inputsBuf.baseAddress,
+                            UInt(inputsBuf.count),
+                            addressSignerHandle,
+                            &newBalance
+                        )
+                    }
                 }
             }
 

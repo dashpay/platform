@@ -1,6 +1,7 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ use crate::changeset::{
 };
 use crate::error::PlatformWalletError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::query_types::AddressInfos;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
@@ -582,13 +584,17 @@ impl PlatformWallet {
     /// a later sync reconciles.
     ///
     /// Returns the identity's new credit balance.
-    pub async fn top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
+    pub async fn top_up_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
-        inputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<Credits, PlatformWalletError> {
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
         let (address_infos, new_balance, proof_height) = self
             .identity
             .top_up_from_addresses(identity_id, inputs, address_signer, settings)
@@ -609,20 +615,49 @@ impl PlatformWallet {
     /// See [`IdentityWallet::top_up_external_from_addresses`]: the identity
     /// is fetched from Platform and never added to the identity manager.
     ///
+    /// Holds the wallet generation's lifecycle gate from the liveness check
+    /// through the fetch, signing, broadcast and reconciliation, so a
+    /// removal waits for it. A wallet removed or re-created since this
+    /// handle was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
+    /// fetched, signed or broadcast. A caller must not hold the gate.
+    ///
     /// Returns the identity's new credit balance.
-    pub async fn top_up_external_identity_from_addresses<
-        S: Signer<PlatformAddress> + Send + Sync,
-    >(
+    pub async fn top_up_external_identity_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
-        inputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
+        self.top_up_external_identity_with(self.identity.top_up_external_from_addresses(
+            identity_id,
+            inputs,
+            address_signer,
+            settings,
+        ))
+        .await
+    }
+
+    /// The external top-up around its submission `top_up` (not yet
+    /// started): the lifecycle gate and liveness check, then the
+    /// reconciliation of the spent addresses at the proof's height. A seam
+    /// so a test can hand in a confirmed result the mock SDK cannot prove.
+    pub(crate) async fn top_up_external_identity_with(
+        &self,
+        top_up: impl Future<Output = Result<(AddressInfos, Credits, u64), PlatformWalletError>>,
     ) -> Result<Credits, PlatformWalletError> {
-        let (address_infos, new_balance, proof_height) = self
-            .identity
-            .top_up_external_from_addresses(identity_id, inputs, address_signer, settings)
-            .await?;
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
+        let (address_infos, new_balance, proof_height) = top_up.await?;
         self.platform
             .reconcile_address_infos(&address_infos, proof_height, "external identity top-up")
             .await;

@@ -12,6 +12,8 @@ use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentit
 use dash_sdk::platform::Fetch;
 
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 
 use dash_sdk::query_types::AddressInfos;
@@ -54,18 +56,25 @@ impl IdentityWallet {
     /// # Arguments
     ///
     /// * `identity_id` - The identity to top up.
-    /// * `inputs` - Map of platform addresses to credit amounts to spend.
+    /// * `inputs` - Funding rows: platform addresses and the credits to
+    ///   spend from each. Rows naming the same address are summed; a sum
+    ///   that overflows is refused as an invalid parameter.
     /// * `address_signer` - Produces ECDSA signatures for the input
     ///   [`PlatformAddress`]es. Construction is the caller's concern —
     ///   seed-backed, hardware, FFI trampoline, whatever — the wallet
     ///   struct carries no key material itself.
-    pub async fn top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
+    pub async fn top_up_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
-        inputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
+    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
+        let inputs = funding_inputs(inputs)?;
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -124,16 +133,22 @@ impl IdentityWallet {
     ///
     /// Returns [`PlatformWalletError::IdentityNotFound`] before anything is
     /// signed or broadcast when Platform has no identity with this id.
+    /// `inputs` are funding rows as for [`Self::top_up_from_addresses`].
     ///
     /// [`PlatformWallet::top_up_external_identity_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_external_identity_from_addresses
-    pub async fn top_up_external_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
+    pub async fn top_up_external_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
-        inputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: I,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError> {
+    ) -> Result<(AddressInfos, Credits, u64), PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        I: IntoIterator<Item = (PlatformAddress, Credits)> + Send,
+    {
+        let inputs = funding_inputs(inputs)?;
         let identity = Identity::fetch(&self.sdk, *identity_id)
             .await?
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
@@ -158,13 +173,46 @@ impl IdentityWallet {
             .await
             .map_err(|e| {
                 preserve_signer_key_unavailable_or(e, |e| {
-                    promote_address_nonce_error(&e).unwrap_or_else(|| {
-                        PlatformWalletError::InvalidIdentityData(format!(
-                            "Failed to top up identity from addresses: {}",
-                            e
-                        ))
-                    })
+                    promote_address_nonce_error(&e)
+                        .or_else(|| no_inputs_as_invalid_parameter(&e))
+                        .unwrap_or_else(|| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Failed to top up identity from addresses: {}",
+                                e
+                            ))
+                        })
                 })
             })
     }
+}
+
+/// The input map of an address-funded top-up from its funding rows: rows
+/// naming the same address are one input of their sum. A sum that overflows
+/// is refused with [`PlatformWalletError::InvalidParameter`]. No rows make an
+/// empty map, which the SDK refuses as a transition without inputs.
+pub(crate) fn funding_inputs(
+    rows: impl IntoIterator<Item = (PlatformAddress, Credits)>,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    let mut inputs = BTreeMap::new();
+    for (address, credits) in rows {
+        let sum: &mut Credits = inputs.entry(address).or_default();
+        *sum = sum.checked_add(credits).ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(format!(
+                "the funding amounts for {address:?} overflow"
+            ))
+        })?;
+    }
+    Ok(inputs)
+}
+
+/// The SDK's refusal of a transition without inputs, reported as the
+/// caller's mistake it is.
+fn no_inputs_as_invalid_parameter(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
+    matches!(
+        error.consensus_error(),
+        Some(ConsensusError::BasicError(
+            BasicError::TransitionNoInputsError(_)
+        ))
+    )
+    .then(|| PlatformWalletError::InvalidParameter(error.to_string()))
 }
