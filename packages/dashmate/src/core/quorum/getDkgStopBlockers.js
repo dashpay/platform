@@ -132,7 +132,7 @@ function hasValidDkgInfoShape(dkgInfo) {
 function isValidUpcomingDkg(dkg) {
   return !!dkg
     && typeof dkg === 'object'
-    && isCount(dkg.blocksUntilStart)
+    && isCount(dkg.quorumHeight)
     && typeof dkg.known === 'boolean'
     && (!dkg.known || typeof dkg.isMember === 'boolean');
 }
@@ -148,10 +148,10 @@ function unreadable(source) {
  * proTxHash), any DKG of any type may include this node, so the restart
  * margin before the next one blocks with no known end.
  */
-function getImminentDkgBlocker(dkgInfo, height) {
+function getImminentDkgBlocker(dkgInfo, dkgInfoHeight) {
   return {
     reason: 'imminent',
-    from: height + dkgInfo.next_dkg - MIN_BLOCKS_BEFORE_DKG,
+    from: dkgInfoHeight + dkgInfo.next_dkg - MIN_BLOCKS_BEFORE_DKG,
     until: null,
   };
 }
@@ -163,7 +163,7 @@ function getImminentDkgBlocker(dkgInfo, height) {
  * not determine, blocks from the restart margin before its start until its
  * Commit phase ends; one of a type dashmate does not know is unreadable.
  */
-function getUpcomingDkgBlockers(upcomingDkgs, height) {
+function getUpcomingDkgBlockers(upcomingDkgs) {
   if (!Array.isArray(upcomingDkgs)) {
     return [unreadable('quorum dkginfo upcoming_dkgs')];
   }
@@ -184,7 +184,7 @@ function getUpcomingDkgBlockers(upcomingDkgs, height) {
       return [unreadable(`quorum dkginfo upcoming_dkgs llmqType ${dkg.llmqType}`)];
     }
 
-    const start = height + dkg.blocksUntilStart;
+    const start = dkg.quorumHeight;
 
     return [{
       reason: 'upcoming',
@@ -283,13 +283,12 @@ export function isDkgKeyCurrent(key, height) {
  * session it is not part of from one Core has not recorded yet.
  *
  * @param {Object} dkgInfo Result of `quorum dkginfo`.
- * @param {number} height Chain tip `dkgInfo` describes.
  * @return {Set<string>}
  */
-export function getAnnouncedNonMemberDkgs(dkgInfo, height) {
+export function getAnnouncedNonMemberDkgs(dkgInfo) {
   const upcomingDkgs = dkgInfo && dkgInfo.upcoming_dkgs;
 
-  if (!Array.isArray(upcomingDkgs) || !isCount(height)) {
+  if (!Array.isArray(upcomingDkgs)) {
     return new Set();
   }
 
@@ -297,7 +296,7 @@ export function getAnnouncedNonMemberDkgs(dkgInfo, height) {
     .filter((dkg) => isValidUpcomingDkg(dkg) && dkg.known && !dkg.isMember)
     .map((dkg) => [LLMQ_TYPES.find(({ id }) => id === dkg.llmqType), dkg])
     .filter(([llmq]) => llmq)
-    .map(([llmq, dkg]) => getDkgKey(llmq.name, dkg.quorumIndex, height + dkg.blocksUntilStart)));
+    .map(([llmq, dkg]) => getDkgKey(llmq.name, dkg.quorumIndex, dkg.quorumHeight)));
 }
 
 /**
@@ -368,6 +367,8 @@ function getUnrecordedSessionBlockers(dkgStatus, height, knownNonMemberDkgs) {
  * @param {Object} snapshot.dkgInfo Result of `quorum dkginfo`.
  * @param {Object} snapshot.dkgStatus Result of `quorum dkgstatus`.
  * @param {number} snapshot.height Chain tip both results describe.
+ * @param {number} [snapshot.dkgInfoHeight] The lowest tip `dkgInfo` may
+ *   describe, when it may be below `height`: Core counts `next_dkg` from it.
  * @param {number} snapshot.coreVersion Core's numeric `version`.
  * @param {Set<string>} [snapshot.knownNonMemberDkgs] DKGs Core announced
  *   without this node, from {@link getAnnouncedNonMemberDkgs}
@@ -377,6 +378,7 @@ export default function getDkgStopBlockers({
   dkgInfo,
   dkgStatus,
   height,
+  dkgInfoHeight = height,
   coreVersion,
   knownNonMemberDkgs = new Set(),
 }) {
@@ -390,8 +392,8 @@ export default function getDkgStopBlockers({
 
   const blockers = [
     ...(dkgInfo.upcoming_dkgs === undefined
-      ? [getImminentDkgBlocker(dkgInfo, height)]
-      : getUpcomingDkgBlockers(dkgInfo.upcoming_dkgs, height)),
+      ? [getImminentDkgBlocker(dkgInfo, dkgInfoHeight)]
+      : getUpcomingDkgBlockers(dkgInfo.upcoming_dkgs)),
     // Read on every Core version: Core 24.1 stops counting a running session
     // in active_dkgs when a mid-session ProUpServTx clears its proTxHash, but
     // the session keeps going and its record stays.

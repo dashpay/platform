@@ -197,9 +197,11 @@ describe('getDkgStopBlockers', () => {
         'an entry is null': [null],
         'an entry is missing known': [{ blocksUntilStart: 1, isMember: false }],
         'a known entry is missing isMember': [{ blocksUntilStart: 1, known: true }],
-        'an entry is missing blocksUntilStart': [{ known: true, isMember: false }],
-        'an entry has a negative blocksUntilStart': [
-          { blocksUntilStart: -1, known: true, isMember: false },
+        'an entry is missing quorumHeight': [{ blocksUntilStart: 1, known: true, isMember: false }],
+        'an entry has a negative quorumHeight': [
+          {
+            quorumHeight: -1, blocksUntilStart: 1, known: true, isMember: false,
+          },
         ],
         'an entry outside the margin is malformed': [
           { blocksUntilStart: MIN_BLOCKS_BEFORE_DKG + 1, known: true },

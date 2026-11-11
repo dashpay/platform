@@ -10,11 +10,12 @@ export const CHECK_INTERVAL_MS = 10000;
  * safety rule. The only acceptable exit is reaching a safe state, so
  * that `--safe` cannot silently fall back to an unsafe restart.
  *
- * DKGs this node takes part in are remembered from the polls that saw them
- * announced. Once a session starts Core no longer announces it, and Core
- * older than 24.1 reports it only after its DKG worker has computed the
- * session's members and recorded it, which can take a while at the start
- * of a rotation cycle. DKGs announced without this node are remembered too,
+ * DKGs this node takes part in, announced or running, are remembered until
+ * their Commit phase ends. Once a session starts Core no longer announces
+ * it, Core older than 24.1 reports it only after its DKG worker has computed
+ * the session's members and recorded it, which can take a while at the
+ * start of a rotation cycle, and a restarted Core keeps no record of it at
+ * all. DKGs announced without this node are remembered too,
  * so their sessions need not wait for a record that never comes, as long as
  * the chain they were announced on stays: a reorg replacing it may make this
  * node a member after all.
@@ -23,7 +24,7 @@ export const CHECK_INTERVAL_MS = 10000;
  * @return {Promise<void>}
  */
 export default async function waitForDKGWindowPass(rpcClient) {
-  const announcedDkgs = new Map();
+  const knownDkgs = new Map();
   let nonMemberDkgs = new Set();
   let lastTip;
 
@@ -50,14 +51,14 @@ export default async function waitForDKGWindowPass(rpcClient) {
         .filter((key) => isDkgKeyCurrent(key, check.height)));
 
       check.blockers
-        .filter(({ reason }) => reason === 'upcoming')
+        .filter(({ from, until }) => from !== null && until !== null)
         .forEach((dkg) => {
-          announcedDkgs.set(`${dkg.llmqType}:${dkg.quorumIndex}:${dkg.from}`, dkg);
+          knownDkgs.set(`${dkg.reason}:${dkg.llmqType}:${dkg.quorumIndex}:${dkg.from}`, dkg);
         });
 
-      announcedDkgs.forEach((dkg, key) => {
+      knownDkgs.forEach((dkg, key) => {
         if (dkg.until <= check.height) {
-          announcedDkgs.delete(key);
+          knownDkgs.delete(key);
         }
       });
     }
@@ -65,7 +66,7 @@ export default async function waitForDKGWindowPass(rpcClient) {
     // A remembered DKG blocks even while Core syncs: Core restarted into initial
     // block download may finish in time for it.
     if (check.status === 'safe'
-      && getBlockersAt([...announcedDkgs.values()], check.height).length === 0) {
+      && getBlockersAt([...knownDkgs.values()], check.height).length === 0) {
       return;
     }
 

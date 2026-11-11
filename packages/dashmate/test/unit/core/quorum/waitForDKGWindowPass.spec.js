@@ -44,7 +44,7 @@ describe('waitForDKGWindowPass', () => {
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [{
-          llmqType: 106, blocksUntilStart: 1, known: true, isMember: false,
+          llmqType: 106, quorumHeight: 1001, blocksUntilStart: 1, known: true, isMember: false,
         }],
       },
       dkgStatus: { session: [] },
@@ -65,7 +65,7 @@ describe('waitForDKGWindowPass', () => {
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [{
-          llmqType: 106, blocksUntilStart: 1, known: true, isMember: false,
+          llmqType: 106, quorumHeight: 1001, blocksUntilStart: 1, known: true, isMember: false,
         }],
       },
       dkgStatus: { session: [] },
@@ -90,7 +90,7 @@ describe('waitForDKGWindowPass', () => {
         active_dkgs: 0,
         next_dkg: 1,
         upcoming_dkgs: [{
-          llmqType: 106, blocksUntilStart: 1, known: true, isMember: true,
+          llmqType: 106, quorumHeight: 1001, blocksUntilStart: 1, known: true, isMember: true,
         }],
       },
       dkgStatus: { session: [] },
@@ -667,5 +667,34 @@ describe('waitForDKGWindowPass', () => {
     };
 
     await expectStillPolling(waiting, rpcClient);
+  });
+
+  it('should keep blocking a running session after Core restarts and forgets it', async function it() {
+    // Restarted Core keeps no session record, and Core 24.1 without its
+    // proTxHash yet reports no count or announcement for the session.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_1,
+      height: start + 3,
+      dkgInfo: { active_dkgs: 1, next_dkg: 21 },
+      dkgStatus: {
+        session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+      },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.height = start + 4;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 20 };
+    core.dkgStatus = { session: [] };
+    await expectStillPolling(waiting, rpcClient);
+
+    core.height = start + 10;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 14 };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
   });
 });

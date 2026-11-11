@@ -315,4 +315,44 @@ describe('checkMasternodeSafeToStop', () => {
 
     expect(state.result.status).to.equal('blocked');
   });
+
+  describe('Core syncing while a block connects during the reads', () => {
+    // Core counts next_dkg and blocksUntilStart from the tip dkginfo saw,
+    // which can be lower than the tip read after it.
+    const start = 1020;
+
+    beforeEach(() => {
+      core.isSyncing = true;
+      core.height = start - 7;
+      core.afterDkgStatus = () => {
+        core.height += 1;
+        core.afterDkgStatus = undefined;
+      };
+    });
+
+    it('should place an announced DKG at the start Core gives', async () => {
+      core.version = CORE_24_0_PATCH;
+      core.dkgInfo = {
+        active_dkgs: 0,
+        next_dkg: 7,
+        upcoming_dkgs: [{
+          llmqType: 106, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 7, known: true, isMember: true,
+        }],
+      };
+
+      const { result } = await startCheck();
+
+      expect(result.height).to.equal(start - 6);
+      expect(result.status).to.equal('blocked');
+    });
+
+    it('should count next_dkg from the earliest tip dkginfo may have seen', async () => {
+      core.dkgInfo = { active_dkgs: 0, next_dkg: 7 };
+
+      const { result } = await startCheck();
+
+      expect(result.height).to.equal(start - 6);
+      expect(result.status).to.equal('blocked');
+    });
+  });
 });

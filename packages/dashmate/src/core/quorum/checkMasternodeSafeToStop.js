@@ -64,6 +64,9 @@ async function readDkgSnapshot(rpcClient, ancestorHeight) {
 
   return {
     height: after.blocks,
+    // Core counts next_dkg from the tip dkginfo saw, which is no lower than
+    // this; it is below `height` only while syncing lets the tip move.
+    dkgInfoHeight: before.blocks,
     hash: after.bestblockhash,
     ancestorHash,
     isSyncing,
@@ -127,7 +130,7 @@ async function evaluate(rpcClient, coreVersion, knownNonMemberDkgs, ancestorHeig
     height,
     hash,
     ancestorHash: snapshot.ancestorHash,
-    nonMemberDkgs: getAnnouncedNonMemberDkgs(snapshot.dkgInfo, height),
+    nonMemberDkgs: getAnnouncedNonMemberDkgs(snapshot.dkgInfo),
     tip: { height, hash },
   };
 
