@@ -604,6 +604,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A spend run against a plan whose notes moved since keeps its own code
+    /// and typed case, apart from an unconfirmed spend (18): nothing was sent.
+    func testShouldReportAChangedShieldedPlanByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED
+        )
+        XCTAssertEqual(code, .errorShieldedPlanChanged)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "the shielded spend no longer selects the planned notes"
+        guard case .shieldedPlanChanged(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed plan-changed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

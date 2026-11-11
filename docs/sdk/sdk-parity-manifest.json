@@ -57,8 +57,13 @@
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_plan_spend": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_transfer_with_plan": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_unshield_with_plan": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
+    "platform_wallet_manager_shielded_withdraw_with_plan": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
@@ -1971,6 +1976,75 @@
           "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
           "id": "should_refuse_drain_on_a_buffered_persistence_backend",
           "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.spend_plan",
+      "title": "Plan a shielded spend with its exact fee and spend against that plan (code 77)",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_plan_spend",
+        "platform_wallet_manager_shielded_transfer_with_plan",
+        "platform_wallet_manager_shielded_unshield_with_plan",
+        "platform_wallet_manager_shielded_withdraw_with_plan",
+        "platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.shieldedPlanSpend returns a ShieldedSpendPlan (kind, amount, exact fee, total input and debited, note count, digest) for an exact amount or a sweep, and shieldedTransfer, shieldedUnshield, shieldedWithdraw and shieldedIdentityTopUpFromPool take an optional plan whose digest goes to the _with_plan export; code 77 is typed as PlatformWalletError.shieldedPlanChanged (ErrorHandlingTests pin). A plan is read-only, so there is nothing to resume after a restart. SwiftExampleApp does not plan its shielded spends."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Code 77 maps to DashSdkError.PlatformWallet.ShieldedPlanChanged (DashSdkErrorTest), but no JNI wrapper plans a shielded spend or spends against a plan."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedSpendPlanTests.swift",
+          "id": "testShouldDecodeEveryFieldOfThePlan",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/ShieldedSpendPlanTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedSpendPlanTests.swift",
+          "id": "testShouldPassAPlanToEverySpendsFFI",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/ShieldedSpendPlanTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testShouldReportAChangedShieldedPlanByItsOwnCode",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/ErrorHandlingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_plan_whose_notes_moved_and_reserve_nothing",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_a_plan_whose_notes_moved_and_reserve_nothing",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_reject_a_spend_plan_with_null_pointers_or_an_unknown_kind",
+          "command": "cargo test -p platform-wallet-ffi --features platform-wallet-ffi/shielded --lib should_reject_a_spend_plan_with_null_pointers_or_an_unknown_kind",
           "covers_restart": false
         }
       ]
