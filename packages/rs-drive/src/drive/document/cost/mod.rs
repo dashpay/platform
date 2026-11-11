@@ -393,8 +393,8 @@ pub fn document_create_cost(
 }
 
 /// Refuses a platform version whose insert methods are not the ones the
-/// estimate mirrors (those of protocol version 14): another version of any
-/// of them may write other elements.
+/// estimate mirrors (those of protocol versions 14 and 15): another version
+/// of any of them may write other elements.
 /// `add_reference_for_index_level_for_contract_operations` 1 (protocol version
 /// 15) writes the elements 0 does and differs only in how Drive's own fee
 /// estimate describes a summable index's entries, so both are mirrored.
@@ -412,8 +412,10 @@ fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<
             document.insert.add_document_to_primary_storage,
         ),
         (
+            // 3 differs from 2 only for a document whose time range buckets
+            // have expired, which a document created now has none of.
             "add_indices_for_top_index_level_for_contract_operations",
-            &[2][..],
+            &[2, 3][..],
             document
                 .insert
                 .add_indices_for_top_index_level_for_contract_operations,

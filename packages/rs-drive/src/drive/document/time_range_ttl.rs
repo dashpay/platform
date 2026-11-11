@@ -3,12 +3,17 @@
 //!
 //! Three rules, one definition each:
 //!
-//! - **Writes never target expired buckets.** The insert path cannot
-//!   produce one by construction (`$createdAt` &co. are consensus-assigned
-//!   and validation requires `ttl >= range`), and the update path filters
-//!   its new entry keys through [`live_time_range_entry_keys`] — an update
-//!   of a document whose windows have all expired simply leaves it with no
-//!   entries under the TTL'd index, and never resurrects a dropped bucket.
+//! - **Writes never target expired buckets.** A created document cannot
+//!   name one (`$createdAt` &co. are consensus-assigned and validation
+//!   requires `ttl >= range`), but an insert is not always a create: the
+//!   winner of a contest is inserted when the contest ends, with the
+//!   timestamps it was submitted with. From protocol version 15 the insert
+//!   path filters its entry keys through [`live_time_range_index_keys`]
+//!   (before it, such an insert writes into the expired bucket), and the
+//!   update path filters its new entry keys through
+//!   [`live_time_range_entry_keys`]. A write of a document whose windows
+//!   have all expired simply leaves it with no entries under the TTL'd
+//!   index, and never resurrects a dropped bucket.
 //! - **Removals touch an expired bucket only while it still stands.** The
 //!   TTL drop is bucket-granular and lazy, so between a bucket's expiry
 //!   and its drop a delete (or key-changing update) of one of its
@@ -45,6 +50,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::push_drive_operation_result;
 use crate::util::grove_operations::DirectQueryType;
+use crate::util::object_size_info::DriveKeyInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -82,6 +88,30 @@ pub(crate) fn live_time_range_entry_keys(
     entry_keys
         .into_iter()
         .filter(|key| entry_key_bucket_start(key).is_none_or(|start| start >= horizon))
+        .collect()
+}
+
+/// [`live_time_range_entry_keys`] for the insert walker's keys. A key that
+/// is only a size (the estimated cost path) always passes, so a dry run
+/// keeps every bucket and stays the upper bound.
+pub(crate) fn live_time_range_index_keys<'a>(
+    transform: &TimeRangeTransform,
+    index_keys: Vec<DriveKeyInfo<'a>>,
+    block_time_ms: u64,
+) -> Vec<DriveKeyInfo<'a>> {
+    let Some(horizon) = transform.expiry_horizon_ms(block_time_ms) else {
+        return index_keys;
+    };
+    index_keys
+        .into_iter()
+        .filter(|index_key| {
+            let entry_key = match index_key {
+                DriveKeyInfo::Key(key) => key.as_slice(),
+                DriveKeyInfo::KeyRef(key) => key,
+                DriveKeyInfo::KeySize(_) => return true,
+            };
+            entry_key_bucket_start(entry_key).is_none_or(|start| start >= horizon)
+        })
         .collect()
 }
 

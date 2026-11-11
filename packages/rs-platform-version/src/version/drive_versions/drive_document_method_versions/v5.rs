@@ -34,6 +34,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   of a single document at a block time stops above the pointer to the latest version, and
 ///   the lookup of a document that may be contested states its cap itself and is refused at a
 ///   block time.
+/// * `insert.add_indices_for_top_index_level_for_contract_operations` is 3: an insert writes no
+///   entry in a bucket of a time range index with a `ttl` that has expired at the block time,
+///   as an update already does not.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
@@ -49,6 +52,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         insert: DriveDocumentInsertMethodVersions {
+            add_indices_for_top_index_level_for_contract_operations: 3, // changed: no entry in an expired time range bucket
             add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
