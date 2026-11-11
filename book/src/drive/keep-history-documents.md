@@ -62,9 +62,9 @@ count matters because a history written before protocol 15 can have gaps
 read is only meaningful when the retained revisions number one through the
 deleted revision without a gap, and the record is where that is decided.
 
-The reserved key `1` and the whole lifecycle tree are per type and
-unflagged, so no single deleter pays for structure nobody refunds; each
-record inside it carries the deleter's flags and is what an erase refunds.
+The lifecycle tree is per type and unflagged. The first delete creates this
+shared container; each record inside it carries its payer's storage flags,
+which determine who receives its removal refund.
 
 ## Contract grammar
 
@@ -109,7 +109,7 @@ the type declared it when registered under protocol 15.
 | **Active** | reference | none | every revision |
 | **Deleted** | none | deleted-at only | every revision retained at deletion |
 | **Erasing** | none | deleted-at and erasing-from | shrinking, newest revisions removed first |
-| **Absent** | none | none | none; the id is free again |
+| **Absent** | none | none | none; no retained state or receipt |
 
 `DocumentLifecycleState` in `packages/rs-drive/src/drive/document/lifecycle/fetch`
 is the one read that classifies a document. It is deliberately not folded
@@ -133,7 +133,9 @@ Two properties follow from the design:
   (`DocumentNotFoundError`, exactly as for an id that holds nothing) rather
   than a deeper removal.
 - **A deleted document keeps its id.** Creating over it is refused in
-  transition validation and, independently, in the storage writer:
+  transition validation because ids include the identity-contract nonce. A
+  fresh nonce derives a different id. Independently, the storage writer refuses
+  insertion over retained revisions:
   appending to a history that still retains revisions would silently merge
   a new document into a deleted one's record, and the writer's check is
   what covers callers that never pass through validation.
@@ -169,7 +171,7 @@ may submit would let a continuation move tokens.
 **Chunks.** One transition removes at most
 `max_document_revisions_erased_per_transition` revisions (100 from
 `SYSTEM_LIMITS_V5`), newest first, so a partial erasure leaves the oldest
-content behind and the retained sequence stays contiguous from one. The
+content behind and preserves any existing revision gaps. The
 enumeration reads one revision more than it may remove so that it knows,
 before emitting anything, whether this chunk is the last one:
 
@@ -222,15 +224,15 @@ serialized document, and a `Lifecycle` message:
 | `erasing_started_at_ms` | zero unless an authorized erasure has started |
 | `erasing_from_time_ms`, `erasing_from_revision` | the newest revision retained when the erasure started |
 
-The state is derived identically in Drive's fetch and in the proof verifier,
-and the verifier checks every claimed field against the proof.
+Unproved responses carry these entries and lifecycle fields explicitly.
+Proved responses carry only the signed proof object; the verifier derives
+the page and every lifecycle field from authenticated state.
 
-**Proof.** The proved response carries one proof object whose grovedb proof
-holds two GroveDB proofs in a small versioned envelope, because they answer
-two queries GroveDB cannot merge: the offset-paginated proof over the
-document's history tree, and the exact-key proof over the current pointer,
-the lifecycle record and the history tree's count. Both commit to the same
-root hash, signed once.
+**Proof.** One merged GroveDB proof authenticates the history page, current
+pointer, lifecycle record and history count against one signed root. Version 1
+has no request offset: its cursor and revision selectors are expressed in the
+history branch, with pagination limits confined to that branch. A legacy
+two-proof envelope is not accepted.
 
 ## Client surfaces
 
