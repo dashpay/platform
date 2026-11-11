@@ -1598,6 +1598,15 @@ impl NetworkShieldedCoordinator {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
         }
 
+        // Identity creates held for their outcome read whose notes this scan
+        // (or an earlier one) saw spent: the scan kept their records and left
+        // their rows alone, as their notes spent do not show whether the
+        // identity was created. Each is read at the node it was delivered to.
+        if !cancelled {
+            self.classify_spent_identity_creates(&subwallets, cancel)
+                .await;
+        }
+
         // Identity-funded shields have no input nullifiers and use an
         // outputs-only empty-tree anchor, so the ordinary stale-reservation
         // pass can never schedule them. After activity derivation has first
@@ -2347,6 +2356,14 @@ impl NetworkShieldedCoordinator {
                 .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
                 .collect();
             let confirmations = derived.confirmations;
+            // Identity creates held for their outcome read: their outputs seen
+            // on chain do not show whether the identity was created, so their
+            // rows and records wait for that read.
+            let held: HashSet<[u8; 32]> = redrives
+                .iter()
+                .filter(|redrive| redrive.outcome_endpoint.is_some())
+                .map(|redrive| redrive.activity_id)
+                .collect();
             for entry in derived.new_entries {
                 let overlapped: std::collections::BTreeSet<[u8; 32]> = entry
                     .note_cmxs
@@ -2375,7 +2392,9 @@ impl NetworkShieldedCoordinator {
                     })?
                     .into_iter()
                     .filter_map(|(owner, redrive)| {
-                        (!redrive.nullifiers.is_empty() && redrive.activity_id == entry.id)
+                        (!redrive.nullifiers.is_empty()
+                            && redrive.outcome_endpoint.is_none()
+                            && redrive.activity_id == entry.id)
                             .then_some(owner)
                     })
                     .collect();
@@ -2404,6 +2423,9 @@ impl NetworkShieldedCoordinator {
                         crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                     })?;
                 let Some(stored) = stored else { continue };
+                if held.contains(&entry_id) {
+                    continue;
+                }
                 // Chain truth wins: a row marked Failed by a client-side
                 // post-broadcast error whose outputs are later observed
                 // on-chain was not actually a failure — upgrade it. (We
@@ -2464,6 +2486,31 @@ impl NetworkShieldedCoordinator {
             }
         }
         Ok(())
+    }
+
+    /// Settle the identity creates of `subwallets` held for their outcome
+    /// read whose notes the store holds spent
+    /// ([`super::operations::classify_spent_identity_creates`]), each with
+    /// its wallet's persister.
+    async fn classify_spent_identity_creates(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        cancel: &CancellationToken,
+    ) {
+        for (id, _) in subwallets {
+            if cancel.is_cancelled() {
+                return;
+            }
+            let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
+            super::operations::classify_spent_identity_creates(
+                &self.sdk,
+                &self.store,
+                persister.as_ref(),
+                *id,
+                cancel,
+            )
+            .await;
+        }
     }
 
     /// Build a pass summary in which every registered wallet is
@@ -2927,6 +2974,7 @@ mod tests {
         .into();
         (
             PendingRedrive {
+                outcome_endpoint: None,
                 activity_id: compute_activity_id(&cmxs),
                 anchor: [1; 32],
                 nullifiers: vec![],
@@ -3357,6 +3405,480 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // ── Identity creates held for their outcome read, across scan passes ──
+    //
+    // The scan itself reads Platform; these tests stand in for it with the
+    // store writes it makes (`mark_spent` for the input it sees spent, the
+    // output note it receives), then run the pass's own post-scan steps in
+    // its order: `derive_activity_into_changeset`, then
+    // `classify_spent_identity_creates`.
+
+    /// The node the held identity creates are delivered to.
+    const HELD_ENDPOINT: &str = "http://127.0.0.1:3011";
+    /// The identity create's identity, real input, output and activity row.
+    const CREATE_IDENTITY: [u8; 32] = [0x44; 32];
+    const CREATE_INPUT: [u8; 32] = [0x51; 32];
+    const CREATE_OUTPUT: [u8; 32] = [0x52; 32];
+    const CREATE_ROW: [u8; 32] = [0x53; 32];
+    const CREATE_ANCHOR: [u8; 32] = [0x54; 32];
+
+    /// The identity create spending the wallet's note `CREATE_INPUT`, padded
+    /// with an explicit dummy spend to two actions.
+    fn held_identity_create_transition() -> StateTransition {
+        use dpp::address_funds::PlatformAddress;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+
+        let action = |nullifier, cmx| SerializedAction {
+            nullifier,
+            rk: [2; 32],
+            cmx,
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        IdentityCreateFromShieldedPoolTransitionV0 {
+            public_keys: vec![],
+            denomination: 1_000_000,
+            actions: vec![
+                action(CREATE_INPUT, CREATE_OUTPUT),
+                action([0xD1; 32], [0xD2; 32]),
+            ],
+            anchor: CREATE_ANCHOR,
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            send_to_address_on_creation_failure: PlatformAddress::P2pkh([7; 20]),
+            identity_id: CREATE_IDENTITY.into(),
+        }
+        .into()
+    }
+
+    /// A mock SDK whose address list holds `HELD_ENDPOINT`, and whose proven
+    /// reads show the create's nullifiers spent and its identity absent, or
+    /// `created`. Every answer of a mock SDK is at height 0.
+    async fn sdk_reading_held_create(created: bool) -> dash_sdk::Sdk {
+        use dash_sdk::query_types::{
+            MostRecentShieldedAnchor, NoParamQuery, ShieldedAnchors, ShieldedNullifierStatus,
+            ShieldedNullifierStatuses, ShieldedNullifiersQuery,
+        };
+        use dpp::identity::Identity;
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        let mut addresses = sdk.address_list().clone();
+        addresses.add(HELD_ENDPOINT.parse().expect("an address"));
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![CREATE_ANCHOR])))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                NoParamQuery {},
+                Some(MostRecentShieldedAnchor(CREATE_ANCHOR)),
+            )
+            .await
+            .unwrap();
+        let nullifiers = vec![CREATE_INPUT, [0xD1; 32]];
+        let statuses = nullifiers
+            .iter()
+            .map(|nullifier| ShieldedNullifierStatus {
+                nullifier: *nullifier,
+                is_spent: true,
+            })
+            .collect();
+        sdk.mock()
+            .expect_fetch(
+                ShieldedNullifiersQuery(nullifiers),
+                Some(ShieldedNullifierStatuses(statuses)),
+            )
+            .await
+            .unwrap();
+        let identity = created.then(|| {
+            Identity::new_with_id_and_keys(
+                CREATE_IDENTITY.into(),
+                BTreeMap::new(),
+                dpp::version::PlatformVersion::latest(),
+            )
+            .unwrap()
+        });
+        sdk.mock()
+            .expect_fetch(dpp::prelude::Identifier::from(CREATE_IDENTITY), identity)
+            .await
+            .unwrap();
+        sdk
+    }
+
+    /// [`coordinator_with_one_wallet`] on `sdk`, over the store under `dir`
+    /// (opened again when it exists).
+    async fn coordinator_on(
+        dir: &std::path::Path,
+        sdk: dash_sdk::Sdk,
+    ) -> NetworkShieldedCoordinator {
+        std::fs::create_dir_all(dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut account_views = BTreeMap::new();
+        account_views.insert(0u32, views);
+        let persister = WalletPersister::new([0x11; 32], Arc::new(NoPlatformPersistence));
+        coordinator
+            .register_wallet([0x11; 32], account_views, persister)
+            .await
+            .expect("register wallet");
+        coordinator
+    }
+
+    /// The identity create, delivered and unconfirmed: its note, its
+    /// pending activity row and its recovery record, held for its outcome
+    /// read at `HELD_ENDPOINT` when `held`.
+    async fn arm_identity_create(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        held: bool,
+    ) {
+        arm_identity_create_row_and_input(coordinator, id).await;
+        let mut store = coordinator.store().write().await;
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: CREATE_ROW,
+                    anchor: CREATE_ANCHOR,
+                    nullifiers: vec![CREATE_INPUT],
+                    st_bytes: held_identity_create_transition()
+                        .serialize_to_bytes()
+                        .unwrap(),
+                    attempts: 0,
+                    anchor_height: Some(5),
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    outcome_endpoint: held.then(|| HELD_ENDPOINT.to_string()),
+                },
+            )
+            .unwrap();
+    }
+
+    /// The create's input note and its pending activity row.
+    async fn arm_identity_create_row_and_input(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+    ) {
+        use crate::wallet::shielded::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+        };
+
+        let mut store = coordinator.store().write().await;
+        let mut input = test_note(CREATE_INPUT, 0, false);
+        input.cmx = [0x56; 32];
+        store.save_note(id, &input).unwrap();
+        store
+            .save_activity(
+                id,
+                &ShieldedActivityEntry {
+                    id: CREATE_ROW,
+                    kind: ShieldedActivityKind::ShieldedSpend,
+                    direction: ShieldedDirection::Out,
+                    amount: 1_000_000,
+                    fee: Some(0),
+                    counterparty: None,
+                    memo: None,
+                    block_height: None,
+                    status: ShieldedActivityStatus::Pending,
+                    created_at_ms: 1,
+                    min_note_position: None,
+                    note_cmxs: vec![CREATE_OUTPUT],
+                    spent_nullifiers: vec![CREATE_INPUT],
+                },
+            )
+            .unwrap();
+    }
+
+    /// What the host's snapshot restores after a restart for the create the
+    /// scan saw: its input spent, its output, its pending row.
+    async fn restore_host_snapshot(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
+        arm_identity_create_row_and_input(coordinator, id).await;
+        scan_sees_identity_create(coordinator, id, 40).await;
+    }
+
+    /// What a scan that reaches the create's block writes: its input seen
+    /// spent, its output received at `height`.
+    async fn scan_sees_identity_create(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+        height: u64,
+    ) {
+        let mut store = coordinator.store().write().await;
+        store.mark_spent(id, &CREATE_INPUT).unwrap();
+        let mut output = test_note([0x55; 32], 1, false);
+        output.cmx = CREATE_OUTPUT;
+        output.block_height = height;
+        store.save_note(id, &output).unwrap();
+    }
+
+    /// The pass's post-scan steps, in its order.
+    async fn post_scan_steps(coordinator: &NetworkShieldedCoordinator, id: SubwalletId) {
+        let keys = coordinator.accounts.read().await[&id].clone();
+        let subwallets = vec![(id, keys)];
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        coordinator
+            .classify_spent_identity_creates(&subwallets, &CancellationToken::new())
+            .await;
+    }
+
+    /// The create's activity row: its status and height.
+    async fn create_row(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+    ) -> (
+        crate::wallet::shielded::activity::ShieldedActivityStatus,
+        Option<u64>,
+    ) {
+        let row = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &CREATE_ROW)
+            .unwrap()
+            .expect("the row");
+        (row.status, row.block_height)
+    }
+
+    /// Without a node to read its outcome at, the create is what the scan
+    /// makes of it, as before: its record goes with its notes and its
+    /// outputs seen confirm its row. This is the sequence the held creates
+    /// below are protected from.
+    #[tokio::test]
+    async fn should_leave_an_unheld_identity_create_to_the_scan() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("unheld_create");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, false).await;
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Confirmed, Some(40))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The scan reaches a held create before anything settles it: the scan
+    /// keeps its record and its pending row, the pass reads its outcome at
+    /// its node, and the proven outcome stands through later scans.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_the_scan_saw_first() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_scan_first");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        let keys = coordinator.accounts.read().await[&id].clone();
+        coordinator
+            .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap()
+                .len(),
+            1,
+            "the scan keeps the held record"
+        );
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Pending, None),
+            "and leaves its row to the outcome read"
+        );
+
+        post_scan_steps(&coordinator, id).await;
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Failed, Some(0))
+        );
+        // A later pass sees the same outputs.
+        scan_sees_identity_create(&coordinator, id, 41).await;
+        post_scan_steps(&coordinator, id).await;
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Failed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A row the scan already confirmed with a height (as it did before the
+    /// create was held) gives way to the proven outcome.
+    #[tokio::test]
+    async fn should_let_a_proven_outcome_win_over_a_scan_confirmed_row() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+        use crate::wallet::shielded::activity_recorder::with_status;
+
+        let dir = temp_dir("held_confirmed_row");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+        {
+            let mut store = coordinator.store().write().await;
+            let row = store
+                .get_activity_by_entry_id(id, &CREATE_ROW)
+                .unwrap()
+                .unwrap();
+            store
+                .save_activity(
+                    id,
+                    &with_status(&row, ShieldedActivityStatus::Confirmed, Some(40)),
+                )
+                .unwrap();
+        }
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Failed, Some(0))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A create settled before the scan reaches it (the direct path proved
+    /// its notes spent and its identity absent): its row stays failed when
+    /// the scan later sees its outputs.
+    #[tokio::test]
+    async fn should_keep_a_settled_identity_create_failed_when_the_scan_sees_its_outputs() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_settled_first");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, true).await;
+
+        super::super::operations::settle_inputs_consumed_identity_create(
+            coordinator.store(),
+            None,
+            id.wallet_id,
+            id,
+            Some(&CREATE_ROW),
+            &[CREATE_INPUT],
+            7,
+        )
+        .await;
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .pending_redrives(id)
+            .unwrap()
+            .is_empty());
+
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::Failed, Some(7))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create the scan saw before a restart: the reopened store keeps
+    /// its record and node, and the next pass settles it, for good. A create
+    /// whose identity the node proves is confirmed instead.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_after_a_restart() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        for created in [false, true] {
+            let dir = temp_dir(&format!("held_restart_{created}"));
+            let id = SubwalletId::new([0x11; 32], 0);
+            {
+                let coordinator = coordinator_on(&dir, dash_sdk::Sdk::new_mock()).await;
+                arm_identity_create(&coordinator, id, true).await;
+                scan_sees_identity_create(&coordinator, id, 40).await;
+                let keys = coordinator.accounts.read().await[&id].clone();
+                coordinator
+                    .derive_activity_into_changeset(
+                        &[(id, keys)],
+                        &mut ShieldedChangeSet::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
+
+            let coordinator = coordinator_on(&dir, sdk_reading_held_create(created).await).await;
+            // The host's snapshot restores the notes and the pending row (the
+            // store keeps neither across a restart); the spent input is
+            // replayed through `mark_spent`, as the restore does.
+            restore_host_snapshot(&coordinator, id).await;
+            let records = coordinator
+                .store()
+                .read()
+                .await
+                .pending_redrives(id)
+                .unwrap();
+            assert_eq!(records.len(), 1, "created {created}");
+            assert_eq!(records[0].outcome_endpoint.as_deref(), Some(HELD_ENDPOINT));
+            post_scan_steps(&coordinator, id).await;
+            let expected = if created {
+                ShieldedActivityStatus::Confirmed
+            } else {
+                ShieldedActivityStatus::Failed
+            };
+            assert_eq!(
+                create_row(&coordinator, id).await.0,
+                expected,
+                "created {created}"
+            );
+            let path = coordinator.db_path.clone();
+            drop(coordinator);
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .unwrap()
+                    .pending_redrives(id)
+                    .unwrap()
+                    .is_empty(),
+                "created {created}: settled for good"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -3501,6 +4023,7 @@ mod tests {
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let guard_id = SubwalletId::new([0x11; 32], 0);
         let identity_guard = super::super::store::PendingRedrive {
+            outcome_endpoint: None,
             activity_id: [0x31; 32],
             anchor: [0x32; 32],
             nullifiers: vec![],
@@ -3878,6 +4401,7 @@ mod tests {
             .expect("old account")
             .clone();
         let identity_guard = super::super::store::PendingRedrive {
+            outcome_endpoint: None,
             activity_id: [0x71; 32],
             anchor: [0x72; 32],
             nullifiers: vec![],
@@ -3992,6 +4516,7 @@ mod tests {
             .arm_redrive(
                 id,
                 super::super::store::PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [0x71; 32],
                     anchor: [0x72; 32],
                     nullifiers: vec![],
@@ -4493,6 +5018,7 @@ mod tests {
                     .arm_redrive(
                         id,
                         PendingRedrive {
+                            outcome_endpoint: None,
                             activity_id: *activity,
                             anchor: *anchor,
                             nullifiers: vec![*nullifier],
@@ -4598,6 +5124,7 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        outcome_endpoint: None,
                         activity_id: activity,
                         anchor,
                         nullifiers: vec![nullifier],
@@ -4697,6 +5224,7 @@ mod tests {
                 .arm_redrive(
                     id,
                     PendingRedrive {
+                        outcome_endpoint: None,
                         activity_id: activity,
                         anchor,
                         nullifiers: vec![nullifier],

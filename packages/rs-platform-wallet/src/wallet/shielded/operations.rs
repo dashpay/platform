@@ -33,8 +33,8 @@ use super::store::{
     SubwalletId,
 };
 use crate::broadcast_outcome::{
-    broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
-    BroadcastDelivery,
+    broadcast_tracking_delivery, broadcast_tracking_endpoint, broadcast_was_refused,
+    carries_consensus_rejection, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -1013,6 +1013,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
         .arm_redrive(
             id,
             PendingRedrive {
+                outcome_endpoint: None,
                 activity_id: entry.id,
                 anchor: transition.anchor(),
                 nullifiers: vec![],
@@ -2951,6 +2952,10 @@ where
                      update failed; will heal on next sync"
                 );
             }
+            // A create held for its outcome read keeps its record when its notes are marked
+            // spent (`PendingRedrive::outcome_endpoint`); its outcome is known now.
+            retire_identity_create_record(store, id, pending_entry.as_ref().map(|entry| &entry.id))
+                .await;
             info!(
                 account,
                 denomination,
@@ -2978,10 +2983,10 @@ where
 }
 
 /// Settle the notes, saved record and activity row of an identity create that ended with
-/// `failure`, and return the error it reports. A create proven to have failed with a paid error
-/// ([`PlatformWalletError::ShieldedIdentityCreateChargedFailure`]) has its `notes` marked spent,
-/// its record dropped with them and its activity row failed
-/// ([`settle_charged_identity_create`]); every other failure is settled as any spend's
+/// `failure`, and return the error it reports. A create proven unable to execute without its
+/// identity ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]) has its `notes`
+/// marked spent, its record retired and its activity row failed
+/// ([`settle_inputs_consumed_identity_create`]); every other failure is settled as any spend's
 /// ([`settle_failed_spend`], [`identity_create_failure`]).
 #[allow(clippy::too_many_arguments)]
 async fn settle_failed_identity_create<S: ShieldedStore>(
@@ -2995,21 +3000,22 @@ async fn settle_failed_identity_create<S: ShieldedStore>(
     failure: SpendFailure,
     identity_id: Option<Identifier>,
 ) -> PlatformWalletError {
-    if matches!(
-        failure.error,
-        PlatformWalletError::ShieldedIdentityCreateChargedFailure { .. }
-    ) {
+    if let PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
+        consumed_by_height, ..
+    } = failure.error
+    {
         // The notes are spent on chain: marking them spent clears their reservations, so the
         // guard must not release them.
         reservation.hand_over();
         let nullifiers: Vec<[u8; 32]> = notes.iter().map(|note| note.nullifier).collect();
-        settle_charged_identity_create(
+        settle_inputs_consumed_identity_create(
             store,
             persister,
             wallet_id,
             id,
             pending_entry.as_ref().map(|entry| &entry.id),
             &nullifiers,
+            consumed_by_height,
         )
         .await;
         return failure.error;
@@ -3075,7 +3081,17 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
         reservation,
         st,
         IDENTITY_CREATE_OPERATION,
-        || broadcast_identity_create(sdk, st, identity_id, submitted_public_keys),
+        || {
+            broadcast_identity_create(
+                sdk,
+                store,
+                id,
+                pending_entry.as_ref().map(|entry| entry.id),
+                st,
+                identity_id,
+                submitted_public_keys,
+            )
+        },
     )
     .await
 }
@@ -3102,16 +3118,25 @@ const IDENTITY_CREATE_OPERATION: &str = "identity create from shielded pool";
 ///     (timeouts, internal errors) that way.
 ///   - a wait that fails, with the identity not found, is judged by proven reads
 ///     ([`probe_identity_create`]): its nullifiers all spent and its identity absent at or
-///     above the height they were spent by is a paid failure
-///     ([`PlatformWalletError::ShieldedIdentityCreateChargedFailure`]), which can never
-///     execute. Notes of this wallet spent by another transition (another device with the same
-///     keys) read the same.
+///     above the height they were spent by is
+///     [`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]: it can never execute and
+///     did not create its identity. Its paid failure path and this wallet's notes spent by
+///     another transition (another device with the same keys) read the same.
+///
+/// Every read after the broadcast names the transition (its nullifiers, its identity id), so
+/// each goes only to the node one dispatch reached ([`broadcast_tracking_endpoint`]), through an
+/// SDK scoped to it, and that node is kept with the create's record
+/// ([`PendingRedrive::outcome_endpoint`]) for the sync pass to read the outcome from later. A
+/// create with no such node is never probed: it stays unconfirmed.
 ///
 /// Nothing here reports a failed create once a dispatch may have reached a node, unless proven
 /// reads show it can no longer execute: a create reported failed while it may still execute is
 /// the orphaned-identity hazard this staging exists to avoid.
-async fn broadcast_identity_create(
+async fn broadcast_identity_create<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<[u8; 32]>,
     st: &StateTransition,
     identity_id: Identifier,
     submitted_public_keys: BTreeMap<u32, IdentityPublicKey>,
@@ -3123,7 +3148,8 @@ async fn broadcast_identity_create(
         })
     };
 
-    match broadcast_tracking_delivery(sdk, st).await {
+    let (delivery, endpoint) = broadcast_tracking_endpoint(sdk, st).await;
+    match delivery {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -3140,12 +3166,22 @@ async fn broadcast_identity_create(
             );
         }
     }
+    // The node that holds the transition answers every read about it from here on.
+    let reader: Arc<dash_sdk::Sdk> = match &endpoint {
+        Some(endpoint) => {
+            if let Some(activity_id) = activity_id {
+                keep_outcome_endpoint(store, id, &activity_id, endpoint).await;
+            }
+            Arc::new(sdk.scoped_to_address(endpoint.clone()))
+        }
+        None => Arc::clone(sdk),
+    };
 
     // An identity-create-from-shielded-pool proof authenticates the spent
     // nullifiers and resulting identity as a snapshot; it cannot bind the
     // complete Orchard request, so accept the affected-state outcome.
     let proof_result = match st
-        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        .wait_for_affected_state::<StateTransitionProofResult>(&reader, None)
         .await
     {
         Ok(result) => result,
@@ -3162,21 +3198,24 @@ async fn broadcast_identity_create(
             // node we hit, so retry a few times with a short, fixed backoff before concluding
             // it's truly absent: long enough to ride out routine indexing/replica lag, short
             // enough not to wedge the caller's UI for minutes.
-            let mut identity = match fetch_identity_with_retries(sdk, identity_id).await {
+            let mut identity = match fetch_identity_with_retries(&reader, identity_id).await {
                 Some(identity) => identity,
-                // Not found: proven reads tell a paid failure from an unknown outcome.
-                None => match probe_identity_create(sdk, st, identity_id).await {
+                // No node is known to hold the transition: nothing may be asked about it.
+                None if endpoint.is_none() => return Err(unconfirmed(wait_err.to_string())),
+                // Not found: proven reads tell a create that can no longer execute from an
+                // unknown outcome.
+                None => match probe_identity_create(&reader, st, identity_id).await {
                     IdentityCreateProbe::Created(identity) => identity,
-                    IdentityCreateProbe::ChargedFailure { consumed_by_height } => {
+                    IdentityCreateProbe::InputsConsumed { consumed_by_height } => {
                         warn!(
                             derived_id = %identity_id,
                             consumed_by_height,
                             error = %wait_err,
                             "IdentityCreateFromShieldedPool: notes proven spent and identity \
-                             proven absent; the create failed with a paid error"
+                             proven absent; the create can no longer execute"
                         );
                         return Err(SpendFailure::from(
-                            PlatformWalletError::ShieldedIdentityCreateChargedFailure {
+                            PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
                                 identity_id,
                                 consumed_by_height,
                                 reason: wait_err.to_string(),
@@ -3242,7 +3281,7 @@ async fn broadcast_identity_create(
             );
             // The create executed. An identity that cannot be synthesized leaves it
             // unconfirmed, its notes and record kept for the next sync, never failed.
-            Identity::new_with_id_and_keys(identity_id, submitted_public_keys, sdk.version())
+            Identity::new_with_id_and_keys(identity_id, submitted_public_keys, reader.version())
                 .map_err(|e| {
                     unconfirmed(format!(
                         "its result was proved, but the identity could not be read from it: {e}"
@@ -3273,7 +3312,7 @@ const IDENTITY_CREATE_FETCH_RETRY_DELAY: std::time::Duration = std::time::Durati
 /// attempt comes back empty or errors (transport hiccup, not-yet-indexed, …) — the caller then
 /// surfaces `ShieldedBroadcastUnconfirmed` rather than a hard failure.
 async fn fetch_identity_with_retries(
-    sdk: &Arc<dash_sdk::Sdk>,
+    sdk: &dash_sdk::Sdk,
     identity_id: Identifier,
 ) -> Option<Identity> {
     use dash_sdk::platform::Fetch;
@@ -3312,11 +3351,10 @@ enum IdentityCreateProbe {
     Created(Identity),
     /// Every nullifier the create spends is spent at or before `consumed_by_height`, and its
     /// identity is proven absent at a height at or above it: the create can no longer execute,
-    /// and did not create the identity. Platform's paid failure path for a Type 20 (a key-state
-    /// check that fails in the block) spends the notes and credits the denomination minus a
-    /// penalty to the transition's fallback address. The reads cannot tell that from the same
-    /// notes spent by another transition (another device with this wallet's keys).
-    ChargedFailure { consumed_by_height: u64 },
+    /// and did not create the identity. The reads do not show what spent the notes: Platform's
+    /// paid failure path for a Type 20 (a key-state check that fails in the block) does, and so
+    /// does another transition spending the same notes (another device with this wallet's keys).
+    InputsConsumed { consumed_by_height: u64 },
     /// The reads prove neither: a read failed, a nullifier is still free, or the identity read
     /// is older than the height the nullifiers were spent by.
     Unknown,
@@ -3328,8 +3366,11 @@ enum IdentityCreateProbe {
 /// nullifier spent at height `h` proves the create cannot execute after `h`, so only an identity
 /// read at or above `h` that misses the identity shows it never created it. An SDK that does not
 /// verify proofs gets no outcome, so the probe is [`IdentityCreateProbe::Unknown`] there.
+///
+/// `sdk` must send its requests only to a node that already holds the transition
+/// ([`dash_sdk::Sdk::scoped_to_address`]): the reads name its nullifiers and its identity.
 async fn probe_identity_create(
-    sdk: &Arc<dash_sdk::Sdk>,
+    sdk: &dash_sdk::Sdk,
     st: &StateTransition,
     identity_id: Identifier,
 ) -> IdentityCreateProbe {
@@ -3360,42 +3401,303 @@ fn judge_identity_create_reads(
             Ok(TransitionOutcome::ExecutedOrSuperseded { consumed_by_height }),
             Ok((None, read_at)),
         ) if read_at >= consumed_by_height => {
-            IdentityCreateProbe::ChargedFailure { consumed_by_height }
+            IdentityCreateProbe::InputsConsumed { consumed_by_height }
         }
         _ => IdentityCreateProbe::Unknown,
     }
 }
 
-/// Settle an identity create proven to have failed with a paid error
-/// ([`PlatformWalletError::ShieldedIdentityCreateChargedFailure`]): its notes are spent on
-/// chain, so they are marked spent, which also clears their reservations and drops the create's
-/// recovery record ([`ShieldedStore::mark_spent`]), and its activity row `activity_id` reads
-/// failed. A store write that fails is logged: the next scan sees the nullifiers spent and
-/// settles the notes and the record the same way.
-async fn settle_charged_identity_create<S: ShieldedStore>(
+/// Settle an identity create proven unable to execute without its identity
+/// ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]): its notes are spent on
+/// chain, so they are marked spent, which also clears their reservations; its recovery record
+/// `activity_id` is retired; and its activity row reads failed at `consumed_by_height`, a height
+/// by which its notes were spent. The height keeps the row failed: the scan upgrades only rows
+/// that are pending or carry no height, and a row of this create the scan already confirmed is
+/// overwritten ([`record_proven_activity_status`]), as its outputs seen on chain do not show
+/// that the identity was created. A store write that fails is logged: the next pass reads the
+/// outcome again while the record is kept.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
     activity_id: Option<&[u8; 32]>,
     nullifiers: &[[u8; 32]],
+    consumed_by_height: u64,
 ) {
     if let Err(e) = mark_nullifiers_spent(store, persister, wallet_id, id, nullifiers).await {
         warn!(
             error = %e,
-            "a charged identity create's notes were not marked spent; the next scan settles them"
+            "an identity create's spent notes were not marked spent; the next scan marks them"
         );
     }
-    if let Some(activity_id) = activity_id {
-        record_activity_status_by_id(
-            store,
-            persister,
-            wallet_id,
-            id,
-            activity_id,
-            ShieldedActivityStatus::Failed,
-        )
-        .await;
+    let Some(activity_id) = activity_id else {
+        return;
+    };
+    record_proven_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        activity_id,
+        ShieldedActivityStatus::Failed,
+        Some(consumed_by_height),
+    )
+    .await;
+    retire_identity_create_record(store, id, Some(activity_id)).await;
+}
+
+/// Drop the recovery record `activity_id` of an identity create whose outcome is known. A
+/// create held for its outcome read ([`PendingRedrive::outcome_endpoint`]) keeps its record when
+/// its notes are marked spent, so the code that learns its outcome drops it. A failure is
+/// logged: the record stays held, and the next pass reads the outcome again.
+async fn retire_identity_create_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<&[u8; 32]>,
+) {
+    let Some(activity_id) = activity_id else {
+        return;
+    };
+    if let Err(e) = store.write().await.clear_redrive(id, activity_id) {
+        warn!(
+            activity_id = %hex::encode(activity_id),
+            error = %e,
+            "an identity create's recovery record was not retired; the next pass retries"
+        );
+    }
+}
+
+/// Keep `endpoint`, the node a dispatch of identity create `activity_id` reached, with its
+/// recovery record, so the sync pass reads its outcome from that node only. A failure is
+/// logged: the create then stays unconfirmed after a restart rather than being read elsewhere.
+async fn keep_outcome_endpoint<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+    endpoint: &dash_sdk::sdk::Address,
+) {
+    match store
+        .write()
+        .await
+        .set_redrive_outcome_endpoint(id, activity_id, &endpoint.to_string())
+    {
+        Ok(true) => {}
+        Ok(false) => warn!(
+            activity_id = %hex::encode(activity_id),
+            "an identity create's node was not kept: its record is gone"
+        ),
+        Err(e) => warn!(
+            activity_id = %hex::encode(activity_id),
+            error = %e,
+            "an identity create's node was not kept with its record"
+        ),
+    }
+}
+
+/// Write `status` (and `block_height`, when given) onto the activity row `entry_id` whatever it
+/// holds, for an outcome proven by reads: unlike [`record_activity_status`], a row the scan
+/// confirmed with a height is overwritten, as its outputs seen on chain do not show what an
+/// identity create did. No-op if no such row exists or it cannot be read.
+async fn record_proven_activity_status<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    entry_id: &[u8; 32],
+    status: ShieldedActivityStatus,
+    block_height: Option<u64>,
+) {
+    let next = {
+        let mut store = store.write().await;
+        let stored = match store.get_activity_by_entry_id(id, entry_id) {
+            Ok(Some(stored)) => stored,
+            Ok(None) => return,
+            Err(e) => {
+                warn!(
+                    entry_id = %hex::encode(entry_id),
+                    error = %e,
+                    "proven activity status: the row did not read; left as it is"
+                );
+                return;
+            }
+        };
+        let next = with_status(&stored, status, block_height);
+        if let Err(e) = store.save_activity(id, &next) {
+            warn!(
+                entry_id = %hex::encode(entry_id),
+                error = %e,
+                "proven activity status: in-memory save_activity failed; persister still queued"
+            );
+        }
+        next
+    };
+    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+}
+
+/// What [`classify_held_identity_create`] did with a held identity create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HeldIdentityCreate {
+    /// Its outcome was proven and settled: its record is retired.
+    Settled,
+    /// Nothing was proven: the record stays.
+    Unknown,
+}
+
+/// Read, at the node it was delivered to, the outcome of the identity create whose recovery
+/// record `redrive` is held for it ([`PendingRedrive::outcome_endpoint`]), and settle what the
+/// reads prove ([`probe_identity_create`]):
+///
+/// - its identity exists: the notes are marked spent, the activity row confirmed, the record
+///   retired;
+/// - its notes are spent and its identity absent: settled as
+///   [`settle_inputs_consumed_identity_create`] settles it;
+/// - anything else, a record with no node or a transition that is not an identity create
+///   included: nothing changes.
+pub(super) async fn classify_held_identity_create<S: ShieldedStore>(
+    sdk: &dash_sdk::Sdk,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    id: SubwalletId,
+    redrive: &PendingRedrive,
+) -> HeldIdentityCreate {
+    use dpp::serialization::PlatformDeserializableTrusted;
+    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+    let Some(endpoint) = redrive.outcome_endpoint.as_deref() else {
+        return HeldIdentityCreate::Unknown;
+    };
+    let Ok(endpoint) = endpoint.parse::<dash_sdk::sdk::Address>() else {
+        warn!(
+            endpoint,
+            "an identity create's kept node does not read; not probed"
+        );
+        return HeldIdentityCreate::Unknown;
+    };
+    let Ok(st) = StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) else {
+        return HeldIdentityCreate::Unknown;
+    };
+    let StateTransition::IdentityCreateFromShieldedPool(create) = &st else {
+        return HeldIdentityCreate::Unknown;
+    };
+    let identity_id = create.identity_id();
+    let reader = sdk.scoped_to_address(endpoint);
+    match probe_identity_create(&reader, &st, identity_id).await {
+        IdentityCreateProbe::Created(_) => {
+            info!(derived_id = %identity_id, "identity create proven executed");
+            if let Err(e) =
+                mark_nullifiers_spent(store, persister, id.wallet_id, id, &redrive.nullifiers).await
+            {
+                warn!(error = %e, "an executed identity create's notes were not marked spent");
+            }
+            record_proven_activity_status(
+                store,
+                persister,
+                id.wallet_id,
+                id,
+                &redrive.activity_id,
+                ShieldedActivityStatus::Confirmed,
+                None,
+            )
+            .await;
+            retire_identity_create_record(store, id, Some(&redrive.activity_id)).await;
+            HeldIdentityCreate::Settled
+        }
+        IdentityCreateProbe::InputsConsumed { consumed_by_height } => {
+            warn!(
+                derived_id = %identity_id,
+                consumed_by_height,
+                "identity create proven unable to execute: its notes are spent and its \
+                 identity absent"
+            );
+            settle_inputs_consumed_identity_create(
+                store,
+                persister,
+                id.wallet_id,
+                id,
+                Some(&redrive.activity_id),
+                &redrive.nullifiers,
+                consumed_by_height,
+            )
+            .await;
+            HeldIdentityCreate::Settled
+        }
+        IdentityCreateProbe::Unknown => HeldIdentityCreate::Unknown,
+    }
+}
+
+/// The sync pass's settlement of `id`'s identity creates held for their outcome read
+/// ([`PendingRedrive::outcome_endpoint`]) whose notes the scan saw spent: the scan keeps their
+/// records and leaves their activity rows as they are, and each is read at the node it was
+/// delivered to ([`classify_held_identity_create`]). A create the reads do not settle counts
+/// an attempt; once [`MAX_REDRIVE_ATTEMPTS`] are spent its hold is given up and its record
+/// retired, as a scan that saw its notes spent would have retired it, and its row is left to
+/// the scan.
+pub(super) async fn classify_spent_identity_creates<S: ShieldedStore>(
+    sdk: &dash_sdk::Sdk,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    id: SubwalletId,
+    cancel: &CancellationToken,
+) {
+    let held: Vec<PendingRedrive> = {
+        let store = store.read().await;
+        let redrives = match store.pending_redrives(id) {
+            Ok(redrives) => redrives,
+            Err(e) => {
+                warn!(error = %e, "held identity creates: pending_redrives failed; skipped");
+                return;
+            }
+        };
+        let spent: HashSet<[u8; 32]> = match store.get_all_notes(id) {
+            Ok(notes) => notes
+                .into_iter()
+                .filter(|note| note.is_spent)
+                .map(|note| note.nullifier)
+                .collect(),
+            Err(e) => {
+                warn!(error = %e, "held identity creates: get_all_notes failed; skipped");
+                return;
+            }
+        };
+        redrives
+            .into_iter()
+            .filter(|redrive| {
+                redrive.outcome_endpoint.is_some()
+                    && !redrive.nullifiers.is_empty()
+                    && redrive.nullifiers.iter().all(|n| spent.contains(n))
+            })
+            .collect()
+    };
+    for redrive in held {
+        if cancel.is_cancelled() {
+            return;
+        }
+        if classify_held_identity_create(sdk, store, persister, id, &redrive).await
+            == HeldIdentityCreate::Settled
+        {
+            continue;
+        }
+        let attempts = match store
+            .write()
+            .await
+            .bump_redrive_attempts(id, &redrive.activity_id)
+        {
+            Ok(attempts) => attempts,
+            Err(e) => {
+                warn!(error = %e, "held identity create: attempt not counted; retried next pass");
+                continue;
+            }
+        };
+        if attempts >= MAX_REDRIVE_ATTEMPTS {
+            warn!(
+                activity_id = %hex::encode(redrive.activity_id),
+                attempts,
+                "held identity create: its outcome could not be read; giving up its hold"
+            );
+            retire_identity_create_record(store, id, Some(&redrive.activity_id)).await;
+        }
     }
 }
 
@@ -4260,6 +4562,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         None => None,
     };
     let redrive = PendingRedrive {
+        outcome_endpoint: None,
         activity_id,
         anchor,
         nullifiers,
@@ -4607,10 +4910,10 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 ///
 /// - accepted / inconclusive → count the attempt; wait for the next scan;
 /// - `NullifierAlreadySpent` → the original executed; the next scan
-///   confirms — touch nothing. Except an identity create (Type 20) whose
-///   identity proven reads show absent once its notes are spent
-///   ([`settle_spent_identity_create_redrive`]): a paid failure, whose notes
-///   are marked spent, its record dropped and its activity row failed;
+///   confirms — touch nothing. Except an identity create (Type 20) held for
+///   its outcome read ([`PendingRedrive::outcome_endpoint`]): its notes spent
+///   do not show that its identity was created, so its outcome is read at
+///   its node and settled ([`classify_held_identity_create`]);
 /// - any other consensus verdict → inconclusive too: a node refusing the
 ///   re-broadcast does not show that no other node holds the original,
 ///   whose broadcast was ambiguous, so the notes stay reserved;
@@ -4622,9 +4925,13 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 /// may be the only evidence of a payment that can still execute. Its notes
 /// stay reserved until the spend lands or the prune backstop releases them.
 ///
+/// A held identity create is re-broadcast only to the node it was
+/// delivered to, through an SDK scoped to it, and not at all once the scan
+/// saw its notes spent: [`classify_spent_identity_creates`] settles it then.
+///
 /// Runs after the scan's spent-note reconcile (a landed spend's record
 /// was already dropped by the `mark_spent` hook, so anything still
-/// armed here is genuinely unresolved).
+/// armed here is genuinely unresolved, or held for its outcome read).
 pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -4674,10 +4981,28 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        // A held identity create goes only to the node that holds it.
+        let held_at = match redrive.outcome_endpoint.as_deref() {
+            Some(endpoint) => match endpoint.parse::<dash_sdk::sdk::Address>() {
+                Ok(endpoint) => Some(endpoint),
+                Err(e) => {
+                    warn!(error = %e, "redrive: a held record's node does not read; not re-broadcast");
+                    continue;
+                }
+            },
+            None => None,
+        };
+        if held_at.is_some() && notes_seen_spent(store, id, &redrive.nullifiers).await {
+            continue;
+        }
+        let broadcaster = match &held_at {
+            Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
+            None => Arc::clone(sdk),
+        };
         let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
             continue;
         };
-        let broadcast_result = st.broadcast(sdk, None).await;
+        let broadcast_result = st.broadcast(&broadcaster, None).await;
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -4692,10 +5017,11 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 );
             }
             RedriveBroadcastOutcome::AlreadyExecuted => {
-                // A Type 20 whose notes are proven spent without its identity is a paid
-                // failure, not an execution: settled here, its record dropped with the notes.
-                if settle_spent_identity_create_redrive(sdk, store, persister, id, &redrive, &st)
-                    .await
+                // A held identity create's notes spent do not show its identity created:
+                // read its outcome at its node.
+                if held_at.is_some()
+                    && classify_held_identity_create(sdk, store, persister, id, &redrive).await
+                        == HeldIdentityCreate::Settled
                 {
                     continue;
                 }
@@ -4726,47 +5052,21 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     }
 }
 
-/// For a redrive whose re-broadcast was refused with `NullifierAlreadySpent`:
-/// when its transition `st` is an identity create (Type 20) that proven reads
-/// show failed with a paid error ([`probe_identity_create`]), settle it as one
-/// ([`settle_charged_identity_create`]) and return `true`. Any other
-/// transition, or a create the reads do not settle, returns `false` and is
-/// left to the usual handling of an executed spend.
-async fn settle_spent_identity_create_redrive<S: ShieldedStore>(
-    sdk: &Arc<dash_sdk::Sdk>,
+/// Whether every one of `nullifiers` belongs to a note of `id` the store holds spent.
+async fn notes_seen_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
-    persister: Option<&WalletPersister>,
     id: SubwalletId,
-    redrive: &PendingRedrive,
-    st: &StateTransition,
+    nullifiers: &[[u8; 32]],
 ) -> bool {
-    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
-
-    let StateTransition::IdentityCreateFromShieldedPool(create) = st else {
+    let Ok(notes) = store.read().await.get_all_notes(id) else {
         return false;
     };
-    let identity_id = create.identity_id();
-    let IdentityCreateProbe::ChargedFailure { consumed_by_height } =
-        probe_identity_create(sdk, st, identity_id).await
-    else {
-        return false;
-    };
-    warn!(
-        derived_id = %identity_id,
-        consumed_by_height,
-        "redrive: identity create's notes proven spent and its identity proven absent; \
-         it failed with a paid error"
-    );
-    settle_charged_identity_create(
-        store,
-        persister,
-        id.wallet_id,
-        id,
-        Some(&redrive.activity_id),
-        &redrive.nullifiers,
-    )
-    .await;
-    true
+    let spent: HashSet<[u8; 32]> = notes
+        .into_iter()
+        .filter(|note| note.is_spent)
+        .map(|note| note.nullifier)
+        .collect();
+    !nullifiers.is_empty() && nullifiers.iter().all(|nullifier| spent.contains(nullifier))
 }
 
 /// How [`broadcast_shielded_spend_classified`] waits for an already-broadcast
@@ -5109,6 +5409,7 @@ mod redrive_tests {
         let id = SubwalletId::new(wallet_id, 3);
         let mut store = InMemoryShieldedStore::new();
         let archived = PendingRedrive {
+            outcome_endpoint: None,
             activity_id: [6; 32],
             anchor: [1; 32],
             nullifiers: vec![],
@@ -5162,6 +5463,7 @@ mod redrive_tests {
             .arm_redrive(
                 id,
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id,
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5233,6 +5535,7 @@ mod redrive_tests {
             .arm_redrive(
                 SubwalletId::new(wallet_id, 3),
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [6; 32],
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5264,6 +5567,7 @@ mod redrive_tests {
             .arm_redrive(
                 SubwalletId::new(wallet_id, 0),
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [8; 32],
                     anchor: [1; 32],
                     nullifiers: vec![],
@@ -5376,6 +5680,7 @@ mod redrive_tests {
             .arm_redrive(
                 previous_account,
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id,
                     anchor: [0xAB; 32],
                     nullifiers: vec![],
@@ -5751,6 +6056,7 @@ mod redrive_tests {
             held.arm_private_contact_payment(
                 id,
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [0x79; 32],
                     anchor: [7; 32],
                     nullifiers: vec![note.nullifier],
@@ -6432,6 +6738,7 @@ mod redrive_tests {
             .arm_redrive(
                 id,
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id,
                     anchor,
                     nullifiers: vec![],
@@ -6471,6 +6778,7 @@ mod redrive_tests {
         let id = SubwalletId::new(wallet_id, 0);
 
         let rec = |activity: u8, anchor: u8, attempts: u32| PendingRedrive {
+            outcome_endpoint: None,
             activity_id: [activity; 32],
             anchor: [anchor; 32],
             nullifiers: vec![[activity ^ 0xFF; 32]],
@@ -6531,6 +6839,7 @@ mod redrive_tests {
         let earlier = identity_shield_transition([0xA1; 32], 3);
         let retired = identity_shield_transition([0xA2; 32], 4);
         let record = |activity: u8, transition: &StateTransition| PendingRedrive {
+            outcome_endpoint: None,
             activity_id: [activity; 32],
             anchor,
             nullifiers: vec![[activity ^ 0xFF; 32]],
@@ -7706,7 +8015,7 @@ mod redrive_tests {
         );
     }
 
-    // ── Identity create: a paid failure, proven by reads ───────────────
+    // ── Identity create: inputs consumed without the identity ──────────
 
     /// The identity a mock read returns for the tests' identity create.
     fn created_identity() -> Identity {
@@ -7723,12 +8032,12 @@ mod redrive_tests {
         dash_sdk::Error::Generic("no proof".to_string())
     }
 
-    /// The identity create is a paid failure only when every nullifier is
-    /// spent and the identity is proven absent at or above the height they
-    /// were spent by. An identity found means it executed, whatever the
-    /// outcome read says; anything else proves nothing.
+    /// The identity create is settled as unable to execute only when every
+    /// nullifier is spent and the identity is proven absent at or above the
+    /// height they were spent by. An identity found means it executed,
+    /// whatever the outcome read says; anything else proves nothing.
     #[test]
-    fn should_judge_an_identity_create_charged_only_when_its_notes_are_spent_and_its_identity_absent(
+    fn should_judge_an_identity_create_consumed_only_when_its_notes_are_spent_and_its_identity_absent(
     ) {
         let spent_by = |height| {
             Ok(TransitionOutcome::ExecutedOrSuperseded {
@@ -7739,13 +8048,13 @@ mod redrive_tests {
 
         assert!(matches!(
             judge_identity_create_reads(spent_by(10), absent_at(10)),
-            IdentityCreateProbe::ChargedFailure {
+            IdentityCreateProbe::InputsConsumed {
                 consumed_by_height: 10
             }
         ));
         assert!(matches!(
             judge_identity_create_reads(spent_by(10), absent_at(12)),
-            IdentityCreateProbe::ChargedFailure {
+            IdentityCreateProbe::InputsConsumed {
                 consumed_by_height: 10
             }
         ));
@@ -7785,7 +8094,7 @@ mod redrive_tests {
                 ),
                 IdentityCreateProbe::Unknown
             ),
-            "a note left free never took the paid path"
+            "a note left free: not this outcome"
         );
         assert!(
             matches!(
@@ -7804,15 +8113,59 @@ mod redrive_tests {
         ));
     }
 
-    /// The nullifiers of the tests' identity create, as its transition lists them.
-    fn identity_create_nullifiers() -> Vec<[u8; 32]> {
-        vec![spend_action().nullifier, spend_action().nullifier]
+    /// The nullifier of the explicit dummy spend that pads the tests'
+    /// identity create to the two actions a bundle carries at least.
+    const DUMMY_NULLIFIER: [u8; 32] = [0xD0; 32];
+
+    /// The node the tests' identity creates are delivered to.
+    const ENDPOINT: &str = "http://127.0.0.1:3010";
+
+    /// An identity create spending exactly `notes`: one action per note,
+    /// carrying its nullifier, padded with one dummy spend to two actions.
+    fn identity_create_spending(notes: &[ShieldedNote]) -> StateTransition {
+        let mut actions: Vec<SerializedAction> = notes
+            .iter()
+            .map(|note| SerializedAction {
+                nullifier: note.nullifier,
+                ..spend_action()
+            })
+            .collect();
+        while actions.len() < 2 {
+            actions.push(SerializedAction {
+                nullifier: DUMMY_NULLIFIER,
+                ..spend_action()
+            });
+        }
+        IdentityCreateFromShieldedPoolTransitionV0 {
+            public_keys: vec![],
+            denomination: 1_000_000,
+            actions,
+            anchor: SPEND_ANCHOR,
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            send_to_address_on_creation_failure: PlatformAddress::P2pkh([7; 20]),
+            identity_id: Identifier::from(CREATED_IDENTITY),
+        }
+        .into()
     }
 
-    /// A mock SDK whose proven reads show the tests' identity create's
-    /// anchor recorded, its nullifiers `spent` or not, and its identity
-    /// absent. Every answer of a mock SDK is at height 0.
-    async fn sdk_reading_identity_create(spent: bool) -> dash_sdk::Sdk {
+    /// The nullifiers `transition`'s actions carry, as its outcome read names them.
+    fn transition_nullifiers(transition: &StateTransition) -> Vec<[u8; 32]> {
+        shielded_actions(transition)
+            .iter()
+            .map(|action| action.nullifier)
+            .collect()
+    }
+
+    /// A mock SDK whose node `ENDPOINT` is in its address list, and whose
+    /// proven reads show `transition`'s anchor recorded, its nullifiers
+    /// `spent` or not, and its identity absent, or `created`. Every answer of
+    /// a mock SDK is at height 0.
+    async fn sdk_reading(
+        transition: &StateTransition,
+        spent: bool,
+        created: bool,
+    ) -> dash_sdk::Sdk {
         use dash_sdk::query_types::{
             MostRecentShieldedAnchor, NoParamQuery, ShieldedAnchors, ShieldedNullifierStatus,
             ShieldedNullifierStatuses, ShieldedNullifiersQuery,
@@ -7822,6 +8175,8 @@ mod redrive_tests {
             .with_version(PlatformVersion::latest())
             .build()
             .expect("mock sdk");
+        let mut addresses = sdk.address_list().clone();
+        addresses.add(ENDPOINT.parse().expect("an address"));
         sdk.mock()
             .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![SPEND_ANCHOR])))
             .await
@@ -7833,67 +8188,203 @@ mod redrive_tests {
             )
             .await
             .expect("the newest anchor");
-        let statuses = identity_create_nullifiers()
-            .into_iter()
+        let nullifiers = transition_nullifiers(transition);
+        let statuses = nullifiers
+            .iter()
             .map(|nullifier| ShieldedNullifierStatus {
-                nullifier,
+                nullifier: *nullifier,
                 is_spent: spent,
             })
             .collect();
         sdk.mock()
             .expect_fetch(
-                ShieldedNullifiersQuery(identity_create_nullifiers()),
+                ShieldedNullifiersQuery(nullifiers),
                 Some(ShieldedNullifierStatuses(statuses)),
             )
             .await
             .expect("the nullifier statuses");
         sdk.mock()
-            .expect_fetch(Identifier::from(CREATED_IDENTITY), None::<Identity>)
+            .expect_fetch(
+                Identifier::from(CREATED_IDENTITY),
+                created.then(created_identity),
+            )
             .await
-            .expect("the identity, absent");
+            .expect("the identity");
         sdk
     }
 
     /// The probe reads the create's outcome and its identity with proofs: its
-    /// nullifiers spent and its identity absent is a paid failure, its
-    /// nullifiers free is not, and reads that fail prove nothing.
+    /// nullifiers spent and its identity absent is inputs consumed, its
+    /// identity found is created, its nullifiers free is not settled, and
+    /// reads that fail prove nothing.
     #[tokio::test]
     async fn should_probe_an_identity_create_by_its_proven_nullifiers_and_identity() {
-        let transition = SpendPath::IdentityCreate.transition();
+        let transition = identity_create_spending(&[spend_note()]);
         let identity_id = Identifier::from(CREATED_IDENTITY);
 
-        let spent = Arc::new(sdk_reading_identity_create(true).await);
+        let spent = sdk_reading(&transition, true, false).await;
         assert!(matches!(
             probe_identity_create(&spent, &transition, identity_id).await,
-            IdentityCreateProbe::ChargedFailure {
+            IdentityCreateProbe::InputsConsumed {
                 consumed_by_height: 0
             }
         ));
-
-        let free = Arc::new(sdk_reading_identity_create(false).await);
+        let created = sdk_reading(&transition, true, true).await;
+        assert!(matches!(
+            probe_identity_create(&created, &transition, identity_id).await,
+            IdentityCreateProbe::Created(_)
+        ));
+        let free = sdk_reading(&transition, false, false).await;
         assert!(matches!(
             probe_identity_create(&free, &transition, identity_id).await,
             IdentityCreateProbe::Unknown
         ));
-
-        let unanswered = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let unanswered = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         assert!(matches!(
             probe_identity_create(&unanswered, &transition, identity_id).await,
             IdentityCreateProbe::Unknown
         ));
     }
 
+    /// The notes of `id` the store at `store` holds spent, by nullifier.
+    async fn spent_nullifiers(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        id: SubwalletId,
+    ) -> Vec<[u8; 32]> {
+        store
+            .read()
+            .await
+            .get_all_notes(id)
+            .expect("notes")
+            .into_iter()
+            .filter(|note| note.is_spent)
+            .map(|note| note.nullifier)
+            .collect()
+    }
+
+    /// The activity row `activity_id` of `id`.
+    async fn activity_row(
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> ShieldedActivityEntry {
+        store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, activity_id)
+            .expect("the row reads")
+            .expect("the row")
+    }
+
+    /// The identity create, delivered to a node whose result wait fails, with
+    /// its identity not found: the node is kept with its record, and the
+    /// outcome is read there. Its notes spent and its identity absent report
+    /// inputs consumed: the notes it spends, exactly the real inputs the
+    /// proof read, are marked spent, the record is retired for good and the
+    /// row reads failed at the height the notes were spent by. With no node
+    /// to read at (no address to pin), nothing is read: it stays unconfirmed.
+    #[tokio::test(start_paused = true)]
+    async fn should_settle_a_delivered_identity_create_whose_notes_are_spent_without_its_identity()
+    {
+        use dash_sdk::query_types::ShieldedNullifiersQuery;
+
+        let wallet_id = [0x74; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7D; 32];
+        for pinned in [true, false] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+            let transition = identity_create_spending(&spend.notes);
+            let mut sdk = if pinned {
+                sdk_reading(&transition, true, false).await
+            } else {
+                dash_sdk::SdkBuilder::new_mock()
+                    .with_version(PlatformVersion::latest())
+                    .build()
+                    .expect("mock sdk")
+            };
+            let sdk_handle = Arc::new(sdk.clone());
+            let failure = broadcast_identity_create_with_redrive(
+                &sdk_handle,
+                &spend.store,
+                id,
+                &spend.entry,
+                SPEND_ANCHOR,
+                SPEND_ANCHOR_HEIGHT,
+                &spend.notes,
+                &mut spend.reservation,
+                &transition,
+                Identifier::from(CREATED_IDENTITY),
+                BTreeMap::new(),
+            )
+            .await
+            .expect_err("the create did not execute");
+            let outcome_read: dash_sdk::dapi_grpc::platform::v0::GetShieldedNullifiersRequest =
+                dash_sdk::platform::Query::query(
+                    &ShieldedNullifiersQuery(transition_nullifiers(&transition)),
+                    &sdk.query_settings(),
+                )
+                .expect("a request");
+            let reads = sdk.mock().request_count(&outcome_read).await;
+            let notes = spend.notes.clone();
+            let store = Arc::clone(&spend.store);
+            let settled = SpendPath::IdentityCreate
+                .settle(spend, wallet_id, id, failure)
+                .await;
+            if !pinned {
+                assert_eq!(reads, 0, "no node holds it, so nothing is read");
+                assert!(
+                    SpendPath::IdentityCreate.reads_unconfirmed(&settled),
+                    "{settled:?}"
+                );
+                continue;
+            }
+            assert!(reads > 0, "the outcome is read at the node");
+            assert!(
+                matches!(
+                    settled,
+                    PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
+                        identity_id,
+                        consumed_by_height: 0,
+                        ..
+                    } if identity_id == Identifier::from(CREATED_IDENTITY)
+                ),
+                "{settled:?}"
+            );
+            let real_inputs: Vec<[u8; 32]> = notes.iter().map(|note| note.nullifier).collect();
+            let queried = transition_nullifiers(&transition);
+            assert!(real_inputs
+                .iter()
+                .all(|nullifier| queried.contains(nullifier)));
+            assert_eq!(spent_nullifiers(&store, id).await, real_inputs);
+            let row = activity_row(&store, id, &activity_id).await;
+            assert_eq!(row.status, ShieldedActivityStatus::Failed);
+            assert_eq!(row.block_height, Some(0));
+            drop(store);
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .expect("reopened")
+                    .pending_redrives(id)
+                    .expect("records")
+                    .is_empty(),
+                "the record is retired for good"
+            );
+        }
+    }
+
     /// An identity create whose saved record is the only thing left of it
-    /// after a result wait failed: its note reserved, its record saved and
-    /// its activity row pending, in the store at `path`.
+    /// after a result wait failed, held for its outcome read at `ENDPOINT`
+    /// when `held`: its note reserved and its activity row pending, in the
+    /// store at `path`, with the transition it spends its note in.
     async fn saved_identity_create(
         path: &std::path::Path,
         id: SubwalletId,
         activity_id: [u8; 32],
-        error: PlatformWalletError,
-    ) -> (ReservedSpend, SpendFailure) {
+        held: bool,
+    ) -> (Arc<RwLock<FileBackedShieldedStore>>, StateTransition) {
         let mut spend = ReservedSpend::at(path, id, activity_id).await;
-        let transition = SpendPath::IdentityCreate.transition();
+        let transition = identity_create_spending(&spend.notes);
         let failure = save_spend_then_broadcast(
             &spend.store,
             id,
@@ -7904,144 +8395,116 @@ mod redrive_tests {
             &mut spend.reservation,
             &transition,
             IDENTITY_CREATE_OPERATION,
-            || async { Err::<(), _>(SpendFailure::from(error)) },
-        )
-        .await
-        .expect_err("the create failed");
-        (spend, failure)
-    }
-
-    /// An identity create proven to have failed with a paid error reports
-    /// it, and its notes are gone: they are marked spent, its record is
-    /// dropped, across a restart too, and its activity row reads failed.
-    #[tokio::test]
-    async fn should_settle_a_charged_identity_create_as_spent_and_failed() {
-        let wallet_id = [0x74; 32];
-        let id = SubwalletId::new(wallet_id, 0);
-        let activity_id = [0x7D; 32];
-        let dir = tempfile::tempdir().expect("a directory");
-        let path = dir.path().join("tree.sqlite");
-        let (spend, failure) = saved_identity_create(
-            &path,
-            id,
-            activity_id,
-            PlatformWalletError::ShieldedIdentityCreateChargedFailure {
-                identity_id: Identifier::from(CREATED_IDENTITY),
-                consumed_by_height: 9,
-                reason: "the result wait reported a key-state error".to_string(),
+            || async {
+                Err::<(), _>(SpendFailure::from(
+                    PlatformWalletError::ShieldedSpendUnconfirmed {
+                        operation: IDENTITY_CREATE_OPERATION,
+                        reason: "the result wait timed out".to_string(),
+                    },
+                ))
             },
         )
-        .await;
+        .await
+        .expect_err("the create is unconfirmed");
+        if held {
+            assert!(spend
+                .store
+                .write()
+                .await
+                .set_redrive_outcome_endpoint(id, &activity_id, ENDPOINT)
+                .expect("kept"));
+        }
         let store = Arc::clone(&spend.store);
-
-        let settled = SpendPath::IdentityCreate
-            .settle(spend, wallet_id, id, failure)
+        let _ = SpendPath::IdentityCreate
+            .settle(spend, wallet_id_of(id), id, failure)
             .await;
-        assert!(
-            matches!(
-                settled,
-                PlatformWalletError::ShieldedIdentityCreateChargedFailure {
-                    identity_id,
-                    consumed_by_height: 9,
-                    ..
-                } if identity_id == Identifier::from(CREATED_IDENTITY)
-            ),
-            "{settled:?}"
-        );
-        assert_eq!(
-            spendable_and_status(&store, id, &activity_id).await,
-            (0, ShieldedActivityStatus::Failed)
-        );
-        assert!(
-            store.read().await.get_all_notes(id).expect("notes")[0].is_spent,
-            "the note is spent"
-        );
-        drop(store);
-        assert!(
-            FileBackedShieldedStore::open_path(&path, 100)
-                .expect("reopened")
-                .pending_redrives(id)
-                .expect("records")
-                .is_empty(),
-            "the record is dropped for good"
-        );
+        (store, transition)
     }
 
-    /// A redrive pass whose re-broadcast of an identity create was refused
-    /// with `NullifierAlreadySpent` settles the create as a paid failure
-    /// only when proven reads show its identity absent once its notes are
-    /// spent. Otherwise the record is left to the handling of a spend that
-    /// executed.
-    #[tokio::test]
-    async fn should_settle_a_redriven_identity_create_whose_notes_are_spent_without_its_identity() {
-        use dpp::serialization::PlatformDeserializableTrusted;
+    fn wallet_id_of(id: SubwalletId) -> WalletId {
+        id.wallet_id
+    }
 
+    /// A held identity create is read at its node: its notes spent and its
+    /// identity absent settles it as inputs consumed (exactly its real
+    /// inputs marked spent), its identity found settles it confirmed, and
+    /// its notes free leave it. One with no node is never read.
+    #[tokio::test]
+    async fn should_classify_a_held_identity_create_only_at_its_node() {
         let wallet_id = [0x75; 32];
         let id = SubwalletId::new(wallet_id, 0);
         let activity_id = [0x7E; 32];
-        for spent in [true, false] {
+        for (held, spent, created) in [
+            (true, true, false),
+            (true, true, true),
+            (true, false, false),
+            (false, true, false),
+        ] {
+            let case = format!("held {held}, spent {spent}, created {created}");
             let dir = tempfile::tempdir().expect("a directory");
-            let path = dir.path().join("tree.sqlite");
-            let (spend, failure) = saved_identity_create(
-                &path,
-                id,
-                activity_id,
-                PlatformWalletError::ShieldedSpendUnconfirmed {
-                    operation: IDENTITY_CREATE_OPERATION,
-                    reason: "the result wait timed out".to_string(),
-                },
-            )
-            .await;
-            let store = Arc::clone(&spend.store);
-            let _ = SpendPath::IdentityCreate
-                .settle(spend, wallet_id, id, failure)
-                .await;
+            let (store, transition) =
+                saved_identity_create(&dir.path().join("tree.sqlite"), id, activity_id, held).await;
             let redrive = store.read().await.pending_redrives(id).expect("records")[0].clone();
-            let st = StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes)
-                .expect("the saved transition");
+            assert_eq!(redrive.outcome_endpoint.is_some(), held, "{case}");
+            let sdk = sdk_reading(&transition, spent, created).await;
 
-            let sdk = Arc::new(sdk_reading_identity_create(spent).await);
-            let settled =
-                settle_spent_identity_create_redrive(&sdk, &store, None, id, &redrive, &st).await;
-            let (spendable, status) = spendable_and_status(&store, id, &activity_id).await;
+            let classified = classify_held_identity_create(&sdk, &store, None, id, &redrive).await;
             let records = store.read().await.pending_redrives(id).expect("records");
-            assert_eq!(settled, spent, "spent: {spent}");
-            assert_eq!(
-                spendable, 0,
-                "spent: {spent}: the note stays out of selection"
-            );
-            if spent {
-                assert!(records.is_empty(), "the record is dropped");
-                assert_eq!(status, ShieldedActivityStatus::Failed);
-                assert!(store.read().await.get_all_notes(id).expect("notes")[0].is_spent);
-            } else {
-                assert_eq!(records.len(), 1, "the record stays");
-                assert_eq!(status, ShieldedActivityStatus::Pending);
+            let row = activity_row(&store, id, &activity_id).await;
+            match (held, spent, created) {
+                (true, true, false) => {
+                    assert_eq!(classified, HeldIdentityCreate::Settled, "{case}");
+                    assert!(records.is_empty(), "{case}");
+                    assert_eq!(row.status, ShieldedActivityStatus::Failed, "{case}");
+                    assert_eq!(row.block_height, Some(0), "{case}");
+                    assert_eq!(spent_nullifiers(&store, id).await, redrive.nullifiers);
+                    assert!(redrive
+                        .nullifiers
+                        .iter()
+                        .all(|n| transition_nullifiers(&transition).contains(n)));
+                }
+                (true, true, true) => {
+                    assert_eq!(classified, HeldIdentityCreate::Settled, "{case}");
+                    assert!(records.is_empty(), "{case}");
+                    assert_eq!(row.status, ShieldedActivityStatus::Confirmed, "{case}");
+                    assert_eq!(spent_nullifiers(&store, id).await, redrive.nullifiers);
+                }
+                _ => {
+                    assert_eq!(classified, HeldIdentityCreate::Unknown, "{case}");
+                    assert_eq!(records.len(), 1, "{case}");
+                    assert_eq!(row.status, ShieldedActivityStatus::Pending, "{case}");
+                }
             }
         }
+    }
 
-        // Any other transition is left alone, unread.
-        let dir = tempfile::tempdir().expect("a directory");
-        let store = Arc::new(RwLock::new(
-            FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100)
-                .expect("the store"),
-        ));
-        let transfer = SpendPath::Shared.transition();
-        let redrive = PendingRedrive {
-            activity_id,
-            anchor: SPEND_ANCHOR,
-            nullifiers: vec![spend_note().nullifier],
-            st_bytes: transfer.serialize_to_bytes().expect("serializes"),
-            attempts: 0,
-            anchor_height: Some(SPEND_ANCHOR_HEIGHT),
-            identity_nonce_finalized: false,
-            identity_user_abandoned: false,
-        };
-        let sdk = Arc::new(sdk_reading_identity_create(true).await);
-        assert!(
-            !settle_spent_identity_create_redrive(&sdk, &store, None, id, &redrive, &transfer)
+    /// A held identity create keeps its record when its notes are marked
+    /// spent, as a scan marks them: the notes spent do not show what it did.
+    /// Any other record is retired with its notes, as before.
+    #[tokio::test]
+    async fn should_keep_a_held_identity_create_s_record_when_its_notes_are_spent() {
+        let wallet_id = [0x76; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7F; 32];
+        for held in [true, false] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let (store, _) = saved_identity_create(&path, id, activity_id, held).await;
+            assert!(store
+                .write()
                 .await
-        );
+                .mark_spent(id, &spend_note().nullifier)
+                .expect("marked"));
+            drop(store);
+            let records = FileBackedShieldedStore::open_path(&path, 100)
+                .expect("reopened")
+                .pending_redrives(id)
+                .expect("records");
+            assert_eq!(records.len(), usize::from(held), "held {held}");
+            if held {
+                assert_eq!(records[0].outcome_endpoint.as_deref(), Some(ENDPOINT));
+            }
+        }
     }
 }
 

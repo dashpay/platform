@@ -957,11 +957,12 @@ fn map_asset_lock_funding_result(
 /// expose). If identity creation fails a stateful check (a public-key hash already registered to
 /// another identity) the spend is still finalized and the value is credited to this address minus a
 /// penalty, exactly like the asset-lock / address-funded identity-create penalties. It is bound into
-/// the transition sighash, so it cannot be redirected after signing. A create proven to have taken
-/// that path (its notes spent, its identity absent) returns
-/// [`ErrorShieldedIdentityCreateChargedFailure`].
+/// the transition sighash, so it cannot be redirected after signing. A create whose notes proven
+/// reads show spent and whose identity they show absent returns
+/// [`ErrorShieldedIdentityCreateInputsConsumed`]: that path is one possible cause, the same notes
+/// spent by another transition another, and the result does not say which.
 ///
-/// [`ErrorShieldedIdentityCreateChargedFailure`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedIdentityCreateChargedFailure
+/// [`ErrorShieldedIdentityCreateInputsConsumed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedIdentityCreateInputsConsumed
 ///
 /// `mnemonic_resolver_handle` supplies the per-operation Orchard spend authority (see
 /// `platform_wallet_manager_shielded_transfer`).
@@ -1119,10 +1120,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Proven paid failure: the notes are spent and the identity is absent, so the
-        // denomination minus a penalty went to the fallback address. The notes were marked spent
-        // wallet-side; `out_identity_id` is not written, as the identity does not exist.
-        Err(e @ PlatformWalletError::ShieldedIdentityCreateChargedFailure { .. }) => e.into(),
+        // Proven unable to execute: its notes are spent and its identity is absent. The notes
+        // were marked spent wallet-side; `out_identity_id` is not written, as the identity does
+        // not exist.
+        Err(e @ PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. }) => e.into(),
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
@@ -2495,6 +2496,7 @@ mod tests {
             .arm_redrive(
                 SubwalletId::new([7; 32], 9),
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [8; 32],
                     anchor: [9; 32],
                     nullifiers: vec![[10; 32]],

@@ -2115,6 +2115,7 @@ mod private_payment_hold_tests {
             .arm_private_contact_payment(
                 SubwalletId::new(bound, 0),
                 PendingRedrive {
+                    outcome_endpoint: None,
                     activity_id: [0x21; 32],
                     anchor: [0x22; 32],
                     nullifiers: vec![[0x23; 32]],

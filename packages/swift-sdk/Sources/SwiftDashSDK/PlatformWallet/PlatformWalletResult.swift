@@ -322,11 +322,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
-    /// An identity created from the shielded pool failed with a paid error,
-    /// as proven reads show: its notes are spent and the identity is absent.
-    /// The denomination minus a penalty went to the transition's fallback
-    /// address; the wallet marked the notes spent. Do not re-submit.
-    case errorShieldedIdentityCreateChargedFailure = 77
+    /// An identity create from the shielded pool did not create its identity
+    /// and can never execute, as proven reads show: its notes are spent and
+    /// the identity is absent. The wallet marked the notes spent. Do not
+    /// re-submit.
+    case errorShieldedIdentityCreateInputsConsumed = 77
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -478,8 +478,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
-        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_CREATE_CHARGED_FAILURE:
-            self = .errorShieldedIdentityCreateChargedFailure
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_CREATE_INPUTS_CONSUMED:
+            self = .errorShieldedIdentityCreateInputsConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -768,14 +768,15 @@ public enum PlatformWalletError: LocalizedError {
     /// An identity create from the pool did not create its identity and can
     /// never execute, as proven reads show (code 77): every note it spends is
     /// spent and the identity is absent at or above the height they were
-    /// spent by. Platform's paid failure path for this transition (a key-state
-    /// check failing in the block, such as a public-key hash already
-    /// registered) credits the denomination minus a penalty to the
-    /// `sendToAddressOnCreationFailure` address. The wallet marked the notes
-    /// spent and dropped the saved transition; do not re-submit. The same
-    /// notes spent by another transition (another device with this wallet's
-    /// keys) read the same, and then nothing went to the fallback address.
-    case shieldedIdentityCreateChargedFailure(String)
+    /// spent by. The wallet marked the notes spent, dropped the saved
+    /// transition and marked the activity row failed; do not re-submit. The
+    /// reads do not say what spent the notes: Platform's paid failure path for
+    /// this transition (a key-state check failing in the block, such as a
+    /// public-key hash already registered, which credits the denomination
+    /// minus a penalty to the `sendToAddressOnCreationFailure` address) is one
+    /// possible cause, the same notes spent by another transition (another
+    /// device with this wallet's keys) another.
+    case shieldedIdentityCreateInputsConsumed(String)
     /// A shielded operation (shield from Platform addresses, unshield /
     /// transfer / withdrawal) may have reached a node and its result is not
     /// proved (a node's refusal or consensus verdict included). It may have
@@ -997,7 +998,7 @@ public enum PlatformWalletError: LocalizedError {
              .publicContactRequestUnconfirmed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedIdentityCreateChargedFailure(let m),
+             .shieldedIdentityCreateInputsConsumed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .shieldedIdentityDebitPending(let m),
              .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
@@ -1136,8 +1137,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
-        case .errorShieldedIdentityCreateChargedFailure:
-            self = .shieldedIdentityCreateChargedFailure(detail)
+        case .errorShieldedIdentityCreateInputsConsumed:
+            self = .shieldedIdentityCreateInputsConsumed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)

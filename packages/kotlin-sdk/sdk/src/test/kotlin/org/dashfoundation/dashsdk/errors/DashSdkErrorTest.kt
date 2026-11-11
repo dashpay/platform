@@ -401,11 +401,11 @@ class DashSdkErrorTest {
     }
 
     @Test
-    fun chargedShieldedIdentityCreateCode77MapsTyped() {
-        val detail = "Shielded identity create failed with a paid error"
+    fun consumedShieldedIdentityCreateCode77MapsTyped() {
+        val detail = "Shielded identity create did not create its identity"
         val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
         val mapped = DashSdkError.fromNative(native)
-        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityCreateChargedFailure)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedIdentityCreateInputsConsumed)
         assertEquals(detail, mapped.message)
         assertFalse("its notes are spent", mapped.isRetryable)
     }
