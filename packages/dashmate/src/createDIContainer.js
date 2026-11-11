@@ -36,6 +36,8 @@ import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFac
 import writeServiceConfigsFactory from './templates/writeServiceConfigsFactory.js';
 
 import DockerCompose from './docker/DockerCompose.js';
+import DockerImageCleanup from './docker/DockerImageCleanup.js';
+import getConfiguredDockerImagesFactory from './docker/getConfiguredDockerImagesFactory.js';
 import StartedContainers from './docker/StartedContainers.js';
 import stopAllContainersFactory from './docker/stopAllContainersFactory.js';
 import dockerPullFactory from './docker/dockerPullFactory.js';
@@ -256,6 +258,8 @@ export default async function createDIContainer(options = {}) {
       new Docker(dockerOptions)
     )).singleton(),
     dockerCompose: asClass(DockerCompose).singleton(),
+    dockerImageCleanup: asClass(DockerImageCleanup).singleton(),
+    getConfiguredDockerImages: asFunction(getConfiguredDockerImagesFactory).singleton(),
     startedContainers: asFunction(() => (
       new StartedContainers()
     )).singleton(),
