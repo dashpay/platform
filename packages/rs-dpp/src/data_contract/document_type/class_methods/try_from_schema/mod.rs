@@ -789,7 +789,8 @@ fn apply_property_reference_v1(
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
     ) {
         return Err(DataContractError::InvalidContractStructure(
-            "a refersTo naming its target through contractIdProperty and documentTypeProperty              is only allowed on identifier properties: its value is the referenced document's id"
+            "a refersTo naming its target through contractIdProperty and documentTypeProperty \
+             is only allowed on identifier properties: its value is the referenced document's id"
                 .to_string(),
         ));
     }
