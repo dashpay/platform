@@ -219,6 +219,9 @@ struct Checker<'a> {
     parent: Option<(&'a Checker<'a>, String)>,
     /// The longest index property name, in bytes (`max_index_property_name_bytes`).
     max_index_property_name_bytes: usize,
+    /// The longest string a slot's `when` is written with, in characters
+    /// (`max_document_type_requirement_condition_text_length`).
+    max_requirement_condition_text_length: usize,
 }
 
 type Checked = Result<(), ProtocolError>;
@@ -230,6 +233,11 @@ impl Checker<'_> {
             parent: None,
             max_index_property_name_bytes: usize::from(
                 platform_version.system_limits.max_index_property_name_bytes,
+            ),
+            max_requirement_condition_text_length: usize::from(
+                platform_version
+                    .system_limits
+                    .max_document_type_requirement_condition_text_length,
             ),
         }
     }
@@ -245,6 +253,7 @@ impl Checker<'_> {
         check(&Checker {
             parent: Some((self, segment.to_string())),
             max_index_property_name_bytes: self.max_index_property_name_bytes,
+            max_requirement_condition_text_length: self.max_requirement_condition_text_length,
         })
     }
 

@@ -467,7 +467,12 @@ impl Checker<'_> {
                     let members = c.array(item)?;
                     for (index, member) in members.iter().enumerate() {
                         c.at(index, |c| {
-                            c.string_of_length(member, 1, Some(256)).map(drop)
+                            c.string_of_length(
+                                member,
+                                1,
+                                Some(c.max_requirement_condition_text_length),
+                            )
+                            .map(drop)
                         })?;
                     }
                     c.item_count(members, Some(2), None)?;
@@ -521,7 +526,8 @@ impl Checker<'_> {
         self.closed(constant, &["const"])?;
         self.required(constant, &["const"])?;
         self.member(constant, "const", |c, text| {
-            c.string_of_length(text, 1, Some(256)).map(drop)
+            c.string_of_length(text, 1, Some(c.max_requirement_condition_text_length))
+                .map(drop)
         })
     }
 

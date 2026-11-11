@@ -50,27 +50,39 @@ const SLOT_KEYS: [&str; 6] = [
 /// slot's `when` for a type the reference admits.
 const DYNAMIC_KIND_NAMES: [&str; 2] = ["permanentDocument", "moderatedDocument"];
 
-/// The most characters a `{ "const": ... }` of a slot's `when` holds: a property path, or
-/// the name of a kind.
-const MAX_SLOT_CONDITION_CONSTANT_LENGTH: usize = 256;
+/// The limits a slot's `when` is parsed under, of `SystemLimits`.
+#[derive(Clone, Copy)]
+struct SlotConditionLimits {
+    /// `max_document_type_requirement_condition_nodes`.
+    nodes: usize,
+    /// `max_document_type_requirement_condition_text_length`.
+    text_length: usize,
+}
 
 fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
 /// Whether a `refersTo` declaration names its target through the referring document: its
-/// `contractId` or its `documentType` is read from it (`"$self.<property>"`), or it
-/// carries `documentTypeRequirements`, which describe a type the schema does not name.
+/// `contractId` or its `documentType` is read from it (`"$self.<property>"`).
+///
+/// Nothing else tells one. This runs on every parse, the reading of a contract stored
+/// under an earlier protocol version included, and must read such a contract as that
+/// version did. No stored declaration is written this way: before protocol version 15 a
+/// `contractId` that is no identifier does not parse, and a `documentType` names a document
+/// type that exists, whose name holds no `$` and no dot. `documentTypeRequirements` beside
+/// a target the schema names is another matter: earlier versions did not read the key, so
+/// a stored declaration may carry it, and it stays unread here. Registration refuses it
+/// (the native schema check), like every key a declaration does not take.
 pub(super) fn declares_dynamic_target(refers_to_value: &Value) -> bool {
     refers_to_value
         .to_btree_ref_string_map()
         .is_ok_and(|declaration| {
-            declaration.contains_key(property_names::DOCUMENT_TYPE_REQUIREMENTS)
-                || TARGET_KEYS.iter().any(|key| {
-                    declaration
-                        .get(*key)
-                        .is_some_and(|value| read_from_referring_document(value).is_some())
-                })
+            TARGET_KEYS.iter().any(|key| {
+                declaration
+                    .get(*key)
+                    .is_some_and(|value| read_from_referring_document(value).is_some())
+            })
         })
 }
 
@@ -405,13 +417,20 @@ fn parse_slot(
     let when = slot
         .get("when")
         .map(|when| {
-            let max_nodes = usize::from(
-                platform_version
-                    .system_limits
-                    .max_document_type_requirement_condition_nodes,
-            );
+            let limits = SlotConditionLimits {
+                nodes: usize::from(
+                    platform_version
+                        .system_limits
+                        .max_document_type_requirement_condition_nodes,
+                ),
+                text_length: usize::from(
+                    platform_version
+                        .system_limits
+                        .max_document_type_requirement_condition_text_length,
+                ),
+            };
             let mut nodes = 0;
-            parse_slot_condition(when, &at(), &mut nodes, max_nodes)
+            parse_slot_condition(when, &at(), &mut nodes, limits)
         })
         .transpose()?;
 
@@ -425,11 +444,15 @@ fn parse_slot(
 }
 
 /// A string a slot's `when` compares: `$kind`, `$property` or `{ "const": <string> }`.
-fn slot_condition_value(value: &Value, at: &str) -> Result<SlotConditionValue, DataContractError> {
+fn slot_condition_value(
+    value: &Value,
+    at: &str,
+    max_length: usize,
+) -> Result<SlotConditionValue, DataContractError> {
     let shape = || {
         refused(format!(
             "{at} when compares \"{SLOT_CONDITION_KIND}\", \"{SLOT_CONDITION_PROPERTY}\" or {{ \
-             \"const\": <a string of 1 to {MAX_SLOT_CONDITION_CONSTANT_LENGTH} characters> }}, \
+             \"const\": <a string of 1 to {max_length} characters> }}, \
              got {value}"
         ))
     };
@@ -442,8 +465,7 @@ fn slot_condition_value(value: &Value, at: &str) -> Result<SlotConditionValue, D
             let constant = value.to_btree_ref_string_map().map_err(|_| shape())?;
             match (constant.len(), constant.get("const")) {
                 (1, Some(Value::Text(constant)))
-                    if (1..=MAX_SLOT_CONDITION_CONSTANT_LENGTH)
-                        .contains(&constant.chars().count()) =>
+                    if (1..=max_length).contains(&constant.chars().count()) =>
                 {
                     Ok(SlotConditionValue::Constant(constant.clone()))
                 }
@@ -471,30 +493,35 @@ fn parse_slot_conditions(
     values: &[Value],
     at: &str,
     nodes: &mut usize,
-    max_nodes: usize,
+    limits: SlotConditionLimits,
 ) -> Result<SlotConditions, DataContractError> {
     values
         .iter()
-        .map(|value| parse_slot_condition(value, at, nodes, max_nodes))
+        .map(|value| parse_slot_condition(value, at, nodes, limits))
         .collect::<Result<Vec<_>, _>>()
         .map(SlotConditions::new)
 }
 
 /// Parses a slot's `when`, or a condition inside one. `nodes` counts the conditions read so
-/// far, refused past `max_nodes`
+/// far, and each string an `in` or a `notIn` lists, refused past `limits.nodes`
 /// (`SystemLimits::max_document_type_requirement_condition_nodes`) before anything is read
 /// of the one that passes it, so the count also bounds how deep this recurses.
 fn parse_slot_condition(
     value: &Value,
     at: &str,
     nodes: &mut usize,
-    max_nodes: usize,
+    limits: SlotConditionLimits,
 ) -> Result<SlotCondition, DataContractError> {
     *nodes += 1;
-    if *nodes > max_nodes {
-        return Err(refused(format!(
-            "{at} when is made of more than {max_nodes} conditions"
-        )));
+    let too_large = || {
+        refused(format!(
+            "{at} when is made of more than {} conditions, counting each string an in or a \
+             notIn lists",
+            limits.nodes
+        ))
+    };
+    if *nodes > limits.nodes {
+        return Err(too_large());
     }
     let condition = value
         .to_btree_ref_string_map()
@@ -521,8 +548,8 @@ fn parse_slot_condition(
     match key {
         "equal" | "notEqual" => {
             let pair = items(2..=2, "two strings")?;
-            let left = slot_condition_value(&pair[0], at)?;
-            let right = slot_condition_value(&pair[1], at)?;
+            let left = slot_condition_value(&pair[0], at, limits.text_length)?;
+            let right = slot_condition_value(&pair[1], at, limits.text_length)?;
             match (&left, &right) {
                 (SlotConditionValue::Kind, SlotConditionValue::Constant(constant))
                 | (SlotConditionValue::Constant(constant), SlotConditionValue::Kind) => {
@@ -545,7 +572,13 @@ fn parse_slot_condition(
         }
         "in" | "notIn" => {
             let pair = items(2..=2, "a string and a list of two or more distinct strings")?;
-            let value = slot_condition_value(&pair[0], at)?;
+            let value = slot_condition_value(&pair[0], at, limits.text_length)?;
+            // Each string listed counts toward the limit, before any of them is read: the
+            // list is what one condition could otherwise grow without bound by
+            *nodes = nodes.saturating_add(pair[1].as_array().map_or(0, Vec::len));
+            if *nodes > limits.nodes {
+                return Err(too_large());
+            }
             let among = pair[1]
                 .as_array()
                 .filter(|among| among.len() >= 2)
@@ -555,8 +588,7 @@ fn parse_slot_condition(
                         .map(|text| {
                             text.as_text()
                                 .filter(|text| {
-                                    (1..=MAX_SLOT_CONDITION_CONSTANT_LENGTH)
-                                        .contains(&text.chars().count())
+                                    (1..=limits.text_length).contains(&text.chars().count())
                                 })
                                 .map(str::to_string)
                         })
@@ -566,7 +598,8 @@ fn parse_slot_condition(
                 .ok_or_else(|| {
                     refused(format!(
                         "{at} when {key} takes a string and a list of two or more distinct \
-                         strings of 1 to {MAX_SLOT_CONDITION_CONSTANT_LENGTH} characters"
+                         strings of 1 to {} characters",
+                        limits.text_length
                     ))
                 })?;
             match value {
@@ -602,7 +635,7 @@ fn parse_slot_condition(
                     )))
                 }
             };
-            let needle = slot_condition_value(&pair[1], at)?;
+            let needle = slot_condition_value(&pair[1], at, limits.text_length)?;
             if needle == SlotConditionValue::Kind {
                 return Err(refused(format!(
                     "{at} when contains looks for \"{SLOT_CONDITION_PROPERTY}\" or a {{ \"const\": \
@@ -623,7 +656,7 @@ fn parse_slot_condition(
                     "{at} when not holds a not or a notIn: write the condition it negates, or in"
                 )));
             }
-            parse_slot_conditions(std::slice::from_ref(operand), at, nodes, max_nodes)
+            parse_slot_conditions(std::slice::from_ref(operand), at, nodes, limits)
                 .map(SlotCondition::Not)
         }
         "anyOf" | "allOf" => {
@@ -638,7 +671,7 @@ fn parse_slot_condition(
                     "{at} when {key} holds another {key}: list its conditions in the outer one"
                 )));
             }
-            let conditions = parse_slot_conditions(operands, at, nodes, max_nodes)?;
+            let conditions = parse_slot_conditions(operands, at, nodes, limits)?;
             let listed = conditions.conditions();
             if listed
                 .iter()
@@ -655,12 +688,10 @@ fn parse_slot_condition(
                 SlotCondition::AllOf(conditions)
             })
         }
-        "ifThen" => parse_slot_conditions(items(2..=2, "two conditions")?, at, nodes, max_nodes)
+        "ifThen" => parse_slot_conditions(items(2..=2, "two conditions")?, at, nodes, limits)
             .map(SlotCondition::IfThen),
-        "ifThenElse" => {
-            parse_slot_conditions(items(3..=3, "three conditions")?, at, nodes, max_nodes)
-                .map(SlotCondition::IfThenElse)
-        }
+        "ifThenElse" => parse_slot_conditions(items(3..=3, "three conditions")?, at, nodes, limits)
+            .map(SlotCondition::IfThenElse),
         other => Err(refused(format!(
             "{at} when does not take {other}: a condition is equal, notEqual, in, notIn, \
              contains, not, anyOf, allOf, ifThen or ifThenElse"

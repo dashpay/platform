@@ -430,17 +430,16 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
             &format!("reads both contractId and documentType from it: {key} must be"),
         );
     }
-    // Requirements describe a type the schema does not name
-    assert_refused_by_the_parser(
-        note_contract(json!({
-            "type": "moderatedDocument",
-            "documentType": "post",
-            "documentTypeRequirements": {
-                "properties": { "body": { "name": "$any", "type": "string" } }
-            }
-        })),
-        "reads both contractId and documentType from it",
-    );
+    // Requirements describe a type the schema does not name: registration refuses them
+    // beside one it names (what a stored contract carrying them reads as is tested apart)
+    contract(note_contract(json!({
+        "type": "permanentDocument",
+        "documentType": "post",
+        "documentTypeRequirements": {
+            "properties": { "body": { "name": "$any", "type": "string" } }
+        }
+    })))
+    .expect_err("documentTypeRequirements beside a target the schema names");
     // What is read is a top-level property, and two different ones
     for read in [
         "$self.",
@@ -1589,4 +1588,214 @@ fn should_write_requirements_as_a_schema_declares_them() {
             .expect("the schema value converts to JSON");
         assert_eq!(requirements(written), parsed);
     }
+}
+
+/// A contract stored before protocol version 15 is read as the version that stored it read
+/// it. That version did not read `documentTypeRequirements`, and through a key its schema
+/// check did not see (a root `properties` given twice: the check read the last entry, the
+/// parser the first) a stored declaration naming its target in the schema may carry one.
+/// It is still that reference: only `$self.` selects the reading this version adds, and no
+/// stored declaration is written with it.
+#[test]
+fn should_read_a_stored_reference_naming_its_target_in_the_schema_as_it_was_registered() {
+    let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+    let text = |value: &str| platform_value::Value::Text(value.to_string());
+    let reference = |stray: bool| {
+        let mut refers_to = json!({ "type": "permanentDocument", "documentType": "post" });
+        if stray {
+            refers_to["documentTypeRequirements"] = json!({
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            });
+        }
+        let mut description_id = identifier(0);
+        description_id["refersTo"] = refers_to;
+        platform_value::to_value(json!({ "descriptionId": description_id }))
+            .expect("the properties should convert")
+    };
+    // `properties` twice: the first entry carries the stray key, the last does not
+    let schema = platform_value::Value::Map(vec![
+        (text("type"), text("object")),
+        (text("properties"), reference(true)),
+        (text("properties"), reference(false)),
+        (
+            text("additionalProperties"),
+            platform_value::Value::Bool(false),
+        ),
+    ]);
+    let parse = |full_validation: bool, platform_version: &PlatformVersion| {
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("default config");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "note",
+            schema.clone(),
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    };
+    let target = |document_type: &DocumentType| {
+        document_type
+            .properties()
+            .get("descriptionId")
+            .expect("descriptionId")
+            .property_type
+            .clone()
+    };
+
+    // Protocol version 14 registers it, reading the reference of the first entry
+    let registered = parse(true, platform_version_14).expect("protocol version 14 registers it");
+    assert!(matches!(
+        target(&registered),
+        DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        )
+    ));
+    // and this version, loading what was stored, reads the same reference
+    let loaded = parse(false, PlatformVersion::latest()).expect("the stored schema still loads");
+    assert_eq!(target(&loaded), target(&registered));
+    // though it registers no such schema itself
+    parse(true, PlatformVersion::latest())
+        .expect_err("registration refuses the repeated key and the stray one");
+
+    // A whole contract stored that way loads too
+    let stored = contract_on(
+        note_contract(json!({
+            "type": "permanentDocument",
+            "documentType": "post",
+            "documentTypeRequirements": {
+                "properties": { "body": { "name": "$any", "type": "string" } }
+            }
+        })),
+        false,
+        platform_version_14,
+    )
+    .expect("parsed as protocol version 14 stored it");
+    let bytes = stored
+        .serialize_to_bytes_with_platform_version(platform_version_14)
+        .expect("the contract should serialize");
+    let recovered =
+        DataContract::versioned_deserialize_untrusted(&bytes, false, PlatformVersion::latest())
+            .expect("the stored contract loads at the latest protocol version");
+    let note = |contract: &DataContract| {
+        contract
+            .document_type_for_name("note")
+            .expect("note")
+            .properties()["descriptionId"]
+            .property_type
+            .clone()
+    };
+    assert_eq!(note(&recovered), note(&stored));
+    assert!(matches!(
+        note(&recovered),
+        DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        )
+    ));
+}
+
+/// A `when` is held to its nodes and to the length of its strings, so what one adds to a
+/// stored contract is bounded: each string an `in` or a `notIn` lists counts as a node, and
+/// no string is longer than a property path.
+#[test]
+fn should_bound_what_a_slot_condition_lists() {
+    let limits = &PlatformVersion::latest().system_limits;
+    let max_nodes = usize::from(limits.max_document_type_requirement_condition_nodes);
+    let max_length = usize::from(limits.max_document_type_requirement_condition_text_length);
+    let listing = |key: &str, count: usize| json!({ key: ["$property", (0..count).map(|index| format!("p{index}")).collect::<Vec<_>>()] });
+    let refused = |when: serde_json::Value, fragment: &str| {
+        assert_refused_by_the_parser(note_contract(requiring(body_when(when))), fragment);
+    };
+
+    // The list and the condition holding it: as many strings as the limit less one
+    for key in ["in", "notIn"] {
+        assert_eq!(
+            parsed_when(listing(key, max_nodes - 1)).node_count(),
+            max_nodes
+        );
+        refused(
+            listing(key, max_nodes),
+            &format!("when is made of more than {max_nodes} conditions, counting each string"),
+        );
+        // however many: the list is not read past the limit
+        refused(
+            listing(key, 50_000),
+            &format!("when is made of more than {max_nodes} conditions, counting each string"),
+        );
+    }
+    // The strings count with the conditions around them
+    refused(
+        json!({ "allOf": [
+            listing("in", max_nodes / 2),
+            listing("notIn", max_nodes / 2)
+        ] }),
+        &format!("when is made of more than {max_nodes} conditions"),
+    );
+
+    // A string is as long as a property path may be, and no longer
+    let long = |length: usize| "p".repeat(length);
+    parsed_when(json!({ "equal": ["$property", { "const": long(max_length) }] }));
+    refused(
+        json!({ "equal": ["$property", { "const": long(max_length + 1) }] }),
+        &format!("a string of 1 to {max_length} characters"),
+    );
+    parsed_when(json!({ "in": ["$property", [long(max_length), "body"]] }));
+    refused(
+        json!({ "in": ["$property", [long(max_length + 1), "body"]] }),
+        &format!("strings of 1 to {max_length} characters"),
+    );
+    refused(
+        json!({ "contains": ["$moderatorAbilities.changeFields", { "const": long(max_length + 1) }] }),
+        &format!("a string of 1 to {max_length} characters"),
+    );
+}
+
+/// Judging a type is billed by the comparisons it may take: each property a slot tries,
+/// and each node of the slot's `when` for it. The count reads the declaration and the size
+/// of the type, never what the type's properties are.
+#[test]
+fn should_count_the_comparisons_judging_a_type_takes() {
+    let parsed = |requirements_value: serde_json::Value| {
+        let parsed = contract(note_contract(requiring(requirements_value))).expect("parses");
+        let requirements = dynamic_reference(&parsed)
+            .requirements
+            .expect("requirements");
+        let post = parsed.document_type_for_name("post").expect("post");
+        (
+            requirements.comparisons(post),
+            post.properties().len() as u64,
+        )
+    };
+
+    // Any property: each of the type's is tried, whatever it holds
+    let (comparisons, properties) =
+        parsed(json!({ "properties": { "body": { "name": "$any", "type": "boolean" } } }));
+    assert_eq!(properties, 7);
+    assert_eq!(comparisons, properties);
+    // A named one: one, and one read from the document: one
+    let (comparisons, _) = parsed(json!({ "properties": {
+        "body": { "name": "body", "type": "string" },
+        "other": { "name": "$self.bodyProperty", "type": "string" }
+    } }));
+    assert_eq!(comparisons, 2);
+    // A `when` adds its nodes for each property tried, listed strings among them
+    let (comparisons, properties) = parsed(json!({ "properties": {
+        "body": {
+            "name": "$any",
+            "type": "string",
+            "when": { "notIn": ["$property", ["title", "summary", "label"]] }
+        },
+        "named": {
+            "name": "blob",
+            "type": "array",
+            "byteArray": true,
+            "when": { "not": { "equal": ["$property", { "const": "raw" }] } }
+        }
+    } }));
+    assert_eq!(comparisons, properties * (1 + 4) + (1 + 2));
 }

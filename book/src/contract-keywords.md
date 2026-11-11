@@ -331,7 +331,8 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_property_constraint_nodes` | 32 | nodes in one rule |
 | `max_choose_first_candidates` | 1000 | commitments a create reads for a [`chooseFirst`](contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst) |
 | `max_document_type_requirement_slots` | 4 | slots a [`documentTypeRequirements`](contract-keywords/refers-to-dynamic.md#documenttyperequirements) may declare |
-| `max_document_type_requirement_condition_nodes` | 16 | conditions in one slot's [`when`](contract-keywords/refers-to-dynamic.md#a-condition-on-the-property-when) |
+| `max_document_type_requirement_condition_nodes` | 16 | conditions in one slot's [`when`](contract-keywords/refers-to-dynamic.md#a-condition-on-the-property-when), each string an `in` or a `notIn` lists counted |
+| `max_document_type_requirement_condition_text_length` | 256 | characters of a string a slot's `when` is written with |
 | `min_document_ttl_seconds`, `max_document_ttl_seconds` | 3600, 31536000 | `ttl` |
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
 | `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |

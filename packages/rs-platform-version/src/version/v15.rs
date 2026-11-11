@@ -695,8 +695,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     property tried for the slot), `$moderatorAbilities.deleteKeepsFields` and
 ///     `$moderatorAbilities.changeFields` (the type's lists) and `{ "const": <string> }`,
 ///     of at most `max_document_type_requirement_condition_nodes` conditions (16,
-///     `SYSTEM_LIMITS_V5`, backfilled); a property it does not hold for does not fill the
-///     slot. The native schema check of note 7 admits the keys and meta-schema v3 refuses
+///     `SYSTEM_LIMITS_V5`, backfilled), each string an `in` or a `notIn` lists counted,
+///     none longer than `max_document_type_requirement_condition_text_length` (256,
+///     backfilled); a property it does not hold for does not fill the slot. Judging the
+///     named type is billed before it is judged, `requirement_credits_per_comparison`
+///     (100, added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`, which nothing read for
+///     it before) for each property a slot tries and each node of its `when` for it. The native schema check of note 7 admits the keys and meta-schema v3 refuses
 ///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
