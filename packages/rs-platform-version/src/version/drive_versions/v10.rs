@@ -24,7 +24,7 @@ use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
-/// * **Retained history** (protocol v15 note 33): per-type revision trees and one proof
+/// * **Retained history** (protocol v15 note 35): per-type revision trees and one proof
 ///   authenticate its page, count and lifecycle.
 /// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the

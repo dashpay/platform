@@ -9,13 +9,14 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Records `core_height` as the chain locked Core height of the first Platform block that
-    /// saw `fork` active. The record is written once and never changed: recording a fork again
-    /// is an error. The write is applied at once, so later reads in the transaction see it.
+    /// Records `core_height` as the chain locked Core height at which Platform first observed
+    /// `fork` active, at init chain or in a block. The record is written once and never
+    /// changed: recording a fork again is an error. The write is applied at once, so later
+    /// reads in the transaction see it.
     ///
     /// # Parameters
     /// - `fork`: the Core fork.
-    /// - `core_height`: the chain locked Core height of the block that saw it active.
+    /// - `core_height`: the chain locked Core height at which Platform observed it active.
     /// - `transaction`: the transaction to write in; in a block, the block's transaction.
     /// - `platform_version`: the platform version.
     ///
