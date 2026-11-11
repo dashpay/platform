@@ -1134,8 +1134,13 @@ class ManagedPlatformWallet internal constructor(
      * `DeductFromInput(0)`. Index 0 is resolved against the inputs sorted by
      * address, NOT the order of [inputs], so the input whose address sorts
      * first pays the fee and must keep at least the fee after its amount is
-     * taken. With one input, that is the input itself: size it as
-     * `balance − preflightWithdrawal().estimatedFee` or less.
+     * taken. With one input, that is the input itself. If
+     * `preflightWithdrawal(accountIndex, coreFeePerByte).canWithdraw` is
+     * true, use its `estimatedFee` as the reserve: size the input as
+     * `balance − estimatedFee` or less. That AUTO estimate may cover more
+     * inputs than this withdrawal, so it can over-reserve. If `canWithdraw`
+     * is false, `estimatedFee` is zero and is not a fee estimate for an
+     * explicit withdrawal.
      *
      * [coreAddress] is passed as given. Rust rejects an empty or
      * NUL-containing value and network-checks it, as in the full-balance
