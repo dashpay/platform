@@ -40,6 +40,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::credits::parse_credit_rows;
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
@@ -2808,14 +2809,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
-/// Size of one row of the withdrawal-inputs blob:
-/// `u8 addressType, u8[20] hash, u64 credits`.
-const WITHDRAWAL_INPUT_ROW_LEN: usize = 1 + 20 + 8;
-
 /// Decode the withdrawal-inputs blob into FFI rows.
 ///
-/// Layout (big-endian, the same row shape as the transfer outputs blob):
-/// `u32 rowCount` then per row `u8 addressType, u8[20] hash, u64 credits`.
+/// The blob uses the shared credit-row format parsed by
+/// [`crate::credits::parse_credit_rows`] (the same rows as the transfer
+/// outputs blob): `u32 rowCount` then per row `u8 addressType, u8[20] hash,
+/// u64 credits`, big-endian.
 ///
 /// Only malformed framing and a set sign bit on `credits` (a negative Kotlin
 /// `Long`, which would otherwise read as a huge `u64`) are rejected here.
@@ -2826,39 +2825,16 @@ const WITHDRAWAL_INPUT_ROW_LEN: usize = 1 + 20 + 8;
 fn decode_withdrawal_inputs(
     bytes: &[u8],
 ) -> Result<Vec<platform_wallet_ffi::ExplicitInputFFI>, String> {
-    let (count_bytes, body) = bytes
-        .split_first_chunk::<4>()
-        .ok_or("withdrawal inputs blob truncated (row count)")?;
-    let count = u32::from_be_bytes(*count_bytes) as usize;
-    // Exact-length check before allocating: a header that disagrees with
-    // the payload is malformed, and this bounds `with_capacity`.
-    if count.checked_mul(WITHDRAWAL_INPUT_ROW_LEN) != Some(body.len()) {
-        return Err(format!(
-            "withdrawal inputs blob claims {count} rows but has {} body bytes",
-            body.len()
-        ));
-    }
-    let mut inputs = Vec::with_capacity(count);
-    let (rows, _) = body.as_chunks::<WITHDRAWAL_INPUT_ROW_LEN>();
-    for (i, row) in rows.iter().enumerate() {
-        // The row is a `[u8; 29]`, so this pattern is irrefutable and binds
-        // `hash` as `[u8; 20]`.
-        let &[address_type, ref hash @ .., c0, c1, c2, c3, c4, c5, c6, c7] = row;
-        let credits = u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]);
-        if credits & (1 << 63) != 0 {
-            return Err(format!(
-                "withdrawal inputs blob row {i} credits amount out of range"
-            ));
-        }
-        inputs.push(platform_wallet_ffi::ExplicitInputFFI {
-            address: platform_wallet_ffi::PlatformAddressFFI {
-                address_type,
-                hash: *hash,
+    let rows = parse_credit_rows(bytes, "withdrawal inputs blob")?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(address_type, hash, credits)| platform_wallet_ffi::ExplicitInputFFI {
+                address: platform_wallet_ffi::PlatformAddressFFI { address_type, hash },
+                balance: credits,
             },
-            balance: credits,
-        });
-    }
-    Ok(inputs)
+        )
+        .collect())
 }
 
 /// Withdraw exactly the listed amounts from the listed platform addresses
@@ -4638,9 +4614,10 @@ mod tests {
         let mut short = blob(&[(0, [0u8; 20], 5)]);
         short.pop();
         assert!(decode_withdrawal_inputs(&short).is_err());
+        // Bytes after the last row are ignored, as on every credit-row route.
         let mut long = blob(&[(0, [0u8; 20], 5)]);
         long.push(0);
-        assert!(decode_withdrawal_inputs(&long).is_err());
+        assert_eq!(decode_withdrawal_inputs(&long).expect("valid").len(), 1);
         // A header claiming more rows than the body holds must not allocate.
         assert!(decode_withdrawal_inputs(&u32::MAX.to_be_bytes()).is_err());
     }

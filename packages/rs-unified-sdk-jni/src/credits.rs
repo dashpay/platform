@@ -389,11 +389,58 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
     })
 }
 
-/// Decode a credit-rows BLOB into owned `(address_type, hash, credits)`
+/// Size of one credit row: `u8 addressType, u8[20] hash, u64 credits`.
+const CREDIT_ROW_LEN: usize = 1 + 20 + 8;
+
+/// Parse a credit-rows BLOB into owned `(address_type, hash, credits)`
 /// tuples. Layout (big-endian): `u32 rowCount` then per row
-/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`. Throws +
-/// returns None on a malformed blob or an out-of-range (sign-bit-set)
-/// credit amount. [`field`] names the blob in error messages
+/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`. Bytes
+/// after the last row are ignored. Fails on a malformed blob or an
+/// out-of-range (sign-bit-set) credit amount; `field` names the blob in the
+/// error message, which never echoes a hash or amount.
+///
+/// The one parser for this wire format: [`decode_credit_rows`] wraps it for
+/// the JNI exports, and the explicit platform-address withdrawal in
+/// `wallet_manager.rs` maps its rows into `ExplicitInputFFI`.
+pub(crate) fn parse_credit_rows(
+    bytes: &[u8],
+    field: &str,
+) -> Result<Vec<(u8, [u8; 20], u64)>, String> {
+    let (count_bytes, body) = bytes
+        .split_first_chunk::<4>()
+        .ok_or_else(|| format!("{field} truncated (row count)"))?;
+    let count = u32::from_be_bytes(*count_bytes) as usize;
+    // Reject an impossible row count before allocating: rows are a fixed
+    // 29 bytes, so a header claiming more than the remaining payload can
+    // hold is malformed. Guards the raw-JNI boundary against a huge
+    // `with_capacity` abort on a short/hostile blob.
+    if count
+        .checked_mul(CREDIT_ROW_LEN)
+        .is_none_or(|need| body.len() < need)
+    {
+        return Err(format!("{field} claims {count} rows but body is too short"));
+    }
+    let (rows, _) = body.as_chunks::<CREDIT_ROW_LEN>();
+    let mut out = Vec::with_capacity(count);
+    for (i, row) in rows.iter().take(count).enumerate() {
+        // The row is a `[u8; 29]`, so this pattern is irrefutable and binds
+        // `hash` as `[u8; 20]`.
+        let &[address_type, ref hash @ .., c0, c1, c2, c3, c4, c5, c6, c7] = row;
+        let credits = u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]);
+        // The Kotlin encoder writes this field from a signed long; a set
+        // sign bit means a negative amount crossed the boundary — reject
+        // rather than treat it as a huge unsigned credit value.
+        if credits & (1 << 63) != 0 {
+            return Err(format!("{field} row {i} credits amount out of range"));
+        }
+        out.push((address_type, *hash, credits));
+    }
+    Ok(out)
+}
+
+/// Decode a credit-rows BLOB (see [`parse_credit_rows`]) from a Java
+/// `byte[]`. Throws + returns None on a null array, a malformed blob or an
+/// out-of-range credit amount. [`field`] names the blob in error messages
 /// (`"inputsBlob"` / `"outputsBlob"`).
 ///
 /// Shared by the top-up (ID-06) and transfer-to-addresses (ID-11) credit
@@ -413,68 +460,13 @@ pub(crate) fn decode_credit_rows(
             return None;
         }
     };
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<&[u8]> {
-        if *cursor + n > bytes.len() {
-            return None;
+    match parse_credit_rows(&bytes, field) {
+        Ok(rows) => Some(rows),
+        Err(msg) => {
+            throw_sdk_exception(env, 1, &msg);
+            None
         }
-        let s = &bytes[*cursor..*cursor + n];
-        *cursor += n;
-        Some(s)
-    };
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, &format!("{field} truncated (row count)"));
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
-    // Reject an impossible row count before allocating: rows are a fixed
-    // 29 bytes, so a header claiming more than the remaining payload can
-    // hold is malformed. Guards the raw-JNI boundary against a huge
-    // `with_capacity` abort on a short/hostile blob (the per-row reads
-    // below still throw precise truncation errors for valid-sized claims).
-    if count
-        .checked_mul(29)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("{field} claims {count} rows but body is too short"),
-        );
-        return None;
     }
-    let mut rows = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} type"));
-            return None;
-        };
-        let address_type = type_byte[0];
-        let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} hash"));
-            return None;
-        };
-        let mut hash = [0u8; 20];
-        hash.copy_from_slice(hash_bytes);
-        let Some(credits_bytes) = read(&mut cursor, 8) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} credits"));
-            return None;
-        };
-        let credits = u64::from_be_bytes(credits_bytes.try_into().ok()?);
-        // The Kotlin encoder writes this field from a signed long; a set
-        // sign bit means a negative amount crossed the boundary — reject
-        // rather than treat it as a huge unsigned credit value.
-        if credits & (1 << 63) != 0 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("{field} row {i} credits amount out of range"),
-            );
-            return None;
-        }
-        rows.push((address_type, hash, credits));
-    }
-    Some(rows)
 }
 
 /// Decode the top-up inputs BLOB into owned [`IdentityFundingInputFFI`]
