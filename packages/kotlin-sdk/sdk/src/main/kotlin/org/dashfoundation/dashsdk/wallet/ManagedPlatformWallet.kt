@@ -3,9 +3,12 @@ package org.dashfoundation.dashsdk.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.AssetLockBuiltBridge
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.persistence.encodeOutPointHex
+import org.dashfoundation.dashsdk.persistence.outpointTxid
 import org.dashfoundation.dashsdk.tokens.translateManagedIdentityNotFoundToZero
 import java.util.concurrent.atomic.AtomicLong
 
@@ -723,6 +726,42 @@ class ManagedPlatformWallet internal constructor(
             (31 * addressType + hash.contentHashCode()) * 31 + (credits?.hashCode() ?: 0)
     }
 
+    /**
+     * The outpoint of a newly built asset lock, as reported to
+     * [fundFromAssetLockExternal]'s `onAssetLockBuilt` — port of Swift's
+     * `AssetLockBuiltOutPoint`.
+     *
+     * @property txid 32-byte txid in wire (little-endian) order — the order
+     *   [resumeFundFromAssetLockExternal] takes.
+     * @property vout output index of the credit output.
+     * @property outPointHex `<display-order txid hex>:<vout>`, the key of the
+     *   lock's persisted `AssetLockEntity` row.
+     */
+    class AssetLockBuiltOutPoint private constructor(private val raw: ByteArray) {
+        val txid: ByteArray = outpointTxid(raw)
+        val vout: Int = java.nio.ByteBuffer.wrap(raw, 32, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+        val outPointHex: String get() = encodeOutPointHex(raw)
+
+        override fun equals(other: Any?): Boolean =
+            other is AssetLockBuiltOutPoint && raw.contentEquals(other.raw)
+
+        override fun hashCode(): Int = raw.contentHashCode()
+
+        override fun toString(): String = "AssetLockBuiltOutPoint($outPointHex)"
+
+        companion object {
+            /**
+             * Decode the 36 bytes the FFI reports (`txid_le[32] || vout_le[4]`).
+             *
+             * @throws IllegalArgumentException for any other length.
+             */
+            fun fromRawBytes(raw: ByteArray): AssetLockBuiltOutPoint {
+                require(raw.size == 36) { "outpoint must be 36 bytes, got ${raw.size}" }
+                return AssetLockBuiltOutPoint(raw.copyOf())
+            }
+        }
+    }
+
     /** One updated address balance from a funding changeset. */
     data class UpdatedBalance(val addressType: Int, val hash: ByteArray, val balance: Long) {
         override fun equals(other: Any?): Boolean =
@@ -799,6 +838,158 @@ class ManagedPlatformWallet internal constructor(
         }
         val blob = mapNativeErrors {
             WalletManagerNative.walletResumeFundFromAssetLock(
+                walletHandle = handle,
+                outPointTxid = outPointTxid,
+                outPointVout = outPointVout,
+                platformAccountIndex = platformAccountIndex,
+                recipientsBlob = encodeRecipients(recipients),
+                signerHandle = signerHandle,
+                coreSignerHandle = coreSignerHandle,
+            )
+        }
+        decodeChangeset(blob)
+    }
+
+    /**
+     * Pay a THIRD PARTY's Platform address from a Core L1 asset lock built
+     * from this wallet's balance, keeping the remainder (change) on one of
+     * this wallet's own addresses — port of
+     * `ManagedPlatformAddressWallet.fundFromAssetLockExternal`.
+     *
+     * Sibling of [fundFromAssetLock]: same orchestration, same parameters,
+     * same return type. The only difference is the Rust recipient pre-flight:
+     * explicit-amount recipients may be ANY valid P2PKH Platform address, not
+     * just members of [platformAccountIndex]. The single remainder recipient
+     * must still belong to [platformAccountIndex], so change and fee always
+     * land on an owned address.
+     *
+     * Whether a recipient may be a third party is decided by WHICH function
+     * you call, not by a flag on [FundRecipient]. Keep using
+     * [fundFromAssetLock] for self-funding: there a mistyped address is
+     * rejected before anything is broadcast, while here it is a valid and
+     * IRREVERSIBLE payment to a stranger.
+     *
+     * ## Failure and resume — bind the recipients to the lock
+     * The lock is tracked as `AssetLockFundingType.AssetLockAddressTopUp`,
+     * exactly like an owned funding. The tracked lock stores NO recipients
+     * and NO owned/external flag: Rust only knows the outpoint, its status
+     * and its proof. If the Platform step fails, the lock stays non-Consumed
+     * and shows as resumable, and resume takes the recipients from the caller
+     * again. Therefore:
+     * - Persist the recipient list (address and amount) under an id of your
+     *   own BEFORE calling this.
+     * - In [onAssetLockBuilt], durably record the reported outpoint against
+     *   that id. It is the only link between the persisted recipients and
+     *   the lock: with more than one funding in flight, matching by amount
+     *   or timing can pick the wrong lock after a restart.
+     * - Resume a lock recorded this way with exactly its list through
+     *   [resumeFundFromAssetLockExternal]. Any other route is wrong:
+     *   [resumeFundFromAssetLock] with this list fails closed (its owned-only
+     *   pre-flight rejects the third-party output before submit), but with an
+     *   owned-only list — e.g. a generic "resume top-up" screen that picks a
+     *   fresh own address — it succeeds and returns the whole lock to the
+     *   wallet, leaving the payee unpaid; and resuming with a different list
+     *   silently pays the new list.
+     *
+     * @param amountDuffs amount to lock, in Core duffs.
+     * @param fundingAccountIndex standard-family source index — see
+     *   [fundFromAssetLock].
+     * @param platformAccountIndex Platform-payment account that owns the
+     *   REMAINDER recipient. Explicit-amount recipients need not belong to it.
+     * @param recipients exactly one entry with `credits = null` (the
+     *   remainder, an address of this wallet) plus the explicit-amount
+     *   payees; P2PKH (`addressType = 0`) only. `platform-wallet` owns these
+     *   rules and rejects a violating list before any lock is built; its
+     *   error surfaces as a [org.dashfoundation.dashsdk.errors.DashSdkError].
+     * @param signerHandle the platform-address per-input `SignerHandle`.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle` for the
+     *   asset-lock's outer state-transition signature.
+     * @param onAssetLockBuilt called at most once with the new lock's
+     *   outpoint, after the lock transaction is signed and before the lock's
+     *   row is persisted or the lock is broadcast; it is not called when the
+     *   build itself fails. It runs on the SDK's runtime thread, inside this
+     *   call: record the outpoint synchronously (durably, to survive a
+     *   restart) before returning, keep it short, and do not call any wallet
+     *   or SDK function from it. It cannot stop the funding: an exception it
+     *   throws is discarded and the lock is still broadcast and submitted.
+     * @return updated balances for the recipients that belong to this wallet
+     *   — in practice only the remainder address. The third party's credit
+     *   is proven on Platform but has no local row, so it is not included.
+     * @throws IllegalArgumentException for a non-positive amount or a
+     *   negative index; nothing is built then.
+     */
+    suspend fun fundFromAssetLockExternal(
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        platformAccountIndex: Int,
+        recipients: List<FundRecipient>,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+        onAssetLockBuilt: (AssetLockBuiltOutPoint) -> Unit,
+    ): List<UpdatedBalance> = gate.op {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
+        require(platformAccountIndex >= 0) {
+            "platformAccountIndex must be non-negative, got $platformAccountIndex"
+        }
+        val bridge = AssetLockBuiltBridge { onAssetLockBuilt(AssetLockBuiltOutPoint.fromRawBytes(it)) }
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletFundFromAssetLockExternal(
+                walletHandle = handle,
+                amountDuffs = amountDuffs,
+                accountIndex = fundingAccountIndex,
+                platformAccountIndex = platformAccountIndex,
+                recipientsBlob = encodeRecipients(recipients),
+                signerHandle = signerHandle,
+                coreSignerHandle = coreSignerHandle,
+                onAssetLockBuilt = bridge,
+            )
+        }
+        decodeChangeset(blob)
+    }
+
+    /**
+     * Resume a stuck external-recipient funding from an already-tracked asset
+     * lock by outpoint — port of
+     * `ManagedPlatformAddressWallet.resumeFundFromAssetLockExternal`.
+     *
+     * Sibling of [resumeFundFromAssetLock] (same resume-by-outpoint shape)
+     * and of [fundFromAssetLockExternal] (same relaxed recipient rules).
+     *
+     * The recipients are a PARAMETER, not something recovered from the
+     * tracked lock: Rust never learns the destination of an address-funding
+     * asset lock. Pass exactly the list persisted before the original
+     * [fundFromAssetLockExternal] call, found through the outpoint its
+     * `onAssetLockBuilt` reported. The asset lock is a bearer input,
+     * not a commitment to a destination, so a different list pays the new
+     * list.
+     *
+     * @param outPointTxid 32-byte raw txid (little-endian wire order).
+     * @param outPointVout funding output index.
+     * @param recipients the persisted list; `platform-wallet` applies the
+     *   same rules as [fundFromAssetLockExternal] before submitting.
+     * @throws IllegalArgumentException for a txid that is not 32 bytes or a
+     *   negative vout or index; nothing is submitted then.
+     */
+    suspend fun resumeFundFromAssetLockExternal(
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        platformAccountIndex: Int,
+        recipients: List<FundRecipient>,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): List<UpdatedBalance> = gate.op {
+        require(outPointTxid.size == 32) {
+            "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        require(platformAccountIndex >= 0) {
+            "platformAccountIndex must be non-negative, got $platformAccountIndex"
+        }
+        val blob = mapNativeErrors {
+            WalletManagerNative.walletResumeFundFromAssetLockExternal(
                 walletHandle = handle,
                 outPointTxid = outPointTxid,
                 outPointVout = outPointVout,
@@ -1133,24 +1324,6 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
-     * Encode [recipients] to the funding-recipients blob the FFI reads:
-     * `u32 rowCount` then per row `u8 addressType, u8[20] hash,
-     * u8 hasBalance (0/1), u64 balance`.
-     */
-    private fun encodeRecipients(recipients: List<FundRecipient>): ByteArray {
-        val out = java.io.ByteArrayOutputStream()
-        val dos = java.io.DataOutputStream(out)
-        dos.writeInt(recipients.size)
-        for (r in recipients) {
-            dos.writeByte(r.addressType)
-            dos.write(r.hash)
-            dos.writeByte(if (r.credits != null) 1 else 0)
-            dos.writeLong(r.credits ?: 0L)
-        }
-        return out.toByteArray()
-    }
-
-    /**
      * Decode a funding changeset blob (`u32 rowCount` then per row
      * `u8 addressType, u8[20] hash, u64 balance`) into [UpdatedBalance]s.
      */
@@ -1199,6 +1372,31 @@ class ManagedPlatformWallet internal constructor(
             }
         }
         return out
+    }
+
+    internal companion object {
+        /**
+         * Encode [recipients] to the funding-recipients blob the FFI reads:
+         * `u32 rowCount` then per row `u8 addressType, u8[20] hash,
+         * u8 hasBalance (0/1), u64 balance`.
+         *
+         * Pure marshalling: one row per recipient, in the caller's order.
+         * Rust collects the rows into a map, so order carries no meaning,
+         * and it derives the fee-paying output itself
+         * (`remainder_fee_strategy`) — Kotlin never computes a fee strategy.
+         */
+        internal fun encodeRecipients(recipients: List<FundRecipient>): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            val dos = java.io.DataOutputStream(out)
+            dos.writeInt(recipients.size)
+            for (r in recipients) {
+                dos.writeByte(r.addressType)
+                dos.write(r.hash)
+                dos.writeByte(if (r.credits != null) 1 else 0)
+                dos.writeLong(r.credits ?: 0L)
+            }
+            return out.toByteArray()
+        }
     }
 
     /** Runs on [NativeCleaner] or [close]; destroys the handle exactly once. */
