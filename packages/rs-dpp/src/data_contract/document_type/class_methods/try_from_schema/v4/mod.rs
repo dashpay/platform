@@ -96,11 +96,11 @@ impl DocumentType {
     }
 }
 
-#[cfg(test)]
-mod keep_history_tests;
-
 const PARSER_GENERATION: common::ParserGeneration = common::ParserGeneration {
     admit_lifecycle: true,
     meta_schema_method_name: "DocumentType::try_from_schema_v4 (document_type_schema)",
     ..super::v3::PARSER_GENERATION
 };
+
+#[cfg(test)]
+mod keep_history_tests;
