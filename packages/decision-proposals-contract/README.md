@@ -72,7 +72,7 @@ contract is one whose moderators the masternodes elect.
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
 | `descriptionId` | identifier, required | The document saying what is being decided |
-| `descriptionContractId` | identifier, required | The contract that document lives in, one declaring elected moderation |
+| `descriptionContractId` | identifier, required | The contract that document lives in, one declaring elected moderation that does not protect its owner from the team |
 | `descriptionDocumentType` | string, 1 to 64 characters, required | That document's document type |
 | `url` | string, a URI of 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
 | `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is false |

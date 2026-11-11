@@ -50,7 +50,7 @@ pub mod document_types {
             /// takes away and that its author writes.
             pub const DESCRIPTION_ID: &str = "descriptionId";
             /// The id of the contract the description document lives in, one declaring
-            /// elected moderation.
+            /// elected moderation that does not protect its owner from the team.
             pub const DESCRIPTION_CONTRACT_ID: &str = "descriptionContractId";
             /// The name of the description document's document type.
             pub const DESCRIPTION_DOCUMENT_TYPE: &str = "descriptionDocumentType";

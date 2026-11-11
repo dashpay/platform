@@ -264,13 +264,14 @@ mod tests {
                 }
             })
         );
-        // and that contract is one whose moderators the masternodes elect
+        // and that contract is one whose moderators the masternodes elect, with no
+        // protection of its owner from them: a description its owner wrote is removable too
         assert_eq!(
             question["properties"][multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID]
                 ["refersTo"],
             serde_json::json!({
                 "type": "contract",
-                "contractRequirements": { "moderation": "elected" }
+                "contractRequirements": { "moderation": "elected", "ownerProtected": false }
             })
         );
         let required: Vec<&str> = question["required"]

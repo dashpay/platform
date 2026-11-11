@@ -306,7 +306,7 @@ describe('Decision Proposals Contract', () => {
       });
       expect(properties.descriptionContractId.refersTo).to.deep.equal({
         type: 'contract',
-        contractRequirements: { moderation: 'elected' },
+        contractRequirements: { moderation: 'elected', ownerProtected: false },
       });
     });
 

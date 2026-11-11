@@ -304,10 +304,11 @@
         "refersTo": {
           "type": "contract",
           "contractRequirements": {
-            "moderation": "elected"
+            "moderation": "elected",
+            "ownerProtected": false
           }
         },
-        "description": "The contract the description document lives in, one whose moderators the masternodes elect",
+        "description": "The contract the description document lives in, one whose moderators the masternodes elect and whose owner they may moderate like anyone",
         "position": 2
       },
       "descriptionDocumentType": {

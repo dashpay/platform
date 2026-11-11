@@ -136,15 +136,49 @@ fn text_schema(extra: Value) -> Value {
     schema
 }
 
+/// Who moderates a contract hosting descriptions.
+#[derive(Clone, Copy, PartialEq)]
+enum HostModerators {
+    /// A team the masternodes elect, the contract's owner until one is seated.
+    Elected,
+    /// The same, with the contract's owner protected from the team.
+    ElectedProtectingItsOwner,
+    /// The contract's owner alone.
+    Owner,
+}
+
 /// A contract hosting the texts proposals describe themselves with. Its moderators are a
 /// team the masternodes elect, its owner until one is seated, when `elected`; its owner
 /// alone otherwise. The same contract every time it is built.
 fn description_host(elected: bool, platform_version: &PlatformVersion) -> DataContract {
-    let owner_id = Identifier::new([if elected { 0xD5 } else { 0xD6 }; 32]);
+    description_host_moderated_by(
+        if elected {
+            HostModerators::Elected
+        } else {
+            HostModerators::Owner
+        },
+        platform_version,
+    )
+}
+
+/// A contract hosting descriptions, moderated by `moderators`. The same contract every time
+/// it is built.
+fn description_host_moderated_by(
+    moderators: HostModerators,
+    platform_version: &PlatformVersion,
+) -> DataContract {
+    let owner_id = Identifier::new(
+        [match moderators {
+            HostModerators::Elected => 0xD5,
+            HostModerators::Owner => 0xD6,
+            HostModerators::ElectedProtectingItsOwner => 0xD7,
+        }; 32],
+    );
     let mut contract =
         get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
             .data_contract_owned();
-    let moderators = if elected {
+    let owner_protected = moderators == HostModerators::ElectedProtectingItsOwner;
+    let moderators = if moderators != HostModerators::Owner {
         ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
@@ -161,7 +195,7 @@ fn description_host(elected: bool, platform_version: &PlatformVersion) -> DataCo
             interim: InterimModerators::ContractOwner,
             election_delay: None,
             max_added_moderators: 0,
-            owner_protected: false,
+            owner_protected,
         }))
     } else {
         ContractModerators::ContractOwner
@@ -210,11 +244,15 @@ fn setup() -> (
         .with_latest_protocol_version()
         .build_with_mock_rpc()
         .set_genesis_state();
-    for elected in [true, false] {
+    for moderators in [
+        HostModerators::Elected,
+        HostModerators::ElectedProtectingItsOwner,
+        HostModerators::Owner,
+    ] {
         platform
             .drive
             .apply_contract(
-                &description_host(elected, platform_version),
+                &description_host_moderated_by(moderators, platform_version),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1838,6 +1876,8 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     let mut proposer = writer(&mut platform, &mut rng);
     let elected = description_host(true, platform_version);
     let owner_moderated = description_host(false, platform_version);
+    let owner_protecting =
+        description_host_moderated_by(HostModerators::ElectedProtectingItsOwner, platform_version);
     for (document_type_name, kind) in [
         (TEXT, DocumentReferenceKind::Moderated),
         (KEPT_TEXT, DocumentReferenceKind::Moderated),
@@ -1860,6 +1900,7 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         (&elected, KEPT_TEXT),
         (&elected, PLAIN_TEXT),
         (&owner_moderated, TEXT),
+        (&owner_protecting, TEXT),
     ] {
         let id = describe(
             &platform,
@@ -1941,6 +1982,26 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     )
     .await;
     let error = process_refused(&platform, unelected, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(_))
+        ),
+        "{error:?}"
+    );
+
+    // and of a contract whose elected team may not moderate its owner: a description the
+    // owner wrote there could never be taken down
+    let (protected, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&owner_protecting, TEXT, text_of(&owner_protecting, TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, protected, 20_000, platform_version);
     assert!(
         matches!(
             error,
