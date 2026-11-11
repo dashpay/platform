@@ -990,6 +990,85 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Identity → EXTERNAL Shielded. The Type 21 `ShieldFromIdentity` transition
+    /// with the note assigned to `recipientRaw43` (a third-party raw 43-byte
+    /// Orchard payment address) instead of the wallet's own default address.
+    /// Same signer, confirmation and no-retry rules as
+    /// [`shieldedShieldFromIdentity`].
+    ///
+    /// The identity is debited `amount` plus the metered fee plus the shielded
+    /// compute fee (`estimateShieldedFee(kind: .shieldFromIdentity)`).
+    /// Returns the identity's proven post-debit balance; any unconfirmed
+    /// outcome throws `.shieldedSpendUnconfirmed` (do not resubmit).
+    @discardableResult
+    public func shieldedShieldFromIdentityToRecipient(
+        walletId: Data,
+        shieldedAccount: UInt32 = 0,
+        identityId: Data,
+        recipientRaw43: Data,
+        amount: UInt64,
+        identitySigner: KeychainSigner
+    ) async throws -> UInt64 {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipientRaw43 must be exactly 43 bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = identitySigner.handle
+
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
+            var newBalance: UInt64 = 0
+            try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    try identityId.withUnsafeBytes { idRaw in
+                        guard let idPtr = idRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                        else {
+                            throw PlatformWalletError.invalidParameter(
+                                "identityId baseAddress is nil"
+                            )
+                        }
+                        try recipientRaw43.withUnsafeBytes { rcpRaw in
+                            guard let rcpPtr = rcpRaw.baseAddress?
+                                .assumingMemoryBound(to: UInt8.self)
+                            else {
+                                throw PlatformWalletError.invalidParameter(
+                                    "recipientRaw43 baseAddress is nil"
+                                )
+                            }
+                            try platform_wallet_manager_shielded_shield_from_identity_to_recipient(
+                                handle, widPtr, shieldedAccount, idPtr, rcpPtr, amount,
+                                signerHandle, &newBalance
+                            ).check()
+                        }
+                    }
+                }
+            }
+            return newBalance
+        }.value
+    }
+
     /// Platform → EXTERNAL Shielded. The Type 15 shield with the note
     /// assigned to `recipientRaw43` (a third-party raw 43-byte Orchard
     /// payment address — same shape [`shieldedTransfer`] takes) instead
