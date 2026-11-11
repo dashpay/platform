@@ -2,8 +2,8 @@
 
 use std::sync::{Arc, PoisonError};
 
-use dash_context_provider::routing::SpvSourceLease;
 use dash_context_provider::ContextProvider;
+use dash_context_provider::SpvSourceLease;
 
 use super::PlatformWalletManager;
 use crate::changeset::PlatformWalletPersistence;
@@ -52,8 +52,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 mod tests {
     use std::sync::Arc;
 
-    use dash_context_provider::routing::{ContractSource, SpvContextProvider};
     use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dash_context_provider::{ContractSource, SpvContextProvider};
     use dashcore::sml::llmq_type::network::NetworkLLMQExt;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{DataContract, Identifier};

@@ -1036,7 +1036,7 @@ impl Sdk {
     /// replaces are not carried over.
     ///
     /// A provider that routes between sources, such as
-    /// [`AdaptiveContextProvider`](dash_context_provider::routing::AdaptiveContextProvider),
+    /// [`AdaptiveContextProvider`](dash_context_provider::AdaptiveContextProvider),
     /// routes inside itself, not in the SDK: once it is replaced, changing its
     /// mode or what is published into its SPV source slot no longer affects
     /// this SDK.

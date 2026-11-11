@@ -5,8 +5,8 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
-use super::{ContractSource, SpvSourceSlot};
-use crate::{platform_activation_height, ContextProvider, ContextProviderError};
+use super::SpvSourceSlot;
+use crate::{platform_activation_height, ContextProvider, ContextProviderError, ContractSource};
 
 /// Strict SPV: quorum keys come only from the SPV client published into
 /// [`Self::source_slot`]; contracts and tokens come from a [`ContractSource`].
@@ -84,7 +84,7 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use super::SpvContextProvider;
-    use crate::routing::test_support::{is_unavailable, quorum_key, quorums, TestContracts};
+    use crate::test_support::{is_unavailable, quorum_key, quorums, TestContracts};
     use crate::ContextProvider;
 
     #[test]

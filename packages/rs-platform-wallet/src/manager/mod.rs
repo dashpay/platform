@@ -522,8 +522,7 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// The SDK provider slot this manager serves SPV quorum keys into, held
     /// from [`Self::serve_spv_quorums`] until [`Self::shutdown`].
     #[cfg(feature = "spv-context")]
-    pub(super) spv_quorum_lease:
-        std::sync::Mutex<Option<dash_context_provider::routing::SpvSourceLease>>,
+    pub(super) spv_quorum_lease: std::sync::Mutex<Option<dash_context_provider::SpvSourceLease>>,
 }
 
 /// Keep `record`'s coverage only for the DashPay receival accounts `core`

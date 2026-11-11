@@ -4,8 +4,10 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
-use super::{ContractSource, SpvSourceLease, SpvSourceSlot};
-use crate::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use crate::{
+    ContextProvider, ContextProviderError, ContractSource, QuorumKeyFuture, SpvSourceLease,
+    SpvSourceSlot,
+};
 
 /// A quorum source answering every lookup with `[key_byte; 48]`, or failing.
 struct TestQuorums {

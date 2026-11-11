@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use dash_context_provider::routing::ContractSource;
 use dash_context_provider::ContextProviderError;
+use dash_context_provider::ContractSource;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{DataContract, Identifier};
@@ -195,7 +195,7 @@ impl ContractSource for LocalContextResolver {
 mod tests {
     use std::sync::Arc;
 
-    use dash_context_provider::routing::ContractSource;
+    use dash_context_provider::ContractSource;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::prelude::{DataContract, Identifier};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};

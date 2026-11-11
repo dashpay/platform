@@ -1,6 +1,6 @@
 //! SDK status query
 
-use dash_context_provider::routing::AdaptiveContextProviderSource;
+use dash_context_provider::AdaptiveContextProviderSource;
 use serde_json::json;
 use std::ffi::CString;
 
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
 mod tests {
     use std::ffi::{CStr, CString};
 
-    use dash_context_provider::routing::ContextProviderMode;
+    use dash_context_provider::ContextProviderMode;
     use serde_json::Value;
 
     use super::dash_sdk_get_status;

@@ -1,17 +1,3 @@
-//! Context providers that choose where quorum keys come from.
-//!
-//! [`SpvContextProvider`] takes quorum keys only from an SPV client.
-//! [`AdaptiveContextProvider`] routes each lookup to an SPV client or to a
-//! trusted provider by a mode that can change while the SDK runs. Both read
-//! data contracts and token configurations from a [`ContractSource`], which has
-//! no quorum keys to fall back on.
-//!
-//! The SPV client is not known when the SDK is built. Each provider owns an
-//! [`SpvSourceSlot`] slot; whoever runs the SPV client claims it with
-//! [`SpvSourceSlot::claim`] and publishes its quorum keys through the
-//! returned [`SpvSourceLease`]. Until then, and once the lease is dropped, an
-//! SPV lookup fails with [`ContextProviderError::QuorumSourceUnavailable`].
-
 use std::sync::Arc;
 
 use dpp::data_contract::TokenConfiguration;
@@ -19,16 +5,6 @@ use dpp::prelude::{DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
 use crate::ContextProviderError;
-
-mod adaptive;
-mod slot;
-mod spv;
-#[cfg(test)]
-mod test_support;
-
-pub use adaptive::{AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode};
-pub use slot::{Readiness, SpvSourceLease, SpvSourceSlot, SpvSourceSlotTaken};
-pub use spv::SpvContextProvider;
 
 /// The data contracts and token configurations a provider resolves locally.
 ///

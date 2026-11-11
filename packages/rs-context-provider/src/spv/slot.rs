@@ -10,8 +10,8 @@ pub type Readiness = Arc<dyn Fn() -> Result<bool, ContextProviderError> + Send +
 
 /// A published SPV client: its quorum lookups and whether it is synced.
 #[derive(Clone)]
-pub(super) struct SpvContextSource {
-    pub(super) provider: Arc<dyn ContextProvider>,
+pub(crate) struct SpvContextSource {
+    pub(crate) provider: Arc<dyn ContextProvider>,
     is_ready: Readiness,
 }
 
@@ -88,7 +88,7 @@ impl SpvSourceSlot {
     /// Every "no usable source" outcome, an unknown readiness included, is
     /// [`ContextProviderError::QuorumSourceUnavailable`]: it is this side's
     /// state, so the SDK must not ban the node whose proof it could not check.
-    pub(super) fn ready_source(&self) -> Result<SpvContextSource, ContextProviderError> {
+    pub(crate) fn ready_source(&self) -> Result<SpvContextSource, ContextProviderError> {
         let source = self
             .claim
             .load_full()
@@ -109,7 +109,7 @@ impl SpvSourceSlot {
         }
     }
 
-    pub(super) fn is_ready(&self) -> bool {
+    pub(crate) fn is_ready(&self) -> bool {
         self.ready_source().is_ok()
     }
 }
@@ -143,7 +143,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::SpvSourceSlot;
-    use crate::routing::test_support::{publish, quorums};
+    use crate::test_support::{publish, quorums};
 
     #[test]
     fn should_let_one_lease_hold_the_slot_until_it_is_dropped() {

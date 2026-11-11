@@ -1,3 +1,8 @@
+//! [`AdaptiveContextProvider`] routes each quorum lookup to an SPV client or
+//! to a trusted provider, by a [`ContextProviderMode`] that can change while
+//! the SDK runs. Its SPV route reads the same kind of [`SpvSourceSlot`] as
+//! [`SpvContextProvider`](crate::SpvContextProvider).
+
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -6,8 +11,10 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
-use super::{ContractSource, SpvSourceSlot};
-use crate::{platform_activation_height, ContextProvider, ContextProviderError, QuorumKeyFuture};
+use crate::{
+    platform_activation_height, ContextProvider, ContextProviderError, ContractSource,
+    QuorumKeyFuture, SpvSourceSlot,
+};
 
 /// Where an [`AdaptiveContextProvider`] takes quorum keys from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -221,11 +228,11 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use super::{AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode};
-    use crate::routing::test_support::{
+    use crate::test_support::{
         failing_quorums, is_unavailable, publish, quorum_key, quorums, TestContracts,
     };
-    use crate::routing::{SpvContextProvider, SpvSourceSlot};
     use crate::{ContextProvider, ContextProviderError};
+    use crate::{SpvContextProvider, SpvSourceSlot};
 
     fn adaptive() -> AdaptiveContextProvider {
         AdaptiveContextProvider::new(

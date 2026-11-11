@@ -24,7 +24,7 @@ use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
-use dash_context_provider::routing::SpvSourceLease;
+use dash_context_provider::SpvSourceLease;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use platform_wallet::changeset::PlatformWalletPersistence;

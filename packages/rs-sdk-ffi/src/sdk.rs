@@ -11,11 +11,11 @@ use dash_sdk::{Sdk, SdkBuilder};
 use std::ffi::CStr;
 use std::str::FromStr;
 
-use dash_context_provider::routing::{
+use dash_context_provider::ContextProvider;
+use dash_context_provider::{
     AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode, ContractSource,
     SpvContextProvider, SpvSourceSlot,
 };
-use dash_context_provider::ContextProvider;
 use rs_sdk_trusted_context_provider::{LocalContextResolver, TrustedHttpContextProvider};
 
 use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
