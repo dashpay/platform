@@ -3,13 +3,36 @@
 
 use super::*;
 
+/// The prefix a `refersTo` reads a value from the referring document with: a `contractId`
+/// and a `documentType` written `"$self.<property>"` name the target through the document
+/// (protocol version 15).
+const REFERRING_DOCUMENT_PREFIX: &str = "$self.";
+
+/// Whether `value` is written with the prefix that reads from the referring document.
+fn is_read_from_referring_document(value: &JsonValue) -> bool {
+    value
+        .as_str()
+        .is_some_and(|text| text.starts_with(REFERRING_DOCUMENT_PREFIX))
+}
+
+/// Whether a `refersTo` declaration names its target through the referring document: its
+/// `contractId` or its `documentType` is read from it, or it carries
+/// `documentTypeRequirements`.
+fn names_its_target(map: &JsonMap<String, JsonValue>) -> bool {
+    map.contains_key("documentTypeRequirements")
+        || ["contractId", "documentType"]
+            .iter()
+            .any(|key| map.get(*key).is_some_and(is_read_from_referring_document))
+}
+
 /// The keys of a `refersTo` declaration.
-const REFERS_TO_KEYS: [&str; 14] = [
+const REFERS_TO_KEYS: [&str; 15] = [
     "type",
     "anyOf",
     "allOf",
     "contractId",
     "documentType",
+    "documentTypeRequirements",
     "contractRequirements",
     "keyIdProperty",
     "identityProperty",
@@ -53,7 +76,22 @@ impl Checker<'_> {
             self.required(map, &["type"])?;
             self.member_constant(map, "type", json!("deletableDocument"))?;
         }
-        if matches!(
+        // A reference naming its target through the referring document: a permanent or
+        // moderated document found by its id, with nothing beside it that needs the
+        // referenced type at registration
+        if names_its_target(map) {
+            self.required(map, &["type", "contractId", "documentType"])?;
+            self.member(map, "type", |c, target| {
+                c.one_of_strings(target, &["permanentDocument", "moderatedDocument"])
+            })?;
+            // Both are read from the referring document, or neither
+            for key in ["contractId", "documentType"] {
+                self.member(map, key, |c, value| c.read_from_referring_document(value))?;
+            }
+            for name in ["findBy", "where", "inList", "consume", "constraints"] {
+                self.absent(map, name)?;
+            }
+        } else if matches!(
             target,
             Some("permanentDocument" | "deletableDocument" | "moderatedDocument")
         ) {
@@ -105,6 +143,33 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// Refuses a declaration naming its target through the referring document where a
+    /// reference names it in the schema: an operand of an expression, `ownerRefersTo` and
+    /// `creatorRefersTo`.
+    fn names_its_target_in_the_schema(&self, map: &JsonMap<String, JsonValue>) -> Checked {
+        self.absent(map, "documentTypeRequirements")?;
+        if names_its_target(map) {
+            return Err(self.fail(
+                "not",
+                "a refersTo here names its contract and document type in the schema, not \
+                 through the referring document",
+            ));
+        }
+        Ok(())
+    }
+
+    /// `"$self.<property>"`: a top-level property of the referring document, a name of 1 to
+    /// 64 letters, digits or underscores after the prefix.
+    fn read_from_referring_document(&self, value: &JsonValue) -> Checked {
+        let property = self
+            .string(value)?
+            .strip_prefix(REFERRING_DOCUMENT_PREFIX)
+            .map(|property| json!(property))
+            .ok_or_else(|| self.no_branch(value))?;
+        self.string_of_length(&property, 1, Some(64))?;
+        self.word(&property)
+    }
+
     fn refers_to_keyword(&self, key: &str, value: &JsonValue) -> Checked {
         match key {
             "type" => self.one_of_strings(
@@ -121,6 +186,9 @@ impl Checker<'_> {
             ),
             "anyOf" | "allOf" => self.reference_operands(key, value),
             "contractId" => {
+                if is_read_from_referring_document(value) {
+                    return self.read_from_referring_document(value);
+                }
                 if let Some(text) = value.as_str() {
                     let length = text.chars().count();
                     let base58 = text
@@ -145,9 +213,13 @@ impl Checker<'_> {
                 Err(self.fail("oneOfNotValid", format!("{value} is not a contract id")))
             }
             "documentType" => {
+                if is_read_from_referring_document(value) {
+                    return self.read_from_referring_document(value);
+                }
                 self.string_of_length(value, 1, Some(64))?;
                 self.word(value)
             }
+            "documentTypeRequirements" => self.document_type_requirements(value),
             "contractRequirements" => {
                 let map = self.object(value)?;
                 self.closed(
@@ -248,6 +320,106 @@ impl Checker<'_> {
         }
     }
 
+    /// `documentTypeRequirements`: named slots, each describing a property the referenced
+    /// document type must have, and `require`, which of them must be filled. That the names
+    /// it uses are slots is the parser's to check.
+    fn document_type_requirements(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.closed(map, &["properties", "require"])?;
+        self.required(map, &["properties"])?;
+        self.member(map, "properties", |c, properties| {
+            let slots = c.object(properties)?;
+            c.property_count(slots, Some(1), None)?;
+            for (name, slot) in slots {
+                c.at(name, |c| {
+                    c.name_of_length(name, 1, 64)?;
+                    c.requirement_slot(slot)
+                })?;
+            }
+            Ok(())
+        })?;
+        self.member(map, "require", |c, require| {
+            if require.is_string() {
+                return c.word(require);
+            }
+            c.slot_combinator(require, true)
+        })
+    }
+
+    /// One slot of `documentTypeRequirements.properties`.
+    fn requirement_slot(&self, value: &JsonValue) -> Checked {
+        let map = self.object(value)?;
+        self.closed(
+            map,
+            &["name", "type", "byteArray", "maxBytes", "distinctFrom"],
+        )?;
+        self.required(map, &["name", "type"])?;
+        // `$any`, a property name, or `$self.<property>` for the name the referring
+        // document gives: which of the three a string is, the parser tells
+        self.member(map, "name", |c, name| {
+            if is_read_from_referring_document(name) {
+                return c.read_from_referring_document(name);
+            }
+            c.string_of_length(name, 1, Some(64)).map(drop)
+        })?;
+        self.member(map, "type", |c, value_type| {
+            c.one_of_strings(
+                value_type,
+                &["string", "identifier", "integer", "boolean", "array"],
+            )
+        })?;
+        self.member(map, "byteArray", |c, byte_array| {
+            c.constant(byte_array, &json!(true))
+        })?;
+        self.member(map, "maxBytes", |c, max_bytes| {
+            c.integer(max_bytes, Some(1), Some(i64::from(u32::MAX)))
+        })?;
+        self.member(map, "distinctFrom", |c, distinct_from| {
+            if distinct_from.is_string() {
+                return c.word(distinct_from);
+            }
+            let others = c.array(distinct_from)?;
+            c.item_count(others, Some(1), None)?;
+            c.unique(others)?;
+            for (index, other) in others.iter().enumerate() {
+                c.at(index, |c| c.word(other))?;
+            }
+            Ok(())
+        })
+    }
+
+    /// `anyOf` or `allOf` over slots: the one key of `value`, holding two or more terms. A
+    /// term is a slot name or, at the top level alone, the other combinator over slot
+    /// names.
+    fn slot_combinator(&self, value: &JsonValue, top_level: bool) -> Checked {
+        let map = self.object(value)?;
+        self.closed(map, &["anyOf", "allOf"])?;
+        self.property_count(map, Some(1), Some(1))?;
+        for (combinator, terms) in map {
+            self.at(combinator, |c| {
+                let terms = c.array(terms)?;
+                c.item_count(terms, Some(2), None)?;
+                for (index, term) in terms.iter().enumerate() {
+                    c.at(index, |c| {
+                        if term.is_string() {
+                            return c.word(term);
+                        }
+                        if !top_level {
+                            return Err(c.no_branch(term));
+                        }
+                        let inner = c.object(term)?;
+                        c.absent(inner, combinator)?;
+                        c.slot_combinator(term, false)
+                    })?;
+                }
+                // No term twice. A group repeated with its slots in another order is the
+                // parser's to refuse
+                c.unique(terms)
+            })?;
+        }
+        Ok(())
+    }
+
     /// The operands of a `refersTo` `anyOf` or `allOf`.
     fn reference_operands(&self, combinator: &str, value: &JsonValue) -> Checked {
         let items = self.array(value)?;
@@ -259,6 +431,7 @@ impl Checker<'_> {
                 let map = c.object(operand)?;
                 c.absent(map, combinator)?;
                 c.absent(map, "identityProperty")?;
+                c.names_its_target_in_the_schema(map)?;
                 c.member(map, "type", |c, target| {
                     c.one_of_strings(
                         target,
@@ -279,6 +452,7 @@ impl Checker<'_> {
     pub(super) fn owner_refers_to(&self, value: &JsonValue) -> Checked {
         self.refers_to(value)?;
         let map = self.object(value)?;
+        self.names_its_target_in_the_schema(map)?;
         self.member(map, "type", |c, target| {
             c.one_of_strings(
                 target,

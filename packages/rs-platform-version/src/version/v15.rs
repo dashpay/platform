@@ -658,6 +658,37 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     not Platform's, fails that block. Protocol v14 and earlier keep
 ///     `update_masternode_list` 0 or 1, `update_operator_identity` 0 and
 ///     `add_new_keys_to_masternode_identity` 0.
+///
+/// 33. **A reference whose target the document names**: `CONTRACT_VERSIONS_V7` selects
+///     `apply_property_reference` 1: a `permanentDocument` or `moderatedDocument` `refersTo`
+///     on an identifier property may read its `contractId` and its `documentType` from the
+///     referring document, each written `"$self.<property>"` for a top-level property of
+///     it (an identifier and a string), with `documentTypeRequirements`: up to
+///     `max_document_type_requirement_slots` (4, `SYSTEM_LIMITS_V5`, backfilled) named
+///     slots, each a top-level property the named type must have (`name`: `"$any"`, a
+///     property name, or `"$self.<a string property of the referring document>"`;
+///     `type`; `maxBytes`; `distinctFrom`, one or several other slots it is filled by a
+///     different property than), and `require`, `anyOf` / `allOf` over slot names, every
+///     slot when absent. The native schema check of note 7 admits the keys and meta-schema
+///     v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
+///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
+///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
+///     `creatorRefersTo`, and no rule, derived index property or chained query reads through
+///     it, each of which resolves the referenced type from the schema. Registration checks
+///     the declaration and the properties it reads alone, none of which a moderator may be
+///     given to write (`moderatorAbilities.changeFields`). `document_reference_validation` 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the target when a document is written:
+///     the document names a contract and a document type (`ReferencedEntityNotFoundError`,
+///     40120, when it does not), they exist (`ReferencedDocumentTypeNotFoundError`, 40121),
+///     the type is not private (`ReferencedDocumentTypePrivateError`, 40150) and not
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146), meets the
+///     requirements (`ReferencedDocumentTypeRequirementNotMetError`, 40153, new) and is of
+///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
+///     moderated one a replace keeps, was removed on the record. A replace checks the
+///     reference again when its value or a property it reads the target from changed.
+///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
+///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 stops a single document lookup at a block time above the pointer to the latest version, and verify_proof_keep_serialized 1 verifies it (note 31); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32)
