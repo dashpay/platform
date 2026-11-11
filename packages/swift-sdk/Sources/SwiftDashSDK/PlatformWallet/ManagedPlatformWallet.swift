@@ -775,6 +775,64 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         inputs: [IdentityAddressInput],
         addressSigner: KeychainSigner
     ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: platform_wallet_top_up_from_addresses_with_signer
+        )
+    }
+
+    /// Top up an identity this wallet does **not** manage (someone
+    /// else's) from one or more Platform addresses.
+    ///
+    /// Bridges `platform_wallet_top_up_external_identity_from_addresses_with_signer`:
+    /// Rust fetches the identity from Platform and never adds it to the
+    /// wallet's identities, so nothing about it is persisted here either.
+    /// Arguments, signer handling and error mapping match
+    /// `topUpFromAddresses`; an identity Platform does not know throws
+    /// `PlatformWalletError.identityNotFound` before anything is signed.
+    ///
+    /// - Returns: the identity's new credit balance reported by Platform.
+    public func topUpExternalIdentityFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner
+    ) async throws -> UInt64 {
+        try await topUpFromAddresses(
+            identityId: identityId,
+            inputs: inputs,
+            addressSigner: addressSigner,
+            call: platform_wallet_top_up_external_identity_from_addresses_with_signer
+        )
+    }
+
+    /// Signature shared by the two address-funded top-up exports.
+    typealias AddressTopUpCall = @Sendable (
+        Handle,
+        UnsafePointer<IdentityIdBytes>?,
+        UnsafePointer<IdentityFundingInputFFI>?,
+        UInt,
+        OpaquePointer?,
+        UnsafeMutablePointer<UInt64>?
+    ) -> PlatformWalletFFIResult
+
+    typealias IdentityIdBytes = (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+
+    /// Guards and marshalling shared by the address-funded top-ups;
+    /// `call` is the export to hand the marshalled arguments to.
+    /// `internal` so tests can observe the marshalling.
+    func topUpFromAddresses(
+        identityId: Data,
+        inputs: [IdentityAddressInput],
+        addressSigner: KeychainSigner,
+        call: @escaping AddressTopUpCall
+    ) async throws -> UInt64 {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "identityId must be 32 bytes, got \(identityId.count)"
@@ -806,12 +864,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             // the Swift owner stays alive across this detached work.
             _ = addressSigner
 
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
+            var idTuple: IdentityIdBytes = (
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0,
@@ -842,7 +895,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
 
             let result = ffiInputs.withUnsafeBufferPointer { inputsBuf in
                 withUnsafePointer(to: &idTuple) { idPtr in
-                    platform_wallet_top_up_from_addresses_with_signer(
+                    call(
                         handle,
                         idPtr,
                         inputsBuf.baseAddress,
