@@ -248,9 +248,10 @@ export default async function checkMasternodeSafeToStop(
   const nonMemberDkgs = new Set([...knownNonMemberDkgs, ...first.nonMemberDkgs]);
   const second = await evaluate(rpcClient, coreVersion, nonMemberDkgs, first.height);
 
-  // The confirming read was discarded: keep what the first check verified.
+  // The confirming read was discarded: report the first check, unconfirmed,
+  // so that a caller polling again keeps the DKGs it announced.
   if (second.height === null) {
-    return { ...second, nonMemberDkgs, tip: first.tip };
+    return { ...first, status: 'unsettled', nonMemberDkgs };
   }
 
   // The first check's tip was replaced: none of it holds on this chain.

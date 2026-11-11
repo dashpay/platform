@@ -644,6 +644,43 @@ describe('waitForDKGWindowPass', () => {
     expect(waiting.resolved).to.be.true();
   });
 
+  it('should keep what a check announced when its confirming read is discarded', async function it() {
+    // The first check announces a member DKG for later; a block connects
+    // during the read confirming it, so that read is discarded.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 8,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 8,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 8, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.beforeDkgInfo = () => {
+      core.height += 1;
+      core.beforeDkgInfo = undefined;
+    };
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    // After the DKG started, Core reports nothing that shows it, as Core 24.1
+    // that has not worked out its proTxHash yet.
+    core.version = CORE_24_1;
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 22 };
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    await expectStillPolling(waiting, rpcClient);
+  });
+
   it('should judge each poll by the Core version answering it', async function it() {
     // Core is replaced between polls, with no failed call to tell.
     const start = 24 * 5000;
