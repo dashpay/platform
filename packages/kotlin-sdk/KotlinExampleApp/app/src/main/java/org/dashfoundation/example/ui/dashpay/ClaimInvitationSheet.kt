@@ -376,8 +376,11 @@ private suspend fun identityAt(
         identityIndex = identityIndex,
     )
 } catch (e: Exception) {
-    throw ClaimRecoveryMessage(failure(e.message ?: e.javaClass.simpleName))
+    throw ClaimRecoveryMessage(failure(e.message ?: e.javaClass.simpleName), e)
 }
 
 /** A recovery outcome of the claim, shown to the user as is. */
-private class ClaimRecoveryMessage(override val message: String) : Exception(message)
+private class ClaimRecoveryMessage(
+    override val message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)

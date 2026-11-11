@@ -545,8 +545,9 @@ impl IdentityWallet {
     /// The claim itself — refetching the funding transaction, rebuilding the
     /// asset-lock proof, the lookups that keep a claim Platform would refuse
     /// and charge for from being broadcast, the IS → ChainLock fallback (a
-    /// stale islock, or a claim too large with the IS proof) and adopting an
-    /// earlier claim that a lagging node let through — is
+    /// stale islock, a claim too large with the IS proof, or a funding
+    /// transaction over the input cap) and adopting an earlier claim that a
+    /// lagging node let through — is
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
     ///
