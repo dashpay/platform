@@ -114,6 +114,18 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
     /// Rust only honours the declaration when both recipient slots are wired.
     public static let assetLockShieldedRecipients: UInt64 = 1 << 14
+    /// The private contact request sync's scan state (each identity's read
+    /// position in DashPay's private contact request store, and its private
+    /// contacts' shielded addresses) is stored on its round and restored at
+    /// load, so a relaunch resumes the sync where it stopped. A store
+    /// declaring it keeps a position record marked unresolved through its
+    /// wallet's removal, until a record stored cleared for the same wallet
+    /// and identity replaces it, and lists that wallet so Rust holds the
+    /// identity again if the wallet comes back. Mirrors
+    /// `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`; Rust
+    /// only honours the declaration when the extension carries the five
+    /// scan-state callbacks.
+    public static let privateContactRequestScanState: UInt64 = 1 << 15
 
     public let version: UInt32
     public let bits: UInt64

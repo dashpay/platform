@@ -18,8 +18,8 @@
 //!    shared `submit_with_cl_height_retry` wrapper. IS→CL fallback
 //!    fires both on Core-side timeout (resolver returns `IsTimeout`)
 //!    and on an unusable IS proof (`needs_chain_lock_proof`: Platform
-//!    rejected the IS lock, or the IS proof made the transition too
-//!    large).
+//!    rejected the IS lock, the IS proof made the transition too
+//!    large, or its funding transaction is over the input cap).
 //! 4. **Bookkeeping + cleanup** — write each recipient's new credit
 //!    balance into `ManagedPlatformAccount` and emit a
 //!    `PlatformAddressChangeSet`; then `consume_asset_lock` the

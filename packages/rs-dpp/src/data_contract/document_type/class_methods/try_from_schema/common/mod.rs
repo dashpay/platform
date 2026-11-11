@@ -3461,8 +3461,9 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
 /// referring side of every `where`, `findBy` source (a function's params
 /// included), `chooseFirst` function param and key id property, for every leaf
 /// of every reference expression, the `ownerRefersTo` and `creatorRefersTo`
-/// declarations included. The referring side of a `where` may name the writer,
-/// `$ownerId`, which is left out.
+/// declarations included, and every property a reference naming its target
+/// through the referring document reads it from. The referring side of a `where`
+/// may name the writer, `$ownerId`, which is left out.
 pub(super) fn paths_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet<&str> {
     let mut read = BTreeSet::new();
     for (holder, reference) in document_type.reference_declarations() {
@@ -3486,6 +3487,13 @@ pub(super) fn paths_read_by_references(document_type: DocumentTypeRef<'_>) -> BT
             } = leaf
             {
                 read.insert(key_id_property.as_str());
+            }
+            // A reference naming its target through the referring document reads where it
+            // points there: the contract id, the document type name, and every property a
+            // slot takes its property name from. A change to one of them outside a replace
+            // would leave the stored reference pointing at something nobody checked
+            if let Some(dynamic) = leaf.as_dynamic_document_reference() {
+                read.extend(dynamic.target_properties());
             }
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;

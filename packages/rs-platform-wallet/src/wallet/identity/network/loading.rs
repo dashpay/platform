@@ -6,8 +6,11 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::bip32::ExtendedPrivKey;
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
 use crate::BlockTime;
+use dash_sdk::platform::Fetch;
 
 use super::*;
 
@@ -345,60 +348,16 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use dash_sdk::platform::Fetch;
-
-        // Verify identity exists in the manager.
-        {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if info.identity_manager.identity(identity_id).is_none() {
-                return Err(PlatformWalletError::IdentityNotFound(*identity_id));
-            }
-        }
-
-        // Fetch the latest state from Platform.
-        let (identity, metadata) = Identity::fetch_with_metadata(&self.sdk, *identity_id, None)
+        self.fetch_and_fold_identity(identity_id)
             .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+            .map(|(identity, _)| identity)
+            .map_err(|error| match error {
+                PlatformWalletError::Sdk(e) => PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch identity {} from Platform: {}",
                     identity_id, e
-                ))
-            })?;
-        let mut identity = identity.ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Identity {} not found on Platform",
-                identity_id
-            ))
-        })?;
-        let block_time = BlockTime::from(metadata);
-
-        // Update the managed identity.
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.status = IdentityStatus::Active;
-                if let Err(e) =
-                    managed.store_fetched_identity(&identity, block_time, &self.persister)
-                {
-                    tracing::error!("Failed to persist changeset: {}", e);
-                }
-                // The cache as folded.
-                identity = managed.identity.clone();
-            }
-        }
-
-        Ok(identity)
+                )),
+                other => other,
+            })
     }
 
     /// Refresh an identity using an externally-provided identity ID.
@@ -528,6 +487,63 @@ impl IdentityWallet {
         }
 
         Ok(Some(identity))
+    }
+}
+
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// [`IdentityWallet::refresh_identity`]'s fetch and fold, generic over the
+    /// broadcaster, with a fetch that fails coming back as the SDK reported it
+    /// ([`PlatformWalletError::Sdk`]): the fetch is proved, a stale node
+    /// included (`dash_sdk::Error::StaleNode`). Applied only while the wallet
+    /// is still this handle's generation (`current_wallet_info_mut`). Returns
+    /// the identity the cache holds afterwards, and the height the fetch was
+    /// proved at.
+    pub(crate) async fn fetch_and_fold_identity(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<(Identity, u64), PlatformWalletError> {
+        // Verify identity exists in the manager.
+        {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            if info.identity_manager.identity(identity_id).is_none() {
+                return Err(PlatformWalletError::IdentityNotFound(*identity_id));
+            }
+        }
+
+        // Fetch the latest state from Platform.
+        let (identity, metadata) =
+            Identity::fetch_with_metadata(&self.sdk, *identity_id, None).await?;
+        let mut identity = identity.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Identity {} not found on Platform",
+                identity_id
+            ))
+        })?;
+        let proved_at = metadata.height;
+        let block_time = BlockTime::from(metadata);
+
+        // Update the managed identity.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let info = self.current_wallet_info_mut(&mut wm)?;
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                managed.status = IdentityStatus::Active;
+                if let Err(e) =
+                    managed.store_fetched_identity(&identity, block_time, &self.persister)
+                {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                }
+                // The cache as folded.
+                identity = managed.identity.clone();
+            }
+        }
+
+        Ok((identity, proved_at))
     }
 }
 

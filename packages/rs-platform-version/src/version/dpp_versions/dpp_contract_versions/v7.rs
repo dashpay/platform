@@ -20,12 +20,16 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   and the native validator;
 /// - `parse_private_document`, `Some(0)` rather than `None`: the `private` keyword declares a
 ///   private document type, which only the native schema check of registration admits;
+/// - `apply_property_reference`, `Some(1)` rather than `Some(0)`: a permanent or moderated
+///   document reference on an identifier property may name its target through the
+///   referring document (`contractId` and `documentType` written `"$self.<property>"`), with what the named
+///   document type must look like (`documentTypeRequirements`);
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property. Generation 1 parses `sys.random.uniform` too;
 /// - `random_generated_from`, `Some(0)` rather than `None`: registration admits
 ///   `sys.random.uniform`, whose values block execution draws from the random beacon Tenderdash
-///   delivers from consensus version 2 on (v15 notes 33 and 35);
+///   delivers from consensus version 2 on (v15 notes 34 and 36);
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1.
@@ -50,6 +54,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: the `private` keyword declares a private document type
             parse_private_document: Some(0),
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
+            // changed: also reads a reference whose target the referring document names
+            apply_property_reference: Some(1),
             // changed: sys.random.uniform is admitted, block execution drawing its values from
             // each block's random beacon
             random_generated_from: Some(0),

@@ -1153,7 +1153,7 @@ class ShieldedService: ObservableObject {
     /// store via `SubwalletId`, so multiple wallets cohabiting
     /// the same SQLite file no longer leak notes across each
     /// other. (See `wallet/shielded/store.rs` for the trait.)
-    private static func dbPath(for network: Network) -> String {
+    static func dbPath(for network: Network) -> String {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)
             .first!
