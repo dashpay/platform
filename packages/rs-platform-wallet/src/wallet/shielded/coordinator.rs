@@ -3941,14 +3941,14 @@ mod tests {
             .is_empty());
         assert_eq!(
             create_row(&coordinator, id).await,
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         // A later pass sees the same outputs.
         scan_sees_identity_create(&coordinator, id, 41).await;
         post_scan_steps(&coordinator, id).await;
         assert_eq!(
             create_row(&coordinator, id).await,
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3983,7 +3983,7 @@ mod tests {
 
         assert_eq!(
             create_row(&coordinator, id).await,
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -4029,7 +4029,7 @@ mod tests {
 
         assert_eq!(
             create_row(&coordinator, id).await,
-            (ShieldedActivityStatus::Failed, Some(7))
+            (ShieldedActivityStatus::InputsConsumed, Some(7))
         );
         assert!(coordinator
             .store()
@@ -4082,7 +4082,7 @@ mod tests {
             let expected = if created {
                 ShieldedActivityStatus::Confirmed
             } else {
-                ShieldedActivityStatus::Failed
+                ShieldedActivityStatus::InputsConsumed
             };
             assert_eq!(
                 create_row(&coordinator, id).await.0,
@@ -4151,7 +4151,7 @@ mod tests {
             .expect("the host holds the row");
         assert_eq!(
             (row.status, row.block_height),
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         assert!(coordinator
             .store()
@@ -4164,7 +4164,7 @@ mod tests {
         post_scan_steps(&coordinator, id).await;
         assert_eq!(
             host.durable_row(&rebuilt_id).unwrap().status,
-            ShieldedActivityStatus::Failed
+            ShieldedActivityStatus::InputsConsumed
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -4203,7 +4203,7 @@ mod tests {
 
                 assert_eq!(
                     create_row(&coordinator, id).await.0,
-                    ShieldedActivityStatus::Failed,
+                    ShieldedActivityStatus::InputsConsumed,
                     "{mode:?}: proven in memory"
                 );
                 assert_eq!(
@@ -4238,7 +4238,7 @@ mod tests {
             let row = host.durable_row(&CREATE_ROW).unwrap();
             assert_eq!(
                 (row.status, row.block_height),
-                (ShieldedActivityStatus::Failed, Some(0)),
+                (ShieldedActivityStatus::InputsConsumed, Some(0)),
                 "{mode:?}: written from the kept outcome"
             );
             drop(coordinator);
@@ -4303,7 +4303,7 @@ mod tests {
             .expect("the host holds the row");
         assert_eq!(
             (row.status, row.block_height),
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         assert!(
             FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100)
@@ -4465,7 +4465,7 @@ mod tests {
         post_scan_steps(&coordinator, id).await;
         assert_eq!(
             create_row(&coordinator, id).await,
-            (ShieldedActivityStatus::Failed, Some(0))
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

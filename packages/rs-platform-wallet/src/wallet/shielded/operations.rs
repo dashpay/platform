@@ -3449,7 +3449,7 @@ pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
         wallet_id,
         id,
         activity_id,
-        ShieldedActivityStatus::Failed,
+        ShieldedActivityStatus::InputsConsumed,
         Some(consumed_by_height),
     )
     .await;
@@ -3797,9 +3797,10 @@ async fn write_proven_identity_create_row<S: ShieldedStore>(
 ) -> bool {
     let (status, block_height) = match outcome {
         IdentityCreateOutcome::Created => (ShieldedActivityStatus::Confirmed, None),
-        IdentityCreateOutcome::InputsConsumed { consumed_by_height } => {
-            (ShieldedActivityStatus::Failed, Some(consumed_by_height))
-        }
+        IdentityCreateOutcome::InputsConsumed { consumed_by_height } => (
+            ShieldedActivityStatus::InputsConsumed,
+            Some(consumed_by_height),
+        ),
         IdentityCreateOutcome::Awaiting => return false,
     };
     let mut store = store.write().await;
@@ -8582,7 +8583,7 @@ mod redrive_tests {
                 .all(|nullifier| queried.contains(nullifier)));
             assert_eq!(spent_nullifiers(&store, id).await, real_inputs);
             let row = activity_row(&store, id, &activity_id).await;
-            assert_eq!(row.status, ShieldedActivityStatus::Failed);
+            assert_eq!(row.status, ShieldedActivityStatus::InputsConsumed);
             assert_eq!(row.block_height, Some(0));
             drop(store);
             // The record stays, with the outcome, until the sync pass's write

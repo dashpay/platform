@@ -51,7 +51,7 @@ public final class PersistentShieldedActivity {
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
-    /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
+    /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown, 4 InputsConsumed.
     public var status: Int
 
     /// Display amount in credits (principal; excludes self-change /
