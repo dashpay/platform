@@ -602,6 +602,33 @@ impl PlatformWallet {
         Ok(new_balance)
     }
 
+    /// Top up an identity this wallet does not manage by spending platform
+    /// address balances, then reconcile the spent addresses exactly as
+    /// [`Self::top_up_from_addresses`] does.
+    ///
+    /// See [`IdentityWallet::top_up_external_from_addresses`]: the identity
+    /// is fetched from Platform and never added to the identity manager.
+    ///
+    /// Returns the identity's new credit balance.
+    pub async fn top_up_external_identity_from_addresses<
+        S: Signer<PlatformAddress> + Send + Sync,
+    >(
+        &self,
+        identity_id: &Identifier,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        address_signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Credits, PlatformWalletError> {
+        let (address_infos, new_balance, proof_height) = self
+            .identity
+            .top_up_external_from_addresses(identity_id, inputs, address_signer, settings)
+            .await?;
+        self.platform
+            .reconcile_address_infos(&address_infos, proof_height, "external identity top-up")
+            .await;
+        Ok(new_balance)
+    }
+
     /// Register a new identity funded by platform-address balances, then
     /// reconcile the spent funding addresses' local balances and nonces
     /// from the proof-attested post-spend `AddressInfos`.

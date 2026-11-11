@@ -44,6 +44,8 @@ use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 #[cfg(test)]
+mod external_identity_tests;
+#[cfg(test)]
 mod submission_result_tests;
 
 /// Top up an existing identity's credit balance from one or more
@@ -82,42 +84,12 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
     check_ptr!(inputs);
     check_ptr!(signer_address_handle);
     check_ptr!(out_new_balance);
-    if inputs_count == 0 {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "`inputs_count` is zero",
-        );
-    }
-
     let identity_id_bytes: [u8; 32] = *identity_id;
     let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
-
-    let entries = slice::from_raw_parts(inputs, inputs_count);
-    let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
-    for entry in entries {
-        let address = match entry.address_type {
-            0 => PlatformAddress::P2pkh(entry.hash),
-            1 => PlatformAddress::P2sh(entry.hash),
-            _ => {
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    "invalid address_type (expected 0 or 1)",
-                );
-            }
-        };
-        // Caller may pass the same address twice (the Swift inputs
-        // builder is greedy and could legitimately split a single
-        // address across multiple rows in a future shape). Sum the
-        // contributions rather than overwriting — `BTreeMap::insert`
-        // would silently keep only the last credit value, causing
-        // the top-up to under-fund the identity by the difference.
-        // Saturating add keeps a pathological caller from looping
-        // overflow back to a small value.
-        input_map
-            .entry(address)
-            .and_modify(|existing| *existing = existing.saturating_add(entry.credits))
-            .or_insert(entry.credits);
-    }
+    let input_map = match input_map(inputs, inputs_count) {
+        Ok(input_map) => input_map,
+        Err(error) => return error,
+    };
 
     // Round-trip the signer pointer through `usize` so the spawned
     // future's capture is `Send + 'static` (the raw pointer is `!Send`,
@@ -136,6 +108,114 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
             // a live derived pool).
             wallet
                 .top_up_from_addresses(&identity_id, input_map, address_signer, None)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let new_balance = unwrap_result_or_return!(result);
+    *out_new_balance = new_balance;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Marshal the address-input rows of an address-funded top-up into the
+/// input map the library takes.
+///
+/// # Safety
+/// `inputs` must point at a valid `[IdentityFundingInputFFI; inputs_count]`
+/// array.
+unsafe fn input_map(
+    inputs: *const IdentityFundingInputFFI,
+    inputs_count: usize,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletFFIResult> {
+    if inputs_count == 0 {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`inputs_count` is zero",
+        ));
+    }
+
+    let entries = slice::from_raw_parts(inputs, inputs_count);
+    let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+    for entry in entries {
+        let address = match entry.address_type {
+            0 => PlatformAddress::P2pkh(entry.hash),
+            1 => PlatformAddress::P2sh(entry.hash),
+            _ => {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    "invalid address_type (expected 0 or 1)",
+                ));
+            }
+        };
+        // Caller may pass the same address twice (the Swift inputs
+        // builder is greedy and could legitimately split a single
+        // address across multiple rows in a future shape). Sum the
+        // contributions rather than overwriting — `BTreeMap::insert`
+        // would silently keep only the last credit value, causing
+        // the top-up to under-fund the identity by the difference.
+        // Saturating add keeps a pathological caller from looping
+        // overflow back to a small value.
+        input_map
+            .entry(address)
+            .and_modify(|existing| *existing = existing.saturating_add(entry.credits))
+            .or_insert(entry.credits);
+    }
+    Ok(input_map)
+}
+
+/// Top up an identity this wallet does **not** manage (someone else's)
+/// from one or more Platform addresses, using an external `SignerHandle`
+/// for the per-address funding signatures.
+///
+/// Wraps the composite
+/// [`PlatformWallet::top_up_external_identity_from_addresses`](platform_wallet::PlatformWallet::top_up_external_identity_from_addresses):
+/// the identity is fetched from Platform rather than read from the wallet,
+/// is never added to the wallet's identity manager, and the spent
+/// platform-address balances are reconciled as for
+/// [`platform_wallet_top_up_from_addresses_with_signer`].
+///
+/// On success `out_new_balance` is populated with the identity's
+/// post-transition credit balance returned by Platform. An identity
+/// Platform does not know returns `ErrorIdentityNotFound` before anything
+/// is signed or broadcast.
+///
+/// # Safety
+/// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_top_up_external_identity_from_addresses_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    inputs: *const IdentityFundingInputFFI,
+    inputs_count: usize,
+    signer_address_handle: *mut SignerHandle,
+    out_new_balance: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(identity_id);
+    check_ptr!(inputs);
+    check_ptr!(signer_address_handle);
+    check_ptr!(out_new_balance);
+    let identity_id_bytes: [u8; 32] = *identity_id;
+    let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
+    let input_map = match input_map(inputs, inputs_count) {
+        Ok(input_map) => input_map,
+        Err(error) => return error,
+    };
+
+    // `usize` round-trip keeps the spawned future `Send + 'static`; see
+    // `platform_wallet_top_up_from_addresses_with_signer`.
+    let signer_addr = signer_address_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wallet = wallet.clone();
+        block_on_worker(async move {
+            let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+            wallet
+                .top_up_external_identity_from_addresses(
+                    &identity_id,
+                    input_map,
+                    address_signer,
+                    None,
+                )
                 .await
         })
     });
