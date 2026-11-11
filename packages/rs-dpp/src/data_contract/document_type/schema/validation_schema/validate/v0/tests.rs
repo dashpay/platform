@@ -746,3 +746,38 @@ fn should_refuse_a_value_nested_past_the_value_depth_limit() {
         "{unlimited:?}"
     );
 }
+
+/// The walk's depth bound counts only containers, as the document validator's depth check
+/// does, so a value whose container nesting equals the limit and whose leaf is a scalar is
+/// not refused for depth under a schema that accepts it.
+#[test]
+fn should_not_refuse_a_value_whose_container_nesting_equals_the_limit() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "p": {
+                "type": "array",
+                "items": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } }
+            }
+        },
+    }));
+    // Three array containers nesting a string: the deepest container is at depth 3.
+    let document = json!({ "p": [[["s"]]] });
+    assert!(
+        validator
+            .validate(&document, Some(3))
+            .expect("expected the check to run")
+            .is_none(),
+        "a value at the container limit with a scalar leaf must not be refused for depth"
+    );
+    // A fourth container exceeds the limit and is refused.
+    let too_deep = json!({ "p": [[[["s"]]]] });
+    let error = validator
+        .validate(&too_deep, Some(3))
+        .expect("expected the check to run")
+        .expect("expected a refusal past the limit");
+    assert!(
+        matches!(error, ConsensusError::BasicError(BasicError::ValueError(_))),
+        "{error:?}"
+    );
+}

@@ -332,11 +332,15 @@ impl<'v, 'i> Walk<'v, 'i> {
         references_in_a_row: usize,
         value_depth: usize,
     ) -> Result<(), ProtocolError> {
-        // The value is nested past the depth the document validator allows. Its own depth
-        // check refuses such a value before the walk, so this is reached only by a caller
-        // that skipped it; the walk stops here rather than recurse as deep as the value, and
-        // the value is refused as the depth check refuses it.
-        if self.max_value_depth.is_some_and(|max| value_depth > max) {
+        // The value is a container nested past the depth the document validator allows. Its
+        // own depth check refuses such a value before the walk, so this is reached only by a
+        // caller that skipped it; the walk stops here rather than recurse as deep as the
+        // value, and the value is refused as the depth check refuses it. Only a container is
+        // counted and checked, as the depth check counts only maps and arrays and gives each
+        // top-level property the full budget, so the two agree on which value is too deep.
+        if (instance.is_array() || instance.is_object())
+            && self.max_value_depth.is_some_and(|max| value_depth > max)
+        {
             let mut too_deep = self.too_deep.borrow_mut();
             if too_deep.is_none() {
                 *too_deep = Some(value_depth);
