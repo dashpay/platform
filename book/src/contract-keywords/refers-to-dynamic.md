@@ -70,7 +70,7 @@ A slot name is 1 to 64 letters, digits or underscores. A transient property fill
 
 - absent, every slot;
 - a slot name, that slot;
-- `{ "anyOf": [...] }` or `{ "allOf": [...] }` over two or more terms, each a slot name or the other combinator over two or more slot names. Two levels say everything `anyOf` and `allOf` can say of a set of slots.
+- `{ "anyOf": [...] }` or `{ "allOf": [...] }` over two or more terms, each a slot name or the other combinator over two or more slot names. Two levels say everything `anyOf` and `allOf` can say of a set of slots. Nothing is named twice: no term, no slot within a group, no group with its slots in another order.
 
 Every slot is named by `require` when there is one: a slot it never names could not matter.
 
@@ -87,7 +87,12 @@ Every slot is named by `require` when there is one: a slot it never names could 
 
 A short text property, and either the string property the document names in its `bodyProperty`, other than the one taken as the title, or a byte array.
 
-**When the requirements are met.** They are met when some choice of properties fills a set of slots `require` holds for, with slots that are `distinctFrom` each other filled by different properties. Consensus only asks whether such a choice exists. A client that needs to know which property is the title and which the body can settle it the same way every time: take the slots in the order of their names and give each the first property, in the type's `position` order, that matches it and that no slot it must differ from has taken, backing up when a later slot is left with nothing. Naming the property outright, or through the referring document, leaves nothing to settle.
+**When the requirements are met.** They are met when some choice of properties fills a set of slots `require` holds for, with slots that are `distinctFrom` each other filled by different properties. Consensus only asks whether such a choice exists. A client that needs to know which property is the title and which the body can settle it the same way every time, in two steps:
+
+1. **Which slots.** Not every slot need be filled: `require` may hold for several sets of slots (every slot is the only set when there is no `require`). Take the sets it holds for with the most slots first and, between sets of the same size, the one whose slot names, listed in order, come first. Use the first set that step 2 can fill.
+2. **Which property for each.** Take the set's slots in the order of their names and give each the first property, in the type's `position` order, that matches it and that no slot it must differ from has taken, backing up to the previous slot's next property when a slot is left with nothing.
+
+Take the first example of this page, `body` or `bodyBytes`: a type holding a string and a byte array fills both slots. A type holding only a string cannot fill that set, so the next ones are tried: `body` alone, which the string fills (`bodyBytes` alone would come after it). Naming the property outright, or through the referring document, leaves nothing to settle.
 
 ## Either kind
 
