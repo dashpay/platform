@@ -31,7 +31,6 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V4: DriveVerifyMethodVersions = DriveVeri
     single_document: DriveVerifySingleDocumentMethodVersions {
         verify_proof: 1, // validates the returned document against its authenticated history key
         verify_proof_keep_serialized: 1, // changed: verifies maybe-contested documents and time-bounded retained revisions outside a contest
-        ..DRIVE_VERIFY_METHOD_VERSIONS_V3.single_document
     },
     ..DRIVE_VERIFY_METHOD_VERSIONS_V3
 };
