@@ -186,6 +186,16 @@ impl DapiClient {
         &self.address_list
     }
 
+    /// A copy of this client that selects its addresses from `address_list`
+    /// instead, with the same settings, certificate and proxy. The original
+    /// client and its address list are not changed.
+    pub fn with_address_list(&self, address_list: AddressList) -> Self {
+        Self {
+            address_list,
+            ..self.clone()
+        }
+    }
+
     /// Get all non-banned addresses from the address list.
     ///
     /// Returns a vector of addresses that are not currently banned or whose ban period has expired.

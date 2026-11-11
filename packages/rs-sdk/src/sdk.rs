@@ -1068,6 +1068,31 @@ impl Sdk {
         }
     }
 
+    /// A copy of this SDK that sends every DAPI request to `address` alone.
+    ///
+    /// The copy shares everything else with this SDK (settings, proofs, context provider,
+    /// caches); this SDK's address list is not changed, so its own requests keep rotating over
+    /// its nodes. A request the node fails bans it in the copy's list only. Use it to ask one
+    /// node that already holds a transition about that transition, as the privacy note of
+    /// [`Sdk::state_transition_outcome`](crate::Sdk::state_transition_outcome) asks.
+    pub fn scoped_to_address(&self, address: Address) -> Sdk {
+        let mut addresses = AddressList::new();
+        addresses.add(address);
+        let mut scoped = self.clone();
+        scoped.inner = match &self.inner {
+            SdkInstance::Dapi { dapi } => SdkInstance::Dapi {
+                dapi: dapi.with_address_list(addresses),
+            },
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { dapi, mock, .. } => SdkInstance::Mock {
+                dapi: Arc::clone(dapi),
+                mock: Arc::clone(mock),
+                address_list: addresses,
+            },
+        };
+        scoped
+    }
+
     /// Return an owned snapshot of every DAPI address' ban state,
     /// including the reason the address was banned (when recorded).
     ///
@@ -1830,6 +1855,26 @@ pub(crate) mod test {
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
+
+    /// A scoped SDK selects only its one address, and leaves the SDK it was
+    /// made from with its own list.
+    #[test]
+    fn should_scope_requests_to_one_address_without_changing_the_shared_list() {
+        let shared: AddressList = "http://127.0.0.1:3000,http://127.0.0.1:3001"
+            .parse()
+            .expect("addresses");
+        let sdk = SdkBuilder::new(shared.clone())
+            .with_core("127.0.0.1", 1, "user", "password")
+            .build()
+            .expect("an sdk");
+        let address: rs_dapi_client::Address = "http://127.0.0.1:3001".parse().expect("address");
+
+        let scoped = sdk.scoped_to_address(address.clone());
+
+        assert_eq!(scoped.address_list().get_live_addresses(), vec![address]);
+        assert_eq!(sdk.address_list().len(), 2);
+        assert_eq!(shared.len(), 2);
+    }
 
     use super::{min_protocol_version, Network};
     use dash_context_provider::{ContextProvider, ContextProviderError};
