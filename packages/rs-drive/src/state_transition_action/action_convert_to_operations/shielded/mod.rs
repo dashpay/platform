@@ -1,5 +1,6 @@
 mod identity_create_from_shielded_pool_transition;
 mod identity_top_up_from_shielded_pool_transition;
+mod private_document_create_from_shielded_pool_transition;
 mod shield_from_asset_lock_transition;
 mod shield_from_identity_transition;
 mod shield_transition;
@@ -191,7 +192,6 @@ pub(super) mod fee_floor_support {
                         &BlockInfo::default(),
                         Some(&tx),
                         platform_version,
-                        None,
                     )
                     .expect("apply");
                 let t = fr.total_base_fee();

@@ -24,8 +24,24 @@ use std::fmt;
     DecodeUntrusted,
 )]
 pub enum TokenTradeMode {
+    /// Holders cannot list the token for sale or make offers for it through the platform.
     #[default]
     NotTradeable,
+    /// Holders may list the token at a price and make offers for it: listed tokens and offered
+    /// credits are held in escrow until the order is filled or cancelled. Admitted from protocol
+    /// version 15 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`), and only on a transferable
+    /// token, since every fill moves the token from one identity to another.
+    Tradeable,
+}
+
+impl TokenTradeMode {
+    /// Whether holders may trade the token through the platform's listings and offers.
+    pub fn is_tradeable(&self) -> bool {
+        match self {
+            TokenTradeMode::NotTradeable => false,
+            TokenTradeMode::Tradeable => true,
+        }
+    }
 }
 
 // Manual impls because TokenTradeMode is a flat enum (not versioned V0/V1).

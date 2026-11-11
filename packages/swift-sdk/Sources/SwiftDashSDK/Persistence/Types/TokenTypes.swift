@@ -241,14 +241,21 @@ public enum TokenDistributionRecipient: String, CaseIterable, Codable, Sendable 
 
 // MARK: - Token Trade Mode
 
-/// Trading modes for tokens
+/// Trading modes for tokens. Raw values match rs-dpp's `TokenTradeMode` in
+/// contract JSON. `tradeable` is valid from protocol version 15.
+///
+/// Stored on `PersistentToken` as its raw string, so a new case leaves the
+/// entity hash unchanged. The frozen schema copies keep only `notTradeable`.
 public enum TokenTradeMode: String, CaseIterable, Codable, Sendable {
     case notTradeable = "NotTradeable"
+    case tradeable = "Tradeable"
 
     public var displayName: String {
         switch self {
         case .notTradeable:
             return "Not Tradeable"
+        case .tradeable:
+            return "Tradeable"
         }
     }
 }

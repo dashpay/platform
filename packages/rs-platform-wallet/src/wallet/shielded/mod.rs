@@ -38,6 +38,8 @@ pub mod activity_recorder;
 pub mod balance;
 #[cfg(test)]
 mod balance_tests;
+#[cfg(test)]
+mod cancelled_scan_tests;
 pub mod coordinator;
 pub mod file_store;
 pub mod fund_from_asset_lock;
@@ -68,7 +70,8 @@ pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore, ShieldedNote,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore,
+    PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
     ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};

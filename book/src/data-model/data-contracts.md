@@ -202,9 +202,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config)
             .map_err(|e| PlatformSerializationError(
                 format!("unable to serialize DataContract: {}", e)

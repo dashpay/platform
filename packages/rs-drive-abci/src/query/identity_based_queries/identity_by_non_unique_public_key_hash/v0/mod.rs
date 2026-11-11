@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request:
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
     get_identity_by_non_unique_public_key_hash_response_v0, GetIdentityByNonUniquePublicKeyHashResponseV0,
 };
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityResponse;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::{IdentityProvedResponse, IdentityResponse};
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::{Bytes20, Bytes32};
 use dpp::serialization::PlatformSerializable;
@@ -17,6 +17,8 @@ use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
+    /// Answers a V0 request; a proved answer carries separate index and identity
+    /// proofs. Query-only, never reached from block execution.
     pub(super) fn query_identity_by_non_unique_public_key_hash_v0(
         &self,
         GetIdentityByNonUniquePublicKeyHashRequestV0 {
@@ -49,7 +51,7 @@ impl<C> Platform<C> {
         let response = if prove {
             let proof = self
                 .drive
-                .prove_full_identity_by_non_unique_public_key_hash(
+                .prove_full_identity_by_non_unique_public_key_hash_two_proofs(
                     public_key_hash,
                     start_after,
                     None,
@@ -59,8 +61,17 @@ impl<C> Platform<C> {
             GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
                     get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
-                            .map(|(_, proof)| proof)?,
+                        IdentityProvedResponse {
+                            grovedb_identity_public_key_hash_proof: Some(
+                                self.response_proof_v0(
+                                    platform_state,
+                                    proof.identity_id_public_key_hash_proof,
+                                    GroveDBToUse::Current,
+                                )
+                                .map(|(_, proof)| proof)?,
+                            ),
+                            identity_proof_bytes: proof.identity_proof,
+                        },
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),

@@ -30,3 +30,23 @@ pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// version 14 and registered at genesis from that version on; below it the contract does not
 /// exist and lookups must report it absent.
 pub const MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
+/// The token marketplace (a token whose `marketplaceRules.tradeMode` is `Tradeable`, whose holders
+/// sell it to each other through escrowed listings and offers) activates with protocol version 15.
+/// Below it a token configuration or a configuration update that makes a token tradeable is
+/// refused without a fee, as software that predates the marketplace cannot decode one.
+pub const TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// Yes/no masternode vote polls activate with protocol version 15: a masternode vote naming one
+/// (a `YesNoVote`, or a resource vote on a `YesNoVotePoll`) is not active before it, every
+/// yes/no method slot is `None` in the tables before it, and the vote decisions trees are
+/// created at genesis from it (and by the upgrade to it).
+pub const YES_NO_VOTE_POLL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// The decision proposals system contract is written to state by the upgrade to protocol
+/// version 15 and registered at genesis from that version on; below it the contract does not
+/// exist and lookups must report it absent. Creating one of its proposals opens a yes/no vote
+/// poll.
+pub const DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;
+/// Private document entries activate with protocol version 15: a
+/// `PrivateDocumentCreateFromShieldedPool`, which appends entries to a private document type's
+/// store paying from the credit shielded pool, is not active before it, as software that
+/// predates it cannot decode one.
+pub const PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 15;

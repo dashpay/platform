@@ -170,6 +170,26 @@ describe('ChainStore - class', () => {
       expect(chainStore.state.hashesByHeight).to.deep.equal(expectedHashesByHeight)
     });
 
+    it('should forget headers from a height a reorg replaces', () => {
+      chainStore.setBlockHeaders(headers);
+      chainStore.updateHeadersMetadata(headers, TAIL_HEIGHT);
+      chainStore.updateLastSyncedHeaderHeight(TAIL_HEIGHT);
+
+      chainStore.rewindHeaders(TAIL_HEIGHT - 2);
+
+      expect(chainStore.state.lastSyncedHeaderHeight).to.equal(TAIL_HEIGHT - 3);
+      expect(chainStore.state.blockHeaders).to.deep.equal(headers.slice(0, -3));
+      expect(chainStore.state.hashesByHeight.has(TAIL_HEIGHT - 2)).to.equal(false);
+      expect(chainStore.state.hashesByHeight.get(TAIL_HEIGHT - 3))
+        .to.equal(headers[headers.length - 4].hash);
+      expect(chainStore.state.headersMetadata.has(headers[headers.length - 1].hash))
+        .to.equal(false);
+      expect(chainStore.state.headersMetadata.size).to.equal(headers.length - 3);
+
+      // Headers can be stored from that height again
+      chainStore.updateLastSyncedHeaderHeight(TAIL_HEIGHT - 2);
+    });
+
     it('should prune headers metadata below specified height', () => {
       chainStore.updateHeadersMetadata(headers, TAIL_HEIGHT);
 

@@ -13,6 +13,7 @@ use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
 use grovedb::element::reference_path::ReferencePathType;
@@ -51,13 +52,11 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )?;
         Ok(fees)
     }
@@ -139,9 +138,7 @@ impl Drive {
 
         let reference_path_type =
             ReferencePathType::UpstreamRootHeightWithParentPathAdditionReference(2, voting_path);
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
 
         let storage_form = ContestedDocumentResourceVoteReferenceStorageForm {
             reference_path_type,

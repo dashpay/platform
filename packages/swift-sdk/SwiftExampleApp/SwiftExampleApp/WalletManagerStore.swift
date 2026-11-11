@@ -90,22 +90,62 @@ final class WalletManagerStore: ObservableObject {
     /// Stop `manager`'s SPV client after cancelling any in-flight
     /// `CoreSpvLauncher.start`. The blessed path for every user-visible
     /// or programmatic SPV stop of the active manager: it bumps the
-    /// generation first, so a start suspended in peer resolution can't
-    /// resume and revive sync after the stop. Best-effort stop (`try?`),
-    /// matching the raw call sites it replaces.
+    /// generation first, synchronously, so a start suspended in peer
+    /// resolution can't resume and revive sync after the stop. The stop
+    /// itself goes through the SDK's async `stopSpv()`: a start already
+    /// admitted by the SDK (past the generation check, awaiting the native
+    /// start) cannot be cancelled, and the blocking `stopSpv()` would be
+    /// refused while it runs; the async one queues behind it on the SDK's
+    /// SPV lifecycle queue and stops the client that start brings up.
+    /// Best-effort (errors are logged, not surfaced), matching the raw
+    /// call sites it replaces.
     func stopSpvCancellingPendingStarts(_ manager: PlatformWalletManager) {
-        stopSpvCancellingPendingStarts(stop: { try? manager.stopSpv() })
+        stopSpvCancellingPendingStarts(stop: { try await manager.stopSpv() })
     }
 
     /// Testable core of `stopSpvCancellingPendingStarts(_:)`: the actual
     /// stop is injected so a unit test can assert the generation was
     /// already bumped by the time `stop` runs (pinning the
-    /// invalidate-before-stop ordering) without a real, network-locked
+    /// invalidate-before-stop ordering) and that a stop overlapping an
+    /// admitted start runs after it, without a real, network-locked
     /// `PlatformWalletManager`. The public overload supplies the real
-    /// `try? manager.stopSpv()`.
-    func stopSpvCancellingPendingStarts(stop: () -> Void) {
+    /// `try await manager.stopSpv()`. The generation is bumped before this
+    /// returns; the stop runs on a task that starts in order after it.
+    func stopSpvCancellingPendingStarts(stop: @escaping @MainActor () async throws -> Void) {
         invalidatePendingSpvStarts()
-        stop()
+        isStoppingSpv = true
+        let task = Task { @MainActor in
+            do {
+                try await stop()
+            } catch {
+                print("stopSpvCancellingPendingStarts: stop failed: \(error)")
+            }
+        }
+        pendingSpvStop = task
+        Task { @MainActor in
+            await task.value
+            // A later Pause replaced the tracked stop; it clears the flag.
+            guard pendingSpvStop == task else { return }
+            pendingSpvStop = nil
+            isStoppingSpv = false
+        }
+    }
+
+    /// Whether a stop issued by `stopSpvCancellingPendingStarts` is still
+    /// running. The native stop removes the client before its teardown
+    /// finishes, so `spvIsRunning` turns false while the SDK still counts
+    /// the stop in flight and refuses a start; the Start button is disabled
+    /// on this instead, and start actions await `awaitPendingSpvStop()`.
+    @Published private(set) var isStoppingSpv = false
+
+    /// The stop `isStoppingSpv` reports; `nil` once it completed.
+    private var pendingSpvStop: Task<Void, Never>?
+
+    /// Suspend until the tracked stop, if any, has completed, so a start
+    /// issued right after a Pause runs after it instead of being refused
+    /// by the SDK while the stop is in flight.
+    func awaitPendingSpvStop() async {
+        await pendingSpvStop?.value
     }
 
     /// Per-network managers. Lazily populated on first activation
@@ -127,6 +167,12 @@ final class WalletManagerStore: ObservableObject {
     /// fetch to its own network so the shared store doesn't cause
     /// cross-network bleed at restore time.
     private let modelContainer: ModelContainer
+
+    /// Why opening each network's shielded store failed, until a later
+    /// attempt succeeds. The DashPay views show it while the wallet's
+    /// private payments wait for that store, and retry it
+    /// (`configureShieldedAgain(_:)`).
+    @Published private(set) var shieldedStoreFailures: [Network: String] = [:]
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -162,6 +208,11 @@ final class WalletManagerStore: ObservableObject {
         if let existing = managers[network] {
             let cachedHandle = managerSdkHandles[network]
             if cachedHandle == sdk.handle {
+                // A shielded store that did not open last time is tried
+                // again: until it opens, contact requests stay held (72).
+                if shieldedStoreFailures[network] != nil {
+                    configureShieldedStore(existing, network: network)
+                }
                 if makeActive && existing !== activeManager {
                     // Swapping to a different warm manager supersedes any
                     // in-flight SPV start against the outgoing one.
@@ -192,6 +243,15 @@ final class WalletManagerStore: ObservableObject {
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
+        // Open the shielded store before any wallet is loaded or created:
+        // this app's persister keeps the private contact request scan state,
+        // so Rust holds every wallet published while no store is configured
+        // (code 72) until its private payment journal is read, and a later
+        // bind may never come (no mnemonic, shielded off). With the store
+        // open first, each wallet's journal is read as it is published, and
+        // the binds' own calls on the same path are no-ops. A failure is
+        // recorded and retried; the wallets stay held meanwhile.
+        configureShieldedStore(manager, network: network)
         // Best-effort: a fresh manager comes up with no wallets in
         // memory; restore from the network-scoped persistence
         // handler so reopening the app on this network resurfaces
@@ -228,6 +288,45 @@ final class WalletManagerStore: ObservableObject {
                 "wallet_count": .integer(Int64(manager.wallets.count)),
             ]
         )
+    }
+
+    /// Open `network`'s shielded store on `manager`, recording why it failed
+    /// for the DashPay views, or clearing that once it opens. A repeat on the
+    /// same path does not wait on the store, so it is safe on the main
+    /// thread.
+    private func configureShieldedStore(_ manager: PlatformWalletManager, network: Network) {
+        do {
+            try manager.configureShielded(dbPath: ShieldedService.dbPath(for: network))
+            shieldedStoreFailures[network] = nil
+        } catch {
+            shieldedStoreFailures[network] = error.localizedDescription
+            SDKLogger.event(
+                "manager_shielded_configure_failed",
+                category: .lifecycle,
+                severity: .error,
+                fields: ["network": .publicText(network.displayName)],
+                error: error
+            )
+        }
+    }
+
+    /// Why opening the shielded store of `manager`'s network failed last, or
+    /// nil when it opened (or `manager` is not one of this store's).
+    func shieldedStoreFailure(of manager: PlatformWalletManager) -> String? {
+        guard let network = managers.first(where: { $0.value === manager })?.key else { return nil }
+        return shieldedStoreFailures[network]
+    }
+
+    /// Open `manager`'s shielded store again and return why it failed, or
+    /// nil once it is open. On a store already open this asks the wallet to
+    /// retry restoring every wallet whose private payments are still held,
+    /// a restoration that failed after the store opened included; it never
+    /// waits on a busy store (a busy store defers the restoration to a
+    /// task), so it is safe on the main thread.
+    func configureShieldedAgain(_ manager: PlatformWalletManager) -> String? {
+        guard let network = managers.first(where: { $0.value === manager })?.key else { return nil }
+        configureShieldedStore(manager, network: network)
+        return shieldedStoreFailures[network]
     }
 
     /// Manager for `network` if one has been activated this session;

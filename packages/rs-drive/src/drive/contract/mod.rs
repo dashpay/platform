@@ -31,6 +31,12 @@ pub(crate) mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "server")]
 mod refresh_cache;
+#[cfg(feature = "server")]
+mod storage_serialization;
+#[cfg(feature = "server")]
+pub(crate) use storage_serialization::{
+    estimated_stored_contract_size, serialize_contract_for_storage,
+};
 #[cfg(all(feature = "server", any(test, feature = "structure")))]
 pub(crate) mod structure;
 #[cfg(feature = "fixtures-and-mocks")]
@@ -341,7 +347,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -568,7 +573,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply contract successfully");
     }
@@ -645,7 +649,6 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("should update contract");
 
@@ -860,13 +863,9 @@ mod tests {
             platform_version,
         )
         .expect("should verify single contract proof");
-        assert!(verified_contract.is_some(), "contract should be in proof");
-        assert_eq!(
-            verified_contract
-                .expect("verified contract should exist")
-                .id(),
-            contract.id()
-        );
+        // At the latest protocol version the contract is stored compiled (format version 2),
+        // and the proof gives it back as it was applied
+        assert_eq!(verified_contract, Some(contract));
     }
 
     #[test]
@@ -977,7 +976,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -1028,7 +1026,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with new document type");
 
@@ -1212,7 +1209,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should update contract with history");
 
@@ -1811,8 +1807,7 @@ mod tests {
             .expect("should set document schema");
         contract.increment_version();
 
-        let result =
-            drive.update_contract(&contract, block_info, true, None, platform_version, None);
+        let result = drive.update_contract(&contract, block_info, true, None, platform_version);
 
         assert!(
             matches!(
@@ -2075,7 +2070,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2117,7 +2111,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2161,7 +2154,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2207,7 +2199,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2294,7 +2285,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2385,7 +2375,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2805,7 +2794,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2845,7 +2833,6 @@ mod tests {
                 false,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected update_contract(apply=false) to succeed via insert delegation");
 

@@ -6,15 +6,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Updates a data contract.
@@ -49,7 +47,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -58,30 +55,15 @@ impl Drive {
             .update
             .update_contract
         {
-            0 => self.update_contract_v0(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
-            1 => self.update_contract_v1(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
-            2 => self.update_contract_v2(
-                contract,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
+            0 => {
+                self.update_contract_v0(contract, block_info, apply, transaction, platform_version)
+            }
+            1 => {
+                self.update_contract_v1(contract, block_info, apply, transaction, platform_version)
+            }
+            2 => {
+                self.update_contract_v2(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
                 known_versions: vec![0, 1, 2],
@@ -182,7 +164,7 @@ impl Drive {
     /// * `original_contract` - A reference to the original `Contract` before updates.
     /// * `block_info` - A `BlockInfo` object containing information about the block where
     ///   the contract is being updated.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of a `HashMap`
+    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of an `EstimatedLayers`
     ///   containing estimated layer information. If provided (`Some`), only the estimated costs will be updated.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used
     ///   for updating the contract.
@@ -206,9 +188,7 @@ impl Drive {
         contract: &DataContract,
         original_contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

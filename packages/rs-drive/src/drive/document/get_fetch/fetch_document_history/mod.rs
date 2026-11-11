@@ -15,7 +15,6 @@ impl Drive {
     pub fn fetch_document_history(
         &self,
         contract_id: [u8; 32],
-        document_type_name: &str,
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
         transaction: TransactionArg,
@@ -33,7 +32,6 @@ impl Drive {
         {
             0 => self.fetch_document_history_v0(
                 contract_id,
-                document_type_name,
                 document_type,
                 document_id,
                 transaction,
@@ -128,7 +126,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("put document");
     }
@@ -152,7 +149,6 @@ mod tests {
         let history = drive
             .fetch_document_history(
                 contract_id,
-                DOCUMENT_TYPE_NAME,
                 document_type,
                 document_id,
                 None,
@@ -170,7 +166,6 @@ mod tests {
         let page = drive
             .fetch_document_history(
                 contract_id,
-                DOCUMENT_TYPE_NAME,
                 document_type,
                 document_id,
                 None,
@@ -185,7 +180,6 @@ mod tests {
         let empty_page = drive
             .fetch_document_history(
                 contract_id,
-                DOCUMENT_TYPE_NAME,
                 document_type,
                 document_id,
                 None,
@@ -215,7 +209,7 @@ mod tests {
         let proof = drive
             .prove_document_history(
                 contract_id,
-                DOCUMENT_TYPE_NAME,
+                document_type,
                 document_id,
                 None,
                 0,
@@ -246,7 +240,7 @@ mod tests {
         let empty_page_proof = drive
             .prove_document_history(
                 contract_id,
-                DOCUMENT_TYPE_NAME,
+                document_type,
                 document_id,
                 None,
                 2000,

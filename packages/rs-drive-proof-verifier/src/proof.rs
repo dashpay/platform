@@ -1,3 +1,5 @@
+/// Blocks and the transactions in them, verified against Tenderdash block proofs
+pub mod blocks;
 /// Verified chained-document (provable semi-join) result: two grovedb
 /// proofs — the inner indexOnly page and the outer by-ids fetch derived
 /// from its proven values — bound to one quorum-signed root.
@@ -42,6 +44,7 @@ pub mod document_sum;
 pub mod groups;
 pub mod identity_keys_remaining_budgets;
 pub mod identity_token_balance;
+pub mod private_document_entries;
 pub mod token_contract_info;
 pub mod token_direct_purchase;
 pub mod token_info;
@@ -49,14 +52,20 @@ pub mod token_perpetual_distribution_last_claim;
 pub mod token_pre_programmed_distributions;
 pub mod token_status;
 pub mod token_total_supply;
+pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
-use crate::{types::*, ContextProvider, DataContractProvider, Error};
+use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
+    get_identity_by_non_unique_public_key_hash_response_v0::Result as NonUniqueLookupV0Result,
+    get_identity_by_non_unique_public_key_hash_response_v1::Result as NonUniqueLookupV1Result,
+    Version as NonUniqueLookupVersion,
+};
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
@@ -77,7 +86,6 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
@@ -107,9 +115,10 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::{
     ResolvedVotePollsByDocumentTypeQuery, VotePollsByDocumentTypeQuery,
 };
-use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{ContractLookupFn, DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use indexmap::IndexMap;
 use std::array::TryFromSliceError;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use crate::error::MapGroveDbError;
@@ -188,6 +197,43 @@ pub trait FromProof<Req> {
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a;
+
+    /// Check, before the request is sent, that this type can be verified from an answer to it.
+    ///
+    /// Several types can share one request type while each accepting only some of its shapes
+    /// (every document view is fetched with the same document query). A shape refused only
+    /// after the answer is reported as a failed proof, which callers retry on another node
+    /// and hold against the one that answered, although that node answered it correctly.
+    /// Refusing it here keeps it off the network.
+    ///
+    /// It may also refuse a request every node refuses: sent, such a request fails on each
+    /// node it reaches, and a refusal some nodes answer with an error the caller retries
+    /// gets those nodes banned.
+    ///
+    /// The default accepts every request. An implementation must not refuse a request that
+    /// an honest node at `platform_version` or at any later version serves and
+    /// [`FromProof::maybe_from_proof_with_metadata()`] verifies: an answer is verified at the
+    /// version it is signed with when that is newer.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request that is about to be sent.
+    /// * `platform_version`: The platform version the request is built for.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` when the request can be sent.
+    /// * `Err(Error)` when no node serves the request, or no answer to it can be verified as
+    ///   this type.
+    fn check_request(
+        _request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
 
     /// Retrieve the requested object from the proof.
     ///
@@ -396,6 +442,84 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     }
 }
 
+// The producer's signed version selects how the producer laid out its proof, while
+// security checks keep the caller's verifier version. For the non-unique identity
+// lookup it selects the GroveDB version its merged queries are built with and, for a
+// two-proof answer, the tables that decode the identity after the strict checks. For a
+// state transition outcome it selects only whether the proof carries the owner balance:
+// every key and query is rebuilt with the caller's rules. Metadata is untrusted until
+// the signature binds it to the root. A producer newer than this build is read with the
+// newest known tables, the same fallback the SDK uses for verifier tables. A wrong guess
+// cannot authenticate data the signed root does not hold, and a changed layout is
+// expected to fail verification for answers that return data. An absence answer can
+// still verify at a location a newer protocol no longer uses, so relocating such an
+// index needs an SDK update. Reserved mock versions also sit above the newest one, so
+// their tables are never looked up.
+fn proof_query_platform_version(
+    metadata: &ResponseMetadata,
+) -> Result<&'static PlatformVersion, Error> {
+    if metadata.protocol_version > LATEST_VERSION {
+        return Ok(PlatformVersion::latest());
+    }
+    PlatformVersion::get(metadata.protocol_version).map_err(|_| Error::ResponseDecodeError {
+        error: format!(
+            "unsupported proof query protocol version {}",
+            metadata.protocol_version
+        ),
+    })
+}
+
+/// A context provider's configuration error, kept aside while Drive, whose errors cannot
+/// carry it, verifies a proof with what the provider answers.
+///
+/// The provider is set up so that it cannot serve what Drive asked for, whichever node's
+/// answer is verified with it, so the error replaces the verification failure it caused.
+#[derive(Default)]
+struct ProviderMisconfiguration(RefCell<Option<ContextProviderError>>);
+
+impl ProviderMisconfiguration {
+    /// The text Drive is given of the provider's `error`; a configuration error is kept.
+    fn describe(&self, error: ContextProviderError) -> String {
+        let reason = error.to_string();
+        if matches!(error, ContextProviderError::Config(_)) {
+            *self.0.borrow_mut() = Some(error);
+        }
+        reason
+    }
+
+    /// `result`, or the kept configuration error in place of the failure it caused.
+    fn in_place_of_failure<T>(self, result: Result<T, Error>) -> Result<T, Error> {
+        match (result, self.0.into_inner()) {
+            (Err(_), Some(error)) => Err(Error::ContextProviderError(error)),
+            (result, _) => result,
+        }
+    }
+}
+
+/// Runs `verify` with a lookup of the data contracts it needs in `provider`.
+///
+/// The lookup gives Drive a failed lookup as text, as
+/// [`crate::DataContractProvider::as_contract_lookup_fn`] does, and a configuration error
+/// is reported in place of the failure it caused ([`ProviderMisconfiguration`]).
+fn with_contract_lookup<T>(
+    provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
+    verify: impl FnOnce(&ContractLookupFn) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let misconfiguration = ProviderMisconfiguration::default();
+    let lookup = |id: &Identifier| {
+        provider
+            .get_data_contract(id, platform_version)
+            .map_err(|error| {
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(
+                    misconfiguration.describe(error),
+                ))
+            })
+    };
+    let result = verify(&lookup);
+    misconfiguration.in_place_of_failure(result)
+}
+
 impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identity {
     type Request = platform::GetIdentityByNonUniquePublicKeyHashRequest;
     type Response = platform::GetIdentityByNonUniquePublicKeyHashResponse;
@@ -411,56 +535,85 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
     {
         let request = request.into();
         let response = response.into();
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
-                let public_key_hash =
-                    v0.public_key_hash
-                        .try_into()
-                        .map_err(|_| Error::RequestError {
-                            error: "Invalid public key hash length".to_string(),
-                        })?;
-
-                let after = v0
-                    .start_after
-                    .map(|a| {
-                        a.try_into().map_err(|_| Error::RequestError {
-                            error: "Invalid start_after length".to_string(),
-                        })
-                    })
-                    .transpose()?;
-                (public_key_hash, after)
+        // A V0 answer carries separate index and identity proofs, a V1 answer one proof.
+        // The index proof of a V0 answer is the one carrying the quorum signature.
+        let (proof, identity_proof, mtd, answered_with_two_proofs) = match &response.version {
+            Some(NonUniqueLookupVersion::V0(v0)) => {
+                let Some(NonUniqueLookupV0Result::Proof(proved)) = &v0.result else {
+                    return Err(Error::NoProofInResult);
+                };
+                (
+                    proved
+                        .grovedb_identity_public_key_hash_proof
+                        .as_ref()
+                        .ok_or(Error::NoProofInResult)?,
+                    proved.identity_proof_bytes.as_deref(),
+                    v0.metadata.as_ref(),
+                    true,
+                )
             }
+            Some(NonUniqueLookupVersion::V1(v1)) => {
+                let Some(NonUniqueLookupV1Result::Proof(proof)) = &v1.result else {
+                    return Err(Error::NoProofInResult);
+                };
+                (proof, None, v1.metadata.as_ref(), false)
+            }
+            None => return Err(Error::NoProofInResult),
         };
+        let mtd = mtd.ok_or(Error::EmptyResponseMetadata)?;
+        let (public_key_hash, start_after, two_proofs_requested) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
+                    (v0.public_key_hash, v0.start_after, true)
+                }
+                get_identity_by_non_unique_public_key_hash_request::Version::V1(v1) => {
+                    (v1.public_key_hash, v1.start_after, false)
+                }
+            };
+        let public_key_hash = public_key_hash
+            .try_into()
+            .map_err(|_| Error::RequestError {
+                error: "Invalid public key hash length".to_string(),
+            })?;
+        let after_identity = start_after
+            .map(|a| {
+                a.try_into().map_err(|_| Error::RequestError {
+                    error: "Invalid start_after length".to_string(),
+                })
+            })
+            .transpose()?;
 
-        // Metadata is untrusted until the signature succeeds. Bound lookup to real
-        // production tables, excluding reserved mock versions that may panic on lookup.
-        if mtd.protocol_version > LATEST_VERSION {
+        // The request version chooses the proof shape, and the answer must come in it.
+        // The quorum signature covers the state, not the envelope, so an answer in the
+        // other shape is refused rather than reinterpreted.
+        if two_proofs_requested != answered_with_two_proofs {
             return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
+                error: "non-unique identity response version does not match request version"
+                    .to_string(),
             });
         }
-        let query_platform_version =
-            PlatformVersion::get(mtd.protocol_version).map_err(|_| Error::ResponseDecodeError {
-                error: format!(
-                    "unsupported non-unique query construction protocol version {}",
-                    mtd.protocol_version
-                ),
-            })?;
 
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_non_unique_public_key_hash(
-                supported_grovedb_proof_bytes(proof)?,
+        let query_platform_version = proof_query_platform_version(mtd)?;
+        let bytes = supported_grovedb_proof_bytes(proof)?;
+        let verified = if answered_with_two_proofs {
+            Drive::verify_full_identity_by_non_unique_public_key_hash_two_proofs(
+                bytes,
+                identity_proof,
                 public_key_hash,
                 after_identity,
                 query_platform_version,
                 platform_version,
             )
-            .map_drive_error(proof, mtd)?;
+        } else {
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
+                bytes,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            )
+        };
+        let (root_hash, maybe_identity) = verified.map_drive_error(proof, mtd)?;
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
         Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
@@ -1495,7 +1648,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
             epoch: Default::default(),
         };
 
-        let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
+        let query_platform_version = proof_query_platform_version(mtd)?;
 
         // Transition families whose proof cannot be bound to execution
         // (balance top-ups, credit transfers/withdrawals, address funds
@@ -1505,14 +1658,18 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         // preserved here so SDK callers can enforce their required
         // guarantee: strict waits reject snapshots, snapshot waits treat
         // them as height-pinned state, never as execution evidence.
-        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            supported_grovedb_proof_bytes(proof)?,
-            &contracts_provider_fn,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, outcome) =
+            with_contract_lookup(provider, platform_version, |contracts_provider_fn| {
+                Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+                    &state_transition,
+                    &block_info,
+                    supported_grovedb_proof_bytes(proof)?,
+                    contracts_provider_fn,
+                    query_platform_version,
+                    platform_version,
+                )
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1846,6 +2003,42 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
+    /// The verifier refuses a query carrying composite sub-queries, which it would otherwise
+    /// ignore, and rebuilds Drive's path query from the request alone before it reads the
+    /// proof: the where-clause shape, the route (by id, through an index, indexOnly) and the
+    /// index it reads. It does so without the cursor document on every page, so a request whose
+    /// path query cannot be built that way, such as one no index covers, can never verify; every
+    /// node refuses it too. The path query is built at `platform_version`, the version the
+    /// request is encoded with: a shape only a later version serves carries a protocol feature,
+    /// and the SDK's protocol gate encodes such a request at the network's version before this
+    /// check runs, so the check never refuses what that later version serves.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error>
+    where
+        Self: Sized,
+    {
+        let request: DriveDocumentQuery<'dq> =
+            request
+                .clone()
+                .try_into()
+                .map_err(|e: Q::Error| Error::RequestError {
+                    error: e.to_string(),
+                })?;
+        request
+            .ensure_no_sub_queries("verify_proof")
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })?;
+        request
+            .construct_path_query(None, platform_version)
+            .map(drop)
+            .map_err(|e| Error::RequestError {
+                error: format!("no answer to this documents query can be verified: {e}"),
+            })
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -1873,7 +2066,10 @@ where
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
-            .verify_proof(supported_grovedb_proof_bytes(proof)?, platform_version)
+            .verify_proof(
+                document_query_proof_bytes(proof, mtd, platform_version)?,
+                platform_version,
+            )
             .map_drive_error(proof, mtd)?;
 
         let documents = documents
@@ -1987,9 +2183,9 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         // Decode request to get drive query
         let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
-        let resolved_request = drive_query.resolve_with_known_contracts_provider(
-            &provider.as_contract_lookup_fn(platform_version),
-        )?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2035,9 +2231,9 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
 
         // Resolve request to get verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2093,10 +2289,9 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
 
         // Parse request to get resolved contract that implements verify_*_proof
-        let contracts_provider = provider.as_contract_lookup_fn(platform_version);
-
-        let resolved_request =
-            drive_query.resolve_with_known_contracts_provider(&contracts_provider)?;
+        let resolved_request = with_contract_lookup(provider, platform_version, |lookup| {
+            Ok(drive_query.resolve_with_known_contracts_provider(lookup)?)
+        })?;
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2149,25 +2344,35 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
 
         let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let contract_provider_fn = provider.as_contract_lookup_fn(platform_version);
-        let (root_hash, voters) = verify_page_drive_proves(drive_query.limit, |limit| {
-            ContestedResourceVotesGivenByIdentityQuery {
-                limit,
-                ..drive_query.clone()
-            }
-            .verify_identity_votes_given_proof::<Vec<_>>(
-                grovedb_proof,
-                &contract_provider_fn,
-                platform_version,
-            )
-        })
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, voters) =
+            with_contract_lookup(provider, platform_version, |contract_provider_fn| {
+                verify_page_drive_proves(drive_query.limit, |limit| {
+                    ContestedResourceVotesGivenByIdentityQuery {
+                        limit,
+                        ..drive_query.clone()
+                    }
+                    .verify_identity_votes_given_proof::<Vec<_>>(
+                        grovedb_proof,
+                        contract_provider_fn,
+                        platform_version,
+                    )
+                })
+                .map_drive_error(proof, mtd)
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let response: ResourceVotesByIdentity = voters
             .into_iter()
-            .map(|(id, vote)| (id, Some(vote)))
+            .map(|(id, (resource_vote, vote_count))| {
+                (
+                    id,
+                    Some(ResourceVoteWithCount {
+                        resource_vote,
+                        vote_count,
+                    }),
+                )
+            })
             .collect();
 
         Ok((response.into_option(), mtd.clone(), proof.clone()))
@@ -2260,9 +2465,42 @@ impl FromProof<platform::GetPrefundedSpecializedBalanceRequest> for PrefundedSpe
     }
 }
 
+/// The vote poll of the vote a single-vote request asks for.
+///
+/// A vote is the identity's vote on one vote poll, so the request has to start at that poll,
+/// including it.
+fn requested_vote_poll_id(
+    request: &platform::GetContestedResourceIdentityVotesRequest,
+) -> Result<Identifier, Error> {
+    match request.version.as_ref().ok_or(Error::EmptyVersion)? {
+        get_contested_resource_identity_votes_request::Version::V0(v0) => {
+            match &v0.start_at_vote_poll_id_info {
+                Some(start) if start.start_poll_identifier_included => {
+                    Identifier::from_bytes(&start.start_at_poll_identifier).map_err(|e| {
+                        Error::RequestError {
+                            error: e.to_string(),
+                        }
+                    })
+                }
+                _ => Err(Error::RequestError {
+                    error: "a vote request must start at the vote poll of the vote, including it"
+                        .to_string(),
+                }),
+            }
+        }
+    }
+}
+
 impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
     type Request = platform::GetContestedResourceIdentityVotesRequest;
     type Response = platform::GetContestedResourceIdentityVotesResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        requested_vote_poll_id(request).map(|_| ())
+    }
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -2275,13 +2513,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
         Self: Sized + 'a,
     {
         let request = request.into();
-        let id_in_request = match request.version.as_ref().ok_or(Error::EmptyVersion)? {
-            get_contested_resource_identity_votes_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::RequestError {
-                    error: e.to_string(),
-                })?
-            }
-        };
+        let vote_poll_id = requested_vote_poll_id(&request)?;
 
         let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
             request,
@@ -2291,30 +2523,15 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             provider,
         )?;
 
-        let (id, vote) = match maybe_votes {
-            Some(v) if v.len() > 1 => {
-                return Err(Error::ResponseDecodeError {
-                    error: format!("expected 1 vote, got {}", v.len()),
-                })
-            }
-            Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
-            Some(v) => v
-                .into_iter()
-                .next()
-                .expect("is_empty() must detect empty map"),
-            None => return Ok((None, mtd, proof)),
-        };
+        // The proved votes are keyed by vote poll id. When the identity has not voted on the
+        // requested poll, the proof carries its votes on the polls that follow it in the
+        // requested order instead, up to the limit, and none of them is the requested vote.
+        let vote = maybe_votes
+            .and_then(|mut votes| votes.shift_remove(&vote_poll_id))
+            .flatten()
+            .map(|vote| Vote::ResourceVote(vote.resource_vote));
 
-        if id != id_in_request {
-            return Err(Error::ResponseDecodeError {
-                error: format!(
-                    "expected vote for identity {}, got vote for identity {}",
-                    id_in_request, id
-                ),
-            });
-        }
-
-        Ok((vote.map(Vote::ResourceVote), mtd, proof))
+        Ok((vote, mtd, proof))
     }
 }
 
@@ -2339,18 +2556,23 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
-        let (root_hash, credits) = Drive::verify_total_credits_in_system(
+        // Drive asks for the activation height only when the unpaid epoch is the first one.
+        let misconfiguration = ProviderMisconfiguration::default();
+        let verified = Drive::verify_total_credits_in_system(
             supported_grovedb_proof_bytes(proof)?,
             core_subsidy_halving_interval,
             || {
                 provider.get_platform_activation_height().map_err(|e| {
-                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(
+                        misconfiguration.describe(e),
+                    ))
                 })
             },
             mtd.core_chain_locked_height,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_drive_error(proof, mtd);
+        let (root_hash, credits) = misconfiguration.in_place_of_failure(verified)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -3014,6 +3236,58 @@ impl<L: Length> IntoOption for L {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
+
+    /// A plain documents page cannot verify the sub-queries a composite request carries: its
+    /// verifier refuses them rather than report them verified, so its check refuses them before
+    /// sending, and sends the page alone.
+    #[test]
+    fn should_refuse_sub_queries_before_sending_a_documents_page() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use drive::query::{DriveSubQuery, SubQueryKind};
+
+        let platform_version = PlatformVersion::latest();
+        let contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("the fixture has this document type");
+        let mut page = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        };
+        <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version)
+            .expect("a plain page is sent");
+
+        page.sub_queries.push(DriveSubQuery {
+            contract: &contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: Some(10),
+            binding: None,
+        });
+        match <Documents as FromProof<DriveDocumentQuery>>::check_request(&page, platform_version) {
+            Err(Error::RequestError { error }) => {
+                assert!(error.contains("sub-queries"), "{error}")
+            }
+            other => panic!("a page with sub-queries must be refused, got {other:?}"),
+        }
+    }
 
     #[test]
     fn try_u32_to_u16_succeeds_for_valid_values() {
@@ -3423,6 +3697,93 @@ mod tests {
         }
     }
 
+    /// Answers every data contract lookup with the error its function makes.
+    struct FailingContractProvider(fn() -> ContextProviderError);
+
+    impl dash_context_provider::ContextProvider for FailingContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, ContextProviderError> {
+            Err((self.0)())
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<Option<dpp::data_contract::TokenConfiguration>, ContextProviderError> {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, ContextProviderError> {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    fn no_contract_source() -> ContextProviderError {
+        ContextProviderError::Config("no contract source".to_string())
+    }
+
+    /// Drive verifies some proofs without the contract a failed lookup could not give, such
+    /// as a deletion a removal record proves. A configuration error then changes nothing:
+    /// the verification's own result is kept.
+    #[test]
+    fn should_keep_a_verification_that_succeeds_after_a_failed_contract_lookup() {
+        let provider = FailingContractProvider(no_contract_source);
+        let result = with_contract_lookup(&provider, PlatformVersion::latest(), |lookup| {
+            assert!(lookup(&Identifier::new([1; 32])).is_err());
+            Ok(7)
+        });
+        assert!(matches!(result, Ok(7)), "{result:?}");
+    }
+
+    /// A verification that fails after the provider refused a lookup with a configuration
+    /// error fails with that error, which the SDK attributes to its own setup. Any other
+    /// provider failure stays the Drive error it was.
+    #[test]
+    fn should_report_only_a_configuration_error_in_place_of_the_failure_it_caused() {
+        let verify = |provider: &dyn ContextProvider| {
+            with_contract_lookup(provider, PlatformVersion::latest(), |lookup| {
+                lookup(&Identifier::new([1; 32]))?;
+                Ok(())
+            })
+        };
+
+        let misconfigured = verify(&FailingContractProvider(no_contract_source));
+        assert!(
+            matches!(
+                &misconfigured,
+                Err(Error::ContextProviderError(ContextProviderError::Config(reason)))
+                    if reason == "no contract source"
+            ),
+            "{misconfigured:?}"
+        );
+
+        let unavailable = verify(&FailingContractProvider(|| {
+            ContextProviderError::Generic("timed out".to_string())
+        }));
+        assert!(
+            matches!(
+                &unavailable,
+                Err(Error::DriveError { error })
+                    if error.contains("could not be retrieved") && error.contains("timed out")
+            ),
+            "{unavailable:?}"
+        );
+    }
+
     /// Build a fully-populated `GetIdentityResponse` shell so that
     /// `response.proof()` and `response.metadata()` both succeed. The
     /// enclosed proof is empty, so any real verification would fail — but
@@ -3669,212 +4030,273 @@ mod tests {
         }
     }
 
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+    /// A proved request of either version, for a hash and cursor of any length.
+    fn non_unique_request(
+        version: u8,
+        public_key_hash: Vec<u8>,
+        start_after: Option<Vec<u8>>,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashRequest {
+        use platform::get_identity_by_non_unique_public_key_hash_request::{
+            GetIdentityByNonUniquePublicKeyHashRequestV0,
+            GetIdentityByNonUniquePublicKeyHashRequestV1, Version,
         };
-
-        // Build a response with a proved result so we get past the response shape check
-        // and hit the request validation.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 3], // must be 20 bytes
-                start_after: None,
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-
-        match err {
-            Error::RequestError { error } => {
-                assert!(
-                    error.contains("Invalid public key hash length"),
-                    "got: {error}"
-                );
-            }
-            other => panic!("expected RequestError, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof::default())),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
-
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],   // good
-                start_after: Some(vec![0u8; 10]), // wrong length; must be 32
-                prove: true,
-            }
-            .into();
-
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-
-        match err {
-            Error::RequestError { error } => {
-                assert!(error.contains("Invalid start_after length"), "got: {error}");
-            }
-            other => panic!("expected RequestError for start_after, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-        let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
-            .expect("V0 envelope discriminant");
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    ..Proof::default()
-                })),
-                metadata: Some(ResponseMetadata {
-                    protocol_version: PlatformVersion::latest().protocol_version,
-                    ..ResponseMetadata::default()
+        platform::GetIdentityByNonUniquePublicKeyHashRequest {
+            version: Some(match version {
+                0 => Version::V0(GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
                 }),
-            })),
+                _ => Version::V1(GetIdentityByNonUniquePublicKeyHashRequestV1 {
+                    public_key_hash,
+                    start_after,
+                    prove: true,
+                }),
+            }),
+        }
+    }
+
+    /// A proved answer of either version whose signed proof is `proof`; a V0 answer
+    /// carries it as the index proof, without an identity proof.
+    fn non_unique_response(
+        version: u8,
+        proof: Proof,
+        metadata: ResponseMetadata,
+    ) -> platform::GetIdentityByNonUniquePublicKeyHashResponse {
+        use platform::get_identity_by_non_unique_public_key_hash_response::{
+            get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+        platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(match version {
+                0 => NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: Some(proof),
+                        identity_proof_bytes: None,
+                    })),
+                    metadata: Some(metadata),
+                }),
+                _ => NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                    result: Some(NonUniqueLookupV1Result::Proof(proof)),
+                    metadata: Some(metadata),
+                }),
+            }),
+        }
+    }
+
+    fn non_unique_lookup_error(
+        request: platform::GetIdentityByNonUniquePublicKeyHashRequest,
+        response: platform::GetIdentityByNonUniquePublicKeyHashResponse,
+    ) -> Error {
+        <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request,
             response,
             Network::Testnet,
             default_platform_version(),
             &unreachable_provider(),
-        ).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
-        ));
+        )
+        .unwrap_err()
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_retired_wire_tag() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+    fn identity_by_non_unique_public_key_hash_rejects_bad_key_hash_length() {
+        for version in [0, 1] {
+            // A proved answer gets past the response shape check to the request validation.
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 3], None),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid public key hash length")),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_bad_start_after_length() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], Some(vec![0u8; 10])),
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(
+                matches!(&err, Error::RequestError { error } if error.contains("Invalid start_after length")),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    /// The request version chooses the proof shape. An answer in the other version is
+    /// refused before any proof is read, even when its proof would verify.
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_the_other_response_version() {
+        for (request_version, response_version) in [(0, 1), (1, 0)] {
+            let err = non_unique_lookup_error(
+                non_unique_request(request_version, vec![0u8; 20], None),
+                non_unique_response(
+                    response_version,
+                    Proof::default(),
+                    ResponseMetadata::default(),
+                ),
+            );
+            assert!(
+                matches!(&err, Error::ResponseDecodeError { error } if error.contains("does not match request version")),
+                "V{request_version} request, V{response_version} response: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
+        for version in [0, 1] {
+            let proof = bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                .expect("V0 envelope discriminant");
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                non_unique_response(
+                    version,
+                    Proof {
+                        grovedb_proof: proof,
+                        ..Proof::default()
+                    },
+                    ResponseMetadata {
+                        protocol_version: PlatformVersion::latest().protocol_version,
+                        ..ResponseMetadata::default()
+                    },
+                ),
+            );
+            assert!(
+                matches!(
+                    err,
+                    Error::UnsupportedGroveDBProofVersion { version: 0, .. }
+                ),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_malformed_two_proof_answer() {
         use dapi_grpc::Message;
-        // Outer V0 contains the retired result tag 2, including an old nested Proof.
-        // Protobuf discards reserved fields, so the standard response has no result.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
+        // Raw result field 2 decodes as the two-proof answer.
+        let mut response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
             &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
         )
-        .expect("unknown retired fields decode");
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
-        ).unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult));
+        .expect("V0 fields decode");
+        let Some(NonUniqueLookupVersion::V0(v0)) = &mut response.version else {
+            panic!("v0")
+        };
+        let Some(NonUniqueLookupV0Result::Proof(proved)) = &mut v0.result else {
+            panic!("field 2 is the two-proof answer")
+        };
+        // A supported envelope over garbage, signed as protocol 13: the answer passes the
+        // version and envelope checks, so the two-proof verifier itself must refuse it.
+        proved
+            .grovedb_identity_public_key_hash_proof
+            .as_mut()
+            .expect("index proof")
+            .grovedb_proof = vec![0x01, 0xff, 0xff];
+        v0.metadata = Some(ResponseMetadata {
+            protocol_version: 13,
+            ..Default::default()
+        });
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::GroveDBError { .. }), "{err}");
+    }
+
+    #[test]
+    fn identity_by_non_unique_public_key_hash_rejects_two_proof_answer_without_index_proof() {
+        use platform::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse;
+        use platform::get_identity_by_non_unique_public_key_hash_response::GetIdentityByNonUniquePublicKeyHashResponseV0;
+        // The index proof carries the signature; identity bytes alone prove nothing.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+            version: Some(NonUniqueLookupVersion::V0(
+                GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                    result: Some(NonUniqueLookupV0Result::Proof(IdentityProvedResponse {
+                        grovedb_identity_public_key_hash_proof: None,
+                        identity_proof_bytes: Some(vec![0x01]),
+                    })),
+                    metadata: Some(ResponseMetadata {
+                        protocol_version: 13,
+                        ..Default::default()
+                    }),
+                },
+            )),
+        };
+        let err = non_unique_lookup_error(non_unique_request(0, vec![0; 20], None), response);
+        assert!(matches!(err, Error::NoProofInResult), "{err}");
     }
 
     #[test]
     fn identity_by_non_unique_response_with_no_result_yields_no_proof() {
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use platform::get_identity_by_non_unique_public_key_hash_response::{
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
+            GetIdentityByNonUniquePublicKeyHashResponseV0,
+            GetIdentityByNonUniquePublicKeyHashResponseV1,
         };
+        for version in [0, 1] {
+            let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
+                version: Some(match version {
+                    0 => {
+                        NonUniqueLookupVersion::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                    _ => {
+                        NonUniqueLookupVersion::V1(GetIdentityByNonUniquePublicKeyHashResponseV1 {
+                            result: None,
+                            metadata: None,
+                        })
+                    }
+                }),
+            };
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
+    }
 
-        // v0 with result=None -> NoProofInResult on the `.ok_or` branch.
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: None,
-                metadata: None,
-            })),
-        };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
+    #[test]
+    fn identity_by_non_unique_proved_response_without_metadata_is_refused() {
+        for version in [0, 1] {
+            let mut response =
+                non_unique_response(version, Proof::default(), ResponseMetadata::default());
+            match &mut response.version {
+                Some(NonUniqueLookupVersion::V0(v0)) => v0.metadata = None,
+                Some(NonUniqueLookupVersion::V1(v1)) => v1.metadata = None,
+                None => panic!("version"),
             }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+            let err =
+                non_unique_lookup_error(non_unique_request(version, vec![0u8; 20], None), response);
+            assert!(
+                matches!(err, Error::EmptyResponseMetadata),
+                "V{version}: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_by_non_unique_request_without_version_is_refused() {
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                platform::GetIdentityByNonUniquePublicKeyHashRequest { version: None },
+                non_unique_response(version, Proof::default(), ResponseMetadata::default()),
+            );
+            assert!(matches!(err, Error::EmptyVersion), "V{version}: {err:?}");
+        }
     }
 
     #[test]
     fn identity_by_non_unique_response_with_no_version_yields_no_proof() {
-        // A missing response version has no proof through the generic accessor.
-        use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None };
-        let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
-            GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
-                start_after: None,
-                prove: true,
-            }
-            .into();
-        let provider = unreachable_provider();
-        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &provider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+        for version in [0, 1] {
+            let err = non_unique_lookup_error(
+                non_unique_request(version, vec![0u8; 20], None),
+                platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None },
+            );
+            assert!(matches!(err, Error::NoProofInResult), "V{version}: {err:?}");
+        }
     }
 
     #[test]
@@ -6182,15 +6604,19 @@ mod tests {
 
     #[test]
     fn vote_identity_vote_rejects_bad_identity_id_length() {
-        // The Vote impl validates id_in_request length before delegating.
+        // The request is validated before the proof is read.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
         use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
         let request: platform::GetContestedResourceIdentityVotesRequest =
             GetContestedResourceIdentityVotesRequestV0 {
                 identity_id: vec![0u8; 5], // bad
-                limit: None,
+                limit: Some(1),
                 offset: None,
                 order_ascending: true,
-                start_at_vote_poll_id_info: None,
+                start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                    start_at_poll_identifier: vec![1u8; 32],
+                    start_poll_identifier_included: true,
+                }),
                 prove: true,
             }
             .into();
@@ -6207,6 +6633,71 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_vote_request_that_does_not_start_at_its_vote_poll() {
+        // The proved votes are keyed by vote poll id, so without the poll the request starts
+        // at, including it, there is no vote to pick from them. Such a request is refused
+        // before it is sent: refused only once a node answered, it would count against that
+        // node although the node answered it correctly.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request =
+            |start_at_vote_poll_id_info| -> platform::GetContestedResourceIdentityVotesRequest {
+                GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![7u8; 32],
+                    limit: Some(1),
+                    offset: None,
+                    order_ascending: true,
+                    start_at_vote_poll_id_info,
+                    prove: true,
+                }
+                .into()
+            };
+
+        let starting_at_its_vote_poll = request(Some(StartAtVotePollIdInfo {
+            start_at_poll_identifier: vec![1u8; 32],
+            start_poll_identifier_included: true,
+        }));
+        <Vote as FromProof<platform::GetContestedResourceIdentityVotesRequest>>::check_request(
+            &starting_at_its_vote_poll,
+            default_platform_version(),
+        )
+        .expect("a request starting at its vote poll is sent");
+
+        for start_at_vote_poll_id_info in [
+            None,
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 32],
+                start_poll_identifier_included: false,
+            }),
+            // Not a vote poll id: 5 bytes instead of 32.
+            Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![1u8; 5],
+                start_poll_identifier_included: true,
+            }),
+        ] {
+            let request = request(start_at_vote_poll_id_info);
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::check_request(&request, default_platform_version())
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+
+            let provider = unreachable_provider();
+            let err = <Vote as FromProof<
+                platform::GetContestedResourceIdentityVotesRequest,
+            >>::maybe_from_proof(
+                request,
+                platform::GetContestedResourceIdentityVotesResponse::default(),
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+            assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+        }
     }
 
     #[test]
@@ -6245,6 +6736,36 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn should_refuse_a_resource_votes_response_without_a_proof() {
+        // Votes and their counts are read from the proof only, so a response carrying none
+        // is refused before the context provider is asked for anything.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
+        let request: platform::GetContestedResourceIdentityVotesRequest =
+            GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![7u8; 32],
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                start_at_vote_poll_id_info: None,
+                prove: true,
+            }
+            .into();
+        let response = platform::GetContestedResourceIdentityVotesResponse::default();
+        let provider = unreachable_provider();
+        let err = <ResourceVotesByIdentity as FromProof<
+            platform::GetContestedResourceIdentityVotesRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
     }
 
     // ---------------------------------------------------------------------
@@ -6346,14 +6867,12 @@ mod tests {
         use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dpp::data_contract::group::Group;
         use dpp::tokens::contract_info::TokenContractInfo;
+        use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
         fn legacy_proof() -> Proof {
             Proof {
-                grovedb_proof: bincode::encode_to_vec(
-                    0u32,
-                    bincode::config::standard().with_big_endian(),
-                )
-                .expect("V0 envelope discriminant should encode"),
+                grovedb_proof: bincode::encode_to_vec(0u32, PLATFORM_BINCODE_CONFIG)
+                    .expect("V0 envelope discriminant should encode"),
                 ..Proof::default()
             }
         }

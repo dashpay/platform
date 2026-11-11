@@ -1,6 +1,6 @@
 use dpp::bls::Signature;
 
-use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
+use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
 
 use crate::error::Error;
@@ -58,11 +58,14 @@ where
 
         let window_width = quorum_config.window;
 
-        // The last block in the window where the quorums would be the same
-        let last_block_in_window = platform_state.last_committed_core_height()
-            - platform_state.last_committed_core_height() % window_width
-            + window_width
-            - 1;
+        // The last block in the window where the quorums would be the same. The window is a
+        // `NonZeroU32`, so the remainder cannot divide by zero, and a window ending past the
+        // largest core height wraps instead of overflowing where overflow is checked. For every
+        // window this equals the wrapping `u32` arithmetic of release builds, which the protocol
+        // versions selecting this method validate their chains with.
+        let last_block_in_window = (platform_state.last_committed_core_height()
+            - platform_state.last_committed_core_height() % window_width)
+            .wrapping_add(window_width.get() - 1);
 
         let verification_height = chain_lock_height.saturating_sub(SIGN_OFFSET);
 
@@ -89,13 +92,13 @@ where
         // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
         // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-        let mut engine = QuorumSigningRequestId::engine();
+        let mut engine = sha256d::Hash::engine();
 
         engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(chain_lock.block_height.to_le_bytes().as_slice());
 
-        let request_id = QuorumSigningRequestId::from_engine(engine);
+        let request_id = QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
         tracing::trace!(
             ?chain_lock,
@@ -243,13 +246,13 @@ mod tests {
         );
         assert_eq!(hex::encode(122u32.to_le_bytes()), "7a000000");
 
-        let mut engine = QuorumSigningRequestId::engine();
+        let mut engine = sha256d::Hash::engine();
 
         engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(122u32.to_le_bytes().as_slice());
 
-        let request_id = QuorumSigningRequestId::from_engine(engine);
+        let request_id = QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
         assert_eq!(
             hex::encode(request_id.as_byte_array()),
@@ -262,13 +265,13 @@ mod tests {
 
     #[test]
     fn verify_message_digest() {
-        let mut engine = QuorumSigningRequestId::engine();
+        let mut engine = sha256d::Hash::engine();
 
         engine.input(&[CHAIN_LOCK_REQUEST_ID_PREFIX.len() as u8]);
         engine.input(CHAIN_LOCK_REQUEST_ID_PREFIX.as_bytes());
         engine.input(956087u32.to_le_bytes().as_slice());
 
-        let request_id = QuorumSigningRequestId::from_engine(engine);
+        let request_id = QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
         assert_eq!(
             hex::encode(request_id.as_byte_array()),

@@ -6,10 +6,12 @@
 //! fetch ([`FetchUnproved::fetch_unproved`] on [`DataContractsLatestVersions`]) returns one
 //! integer per contract, and the proved fetch ([`FetchMany::fetch_many`] on
 //! [`DataContractLatestVersion`]) verifies a proof of the items, a few hundred bytes of hash
-//! path per contract. With `include_contracts`, and on earlier protocol versions, the proof
-//! is the multi-contract proof `getDataContracts` returns, so it costs as much as fetching
-//! the contracts. Either way the contracts themselves come back only when
-//! `include_contracts` is set.
+//! path per contract. With `include_contracts`, the proof is the multi-contract proof
+//! `getDataContracts` returns, so it costs as much as fetching the contracts. Either way the
+//! contracts themselves come back only when `include_contracts` is set.
+//!
+//! Nodes of releases before protocol 14 do not know this query, so the SDK refuses it with
+//! [`Error::ProtocolVersionNotActive`] until the network has proven protocol 14.
 
 use crate::platform::{FetchMany, FetchUnproved, Identifier, Query, QuerySettings};
 use crate::Error;

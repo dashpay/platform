@@ -94,7 +94,8 @@ fn setup_sdk(config: &Config) -> Sdk {
 
     // Reconfigure context provider with Sdk
     context_provider.set_sdk(Some(sdk.clone()));
-    sdk.set_context_provider(context_provider);
+    sdk.set_context_provider(context_provider)
+        .expect("the context provider fits the SDK");
     // Return the SDK we created
     sdk
 }

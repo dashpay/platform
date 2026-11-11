@@ -322,9 +322,18 @@ struct ClaimInvitationSheet: View {
                 dismiss()
             } catch {
                 // The identity is already registered; a failed contact request
-                // is non-fatal and re-sendable. Surface it but keep the sheet so
-                // the user sees the outcome.
-                errorMessage = "Identity claimed, but the contact request failed: \(error.localizedDescription)"
+                // is non-fatal. Surface it but keep the sheet so the user sees
+                // the outcome. One that may have gone through (18, 20), or that
+                // the wallet refused while an earlier one awaits its outcome
+                // (76), is not a failure: the sync settles it.
+                switch ContactRequestSubmissionOutcome.of(error) {
+                case .mayHaveGoneThrough, .publicRequestUnconfirmed:
+                    kickDashPaySync(walletManager)
+                    errorMessage = "Identity claimed. "
+                        + ContactRequestSubmissionOutcome.publicRequestUnconfirmedMessage
+                default:
+                    errorMessage = "Identity claimed, but the contact request failed: \(error.localizedDescription)"
+                }
             }
         }
     }

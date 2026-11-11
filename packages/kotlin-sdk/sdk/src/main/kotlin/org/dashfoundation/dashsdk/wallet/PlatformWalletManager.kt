@@ -41,6 +41,8 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.dashsdk.tokens.ContactRequestRef
+import org.dashfoundation.dashsdk.tokens.EstablishedContactRef
 import java.util.concurrent.atomic.AtomicLong
 
 /** Effective native persistence contract exposed for initialization diagnostics. */
@@ -77,6 +79,15 @@ data class PlatformWalletPersistenceCapabilities(
          * is deliberately absent: Android never attests it).
          */
         const val CORE_SWEEP_REMOVAL: Long = NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+        /**
+         * The private contact request sync's scan state (each identity's
+         * read position in DashPay's private contact request store, and its
+         * private contacts' shielded addresses) is stored on its round and
+         * restored at load. Mirrors
+         * `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`.
+         */
+        const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
+            NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
     }
 }
 
@@ -642,7 +653,7 @@ class PlatformWalletManager(
 
     /**
      * DIP-13 sub-features DashPay Connect v2 keys live under
-     * (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose']`),
+     * (`m/9'/coin'/5'/<subFeature>'/0'/identityId'/leaf'[/purpose'/rotation']`),
      * registered by the DIP-13 amendment dashpay/dips#191. Mirror of
      * Swift's `ManagedPlatformWallet.ConnectSubFeature`.
      */
@@ -651,13 +662,13 @@ class PlatformWalletManager(
         SESSION_AUTHENTICATION(6),
         /**
          * App encryption key pair: the leaf is the bound data contract's id;
-         * the purpose level is a [ConnectKeyPurpose].
+         * the purpose level is a [ConnectKeyPurpose], followed by a rotation level.
          */
         APP_ENCRYPTION(7),
     }
 
     /**
-     * The trailing `purpose'` level of the app-encryption path: the DPP
+     * The `purpose'` level of the app-encryption path: the DPP
      * purpose discriminant of the half being derived. Only these two exist
      * in the DIP-13 amendment, so the type makes any other value (in
      * particular 0, the FFI's "no purpose level") unrepresentable. Mirror
@@ -669,15 +680,15 @@ class PlatformWalletManager(
     }
 
     /**
-     * Derive a DashPay Connect key at
-     * `m/9'/coin'/5'/<subFeature>'/0'/<identityId>'/<leaf>'[/<purpose>']`
-     * from the wallet's seed, resolved through the mnemonic resolver — the
-     * Android analog of Swift's `deriveConnectKey(subFeature:identityId:leaf:purpose:)`.
-     * [identityId] and [leaf] are DIP-14 256-bit hardened children, so no
-     * wallet-local counter is an input. [ConnectSubFeature.APP_ENCRYPTION]
-     * requires a [purpose], which picks the half of its pair;
-     * [ConnectSubFeature.SESSION_AUTHENTICATION] requires null. Any other
-     * combination throws.
+     * Derive the DashPay Connect session authentication key at
+     * `m/9'/coin'/5'/6'/0'/<identityId>'/<leaf>'` from the wallet's seed,
+     * resolved through the mnemonic resolver — the Android analog of Swift's
+     * `deriveConnectKey(subFeature:identityId:leaf:network:storage:)`. [identityId]
+     * and [leaf] (the connect request id) are DIP-14 256-bit hardened
+     * children, so no wallet-local counter is an input. Only
+     * [ConnectSubFeature.SESSION_AUTHENTICATION] derives here; app
+     * encryption keys need a purpose and rotation, so passing
+     * [ConnectSubFeature.APP_ENCRYPTION] throws.
      *
      * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
      */
@@ -686,7 +697,82 @@ class PlatformWalletManager(
         subFeature: ConnectSubFeature,
         identityId: ByteArray,
         leaf: ByteArray,
-        purpose: ConnectKeyPurpose? = null,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            subFeature.value,
+            identityId,
+            leaf,
+            0,
+            0,
+        )
+    }
+
+    /**
+     * Derive one half of a DashPay Connect app encryption pair at
+     * `m/9'/coin'/5'/7'/0'/<identityId>'/<leaf>'/<purpose>'/<rotation>'` —
+     * the Android analog of Swift's
+     * `deriveConnectKey(subFeature:identityId:leaf:purpose:rotation:network:storage:)`.
+     * [leaf] is the bound contract's id; [rotation] is the non-negative
+     * rotation level, 0 for the first pair. Only
+     * [ConnectSubFeature.APP_ENCRYPTION] derives here; anything else throws.
+     * Keys registered before DIP-13 gained the rotation level come from
+     * [deriveLegacyAppEncryptionKey].
+     *
+     * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
+     */
+    suspend fun deriveConnectKey(
+        walletId: ByteArray,
+        subFeature: ConnectSubFeature,
+        identityId: ByteArray,
+        leaf: ByteArray,
+        purpose: ConnectKeyPurpose,
+        rotation: Int,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, leaf, "leaf") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyV2WithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            subFeature.value,
+            identityId,
+            leaf,
+            purpose.value,
+            rotation,
+        )
+    }
+
+    /**
+     * Derive one half of a DashPay Connect app encryption pair at the
+     * pre-rotation layout `m/9'/coin'/5'/7'/0'/<identityId>'/<contractId>'/<purpose>'`.
+     * Only for recognising keys registered on testnet/devnet before DIP-13
+     * gained the rotation level; derive new keys with [deriveConnectKey].
+     * Mirror of Swift's `deriveLegacyAppEncryptionKey`.
+     *
+     * @return `(privateKey(32), publicKey(33))`. Caller zeroes the private half.
+     */
+    suspend fun deriveLegacyAppEncryptionKey(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        contractId: ByteArray,
+        purpose: ConnectKeyPurpose,
+    ): Pair<ByteArray, ByteArray> = connectKey(identityId, contractId, "contractId") {
+        org.dashfoundation.dashsdk.ffi.IdentityNative.deriveLegacyAppEncryptionKeyWithResolver(
+            network.ffiValue,
+            walletId,
+            mnemonicResolver.nativeHandle,
+            identityId,
+            contractId,
+            purpose.value,
+        )
+    }
+
+    private suspend fun connectKey(
+        identityId: ByteArray,
+        leaf: ByteArray,
+        leafName: String,
+        derive: () -> Array<ByteArray>,
     ): Pair<ByteArray, ByteArray> = teardownGate.opWithCleanupOnCancellation(
         // withContext's prompt cancellation can discard a completed derive
         // before the caller receives the pair it is documented to wipe; scrub
@@ -694,18 +780,8 @@ class PlatformWalletManager(
         cleanup = { pair -> pair.first.fill(0) },
     ) {
         require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
-        require(leaf.size == 32) { "leaf must be 32 bytes, got ${leaf.size}" }
-        val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors {
-            org.dashfoundation.dashsdk.ffi.IdentityNative.deriveConnectKeyWithResolver(
-                network.ffiValue,
-                walletId,
-                mnemonicResolver.nativeHandle,
-                subFeature.value,
-                identityId,
-                leaf,
-                purpose?.value ?: 0,
-            )
-        }
+        require(leaf.size == 32) { "$leafName must be 32 bytes, got ${leaf.size}" }
+        val pair = org.dashfoundation.dashsdk.errors.mapNativeErrors(derive)
         check(pair.size == 2) { "connect key derive returned ${pair.size} elements" }
         pair[0] to pair[1]
     }
@@ -774,6 +850,15 @@ class PlatformWalletManager(
      */
     val voteCasting: org.dashfoundation.dashsdk.voting.VoteCasting =
         org.dashfoundation.dashsdk.voting.VoteCasting()
+
+    /**
+     * Decision proposal create and edit (protocol version 15): the decision proposal
+     * slice of `ManagedPlatformWallet` (`ManagedPlatformWalletDecisionProposals.swift`).
+     * Stateless; callers thread the wallet handle and [signerHandle] into each call. Reads
+     * and the masternode vote are on `Sdk.decisionProposals`.
+     */
+    val decisionProposals: org.dashfoundation.dashsdk.voting.DecisionProposalTransactions =
+        org.dashfoundation.dashsdk.voting.DecisionProposalTransactions(teardownGate)
 
     // ── Native manager bundle ─────────────────────────────────────────
 
@@ -1936,10 +2021,11 @@ class PlatformWalletManager(
     // (cached by [bindShielded]), so no signer or resolver handle crosses
     // JNI — matching the Swift counterparts, which take no signer either.
     // Each blocks for the ~30s Halo 2 proof on Dispatchers.IO. On the
-    // AMBIGUOUS outcome (broadcast accepted, execution unconfirmed) they
-    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
-    // — the caller must NOT retry (the spent notes stay reserved Rust-side;
-    // the next shielded sync reconciles the outcome).
+    // AMBIGUOUS outcome (the spend may have reached a node and its result is
+    // not proved, a node's refusal or verdict included) they
+    // throw [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+    // the caller must NOT retry (the spent notes stay reserved Rust-side
+    // until a later shielded sync resolves them).
 
     /**
      * Shielded → shielded transfer (Type 16) — port of Swift's
@@ -2053,6 +2139,153 @@ class PlatformWalletManager(
                 amount,
             )
         }
+    }
+
+    /**
+     * Send a DashPay private contact request (protocol version 15) from
+     * [senderIdentityId] to [recipientIdentityId], paying for it from
+     * [account]'s shielded notes on [walletId], so nothing on chain names
+     * either identity. Port of Swift's
+     * `PlatformWalletManager.sendPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * The request is signed by this manager's identity signer
+     * ([signerHandle], the handle the public `Dashpay.sendContactRequest`
+     * is given) and sealed with DashPay keys derived through this manager's
+     * resolver, which also supplies the Orchard spend authority.
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * Before anything is paid the wallet reads DashPay's private store for
+     * the sender to its end. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] when the payment
+     * may already be on chain,
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] when the
+     * SDK could not confirm a transition it may have accepted, and
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the
+     * pair is held for a private request: in each case do not send again.
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] sent nothing;
+     * calling again continues the read.
+     * [DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored] and
+     * [DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported] refuse
+     * before the read.
+     *
+     * @return the created request; close it (or `use {}`) when done.
+     */
+    suspend fun sendPrivateContactRequest(
+        walletId: ByteArray,
+        senderIdentityId: ByteArray,
+        recipientIdentityId: ByteArray,
+        accountLabel: String? = null,
+        autoAcceptProof: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): ContactRequestRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.sendPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                senderIdentityId,
+                recipientIdentityId,
+                accountLabel,
+                autoAcceptProof,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        ContactRequestRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request that came privately, replying
+     * privately and paying for the reply from [account]'s shielded notes on
+     * [walletId]. Port of Swift's
+     * `PlatformWalletManager.acceptPrivateContactRequest`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * A host accepts with [acceptContactRequestReplyingInKind], which
+     * picks this reply itself; this explicit accept stays for a host that
+     * wants a private reply. The reply is signed by this manager's identity
+     * signer ([signerHandle]).
+     * [shieldedAddress] is the 43-byte raw Orchard address the contact may
+     * pay us at privately. Blocks for the Halo 2 proof.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptPrivateContactRequest(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptPrivateContactRequest(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
+    }
+
+    /**
+     * Accept a DashPay contact request replying the way it came: privately,
+     * paid from [account]'s shielded notes on [walletId], when it came
+     * privately and no reply exists yet; otherwise with a `contactRequest`
+     * document, or by adopting the reply already sent. Which reply a request
+     * takes is the wallet's decision, so this is the accept a host calls.
+     * Port of Swift's `PlatformWalletManager.acceptContactRequestReplyingInKind`
+     * (`packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PrivateContactRequests.swift`).
+     *
+     * [request] is the incoming request (`Dashpay.incomingContactRequest`).
+     * The reply is signed by this manager's identity signer ([signerHandle]);
+     * the Orchard spend authority comes from this manager's resolver and is
+     * derived only for a private reply. [shieldedAddress] is the 43-byte raw
+     * Orchard address the contact may pay us at privately; a public reply
+     * ignores it.
+     *
+     * A public or adopted reply needs neither shielded support nor a
+     * mnemonic read for the payment. Throws
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] (or
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed]) when a
+     * private reply may already be on chain, or
+     * [DashSdkError.PlatformWallet.PrivateContactRequestPending] when the pair
+     * is held for one: do not accept again;
+     * [DashSdkError.PlatformWallet.PrivateContactStoreNotRead] when the
+     * private store read every accept runs first did not finish (nothing
+     * sent; calling again continues it); and
+     * [DashSdkError.PlatformWallet.ShieldedBuildRequired] when the request
+     * needs a private reply and the native library has no shielded support.
+     *
+     * @return the established contact; close it (or `use {}`) when done.
+     */
+    suspend fun acceptContactRequestReplyingInKind(
+        walletId: ByteArray,
+        request: ContactRequestRef,
+        shieldedAddress: ByteArray? = null,
+        account: Int = 0,
+    ): EstablishedContactRef = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        val handle = mapNativeErrors {
+            DashpayNative.acceptContactRequestReplyingInKind(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                request.value,
+                shieldedAddress,
+                signerHandle,
+            )
+        }
+        EstablishedContactRef(handle)
     }
 
     /**

@@ -124,7 +124,6 @@ fn insert(drive: &Drive, contract: &DataContract, document: &Document) {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("add document");
 }
@@ -206,7 +205,6 @@ fn should_index_a_document_under_every_containing_window_and_delete_them_all() {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("delete document");
     for start in [500u64, 600, 700] {
@@ -237,7 +235,6 @@ fn should_move_a_document_between_windows_when_its_value_changes() {
                 None,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("update document");
     };
@@ -360,7 +357,6 @@ fn should_move_a_listing_into_and_out_of_the_windows_of_a_skip_index() {
                 None,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("update document");
     };
@@ -413,7 +409,6 @@ fn should_move_a_listing_into_and_out_of_the_windows_of_a_skip_index() {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("delete a listing the index skips");
 }
@@ -468,7 +463,6 @@ fn should_move_a_document_between_windows_of_a_unique_integer_range_index() {
                 None,
                 None,
                 PlatformVersion::latest(),
-                None,
             )
             .expect("update document");
     };
@@ -508,7 +502,6 @@ fn should_move_a_document_between_windows_of_a_unique_integer_range_index() {
             true,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("delete document");
     assert!(ids_in_window(&drive, &contract, Value::U64(200)).is_empty());

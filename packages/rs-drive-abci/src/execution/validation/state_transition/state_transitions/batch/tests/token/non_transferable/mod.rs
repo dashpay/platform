@@ -579,3 +579,176 @@ async fn should_still_hand_a_non_transferable_token_out_by_mint_claim_and_purcha
         assert_eq!(balance, Some(expected));
     }
 }
+
+mod tradeable {
+    use super::*;
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
+    use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
+
+    /// Lets the contract owner change the token's trade mode, and makes the token
+    /// non-transferable when asked.
+    fn owner_sets_trade_mode(non_transferable: bool) -> impl FnOnce(&mut TokenConfiguration) {
+        move |token_configuration: &mut TokenConfiguration| {
+            if non_transferable {
+                make_token_non_transferable(token_configuration);
+            }
+            token_configuration.apply_token_configuration_item(
+                TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(
+                    AuthorizedActionTakers::ContractOwner,
+                ),
+            );
+        }
+    }
+
+    /// Sends the contract owner's update of the token's trade mode to `Tradeable` to the mempool
+    /// and then in one block, and returns what check_tx refused it with, the block's result and
+    /// the trade mode the token has afterwards.
+    async fn make_tradeable(
+        non_transferable: bool,
+    ) -> (Vec<ConsensusError>, StateTransitionExecutionResult, bool) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(owner_sets_trade_mode(non_transferable)),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let config_update_transition = BatchTransition::new_token_config_update_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create documents batch transition");
+
+        let config_update_serialized_transition = config_update_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let check_tx_errors = platform
+            .check_tx(
+                &config_update_serialized_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to be able to check tx")
+            .errors;
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[config_update_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let contract = platform
+            .drive
+            .fetch_contract(
+                contract.id().to_buffer(),
+                None,
+                None,
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .expect("expected to fetch the contract")
+            .expect("expected the contract");
+        let is_tradeable = contract
+            .contract
+            .expected_token_configuration(0)
+            .expect("expected the token configuration")
+            .as_cow_v0()
+            .marketplace_rules
+            .trade_mode()
+            .is_tradeable();
+
+        let result = processing_result
+            .into_execution_results()
+            .pop()
+            .expect("expected one execution result");
+        (check_tx_errors, result, is_tradeable)
+    }
+
+    /// The rule reads only the contract the action carries, so it runs with the batch's advanced
+    /// structure and the mempool refuses the update too.
+    #[tokio::test]
+    async fn should_refuse_making_a_non_transferable_token_tradeable_with_a_paid_error_10281() {
+        let (check_tx_errors, result, is_tradeable) = make_tradeable(true).await;
+        assert_matches!(
+            check_tx_errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::NonTransferableTokenTradeableError(_)
+            )]
+        );
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: error @ ConsensusError::BasicError(
+                    BasicError::NonTransferableTokenTradeableError(_)
+                ),
+                ..
+            } if error.code() == 10281
+        );
+        assert!(!is_tradeable);
+    }
+
+    #[tokio::test]
+    async fn should_make_a_transferable_token_tradeable_from_protocol_version_15() {
+        let (check_tx_errors, result, is_tradeable) = make_tradeable(false).await;
+        assert!(check_tx_errors.is_empty(), "{check_tx_errors:?}");
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(is_tradeable);
+    }
+}

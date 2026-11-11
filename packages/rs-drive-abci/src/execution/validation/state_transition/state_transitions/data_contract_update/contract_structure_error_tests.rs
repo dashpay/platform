@@ -2,9 +2,9 @@
 //! through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    add_ref_dag_document_type, assert_paid_contract_structure_error,
+    add_ref_dag_document_type, add_token_with_trade_mode, assert_paid_contract_structure_error,
     assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
-    assert_unpaid_internal_error, check_and_process,
+    assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
     expiring_summed_schema, resign_with_contract, summed_u64_schema,
     terminal_without_index_only_schema, Outcome, EXPIRING_UNBOUNDED_SUM_MESSAGE,
     SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
@@ -17,6 +17,7 @@ use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
 use dpp::dash_to_credits;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -44,6 +45,7 @@ async fn update_contract_adding_schema(
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("item".to_string(), schema);
         },
         protocol_version,
@@ -119,6 +121,7 @@ async fn update_expiring_summed_amount(amount: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("tally".to_string(), expiring_summed_schema(amount));
         },
         platform_version,
@@ -183,6 +186,7 @@ async fn update_tagged_like(like: Value) -> Outcome {
         |contract| {
             contract
                 .document_schemas_mut()
+                .expect("expected a transport format's schemas")
                 .insert("like".to_string(), like);
         },
         platform_version,
@@ -348,5 +352,36 @@ async fn should_refuse_an_update_dropping_unique_items_from_an_index_only_indexe
         &outcome,
         "must declare `uniqueItems: true`",
         UPDATE_NONCE,
+    );
+}
+
+/// An update adding a tradeable token is refused unpaid at protocol version 13 by the same gate
+/// as a create, in check_tx and in a block: the update arm reads the trade mode too, not only the
+/// configuration's format version.
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_tradeable_token_unpaid_at_protocol_version_13() {
+    let outcome = update_fixture_contract(
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        13,
+    )
+    .await;
+
+    assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
+}
+
+/// The same update with a token that is not tradeable passes the gate: check_tx admits it.
+#[tokio::test]
+async fn should_admit_an_update_adding_a_token_that_is_not_tradeable_at_protocol_version_13() {
+    let outcome = update_fixture_contract(
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::NotTradeable),
+        13,
+    )
+    .await;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
     );
 }

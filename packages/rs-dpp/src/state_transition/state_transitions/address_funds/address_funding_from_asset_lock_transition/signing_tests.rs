@@ -13,7 +13,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, PublicKey};
 use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;

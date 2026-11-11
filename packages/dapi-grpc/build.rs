@@ -111,7 +111,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 69] = [
+    const VERSIONED_REQUESTS: [&str; 75] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -142,6 +142,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityKeysRequest",
         "GetIdentityRequest",
         "WaitForStateTransitionResultRequest",
+        "GetRecentStateTransitionStatusRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
         "GetPathElementsRequest",
@@ -152,6 +153,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityRequest",
         "GetContestedResourceIdentityVotesRequest",
         "GetVotePollsByEndDateRequest",
+        "GetYesNoVotePollStateRequest",
+        "GetMasternodeYesNoVoteRequest",
         "GetTotalCreditsInPlatformRequest",
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
@@ -181,6 +184,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateRequest",
         "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
+        "GetPrivateDocumentEntriesRequest",
+        "GetOwnerTransactionsInBlockRequest",
+        "GetBlocksRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -190,10 +196,15 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
+    // - "GetRecentStateTransitionStatusResponse"
+    //
+    // The following responses are excluded as they need custom proof handling:
+    // - "GetOwnerTransactionsInBlockResponse" (a Tenderdash block proof, not a GroveDB one)
+    // - "GetBlocksResponse" (a Tenderdash block proof in each block)
+    // - "GetIdentityByNonUniquePublicKeyHashResponse" (V0 carries two proofs)
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 67] = [
-        "GetIdentityByNonUniquePublicKeyHashResponse",
+    const VERSIONED_RESPONSES: [&str; 69] = [
         "GetContractModerationStatusResponse",
         "GetContractModerationEntriesResponse",
         "GetContractDocumentRemovalsResponse",
@@ -233,6 +244,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityResponse",
         "GetContestedResourceIdentityVotesResponse",
         "GetVotePollsByEndDateResponse",
+        "GetYesNoVotePollStateResponse",
+        "GetMasternodeYesNoVoteResponse",
         "GetTotalCreditsInPlatformResponse",
         "GetEvonodesProposedEpochBlocksResponse",
         "GetIdentityTokenBalancesResponse",
@@ -260,6 +273,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateResponse",
         "GetShieldedNotesCountResponse",
         "GetShieldedNullifiersResponse",
+        "GetPrivateDocumentEntriesResponse",
     ];
 
     const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
@@ -283,7 +297,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     //   - Bumping the matching `FeatureVersionBounds.max_version`
     //     to 1 in `rs-platform-version`.
     //   - Implementing the v1 dispatch arm in `drive-abci`.
-    const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
+    const VERSIONED_AT_V1_REQUESTS: [&str; 2] = [
+        "GetDocumentsRequest",
+        "GetIdentityByNonUniquePublicKeyHashRequest",
+    ];
     const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
 
     // Derive VersionedGrpcMessage on requests
@@ -411,6 +428,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         // and doesn't need the `bytes`-shaped serde shim.
         .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
         .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
+        // A private document entry: up to a chunk of these fills a page
+        .field_attribute("PrivateDocumentEntry.data", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)

@@ -5,7 +5,6 @@
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-use once_cell::sync::Lazy;
 #[cfg(feature = "server")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "server")]
@@ -51,9 +50,7 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
@@ -165,9 +162,6 @@ pub fn setup(
 ) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
     let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
@@ -234,7 +228,6 @@ pub fn setup(
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to add document");
         }
@@ -353,9 +346,6 @@ fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
 fn test_query_historical_first_platform_version() {
     let platform_version = PlatformVersion::first();
     let (drive, contract) = setup(10, None, 73509, platform_version);
-
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -1217,7 +1207,6 @@ fn test_query_historical_first_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -1263,7 +1252,6 @@ fn test_query_historical_first_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            None,
         )
         .expect("document should be inserted");
 
@@ -1755,9 +1743,6 @@ fn test_query_historical_latest_platform_version() {
     let platform_version = PlatformVersion::latest();
     let (drive, contract) = setup(10, None, 73509, platform_version);
 
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
@@ -1766,12 +1751,13 @@ fn test_query_historical_latest_platform_version() {
         .unwrap()
         .expect("there is always a root hash");
     // protocol version 14 stores the contract's version item beside the contract, one more
-    // element under the contract's root subtree in the app hash
+    // element under the contract's root subtree in the app hash; from protocol version 15
+    // the contract is stored compiled (format version 2)
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            154, 194, 44, 125, 179, 94, 9, 234, 111, 237, 91, 245, 165, 141, 253, 76, 143, 141,
-            245, 7, 243, 30, 75, 19, 125, 230, 89, 223, 137, 197, 4, 7
+            164, 19, 82, 38, 204, 246, 241, 238, 130, 180, 160, 236, 73, 210, 55, 148, 3, 7, 136,
+            162, 235, 69, 187, 186, 111, 173, 44, 45, 105, 42, 120, 31
         ]
     );
 
@@ -2620,7 +2606,6 @@ fn test_query_historical_latest_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -2666,7 +2651,6 @@ fn test_query_historical_latest_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            None,
         )
         .expect("document should be inserted");
 
@@ -3144,12 +3128,13 @@ fn test_query_historical_latest_platform_version() {
         .unwrap()
         .expect("there is always a root hash");
     // protocol version 14 stores the contract's version item beside the contract, one more
-    // element under the contract's root subtree in the app hash
+    // element under the contract's root subtree in the app hash; from protocol version 15
+    // the contract is stored compiled (format version 2)
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            144, 239, 7, 209, 248, 216, 179, 175, 158, 85, 227, 204, 70, 8, 219, 70, 175, 116, 83,
-            174, 23, 60, 153, 207, 128, 99, 192, 173, 93, 231, 31, 147
+            100, 160, 69, 189, 204, 135, 147, 36, 228, 242, 49, 99, 116, 167, 17, 44, 71, 49, 67,
+            240, 202, 157, 241, 94, 39, 6, 81, 105, 213, 170, 107, 164
         ]
     );
 }

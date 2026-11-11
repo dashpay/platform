@@ -243,13 +243,12 @@ mod json_convertible_tests {
 mod deserialize_limit_tests {
     use super::*;
     use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// Bincode-encode the V0 shape by hand so the `tx_out_script` length prefix
     /// can claim more bytes than exist in the payload.
     fn payload_with_script_length(fake_len: u64) -> Vec<u8> {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let mut buf = Vec::new();
         // enum discriminant: V0
         buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());

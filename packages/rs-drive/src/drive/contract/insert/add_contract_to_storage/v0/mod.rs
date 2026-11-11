@@ -4,6 +4,7 @@ use crate::drive::LowLevelDriveOperation;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::common::encode::encode_u64;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 use crate::util::object_size_info::PathKeyElementInfo::{
@@ -19,8 +20,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg, TreeType};
 
 impl Drive {
     /// Adds a contract to storage.
@@ -31,9 +31,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         insert_operations: &mut Vec<LowLevelDriveOperation>,
         is_first_insert: bool,
         transaction: TransactionArg,

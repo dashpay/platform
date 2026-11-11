@@ -8,6 +8,7 @@
     "atomic_changesets",
     "invitations",
     "pending_contact_crypto",
+    "private_contact_request_scan_state",
     "provider_transactions",
     "shielded_viewing_keys",
     "tracked_asset_locks",
@@ -30,19 +31,32 @@
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
+    "managed_identity_get_private_contact": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "on_load_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_load_private_contact_scan_state_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_load_private_contact_scan_state_wallets_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_load_private_contact_scan_state_wallets_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_dashpay_payments_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_private_contact_scan_state_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
+    "platform_wallet_get_private_contact_readiness": "packages/rs-platform-wallet-ffi/src/contact_request.rs",
+    "platform_wallet_get_private_pair_held": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "platform_wallet_get_private_payments_restore_failure": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "platform_wallet_get_public_contact_request_unconfirmed": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_invitation_claim_status_for_identity": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_manager_accept_contact_request_replying_in_kind": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+    "platform_wallet_manager_accept_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_send_private_contact_request": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_manager_shielded_fund_from_wallet_drain": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_preview": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
     "platform_wallet_manager_shielded_wallet_drain_status": "packages/rs-platform-wallet-ffi/src/shielded_wallet_drain.rs",
@@ -50,6 +64,7 @@
     "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "platform_wallet_sync_private_contact_requests": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
@@ -808,6 +823,275 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DP-03",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.private_contact_requests",
+      "title": "DashPay private contact requests: store sync, shielded send, accept replying in kind, private-reply accept, private contact, pair-hold and public-unconfirmed reads, codes 68 to 76, readiness and restore failure",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_sync_private_contact_requests",
+        "platform_wallet_manager_send_private_contact_request",
+        "platform_wallet_manager_accept_contact_request_replying_in_kind",
+        "platform_wallet_manager_accept_private_contact_request",
+        "managed_identity_get_private_contact",
+        "platform_wallet_get_private_pair_held",
+        "platform_wallet_get_public_contact_request_unconfirmed",
+        "platform_wallet_get_private_contact_readiness",
+        "platform_wallet_get_private_payments_restore_failure"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PrivateContactRequests.swift wraps the store sync, the shielded send, the accept replying in kind (the wallet replies privately to a request that came privately, and with a document otherwise; a public or adopted reply needs no shielded support or payment mnemonic read, and a build without shielded support refuses only a private reply, with code 69), the explicit private-reply accept, PrivateContactInfo and the wallet's pair-hold read (privatePairHeld, which answers as a send decides it, the shielded store's journal included), all signed with the identity signer the public calls take and counted as native manager operations; codes 68 to 76 are typed and pinned in ErrorHandlingTests. The sync, send and accepts have no automated or recorded gate: a private reply needs a protocol version 15 network with shielded funds. The private marker (core height 0) round-trips through the persisted coreHeightCreatedAt, but no test covers a restart; a paid reply's hold survives one in the shielded store's payment journal, which no host test exercises. The example app has the send-privately toggle, accepts with acceptContactRequestReplyingInKind, keeps a held or unconfirmed private send or reply pending by reading the wallet's per-pair hold (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free (a payment that never lands frees it only once the wallet proves it expired), offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15), with no recorded gate. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates a manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the view is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state, so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as publicContactRequestUnconfirmed): the example app reads that hold per pair (publicContactRequestUnconfirmed) beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the request list's refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Dashpay.syncPrivateContactRequests, privateContact, privateRepliesPending (one pair-hold read per contact, as a send decides it, the shielded store's journal included), privateContactReadiness and privatePaymentsRestoreFailure, and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 76 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and a paid reply's hold survives one only in the shielded store's payment journal, which no host test exercises. The example app accepts with acceptContactRequestReplyingInKind, keeps a held or unconfirmed reply pending by reading the wallet's per-pair hold on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free, offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates the manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the screen is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state (bit 15), so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as PublicContactRequestUnconfirmed): Dashpay.publicContactRequestsUnconfirmed reads that hold per pair, and the example app reads it beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the Requests refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_contact_requests.rs",
+          "id": "should_send_read_and_accept_a_private_contact_request",
+          "command": "cargo test -p platform-wallet --lib should_send_read_and_accept_a_private_contact_request",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/private_contact_requests.rs",
+          "id": "should_accept_a_public_request_replying_in_kind",
+          "command": "cargo test -p platform-wallet --lib should_accept_a_public_request_replying_in_kind",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+          "id": "should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
+          "command": "cargo test -p platform-wallet-ffi --lib should_accept_publicly_without_shielded_support_or_a_mnemonic_read",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/private_contact_request.rs",
+          "id": "should_read_a_pair_s_hold_and_the_restore_failure_from_the_wallet",
+          "command": "cargo test -p platform-wallet-ffi --lib should_read_a_pair_s_hold_and_the_restore_failure_from_the_wallet",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/error.rs",
+          "id": "should_tell_a_private_request_from_other_accept_failures_by_code",
+          "command": "cargo test -p platform-wallet-ffi --lib should_tell_a_private_request_from_other_accept_failures_by_code",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/error.rs",
+          "id": "should_report_an_unconfirmed_public_request_by_its_own_code",
+          "command": "cargo test -p platform-wallet-ffi --lib should_report_an_unconfirmed_public_request_by_its_own_code",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testShouldRouteAPrivatelyReceivedRequestByItsOwnCode",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ErrorHandlingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ContactRequestOutcomesTests.swift",
+          "id": "testShouldKeepAnUnconfirmedPrivateSubmissionPending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ContactRequestOutcomesTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldRouteARequestThatNeedsAPrivateReplyByItsOwnCode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DashSdkErrorTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldKeepAnUnconfirmedPrivateSubmissionPending",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldKeepAPendingPrivateRequestPending",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/dashpay.rs",
+          "id": "should_lay_out_the_private_sync_counters_in_the_order_kotlin_reads",
+          "command": "cargo test -p rs-unified-sdk-jni --lib should_lay_out_the_private_sync_counters_in_the_order_kotlin_reads",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/dashpay.rs",
+          "id": "should_destroy_every_handle_of_the_array_and_free_it",
+          "command": "cargo test -p rs-unified-sdk-jni --lib should_destroy_every_handle_of_the_array_and_free_it",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "privateContactRequestSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ContactRequestOutcomesTests.swift",
+          "id": "testShouldRetryARestorationThatFailedAfterTheStoreOpenedOnARefresh",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ContactRequestOutcomesTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ContactRequestOutcomesTests.swift",
+          "id": "testShouldHoldAPublicAcceptThatMayHaveGoneThroughThroughAReloadAndARetryUntilTheWalletSettlesIt",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ContactRequestOutcomesTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldRetryARestorationThatFailedAfterTheStoreOpenedOnARefresh",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldKeepAPublicAcceptHeldAfterCode20ThroughAnEmptyPrivateReadAndAnUnsettledSync",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.private_contact_request_scan_state",
+      "title": "DashPay private contact request sync resumes after restart from its persisted read position; a marked record outlives its wallet",
+      "area": "persistence",
+      "shared_apis": [
+        "on_persist_private_contact_scan_state_fn",
+        "on_load_private_contact_scan_state_fn",
+        "on_load_private_contact_scan_state_free_fn",
+        "on_load_private_contact_scan_state_wallets_fn",
+        "on_load_private_contact_scan_state_wallets_free_fn"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "private_contact_request_scan_state",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "SwiftData schema V5 stores each identity's read position and its private contacts' shielded addresses (PersistentPrivateContactRequestsPosition, PersistentPrivateShieldedAddress) inside the changeset round, clears the state of a removed identity, and purges it with the wallet except a position record marked unresolved, which it keeps until a record stored cleared for the same wallet and identity replaces it and lists through the wallet list shim, so the load hands it back as retained and a wallet registered again holds the identity it names; it hands the state back through the load/free shims (a stored row that cannot cross fails the load) and declares the capability; the example app's Storage Explorer lists both models and notes a kept record. No test restarts a process and resumes a private sync from the stored position."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "required",
+          "reason": "Room v16 (migration 15 to 16) stores the same rows in the round, clears a removed identity's state, purges it with the wallet except a position record marked unresolved, which it keeps until a cleared record for the same wallet and identity replaces it and lists through onLoadPrivateContactScanStateWallets, and declares the capability; JNI wires the five scan state slots only for a bridge that overrides its store, its load, its wallet list and the contact upsert (the capability also needs contact persistence on the Rust side), rows cross as packed byte arrays, and a stored row that cannot cross fails the load. The example app has no storage explorer. No test restarts a process and resumes a private sync from the stored position."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_restore_the_private_contact_request_scan_state_onto_its_identity",
+          "command": "cargo test -p platform-wallet-ffi --lib should_restore_the_private_contact_request_scan_state_onto_its_identity",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_leave_hosts_without_the_scan_state_capability_unchanged",
+          "command": "cargo test -p platform-wallet-ffi --lib should_leave_hosts_without_the_scan_state_capability_unchanged",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_hand_back_the_marked_records_no_restored_identity_takes",
+          "command": "cargo test -p platform-wallet-ffi --lib should_hand_back_the_marked_records_no_restored_identity_takes",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "should_hold_an_identity_a_kept_marked_record_names_when_its_wallet_is_registered_again",
+          "command": "cargo test -p platform-wallet-ffi --lib should_hold_an_identity_a_kept_marked_record_names_when_its_wallet_is_registered_again",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PrivateContactScanStatePersistenceTests.swift",
+          "id": "testShouldKeepAMarkedRecordThroughItsWalletsPurgeUntilAClearedRecordReplacesIt",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PrivateContactScanStatePersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PrivateContactScanStatePersistenceTest.kt",
+          "id": "shouldKeepAMarkedRecordThroughItsWalletsPurgeUntilAClearedRecordReplacesIt",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateContactScanStatePersistenceTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/persistence.rs",
+          "id": "the_scan_state_slots_are_wired_only_for_a_bridge_that_stores_and_loads_it",
+          "command": "cargo test -p rs-unified-sdk-jni --lib the_scan_state_slots_are_wired_only_for_a_bridge_that_stores_and_loads_it",
           "covers_restart": false
         }
       ]

@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::accessors::v0::DataContractV0Setters;
-use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::GroupAction;
 use dpp::group::group_action::v0::GroupActionV0;
@@ -81,13 +79,13 @@ impl DriveHighLevelBatchOperationConverter for TokenConfigUpdateTransitionAction
                 }
 
                 if self.base().perform_action() {
-                    let mut contract = self.data_contract_fetch_info().contract.clone();
-                    contract.increment_version();
-                    let mut token_configuration = self.base().token_configuration()?.clone();
-                    token_configuration.apply_token_configuration_item(
-                        self.update_token_configuration_item().clone(),
-                    );
-                    contract.add_token(self.token_position(), token_configuration);
+                    // From protocol version 15 the contract is stored compiled from this copy
+                    // of the cached contract: one stored before then in format version 1 is
+                    // re-stored compiled here, and this transition's sender pays its growth
+                    // (v15 note 8). The compiled bytes follow the version that parsed the
+                    // cache entry, which compiles a contract the same at 14 and 15. The same
+                    // contract the update's validation held to its compiled size cap.
+                    let contract = self.updated_contract()?;
                     ops.push(DataContractOperation(
                         DataContractOperationType::ApplyContract {
                             contract: Cow::Owned(contract),

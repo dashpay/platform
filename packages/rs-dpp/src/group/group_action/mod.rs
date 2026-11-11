@@ -129,6 +129,7 @@ mod deserialize_limit_tests {
     use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
     use platform_version::version::{PlatformVersion, PLATFORM_VERSIONS};
     use std::collections::BTreeMap;
+    use platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     /// The budget `GroupAction` decoded under before it was sized from
     /// memory claims.
@@ -218,9 +219,7 @@ mod deserialize_limit_tests {
     /// Whether `bytes` decode untrusted under the budget `GroupAction` had
     /// before.
     fn decodes_under_previous_budget(bytes: &[u8]) -> bool {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<PREVIOUS_BUDGET>();
+        let config = PLATFORM_BINCODE_CONFIG.with_limit::<PREVIOUS_BUDGET>();
         bincode::decode_from_slice_untrusted::<GroupAction, _>(bytes, config).is_ok()
     }
 
@@ -307,8 +306,7 @@ mod deserialize_limit_tests {
         let empty = encode(&localizations_action(0));
         let mut buf = empty[..empty.len() - 3].to_vec();
         buf.extend_from_slice(
-            &bincode::encode_to_vec(1_000_000u64, bincode::config::standard().with_big_endian())
-                .unwrap(),
+            &bincode::encode_to_vec(1_000_000u64, PLATFORM_BINCODE_CONFIG).unwrap(),
         );
 
         let err = GroupAction::deserialize_from_bytes_untrusted(&buf)
@@ -323,9 +321,7 @@ mod deserialize_limit_tests {
     /// rejected against the byte budget before it sizes an allocation.
     #[test]
     fn rejects_note_length_prefix_beyond_budget_without_allocating() {
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let mut buf = Vec::new();
         // GroupAction::V0, then GroupActionV0 { contract_id, proposer_id, position, event }
         buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());

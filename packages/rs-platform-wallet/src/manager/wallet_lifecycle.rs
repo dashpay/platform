@@ -1,9 +1,10 @@
 //! Wallet creation, registration, and removal on [`PlatformWalletManager`].
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_spv::chain::CheckpointManager;
-use key_wallet::mnemonic::Mnemonic;
+use dpp::prelude::Identifier;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -12,11 +13,13 @@ use key_wallet::Network;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-    PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
+    AccountAddressPoolEntry, AccountRegistrationEntry, ClientWalletStartState,
+    PlatformWalletChangeSet, PlatformWalletPersistence, PrivateContactRequestsPosition,
+    ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+use crate::wallet::mnemonic::parse_mnemonic_any_language;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -31,17 +34,6 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
     PlatformWalletError::WalletAlreadyExists(
         key_wallet_manager::WalletError::WalletExists(wallet_id).to_string(),
     )
-}
-
-/// Parse a BIP-39 mnemonic in any supported language.
-///
-/// Since rust-dashcore#981 `Mnemonic::from_phrase` IS the auto-detecting
-/// parse — one path, with English diagnostics kept when nothing matches —
-/// so there is no language list left for a caller to walk. What remains is
-/// the error narrowing: callers report a `&'static str`, and this is where
-/// upstream's richer error is reduced to one.
-fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
@@ -191,8 +183,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     tip
                 } else {
                     CheckpointManager::for_network(self.sdk.network)
-                        .last_checkpoint()
-                        .map(|checkpoint| checkpoint.height)
+                        .checkpoints()
+                        .last()
+                        .map(|checkpoint| checkpoint.height())
                         .unwrap_or(0)
                 }
             }
@@ -363,7 +356,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
             .unwrap_or(wallet.wallet_id);
 
-        let platform_info = PlatformWalletInfo {
+        let mut platform_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
@@ -420,31 +413,47 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // must measure durable writes against the host's cursor, not the one
         // it just built, and keeps the host's DashPay backfill record for the
         // receival accounts it holds (see the seed below).
+        //
+        // And the private contact request scan state records the host kept
+        // marked for this id, its wallet's identities' or those kept after the
+        // wallet's removal: a private payment one stands for may still
+        // execute, while the identity is added afresh, with no reservation or
+        // record of it. Each such identity is held as it is added, before it
+        // can send or accept, in every build.
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
-        let (mut persisted_platform_addresses, mut host_wallets) =
+        let (mut persisted_platform_addresses, mut host_wallets, retained_markers) =
             match super::run_blocking_load(move || load_persister.load()).await {
                 Ok(crate::changeset::ClientStartState {
                     platform_addresses,
                     wallets,
+                    retained_private_contact_scan_states,
                     ..
-                }) => (
-                    platform_addresses,
-                    wallets
-                        .into_iter()
-                        .map(|(id, state)| {
-                            (
-                                id,
+                }) => {
+                    let retained_markers = retained_private_payment_markers(
+                        registration_wallet_id,
+                        &wallets,
+                        &retained_private_contact_scan_states,
+                    );
+                    (
+                        platform_addresses,
+                        wallets
+                            .into_iter()
+                            .map(|(id, state)| {
                                 (
-                                    state.wallet_info.metadata.synced_height,
-                                    state.dashpay_backfill,
-                                ),
-                            )
-                        })
-                        .collect::<std::collections::BTreeMap<
-                            WalletId,
-                            (u32, crate::changeset::DashPayBackfillRecord),
-                        >>(),
-                ),
+                                    id,
+                                    (
+                                        state.wallet_info.metadata.synced_height,
+                                        state.dashpay_backfill,
+                                    ),
+                                )
+                            })
+                            .collect::<std::collections::BTreeMap<
+                                WalletId,
+                                (u32, crate::changeset::DashPayBackfillRecord),
+                            >>(),
+                        retained_markers,
+                    )
+                }
                 Err(e) => {
                     tracing::error!(
                         wallet_id = %hex::encode(registration_wallet_id),
@@ -512,6 +521,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // runs first, so a wallet still registered under this id never has
         // its record overwritten; every publisher holds the cursor lock, so
         // none can appear between that check and the insert.
+        platform_info
+            .identity_manager
+            .retain_private_payment_markers(retained_markers);
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let (snapshot_cursor, mut host_backfill) =
             match host_wallets.remove(&registration_wallet_id) {
@@ -732,6 +744,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
+        // Before the wallet is published: hold or restore its private
+        // payments (`PlatformWalletManager::hold_or_restore_private_payments`).
+        #[cfg(feature = "shielded")]
+        self.hold_or_restore_private_payments(&platform_wallet)
+            .await;
+
         // Register the PlatformWallet handle. `rcu` publishes a new map
         // snapshot; the closure can rerun under a concurrent-writer
         // retry, so it must stay pure map manipulation.
@@ -740,6 +758,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
             wallets
         });
+        // A store configured since the check above restored the wallets it
+        // found published, which this one was not yet.
+        #[cfg(feature = "shielded")]
+        self.restore_private_payments_configured_since(&platform_wallet)
+            .await;
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -1072,6 +1095,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
+/// The identities of `wallet_id` whose private contact request scan state
+/// record the host kept marked
+/// (`PrivateContactRequestsPosition::private_payments_unresolved`): those of
+/// its own identities, when the host still holds the wallet, and those it kept
+/// after the wallet's removal
+/// (`ClientStartState::retained_private_contact_scan_states`).
+pub(super) fn retained_private_payment_markers(
+    wallet_id: WalletId,
+    wallets: &BTreeMap<WalletId, ClientWalletStartState>,
+    retained: &BTreeMap<WalletId, BTreeMap<Identifier, PrivateContactRequestsPosition>>,
+) -> BTreeSet<Identifier> {
+    let held = wallets
+        .get(&wallet_id)
+        .into_iter()
+        .flat_map(|state| state.identity_manager.wallet_identities.values())
+        .flat_map(|identities| identities.values())
+        .filter(|managed| managed.dashpay().private_payments_unresolved())
+        .map(|managed| managed.id());
+    let kept = retained
+        .get(&wallet_id)
+        .into_iter()
+        .flat_map(|records| records.iter())
+        .filter(|(_, record)| record.private_payments_unresolved)
+        .map(|(owner, _)| *owner);
+    held.chain(kept).collect()
+}
+
 #[cfg(test)]
 mod scoped_wallet_id_tests {
     use key_wallet::mnemonic::Mnemonic;
@@ -1376,15 +1426,18 @@ mod register_wallet_duplicate_tests {
         let network = Network::Testnet;
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let seed_bytes = mnemonic.to_seed("");
-        let create = |manager: Arc<PlatformWalletManager<NoopPersister>>| async move {
-            manager
-                .create_wallet_from_seed_bytes(
-                    network,
-                    &seed_bytes,
-                    WalletAccountCreationOptions::Default,
-                    Some(0),
-                )
-                .await
+        let create = |manager: Arc<PlatformWalletManager<NoopPersister>>| {
+            let seed_bytes = seed_bytes.clone();
+            async move {
+                manager
+                    .create_wallet_from_seed_bytes(
+                        network,
+                        &seed_bytes,
+                        WalletAccountCreationOptions::Default,
+                        Some(0),
+                    )
+                    .await
+            }
         };
         let wallet_id = create(Arc::clone(&manager))
             .await
@@ -1441,15 +1494,18 @@ mod register_wallet_duplicate_tests {
         let network = Network::Testnet;
         let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
         let seed_bytes = mnemonic.to_seed("");
-        let create = |manager: Arc<PlatformWalletManager<NoopPersister>>| async move {
-            manager
-                .create_wallet_from_seed_bytes(
-                    network,
-                    &seed_bytes,
-                    WalletAccountCreationOptions::Default,
-                    Some(0),
-                )
-                .await
+        let create = |manager: Arc<PlatformWalletManager<NoopPersister>>| {
+            let seed_bytes = seed_bytes.clone();
+            async move {
+                manager
+                    .create_wallet_from_seed_bytes(
+                        network,
+                        &seed_bytes,
+                        WalletAccountCreationOptions::Default,
+                        Some(0),
+                    )
+                    .await
+            }
         };
 
         let wallet_id = create(Arc::clone(&manager))
@@ -1532,7 +1588,6 @@ mod register_wallet_duplicate_tests {
     /// at all.
     #[tokio::test]
     async fn a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces() {
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
 
         let manager = make_manager();
@@ -1611,7 +1666,6 @@ mod register_wallet_duplicate_tests {
     /// must never fence another wallet's inputs.
     #[tokio::test]
     async fn fences_do_not_leak_between_different_wallets() {
-        use dashcore::hashes::Hash;
         use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, Txid, Witness};
 
         let manager = make_manager();
@@ -1683,6 +1737,7 @@ mod persister_error_tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
     use tracing::Level;
+    use zeroize::Zeroizing;
 
     use crate::changeset::{
         ClientStartState, PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet,
@@ -1803,7 +1858,7 @@ mod persister_error_tests {
         Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
     }
 
-    fn seed_bytes() -> [u8; 64] {
+    fn seed_bytes() -> Zeroizing<[u8; 64]> {
         Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid test mnemonic")
             .to_seed("")

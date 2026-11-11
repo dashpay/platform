@@ -238,9 +238,14 @@ impl DocumentType {
                     // ReferencedDocumentTypeModeratedError), so the lookup is not judged
                     // against a type it could never reference. A deletableDocument lookup
                     // exists from the same protocol version 14 as every other lookup, so
-                    // this stays inert before it
+                    // this stays inert before it.
+                    // A private type is judged whatever the kind: `referenced_side_error`
+                    // refuses every lookup into one, so the contract parse reports each the
+                    // same way. In place: no type is private before protocol version 15, the
+                    // first to parse one (`parse_private_document`), so the filter is
+                    // unchanged there
                     let referenced = referenced_document_type.as_ref();
-                    if kind != referenced.document_reference_kind() {
+                    if kind != referenced.document_reference_kind() && !referenced.is_private() {
                         continue;
                     }
                     let reference_property = match holder {
@@ -323,10 +328,15 @@ impl DocumentType {
         }
 
         // What a `countOf` or `sumOf` totals is another document type of the contract, so it
-        // is checked once all are parsed. Inert for every protocol version before 14: only
-        // the tables carrying `parse_property_constraints: Some(_)` parse a rule at all.
-        validate_property_constraint_aggregates(&contract_document_types, schema_defs)
-            .map_err(consensus_or_protocol_data_contract_error)?;
+        // is checked once all are parsed, by the version of `parse_property_constraints` that
+        // parsed the rules. Inert for every protocol version before 14: only the tables
+        // carrying `parse_property_constraints: Some(_)` parse a rule at all.
+        validate_property_constraint_aggregates(
+            &contract_document_types,
+            schema_defs,
+            platform_version,
+        )
+        .map_err(consensus_or_protocol_data_contract_error)?;
 
         // What a rule reads of a document a reference points at, when that document's type
         // is another of this contract; the referenced types of other contracts are read at

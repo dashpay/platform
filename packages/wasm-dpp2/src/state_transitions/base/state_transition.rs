@@ -369,6 +369,7 @@ impl StateTransitionWasm {
             TokenShieldedTransferWithShieldedFee(_) => 26,
             TokenUnshieldWithShieldedFee(_) => 27,
             TokenPurchaseFromShieldedPool(_) => 28,
+            PrivateDocumentCreateFromShieldedPool(_) => 29,
         }
     }
 
@@ -466,6 +467,7 @@ impl StateTransitionWasm {
             | TokenShieldedTransferWithShieldedFee(_)
             | TokenUnshieldWithShieldedFee(_)
             | TokenPurchaseFromShieldedPool(_)
+            | PrivateDocumentCreateFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
@@ -502,6 +504,7 @@ impl StateTransitionWasm {
             | TokenShieldedTransferWithShieldedFee(_)
             | TokenUnshieldWithShieldedFee(_)
             | TokenPurchaseFromShieldedPool(_)
+            | PrivateDocumentCreateFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => None,
         }
     }
@@ -548,6 +551,11 @@ impl StateTransitionWasm {
 
                         DataContractInSerializationFormat::V1(v1)
                     }
+                    DataContractInSerializationFormat::V2(mut v2) => {
+                        v2.base.owner_id = owner_id;
+
+                        DataContractInSerializationFormat::V2(v2)
+                    }
                 };
 
                 contract_create.set_data_contract(new_contract);
@@ -565,6 +573,11 @@ impl StateTransitionWasm {
                         v1.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V1(v1)
+                    }
+                    DataContractInSerializationFormat::V2(mut v2) => {
+                        v2.base.owner_id = owner_id;
+
+                        DataContractInSerializationFormat::V2(v2)
                     }
                 };
 
@@ -668,6 +681,7 @@ impl StateTransitionWasm {
             | TokenShieldedTransferWithShieldedFee(_)
             | TokenUnshieldWithShieldedFee(_)
             | TokenPurchaseFromShieldedPool(_)
+            | PrivateDocumentCreateFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for shielded transition",
@@ -766,6 +780,7 @@ impl StateTransitionWasm {
             | TokenShieldedTransferWithShieldedFee(_)
             | TokenUnshieldWithShieldedFee(_)
             | TokenPurchaseFromShieldedPool(_)
+            | PrivateDocumentCreateFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for shielded transition",
@@ -891,6 +906,7 @@ impl StateTransitionWasm {
             | TokenShieldedTransferWithShieldedFee(_)
             | TokenUnshieldWithShieldedFee(_)
             | TokenPurchaseFromShieldedPool(_)
+            | PrivateDocumentCreateFromShieldedPool(_)
             | IdentityTopUpFromShieldedPool(_) => {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for shielded transition",

@@ -72,7 +72,8 @@ pub use platform_address::{
     outputs_to_optional_btree_map,
 };
 pub use shielded::{
-    AddressWitnessWasm, IdentityTopUpFromShieldedPoolTransitionWasm, SerializedOrchardActionWasm,
+    AddressWitnessWasm, IdentityTopUpFromShieldedPoolTransitionWasm,
+    PrivateDocumentCreateFromShieldedPoolTransitionWasm, SerializedOrchardActionWasm,
     ShieldFromAssetLockTransitionWasm, ShieldFromIdentityTransitionWasm, ShieldTransitionWasm,
     ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm,
     TokenPurchaseFromShieldedPoolTransitionWasm,

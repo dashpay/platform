@@ -12,6 +12,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
@@ -87,32 +88,15 @@ use crate::error::proof::ProofError;
 use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 
 impl Drive {
-    #[inline(always)]
-    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
-        state_transition: &StateTransition,
-        block_info: &BlockInfo,
-        proof: &[u8],
-        known_contracts_provider_fn: &ContractLookupFn,
-        platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        Self::verify_state_transition_was_executed_with_proof_internal(
-            state_transition,
-            block_info,
-            proof,
-            known_contracts_provider_fn,
-            false,
-            platform_version,
-        )
-    }
-
-    /// The verification shared by every version of
+    /// The verification of generations 0 and 1 of
     /// `verify_state_transition_was_executed_with_proof`. With
-    /// `carries_owner_balance` (from version 1) the proof of an owned, fee-paying
-    /// transition also carries the owner's credit balance: a document batch's
-    /// proof is verified strictly as one merged query, an identity update's
-    /// through the identity keys verifier's own composition, and the others as
-    /// subsets of the merged proof; the outcome carries the balance.
-    pub(in crate::verify::state_transition::verify_state_transition_was_executed_with_proof) fn verify_state_transition_was_executed_with_proof_internal(
+    /// `carries_owner_balance` (a producer at `prove_state_transition` generation
+    /// 1) the proof of an owned, fee-paying transition also carries the owner's
+    /// credit balance: a document batch's proof is verified strictly as one merged
+    /// query, an identity update's through the identity keys verifier's own
+    /// composition, and the others as subsets of the merged proof; the outcome
+    /// carries the balance.
+    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],
@@ -428,17 +412,9 @@ impl Drive {
                         }
 
                         let contested_status =
-                            if let DocumentTransition::Create(create_transition) =
-                                document_transition
-                            {
-                                if create_transition.prefunded_voting_balance().is_some() {
-                                    SingleDocumentDriveQueryContestedStatus::Contested
-                                } else {
-                                    SingleDocumentDriveQueryContestedStatus::NotContested
-                                }
-                            } else {
-                                SingleDocumentDriveQueryContestedStatus::NotContested
-                            };
+                            SingleDocumentDriveQueryContestedStatus::of_document_transition(
+                                document_transition,
+                            );
 
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition.data_contract_id().into_buffer(),
@@ -507,7 +483,7 @@ impl Drive {
                         let (root_hash, documents) = match document_transition {
                             DocumentTransition::Create(create_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (create)", create_transition.base().id()))))?;
-                                let expected_document = Document::try_from_create_transition(
+                                let mut expected_document = Document::try_from_create_transition(
                                     create_transition,
                                     documents_batch_transition.owner_id(),
                                     block_info,
@@ -515,6 +491,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -533,7 +515,7 @@ impl Drive {
                             }
                             DocumentTransition::Replace(replace_transition) => {
                                 let document = document.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain document with id {} expected to exist because of state transition (replace)", replace_transition.base().id()))))?;
-                                let expected_document = Document::try_from_replace_transition(
+                                let mut expected_document = Document::try_from_replace_transition(
                                     replace_transition,
                                     documents_batch_transition.owner_id(),
                                     document.created_at(), //we can trust the created at (as we don't care)
@@ -547,6 +529,12 @@ impl Drive {
                                     &document_type,
                                     platform_version,
                                 )?;
+                                // A property generated from state (protocol version 15) is
+                                // taken as proved: the verifier holds no state to generate it
+                                document_type.adopt_state_generated_properties(
+                                    expected_document.properties_mut(),
+                                    document.properties(),
+                                );
 
                                 let transient_fields = document_type
                                     .transient_fields()
@@ -1796,31 +1784,50 @@ impl Drive {
             StateTransition::MasternodeVote(masternode_vote) => {
                 let pro_tx_hash = masternode_vote.pro_tx_hash();
                 let vote = masternode_vote.vote();
-                let contract = match vote {
-                    Vote::ResourceVote(resource_vote) => match resource_vote.vote_poll() {
-                        VotePoll::ContestedDocumentResourceVotePoll(
-                            contested_document_resource_vote_poll,
-                        ) => known_contracts_provider_fn(
-                            &contested_document_resource_vote_poll.contract_id,
+                // Shared by versions 0 and 1, and client side only. A resource vote on a
+                // contested poll verifies exactly as before; a vote naming a yes/no poll exists
+                // only from protocol version 15.
+                let (root_hash, vote) = match vote {
+                    Vote::ResourceVote(resource_vote) => {
+                        let contract = match resource_vote.vote_poll() {
+                            VotePoll::ContestedDocumentResourceVotePoll(
+                                contested_document_resource_vote_poll,
+                            ) => known_contracts_provider_fn(
+                                &contested_document_resource_vote_poll.contract_id,
+                            )?
+                            .ok_or(Error::Proof(
+                                ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in resource vote verification",
+                                    contested_document_resource_vote_poll.contract_id
+                                )),
+                            ))?,
+                            VotePoll::YesNoVotePoll(_) => {
+                                return Err(Error::Proof(ProofError::InvalidTransition(
+                                    "a resource vote cannot answer a yes/no vote poll".to_string(),
+                                )))
+                            }
+                        };
+                        // we expect to get a vote that matches the state transition
+                        Drive::verify_masternode_vote(
+                            proof,
+                            pro_tx_hash.to_buffer(),
+                            vote,
+                            &contract,
+                            false,
+                            platform_version,
                         )?
-                        .ok_or(Error::Proof(
-                            ProofError::UnknownContract(format!(
-                                "unknown contract with id {} in resource vote verification",
-                                contested_document_resource_vote_poll.contract_id
-                            )),
-                        ))?,
-                    },
+                    }
+                    Vote::YesNoVote(yes_no_vote) => {
+                        let (root_hash, proved_vote) = Drive::verify_masternode_yes_no_vote(
+                            proof,
+                            pro_tx_hash.to_buffer(),
+                            yes_no_vote,
+                            false,
+                            platform_version,
+                        )?;
+                        (root_hash, proved_vote.map(Vote::YesNoVote))
+                    }
                 };
-
-                // we expect to get a vote that matches the state transition
-                let (root_hash, vote) = Drive::verify_masternode_vote(
-                    proof,
-                    pro_tx_hash.to_buffer(),
-                    vote,
-                    &contract,
-                    false,
-                    platform_version,
-                )?;
                 let vote = vote.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain actual vote for masternode {} expected to exist because of state transition (masternode vote)", masternode_vote.pro_tx_hash()))))?;
                 Ok((root_hash, VerifiedMasternodeVote(vote)))
             }
@@ -2133,6 +2140,31 @@ impl Drive {
             StateTransition::ShieldedTransfer(st) => {
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
                 use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+
+                // All nullifiers must be marked as spent
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
+            StateTransition::PrivateDocumentCreateFromShieldedPool(st) => {
+                use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
 
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
 
@@ -3247,6 +3279,10 @@ impl Drive {
             // Balance and pool snapshots at the proof's block: not bindable to one transition.
             StateTransition::TokenUnshieldWithShieldedFee(_) => false,
             StateTransition::TokenPurchaseFromShieldedPool(_) => false,
+            // Only the resulting state: the spent nullifiers name the notes paying the fee, not
+            // the entries, so a competing create spending the same notes for other entries
+            // leaves the same evidence.
+            StateTransition::PrivateDocumentCreateFromShieldedPool(_) => false,
         };
 
         Ok(binds)
@@ -3653,10 +3689,14 @@ mod tests {
 
     /// Helper: set up drive, insert a DPNS contract, return (drive, contract)
     fn setup_drive_and_contract() -> (Drive, DataContract) {
+        setup_drive_and_dpns_contract_of(PlatformVersion::latest().protocol_version)
+    }
+
+    /// Helper: set up drive with the DPNS contract of `protocol_version`
+    fn setup_drive_and_dpns_contract_of(protocol_version: u32) -> (Drive, DataContract) {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let created_contract =
-            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let created_contract = get_dpns_data_contract_fixture(None, 0, protocol_version);
         let contract = created_contract.data_contract_owned();
         drive
             .insert_contract(
@@ -4563,7 +4603,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4577,7 +4616,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to delete document");
 
@@ -4659,7 +4697,9 @@ mod tests {
     /// exactly the single-document proof a pre-14 client rebuilds strictly.
     #[test]
     fn verify_batch_document_proof_before_protocol_version_14_carries_no_balance() {
-        let (drive, contract) = setup_drive_and_contract();
+        // A chain at protocol version 13 stores DPNS v2, which every later version reads too;
+        // v3 is written with type shorthands protocol version 13 does not parse
+        let (drive, contract) = setup_drive_and_dpns_contract_of(13);
         let latest = PlatformVersion::latest();
         let before_balances = PlatformVersion::get(13).expect("protocol version 13 exists");
         assert_eq!(
@@ -4700,7 +4740,6 @@ mod tests {
                 true,
                 None,
                 latest,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4807,7 +4846,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -4939,7 +4977,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
 
@@ -5365,6 +5402,103 @@ mod tests {
                 Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
             ),
             "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- MasternodeVote on a yes/no poll: the prover's path query and the verifier agree,
+    // so a registered vote is proved executed and an unregistered one is refused.
+    #[test]
+    fn should_verify_a_yes_no_masternode_vote_executed_and_refuse_one_never_cast() {
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use crate::util::test_helpers::{open_yes_no_vote_poll_with_votes, test_yes_no_vote_poll};
+        use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+        use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+        use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+        use dpp::voting::votes::yes_no_vote::v0::YesNoVoteV0;
+        use dpp::voting::votes::yes_no_vote::YesNoVote;
+        use dpp::voting::votes::Vote;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let vote_poll = test_yes_no_vote_poll();
+        let voter = [1u8; 32];
+        open_yes_no_vote_poll_with_votes(
+            &drive,
+            &vote_poll,
+            &[(voter, 4, YesNoAbstainVoteChoice::Yes)],
+            platform_version,
+        );
+
+        let transition_for = |voter: [u8; 32], vote_choice: YesNoAbstainVoteChoice| {
+            StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                MasternodeVoteTransitionV0 {
+                    pro_tx_hash: dpp::prelude::Identifier::from(voter),
+                    voter_identity_id: dpp::prelude::Identifier::from([2u8; 32]),
+                    vote: Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
+                        vote_poll_id: vote_poll
+                            .unique_id(platform_version)
+                            .expect("expected the poll id"),
+                        vote_choice,
+                    })),
+                    nonce: 1,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                },
+            ))
+        };
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let executed = transition_for(voter, YesNoAbstainVoteChoice::Yes);
+        let proof = drive
+            .prove_state_transition(&executed, None, platform_version)
+            .expect("expected to prove the vote")
+            .into_data()
+            .expect("expected proof bytes");
+        let (root_hash, verified) = Drive::verify_state_transition_was_executed_with_proof(
+            &executed,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        )
+        .expect("expected the executed vote to verify");
+        assert_eq!(
+            root_hash,
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("root hash")
+        );
+        let StateTransition::MasternodeVote(masternode_vote) = &executed else {
+            unreachable!()
+        };
+        assert_eq!(
+            verified.into_result(),
+            VerifiedMasternodeVote(masternode_vote.vote().clone())
+        );
+
+        // A vote the state does not hold is not proved executed.
+        let not_executed = transition_for([9u8; 32], YesNoAbstainVoteChoice::No);
+        let proof = drive
+            .prove_state_transition(&not_executed, None, platform_version)
+            .expect("expected to prove the absence")
+            .into_data()
+            .expect("expected proof bytes");
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &not_executed,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(ProofError::IncorrectProof(_)))
+            ),
+            "expected IncorrectProof, got {:?}",
             result
         );
     }

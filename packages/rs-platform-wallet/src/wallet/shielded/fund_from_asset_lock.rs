@@ -17,8 +17,10 @@
 //!    [`build_shield_from_asset_lock_transition_with_signer`] so the
 //!    asset-lock-proof signature is routed through the external
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
-//!    IS→CL fallback fires on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`).
+//!    IS→CL fallback fires when `needs_chain_lock_proof` matches:
+//!    Platform rejected the IS signature, or the InstantSend proof
+//!    made the transition too large (the SDK refuses that before
+//!    broadcast with a typed error).
 //! 4. **Finalize lock state** — a verified submit completes a wallet drain
 //!    (`DrainCompleted`) or consumes a generic lock. A resumed drain that
 //!    Platform rejects because its exact outpoint was already consumed is
@@ -31,7 +33,9 @@
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dashcore::OutPoint;
-use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::address_funds::{OrchardAddress, PlatformAddress, ORCHARD_ADDRESS_SIZE};
+
+use crate::changeset::{ShieldedRecipientRaw, SHIELDED_RECIPIENT_SIZE};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
@@ -47,12 +51,12 @@ use crate::wallet::asset_lock::AssetLockOperationState;
 use std::time::Duration;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{is_asset_lock_already_consumed, is_instant_lock_proof_invalid};
+use crate::error::is_asset_lock_already_consumed;
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
+use crate::wallet::asset_lock::AssetLockBuiltObserver;
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 
@@ -171,6 +175,9 @@ impl PlatformWallet {
     ///   shielded seed pool passes `Some(CL_FALLBACK_TIMEOUT)` so a
     ///   `FinalityTimeout` surfaces as its unconfirmed-ancestor pacing
     ///   signal (see `seed_pool.rs`).
+    /// * `on_asset_lock_built` — Receives the outpoint of a newly built
+    ///   asset lock before its row is persisted or it is broadcast; see
+    ///   [`AssetLockBuiltObserver`]. Not called on resume.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -184,6 +191,7 @@ impl PlatformWallet {
         dummy_outputs: usize,
         settings: Option<PutSettings>,
         cl_wait: Option<Duration>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -222,6 +230,7 @@ impl PlatformWallet {
                 dummy_outputs,
                 settings,
                 cl_wait,
+                on_asset_lock_built,
             )
             .await;
         if let Some(operation) = operation {
@@ -249,6 +258,7 @@ impl PlatformWallet {
         dummy_outputs: usize,
         settings: Option<PutSettings>,
         cl_wait: Option<Duration>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -262,6 +272,23 @@ impl PlatformWallet {
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
+        let (requested_recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
+
+        // A resume pays the recipient its lock was built for. The row recorded
+        // it before dispatch (`TrackedAssetLock::shielded_recipient`), so a
+        // host that lost its own marker between the Core broadcast and the
+        // Type 18 submit cannot redirect the funds by passing another address.
+        // Decided before any funding resolution: a refused resume touches no
+        // reservation, waits for no proof and reaches no transport. A row
+        // tracked before recipients were recorded carries none and accepts
+        // the caller's, as before.
+        let recipient = match &funding {
+            AssetLockFunding::FromExistingAssetLock { out_point, .. } => {
+                let recorded = self.asset_locks.tracked_shielded_recipient(out_point).await;
+                resume_recipient(*out_point, recorded, requested_recipient)?
+            }
+            _ => requested_recipient,
+        };
 
         // Pre-broadcast sizing guard for the `FromWalletBalance` path:
         // refuse to build an L1 asset-lock that can't even cover the
@@ -370,7 +397,9 @@ impl PlatformWallet {
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
+                Some(recipient.to_raw_bytes()),
                 asset_lock_signer,
+                on_asset_lock_built,
             )
             .await?
         {
@@ -383,7 +412,7 @@ impl PlatformWallet {
                 );
                 // Persists the rebuilt proof before resuming, so a later
                 // resume of this lock does not fall back into the
-                // record-only proof wait that just timed out.
+                // proof wait that just timed out.
                 let (chain_proof, path) = self
                     .asset_locks
                     .resolve_chain_proof_after_is_timeout(&out_point, cl_wait)
@@ -460,8 +489,6 @@ impl PlatformWallet {
                 )));
             }
         }
-        let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
-
         // Encrypt the output under this wallet's OVK so the shielded sync can
         // recover the funding (recipient, value, memo) from chain data alone.
         // Prefer the bound account whose IVK recognizes the recipient address
@@ -485,8 +512,8 @@ impl PlatformWallet {
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
         // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
-        // cache) and IS-lock rejection triggers an IS→CL upgrade on
-        // the same outpoint.
+        // cache) and an unusable IS proof (rejected, or too large)
+        // triggers an IS→CL upgrade on the same outpoint.
         //
         // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
         // is a no-op (pinned at `state_transition::mod`'s
@@ -508,50 +535,19 @@ impl PlatformWallet {
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
         // them on success, with the proof's verdict on the lock.
-        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
-            build_and_broadcast_shielded(
-                sdk.clone(),
-                recipient,
-                shield_amount,
-                proof.clone(),
-                path.clone(),
-                asset_lock_signer,
-                &prover,
-                sender_ovk.clone(),
-                surplus_output,
-                dummy_outputs,
-                s,
-            )
-        })
-        .await
-        {
-            Ok(landed) => (Ok(landed), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point;
-                tracing::warn!(
-                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
-                     (tx {}), retrying with ChainLock proof",
-                    out_point.txid
-                );
-                let chain_proof = self
-                    .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
-                    .await?;
-                let cs = self
-                    .asset_locks
-                    .advance_asset_lock_status(
-                        &out_point,
-                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                        Some(chain_proof.clone()),
-                    )
-                    .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
-                let submit_result = submit_with_cl_height_retry(settings, |s| {
+        let (submit_result, effective_proof) = self
+            .asset_locks
+            .submit_with_chain_lock_fallback(
+                proof,
+                settings,
+                cl_wait,
+                "shielded fund-from-asset-lock",
+                |proof, s| {
                     build_and_broadcast_shielded(
                         sdk.clone(),
                         recipient,
                         shield_amount,
-                        chain_proof.clone(),
+                        proof,
                         path.clone(),
                         asset_lock_signer,
                         &prover,
@@ -560,22 +556,9 @@ impl PlatformWallet {
                         dummy_outputs,
                         s,
                     )
-                })
-                .await;
-                (submit_result, chain_proof)
-            }
-            Err(e) => (Err(e), proof.clone()),
-        };
-
-        // Whichever proof was submitted, a persisted Chain proof Platform
-        // places the transaction outside of must come off the row — including
-        // one this resume loaded rather than built, which would otherwise be
-        // replayed on every later attempt.
-        if let Err(e) = &submit_result {
-            self.asset_locks
-                .invalidate_rejected_chain_proof(&proof_out_point, &effective_proof, e)
-                .await;
-        }
+                },
+            )
+            .await?;
 
         // Platform's verdict settles the lock. For a wallet drain, an
         // exact-outpoint "already consumed" rejection means an earlier attempt
@@ -985,6 +968,32 @@ where
 /// Generic over `T` so unit tests can pass `(u8, Option<Credits>)`
 /// instead of constructing a curve-valid `OrchardAddress` for what
 /// is really a length / cardinality check.
+/// The recipient a resumed shielded funding pays: the one its tracked lock
+/// recorded when it was built, or — for a row tracked before recipients were
+/// recorded — the one the resuming caller passes. A caller that names a
+/// different recipient than the recorded one is refused with
+/// [`PlatformWalletError::AssetLockRecipientMismatch`]; nothing is paid.
+///
+/// The row carries the recipient raw; the comparison is on bytes, so a
+/// corrupted recorded recipient matches nothing and the resume is refused
+/// rather than paid to an address nobody holds.
+pub(super) fn resume_recipient(
+    out_point: OutPoint,
+    recorded: Option<ShieldedRecipientRaw>,
+    requested: OrchardAddress,
+) -> Result<OrchardAddress, PlatformWalletError> {
+    const _: () = assert!(SHIELDED_RECIPIENT_SIZE == ORCHARD_ADDRESS_SIZE);
+    match recorded {
+        None => Ok(requested),
+        Some(recorded) if recorded == requested.to_raw_bytes() => Ok(requested),
+        Some(recorded) => Err(PlatformWalletError::AssetLockRecipientMismatch {
+            out_point,
+            recorded,
+            requested: requested.to_raw_bytes(),
+        }),
+    }
+}
+
 pub(super) fn validate_shielded_recipients<T>(
     recipients: &[(T, Option<Credits>)],
 ) -> Result<(), PlatformWalletError> {
@@ -1088,6 +1097,31 @@ mod tests {
         ));
         assert!(!proof_attests_full_consumption(
             &StateTransitionProofResult::VerifiedShieldedNullifiers(Vec::new())
+        ));
+    }
+
+    #[test]
+    fn resume_recipient_pays_the_recorded_one_and_refuses_another() {
+        let out_point = OutPoint::null();
+        let recorded = crate::test_support::orchard_address_fixture(0x61);
+        let other = crate::test_support::orchard_address_fixture(0x62);
+        assert_eq!(
+            resume_recipient(out_point, Some(recorded.to_raw_bytes()), recorded).unwrap(),
+            recorded
+        );
+        assert_eq!(resume_recipient(out_point, None, other).unwrap(), other);
+        assert!(matches!(
+            resume_recipient(out_point, Some(recorded.to_raw_bytes()), other),
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point: o,
+                recorded: r,
+                requested: q,
+            }) if o == out_point && r == recorded.to_raw_bytes() && q == other.to_raw_bytes()
+        ));
+        // Bytes that are not an address match nothing: refused, not paid.
+        assert!(matches!(
+            resume_recipient(out_point, Some([0xff; SHIELDED_RECIPIENT_SIZE]), other),
+            Err(PlatformWalletError::AssetLockRecipientMismatch { .. })
         ));
     }
 
@@ -1253,6 +1287,7 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    shielded_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,

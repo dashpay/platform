@@ -47,6 +47,8 @@ use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+#[cfg(feature = "shielded")]
+use crate::wallet::shielded::NetworkShieldedCoordinator;
 use crate::wallet::PlatformWallet;
 
 /// Registry key identifying each background worker the manager joins at
@@ -104,6 +106,13 @@ pub enum WalletWorker {
 /// so `all_clean()` fails and the host keeps its callback context alive.
 pub(crate) const COORDINATOR_DRAIN_BUDGET: Duration = Duration::from_secs(10);
 
+/// How often a running sync loop re-checks a latched gate while the pass
+/// a timed-out drain gave up on still holds `is_syncing`. The loop cannot
+/// run a pass behind that one anyway, so instead of sleeping its normal
+/// interval (up to 60 s) it polls the slot at this cadence and resumes
+/// within about a second of the wedged pass draining.
+pub(crate) const LATCHED_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Deadline for draining the DashPay payment-hook tasks at shutdown.
 /// After it lapses each straggler is aborted and given
 /// [`PAYMENT_ABORT_GRACE`] to confirm termination; anything still alive
@@ -153,7 +162,9 @@ impl Drop for SyncSlotGuard<'_> {
 ///   mutating; the gate reopens when the last hold drops,
 /// - the latch — a drain that timed out leaves the gate stuck closed with
 ///   no holder, so the wedged pass cannot be followed by a fresh one; the
-///   next *successful* drain clears it,
+///   next *successful* drain clears it, as does a loop (re)start once the
+///   wedged pass has released `is_syncing`
+///   ([`reopen_if_drained`](Self::reopen_if_drained)),
 /// - [`seal`](Self::seal) — terminal, set by
 ///   [`shutdown`](PlatformWalletManager::shutdown); never reopens, so a
 ///   direct `sync_now` that was already dispatched on a host thread
@@ -244,6 +255,34 @@ impl QuiesceGate {
         let mut bookkeeping = self.bookkeeping();
         bookkeeping.latched = true;
         self.publish_locked(&bookkeeping);
+    }
+
+    /// Clear the timeout latch if the pass it guarded has since drained.
+    ///
+    /// Called by a coordinator's `start()` and by its loop before each
+    /// pass. Without it, a `quiesce` that timed out (the host saw
+    /// `ErrorShutdownIncomplete`) leaves the latch set until *another*
+    /// drain succeeds — and a plain restart never drains, so the new loop
+    /// reports running while every pass bails on the closed gate. Called
+    /// by `start()`, by the one-shot `sync_now` / per-wallet entry points
+    /// before they claim the slot, and by the running loop after each
+    /// pass to pick its cadence, so a stale latch never outlives the pass
+    /// it guarded.
+    ///
+    /// Keeps the latch's guarantee: while `is_syncing` is still held, the
+    /// wedged pass is the only thing that can hold it (a latched gate makes
+    /// every new pass bail right after its CAS), so the gate stays closed
+    /// until that pass is gone. A live hold or the seal still closes the
+    /// gate regardless of the latch.
+    ///
+    /// Returns `true` when no latch remains after the call.
+    fn reopen_if_drained(&self, is_syncing: &std::sync::atomic::AtomicBool) -> bool {
+        let mut bookkeeping = self.bookkeeping();
+        if bookkeeping.latched && !is_syncing.load(std::sync::atomic::Ordering::Acquire) {
+            bookkeeping.latched = false;
+        }
+        self.publish_locked(&bookkeeping);
+        !bookkeeping.latched
     }
 
     /// Drop a hold, reopening the gate only if nothing else closes it.
@@ -863,6 +902,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// per-wallet bind looks up the coordinator from the manager
     /// and errors out if it hasn't been configured.
     ///
+    /// Once the store is open, restores the reservations of the unconfirmed
+    /// private contact request payments of every wallet the manager holds
+    /// whose public contact requests a load or a re-creation held for them,
+    /// or whose id the store's journal keeps payments of, with no keys
+    /// ([`Self::restore_private_contact_payment_holds`]). Call it right after
+    /// [`Self::load_from_persistor`] for a wallet that bound a shielded
+    /// account before: until then, its public contact requests are refused
+    /// with [`PlatformWalletError::PrivateContactPaymentsNotRestored`].
+    ///
     /// Subsequent calls with the **same** `db_path` are a no-op
     /// (configuration is idempotent at the path level). A second
     /// call with a **different** path returns
@@ -881,6 +929,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut slot = self.shielded_coordinator.write().await;
         if let Some(existing) = slot.as_ref() {
             if existing.db_path() == db_path.as_path() {
+                let existing = Arc::clone(existing);
+                drop(slot);
+                // A repeat call, on the main thread of a host binding again:
+                // a scan may hold the store, so nothing waits on it.
+                self.restore_private_payments_without_waiting(&existing, false)
+                    .await;
                 return Ok(());
             }
             return Err(crate::error::PlatformWalletError::ShieldedStoreError(
@@ -932,8 +986,113 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_tree_progress(leaves_committed, total_target);
             },
         )));
-        *slot = Some(coordinator);
+        *slot = Some(Arc::clone(&coordinator));
+        drop(slot);
+        self.restore_private_contact_payment_holds(&coordinator)
+            .await;
         Ok(())
+    }
+
+    /// Restore from `coordinator`'s store, just opened, with no keys, the
+    /// reservations of the unconfirmed private contact request payments of
+    /// every wallet this manager holds whose contact requests wait for them,
+    /// or whose id the store's journal keeps payments of
+    /// ([`PlatformWallet::restore_private_contact_payments`]): a wallet
+    /// published before the store was configured with a persister that keeps
+    /// the private scan state, one loaded after binding a shielded account in
+    /// an earlier process, one with an identity marking a private payment that
+    /// may be unresolved ([`PlatformWallet::private_payments_held`]), or one
+    /// whose id another process journaled payments under. Nothing else holds a
+    /// store just opened, so this waits for nothing long. A wallet whose
+    /// restoration fails stays held, until a bind, a contact request's own
+    /// retry or a later call restores it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_contact_payment_holds(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+    ) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if !wallet.private_payments_held().await
+                && !coordinator.may_journal_private_payments_of(wallet.wallet_id())
+            {
+                continue;
+            }
+            if let Err(error) = wallet.restore_private_contact_payments(coordinator).await {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet.wallet_id()),
+                    %error,
+                    "unconfirmed private contact request payments not restored; the wallet's \
+                     contact requests stay held until a restoration succeeds"
+                );
+            }
+        }
+    }
+
+    /// [`Self::restore_private_contact_payment_holds`] for a store configured
+    /// before, which a shielded scan may hold for minutes: none waits on the
+    /// store ([`PlatformWallet::restore_private_payments_or_defer`]), a busy
+    /// store deferring it to a task, the wallet held until it runs. The
+    /// wallets still held are restored, and with `journaled_too` those whose
+    /// id the journal may keep payments of
+    /// (`NetworkShieldedCoordinator::may_journal_private_payments_of`, a busy
+    /// store counting as may): a load passes it, a repeat configure does not,
+    /// so a configure during a scan holds no wallet that was not held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_without_waiting(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        journaled_too: bool,
+    ) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            if wallet.private_payments_held().await
+                || (journaled_too
+                    && coordinator.may_journal_private_payments_of(wallet.wallet_id()))
+            {
+                wallet.restore_private_payments_or_defer(coordinator).await;
+            }
+        }
+    }
+
+    /// Before `wallet` is published: hold its contact requests until its
+    /// private payments are restored, or restore them now. The shielded
+    /// store's journal outlives a wallet's removal and a process's end, so a
+    /// wallet created or loaded under an id may have payments that may still
+    /// execute, which no marker shows and only the journal does. With a store
+    /// configured, the journal is read now, without waiting on the store
+    /// ([`PlatformWallet::restore_private_payments_or_defer`]): restored, the
+    /// pairs are held through the wallet's journal mirror whether or not their
+    /// senders are loaded yet; a busy store or a read that fails holds the
+    /// wallet until a restoration succeeds. With none, a wallet whose persister
+    /// keeps the private scan state is held until `configure_shielded` or a
+    /// bind reads the journal: only such a persister lets a private payment be
+    /// paid, so only its wallet can have journal records no marker shows. One
+    /// that does not is never held for want of a store.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn hold_or_restore_private_payments(&self, wallet: &PlatformWallet) {
+        match self.shielded_coordinator().await {
+            Some(coordinator) => {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
+            }
+            None if wallet.persister().persists_private_contact_scan_state() => {
+                wallet.persister().hold_until_private_payments_restored();
+            }
+            None => {}
+        }
+    }
+
+    /// After `wallet` is published: a store configured since
+    /// [`Self::hold_or_restore_private_payments`] found none restored the
+    /// wallets published then, which this one was not yet, so it is restored
+    /// here, without waiting on the store, while it is still held.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn restore_private_payments_configured_since(&self, wallet: &PlatformWallet) {
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            if wallet.private_payments_held().await {
+                wallet.restore_private_payments_or_defer(&coordinator).await;
+            }
+        }
     }
 
     /// Snapshot of the currently-installed shielded coordinator,
@@ -1371,8 +1530,6 @@ mod tests {
     /// because nothing else on the fan-out calls `observe_spent`.
     #[tokio::test]
     async fn constructor_wires_spend_observation_into_the_event_fanout() {
-        use dashcore::hashes::Hash as _;
-
         let mgr = make_manager();
 
         // A funded wallet registered in the manager's live wallets map — the
@@ -1691,6 +1848,62 @@ mod tests {
         assert!(gate.is_closed());
         drop(guard);
         assert!(!gate.is_closed(), "successful drain clears the latch");
+    }
+
+    /// `reopen_if_drained` is what a loop (re)start uses to clear a
+    /// timeout latch: it must keep the gate closed while the wedged pass
+    /// still holds `is_syncing`, clear the latch once that pass is gone,
+    /// and never override a live hold or the seal.
+    #[tokio::test(start_paused = true)]
+    async fn reopen_if_drained_keeps_latch_while_pass_in_flight_and_clears_it_after() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = QuiesceGate::default();
+        let is_syncing = AtomicBool::new(true);
+
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        assert!(gate.is_closed(), "timed-out drain leaves the gate latched");
+
+        // The wedged pass is still running: the latch must hold.
+        assert!(
+            !gate.reopen_if_drained(&is_syncing),
+            "latch must survive while the wedged pass holds is_syncing"
+        );
+        assert!(gate.is_closed());
+
+        // The wedged pass finished: a restart may clear the latch itself.
+        is_syncing.store(false, Ordering::Release);
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(!gate.is_closed(), "cleared latch reopens admission");
+
+        // Idempotent on an open gate.
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(!gate.is_closed());
+
+        // A live hold still closes the gate even though the latch is clear.
+        is_syncing.store(true, Ordering::Release);
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        is_syncing.store(false, Ordering::Release);
+        let hold = gate.hold();
+        assert!(gate.reopen_if_drained(&is_syncing), "latch is cleared");
+        assert!(gate.is_closed(), "but the live hold keeps the gate closed");
+        drop(hold);
+        assert!(!gate.is_closed());
+
+        // The seal wins over everything.
+        gate.seal();
+        assert!(gate.reopen_if_drained(&is_syncing));
+        assert!(gate.is_closed(), "a sealed gate never reopens");
     }
 
     /// `SyncSlotGuard` must clear the `is_syncing` slot on panic unwind,

@@ -30,7 +30,8 @@ discovering them afterwards as failed opens.
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
 `accepted-v1-to-v3`, `historical-v2-to-v3`, `previous-live-v2-current-shape`,
-`unsupported-v2`, `labelled-current-v3`, `ordinary-current-plan` or, from the
+`unsupported-v2`, `published-v3-to-v4`, `published-v4-to-v5`,
+`labelled-current-v5`, `ordinary-current-plan` or, from the
 bridge, `legacy-v1-bridge-to-v3`. Resolving a frozen schema's identity builds
 a temporary store, so it is memoized per process and consulted only where a
 label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0` label takes the

@@ -35,6 +35,7 @@ use dpp::data_contract::DataContractFactory;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::utils::generate_random_identifier_struct;
@@ -249,7 +250,6 @@ fn insert_widgets(
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -337,7 +337,6 @@ fn value_tree_for_range_countable_index_is_count_tree_after_insert() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document");
 
@@ -416,7 +415,6 @@ fn count_tree_value_count_excludes_compound_continuation_via_non_counted() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert document");
 
@@ -509,7 +507,6 @@ fn delete_decrements_count_tree_and_provable_count_aggregate() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -532,7 +529,6 @@ fn delete_decrements_count_tree_and_provable_count_aggregate() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete document");
 
@@ -601,7 +597,6 @@ fn aggregate_count_grows_across_distinct_values() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -679,7 +674,6 @@ fn range_count_executor_sums_and_splits_correctly() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -860,7 +854,6 @@ fn range_count_executor_between_is_inclusive_on_both_bounds() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -961,7 +954,6 @@ fn aggregate_count_proof_verifies_and_returns_correct_count() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to insert document");
     }
@@ -1921,7 +1913,6 @@ fn range_count_executor_accepts_starts_with_in_all_four_modes() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert document");
     }
@@ -2168,7 +2159,6 @@ fn setup_widget_with_5_colors_2_docs_each() -> (Drive, DataContract) {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert document");
             seed += 1;
@@ -2591,7 +2581,6 @@ fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -2734,9 +2723,7 @@ fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
         }
     }
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
     let (envelope, _): (GroveDBProof, _) =
         bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
 
@@ -2858,7 +2845,6 @@ fn range_count_executor_returns_per_lot_counts_for_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -3036,7 +3022,6 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert car document");
             seed += 1;
@@ -3108,9 +3093,7 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
     use grovedb::{Element, MerkProofDecoder, MerkProofNode, MerkProofOp};
     use std::collections::BTreeMap;
 
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<{ 256 * 1024 * 1024 }>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
     let (envelope, _): (GroveDBProof, _) =
         bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
 
@@ -3315,7 +3298,7 @@ fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
 /// ascending order: `c, d, e, f, g`.
 ///
 /// Pins two things at once: (1) the limit is plumbed end-to-end
-/// through `execute_document_count_range_distinct_proof` →
+/// through `execute_document_count_proof` →
 /// `execute_distinct_count_with_proof` →
 /// `distinct_count_path_query`, and (2) the prover and verifier
 /// build the *exact same* `PathQuery` with that limit so the
@@ -3382,7 +3365,6 @@ fn distinct_count_proof_honors_request_limit() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert");
     }
@@ -3469,7 +3451,7 @@ fn distinct_count_proof_honors_request_limit() {
 /// in-range). With `LIMIT = 5` and descending iteration the
 /// proof should cover `z, y, x, w, v` — pinning that:
 /// (1) `left_to_right = false` propagates end-to-end through
-/// `execute_document_count_range_distinct_proof` →
+/// `execute_document_count_proof` →
 /// `execute_distinct_count_with_proof` →
 /// `distinct_count_path_query`;
 /// (2) the prover and verifier agree on the descending path
@@ -3539,7 +3521,6 @@ fn distinct_count_proof_descending_returns_last_limit_keys() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("insert");
     }

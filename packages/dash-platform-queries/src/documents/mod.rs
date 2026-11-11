@@ -1,6 +1,9 @@
+pub(crate) mod aggregate_routing;
 pub mod array_element_clauses;
 pub(crate) mod average_proof_helpers;
 pub mod chained_document_query;
+#[cfg(test)]
+mod check_request_tests;
 pub mod composite_document_query;
 pub(crate) mod count_proof_helpers;
 pub mod document_average;
@@ -15,4 +18,5 @@ pub mod document_split_sums;
 pub mod document_sum;
 pub(crate) mod having_proof_helpers;
 pub(crate) mod ranked_proof_helpers;
+pub mod requirement;
 pub(crate) mod sum_proof_helpers;

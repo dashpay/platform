@@ -63,6 +63,68 @@ struct IdentityBalanceMetadataStorageListView: View {
     }
 }
 
+// MARK: - PersistentPrivateContactRequestsPosition
+
+struct PrivateContactRequestsPositionStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentPrivateContactRequestsPosition]
+
+    private var filtered: [PersistentPrivateContactRequestsPosition] {
+        records.filter { $0.networkRaw == network.rawValue }
+            .sorted { $0.identityId.toHexString() < $1.identityId.toHexString() }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: PrivateContactRequestsPositionStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.identityId.toHexString())
+                        .font(.body).lineLimit(1).truncationMode(.middle)
+                    Text("Wallet: \(record.walletId.toHexString())")
+                        .font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    // Stored as a bit pattern; show the unsigned position.
+                    Text("Position \(UInt64(bitPattern: record.position))")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Private Positions (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "bookmark") } }
+    }
+}
+
+// MARK: - PersistentPrivateShieldedAddress
+
+struct PrivateShieldedAddressStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentPrivateShieldedAddress]
+
+    private var filtered: [PersistentPrivateShieldedAddress] {
+        records.filter { $0.networkRaw == network.rawValue }
+            .sorted { ($0.ownerId.toHexString(), $0.contactId.toHexString())
+                < ($1.ownerId.toHexString(), $1.contactId.toHexString()) }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: PrivateShieldedAddressStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Contact: \(record.contactId.toHexString())")
+                        .font(.body).lineLimit(1).truncationMode(.middle)
+                    Text("Owner: \(record.ownerId.toHexString())")
+                        .font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Private Addresses (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "lock.rectangle") } }
+    }
+}
+
 // MARK: - PersistentDocument
 
 struct DocumentStorageListView: View {

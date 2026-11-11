@@ -9,6 +9,8 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Blocks of the Platform chain and the state transitions in them
+pub mod blocks;
 /// Contract groups: a group's information, its members and the groups a contract is in
 pub mod contract_groups;
 /// Contract moderation query results
@@ -25,12 +27,16 @@ pub mod groups;
 pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
+/// A page of the entries of a private document type's store
+pub mod private_document_entries;
 /// Token contract info
 pub mod token_contract_info;
 /// Token info
 pub mod token_info;
 /// Token status
 pub mod token_status;
+/// The state of a yes/no vote poll and a masternode's answer on one
+pub mod yes_no_vote_polls;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -65,7 +71,6 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -386,8 +391,28 @@ pub struct ContestedVote(
     pub ResourceVoteChoice,
 );
 
-/// Votes casted by some identity.
-pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
+/// The vote an identity currently has on a vote poll, with the number of times the identity
+/// has voted on that poll.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct ResourceVoteWithCount {
+    /// The identity's current vote on the vote poll
+    pub resource_vote: ResourceVote,
+    /// How many times the identity has voted on the vote poll, the current vote included: 1
+    /// after a first vote, one more with each changed vote. Platform refuses a changed vote
+    /// once this reaches the `votes_allowed_per_masternode` of the active protocol version.
+    pub vote_count: u16,
+}
+
+/// Votes casted by some identity, each with the number of times the identity has voted on its
+/// vote poll, by vote poll unique id.
+///
+/// Every entry is `Some`: a vote poll the identity has not voted on has no entry.
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
 
 /// Represents the current state of quorums in the platform.
 ///

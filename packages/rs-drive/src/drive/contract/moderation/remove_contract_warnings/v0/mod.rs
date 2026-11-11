@@ -3,6 +3,7 @@ use crate::drive::contract::paths::contract_moderation_list_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
@@ -11,10 +12,8 @@ use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use grovedb::{MaybeTree, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     #[inline(always)]
@@ -28,11 +27,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
         let batch_operations = self.remove_contract_warnings_operations_v0(
             contract_id,
@@ -52,13 +47,11 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )
     }
 
@@ -71,9 +64,7 @@ impl Drive {
         contract_id: Identifier,
         identity_id: Identifier,
         _block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

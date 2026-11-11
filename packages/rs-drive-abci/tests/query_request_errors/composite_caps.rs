@@ -68,7 +68,6 @@ fn store_document(
             true,
             None,
             version,
-            None,
         )
         .expect("store seeded document");
 }

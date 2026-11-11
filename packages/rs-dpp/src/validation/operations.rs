@@ -6,6 +6,9 @@ pub enum ProtocolValidationOperation {
     DocumentTypeSchemaValidationForSize(u64),
     DocumentTypeSchemaPropertyValidation(u64),
     DocumentTypeSchemaIndexValidation(u64, bool),
+    /// Compiling and serializing a contract to check its compiled size, of that many bytes
+    /// (protocol version 15): charged per byte at the rate of a document type schema's size.
+    ContractCompiledSizeValidation(u64),
 }
 
 impl ProtocolValidationOperation {
@@ -21,6 +24,13 @@ impl ProtocolValidationOperation {
                             .fee_version
                             .data_contract_validation
                             .document_type_schema_size_fee
+            }
+            ProtocolValidationOperation::ContractCompiledSizeValidation(compiled_size) => {
+                *compiled_size
+                    * platform_version
+                        .fee_version
+                        .data_contract_validation
+                        .document_type_schema_size_fee
             }
             ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(properties_count) => {
                 *properties_count

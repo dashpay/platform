@@ -1,13 +1,17 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::SystemDataContract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Runs the protocol change events and then refreshes the cached definitions of the system
     /// contracts those events may have rewritten.
     ///
@@ -32,6 +36,7 @@ impl<C> Platform<C> {
     pub(super) fn perform_events_on_first_block_of_protocol_change_v1(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -39,6 +44,7 @@ impl<C> Platform<C> {
     ) -> Result<(), Error> {
         self.perform_events_on_first_block_of_protocol_change_v0(
             platform_state,
+            block_platform_state,
             block_info,
             transaction,
             previous_protocol_version,

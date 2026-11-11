@@ -1,3 +1,4 @@
+use crate::drive::contract::estimated_stored_contract_size;
 use crate::drive::contract::paths::contract_root_path;
 use crate::drive::document::ContestWindows;
 use crate::drive::votes::paths::{
@@ -12,9 +13,10 @@ use crate::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
 };
 use crate::query::GroveError;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::ContestedIndexResolution;
@@ -26,10 +28,36 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
 };
 use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{MaybeTree, TransactionArg, TreeType};
 
 impl Drive {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_contested_document_for_contract_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+        insert_without_check: bool,
+        block_info: &BlockInfo,
+        also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.add_contested_document_for_contract_operations_v1_body(
+            document_and_contract_info,
+            contested_document_resource_vote_poll,
+            insert_without_check,
+            block_info,
+            also_insert_vote_poll_stored_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            false,
+            transaction,
+            platform_version,
+        )
+    }
+
     /// Gathers the operations to add a contested document to a contract.
     ///
     /// Version 1 (protocol version 14) reads the contested index's resolution. A contest
@@ -42,7 +70,7 @@ impl Drive {
     /// the generic windows of the version tables.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn add_contested_document_for_contract_operations_v1(
+    pub(super) fn add_contested_document_for_contract_operations_v1_body(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
@@ -50,9 +78,8 @@ impl Drive {
         block_info: &BlockInfo,
         also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        end_date_entries_name_storage_owner: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -95,7 +122,19 @@ impl Drive {
             platform_version,
         )?;
 
-        let owner_id = document_and_contract_info.owned_document_info.owner_id;
+        // A poll's end date entries are paid for with the document, so from generation 2 they
+        // name whoever its storage flags name: a sponsor who paid is refunded when a second
+        // contender's arrival moves the end date.
+        let owner_id = if end_date_entries_name_storage_owner {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+                .and_then(|storage_flags| storage_flags.owner_id().copied())
+                .or(document_and_contract_info.owned_document_info.owner_id)
+        } else {
+            document_and_contract_info.owned_document_info.owner_id
+        };
 
         if !contest_already_existed {
             if let Some(vote_poll_stored_start_info) = also_insert_vote_poll_stored_info {
@@ -199,7 +238,8 @@ impl Drive {
                     contested_document_resource_vote_poll.into(),
                 );
 
-                let unique_id = vote_poll.unique_id()?;
+                // A contested poll's id does not read the platform version.
+                let unique_id = vote_poll.unique_id(platform_version)?;
                 let join_end_path =
                     vote_contested_resource_end_date_queries_at_time_tree_path_vec(join_end);
                 // The windows are read again rather than remembered, so the entry the contest
@@ -284,7 +324,10 @@ impl Drive {
         if estimating {
             // The windows change nothing an estimate measures, but the read of a moderation
             // election's target does: it is estimated as a read of the target's stored
-            // contract at the largest size contracts are estimated at
+            // contract at the largest size contracts are estimated at. Edited in place: at
+            // protocol version 14, which stores contracts in format version 1, that is
+            // `estimated_contract_max_serialized_size` as before; from 15 it is the most a
+            // contract stored compiled takes
             if let Some(target_contract_id) = charter_election_target(
                 &contested_document_resource_vote_poll.contract.as_ref().id(),
                 &contested_document_resource_vote_poll.document_type_name,
@@ -295,12 +338,9 @@ impl Drive {
                     &[0],
                     DirectQueryType::StatelessDirectQuery {
                         in_tree_type: TreeType::NormalTree,
-                        query_target: QueryTargetValue(
-                            platform_version
-                                .system_limits
-                                .estimated_contract_max_serialized_size
-                                as u32,
-                        ),
+                        query_target: QueryTargetValue(estimated_stored_contract_size(
+                            platform_version,
+                        )),
                     },
                     transaction,
                     batch_operations,
@@ -356,7 +396,7 @@ mod tests {
     }
 
     /// An estimate reads nothing, so a moderation election's target read is estimated as the
-    /// read of a stored contract at `estimated_contract_max_serialized_size`, whether the target
+    /// read of a stored contract at the size contracts are estimated at, whether the target
     /// exists or not; every other contest estimates no target read.
     #[test]
     fn should_estimate_the_target_read_of_a_moderation_election_whatever_the_state() {
@@ -379,9 +419,7 @@ mod tests {
             GroveDb::average_case_for_get_raw(
                 &KeyInfoPath::from_known_path(contract_root_path(&target)),
                 &KeyInfo::KnownKey(vec![0]),
-                platform_version
-                    .system_limits
-                    .estimated_contract_max_serialized_size as u32,
+                estimated_stored_contract_size(platform_version),
                 TreeType::NormalTree,
                 &platform_version.drive.grove_version,
             )

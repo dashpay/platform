@@ -40,9 +40,8 @@
 //! [`ShieldedWallet::shield`]: platform_wallet::wallet::shielded::ShieldedWallet::shield
 
 use std::ffi::CStr;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 
-use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
@@ -59,6 +58,7 @@ use rs_sdk_ffi::{
     DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
 };
 
+use crate::asset_lock::{observer_ref, AssetLockBuiltCallback, AssetLockBuiltFn};
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
@@ -563,7 +563,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// prune backstop); the pass outcome is logged, not surfaced.
 ///
 /// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
-fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+pub(crate) fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
     let ambiguous = matches!(
         result,
         Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
@@ -596,19 +596,24 @@ fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: 
 /// withdraw) to a typed FFI result, mirroring the identity-create sibling's
 /// code split so hosts can tell "definitively failed, safe to retry" from
 /// "may have executed, do NOT retry".
-fn map_spend_result(
+pub(crate) fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed — the host must NOT re-submit. For the
-        // spend-based operations the notes stay reserved wallet-side; a
-        // shield reserves nothing. Either way the next sync (or an app
-        // restart) reconciles the outcome; the typed Display already
-        // carries the operation name and guidance.
-        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+        // Outcome not known: a dispatch may have reached a node and the
+        // execution result couldn't be confirmed, so the host must NOT
+        // re-submit. For the spend-based operations the notes stay reserved
+        // wallet-side, with the recovery record saved before the broadcast;
+        // a shield from Platform addresses reserves nothing. Either way the
+        // next sync reconciles a transition that landed; the typed Display
+        // already carries the operation name and guidance.
+        // A broadcast that may have been delivered reads the same: it may
+        // still execute, so its notes and recovery record stay, and a host
+        // must not pay again.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+        | Err(e @ PlatformWalletError::ShieldedBroadcastMaybeDelivered(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 e.to_string(),
@@ -620,6 +625,31 @@ fn map_spend_result(
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
+        // A private contact request in flight, or paid and not yet read back
+        // from the store: nothing new was paid, and a later private sync
+        // settles it, so it keeps its own pending code; unrestored private
+        // payments keep theirs, and so does a persister that cannot keep a
+        // private payment's recovery marker. A wallet removed before the
+        // payment started keeps the lifecycle refusal code (`NotFound`) every
+        // other export gives it. A protocol-version refusal from the store
+        // read before any payment keeps the blanket conversion's split: a
+        // lasting refusal is `ErrorProtocolVersionNotActive`, a transient one
+        // the catch-all.
+        // So does a public request to the pair whose outcome is unconfirmed,
+        // which holds the private send and accepts as it holds a public one.
+        // So does a private store read that did not finish before deciding
+        // (nothing reserved or sent), and a pair whose requests came or went
+        // privately, which the in-kind accept can raise.
+        Err(e @ PlatformWalletError::PrivateContactRequestPending(..))
+        | Err(e @ PlatformWalletError::PublicContactRequestUnconfirmed(..))
+        | Err(e @ PlatformWalletError::PrivateContactStoreNotRead(..))
+        | Err(e @ PlatformWalletError::PrivateContactRequestNeedsPrivateReply(..))
+        | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
+        | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
+        | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
+            e.into()
+        }
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -628,17 +658,19 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
-        // Definitive failure: the transition was not executed and the notes
-        // were released; the host may retry.
+        // Definitive failure: the transition never left the wallet (refused
+        // before anything was sent); a spend's notes were released and the
+        // host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("{operation} failed: {e}"),
         ),
-        // Definitively failed on an address-nonce race (a shield spends platform
-        // address funds; a shield reserves no notes). Its own code carries the
-        // safe-to-retry contract AND lets the host recognize the self-healing
-        // nonce mismatch — a plain retry re-fetches the nonce. Without this arm
-        // it would regress to the generic `ErrorWalletOperation` below.
+        // An address-nonce race keeps its own code, so the host can recognize
+        // the self-healing nonce mismatch: a plain retry re-fetches the nonce.
+        // No operation mapped here reports it today: a shield from Platform
+        // addresses reads an endpoint's nonce verdict on a dispatched shield
+        // as unconfirmed, above. The arm keeps the code from regressing to the
+        // generic `ErrorWalletOperation` below if one does.
         Err(e @ PlatformWalletError::AddressNonceMismatch { .. }) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorAddressNonceMismatch,
             format!("{operation} failed: {e}"),
@@ -659,6 +691,18 @@ fn map_spend_result(
         // here as the blanket `From` conversion does, so hosts route to key
         // repair instead of reading a generic wallet failure. Structural
         // position-0 check only, never a substring sniff of the rendering.
+        // The SDK's unconfirmed outcome (`StateTransitionResultUnconfirmed`)
+        // that reached here unclassified: the transition may have executed,
+        // so it keeps the blanket conversion's unconfirmed code rather than
+        // reading as a failure a host may retry.
+        Err(e)
+            if matches!(
+                &e,
+                PlatformWalletError::Sdk(source) if source.is_state_transition_result_unconfirmed()
+            ) =>
+        {
+            e.into()
+        }
         Err(e) if is_preserved_signer_key_unavailable(&e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),
@@ -742,8 +786,8 @@ const SPEND_PANIC_GUIDANCE: &str = "The spend may or may not have been broadcast
 /// a definitive failure code: a panic can strike after the notes were reserved and even after the
 /// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
 /// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
-/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
-fn catch_spend_panic(
+/// in place, and the next nullifier sync reconciles whether the spend landed.
+pub(crate) fn catch_spend_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {
@@ -798,6 +842,9 @@ pub(crate) fn catch_funding_panic(
 /// - `AssetLockAlreadyConsumed` -> `ErrorAssetLockAlreadyConsumed` (24). The
 ///   wallet retains nonterminal consumption-unknown state; the host must not
 ///   interpret this code as authenticated completion.
+/// - `AssetLockTooManyInputs` -> `ErrorAssetLockTooManyInputs` (60), for
+///   the fresh build and for the resume of a tracked lock over the input
+///   cap, as `asset_lock_manager_resume` reports it.
 /// - `AssetLockInsufficientFunds` -> `ErrorAssetLockInsufficientFunds` (29).
 ///   Coin selection came up short over the permitted funding set, so nothing
 ///   was built or broadcast and no funding output was consumed; the host may
@@ -809,6 +856,8 @@ pub(crate) fn catch_funding_panic(
 ///   drainable balance sits under the required minimum lock floor, so the
 ///   host's only remedies are to add funds to that account or lower the
 ///   floor. Do not surface "try a smaller amount" for the drain form.
+///   `AssetLockFundsAwaitingFinality` shares code 29, as it does on the
+///   non-shielded entry points.
 ///
 ///   Without this arm the shortfall flattened into the generic
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
@@ -833,6 +882,12 @@ pub(crate) fn catch_funding_panic(
 ///   whichever entry point it came in through — both are caller-state errors
 ///   that no retry fixes, unlike the timeout and proof-wait failures below
 ///   that keep the contextual `ErrorWalletOperation`.
+/// - `TransactionBroadcast` -> `ErrorTransactionBroadcastRejected` (26) and
+///   `TransactionBroadcastUnconfirmed` -> `ErrorTransactionBroadcastUnconfirmed`
+///   (20), as the CoinJoin-drain sibling reports them, for both the fresh
+///   build and the resume entry point. A host that was handed the lock's
+///   outpoint by `on_asset_lock_built` tells from these whether the lock is
+///   gone (definite rejection) or kept and resumable.
 fn map_asset_lock_funding_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -842,13 +897,22 @@ fn map_asset_lock_funding_result(
         Err(e @ PlatformWalletError::AssetLockAlreadyConsumed(_)) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockNotTracked(_)
-            | PlatformWalletError::AssetLockFundingMismatch { .. }),
+            | PlatformWalletError::AssetLockFundingMismatch { .. }
+            | PlatformWalletError::AssetLockRecipientMismatch { .. }),
         ) => e.into(),
         Err(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
             | PlatformWalletError::AssetLockInputContested { .. }),
         ) => e.into(),
-        Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
+            | PlatformWalletError::AssetLockTooManyInputs { .. }
+            | PlatformWalletError::AssetLockFundsAwaitingFinality { .. }),
+        ) => e.into(),
+        Err(
+            e @ (PlatformWalletError::TransactionBroadcast(_)
+            | PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
+        ) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1575,6 +1639,10 @@ unsafe fn shielded_shield_to_recipient_inner(
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains
 ///   ownership.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
@@ -1586,6 +1654,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     surplus_output_ptr: *const u8,
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -1627,6 +1697,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     // Round-trip the resolver handle through `usize` so the worker
     // future's capture is `Send + 'static`.
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
     // synthesis recurses past the ~512 KB iOS dispatch-thread stack
@@ -1644,6 +1716,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
             )
         };
         let prover = CachedOrchardProver::new();
+        let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
                 &coordinator,
@@ -1662,6 +1735,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                observer_ref(&on_built),
             )
             .await
     });
@@ -1697,6 +1771,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership.
+/// - `on_asset_lock_built`, when non-null, must be a valid C function
+///   pointer for the duration of the call; `on_asset_lock_built_context`
+///   is passed to it opaquely and must remain valid for the duration of the
+///   call (or be null). See [`AssetLockBuiltFn`] for its contract.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
     handle: Handle,
@@ -1704,6 +1782,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
     account_index: u32,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
     // `.expect` on a panicking funding/proving task) must NOT reach this `extern "C"` frame,
@@ -1720,6 +1800,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_c
             account_index,
             recipient_raw_43,
             core_signer_handle,
+            on_asset_lock_built,
+            on_asset_lock_built_context,
         )
     })
 }
@@ -1736,6 +1818,8 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     account_index: u32,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
+    on_asset_lock_built: AssetLockBuiltFn,
+    on_asset_lock_built_context: *mut c_void,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -1768,6 +1852,8 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
     // Round-trip the resolver handle through `usize` so the worker
     // future's capture is `Send + 'static`.
     let core_signer_addr = core_signer_handle as usize;
+    let built_callback =
+        AssetLockBuiltCallback::new(on_asset_lock_built, on_asset_lock_built_context);
 
     // Run the proof on a worker thread (8 MB stack) — see the sibling for
     // why the Halo 2 synthesis cannot run on the calling thread.
@@ -1782,6 +1868,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
             )
         };
         let prover = CachedOrchardProver::new();
+        let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
                 &coordinator,
@@ -1806,6 +1893,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                observer_ref(&on_built),
             )
             .await
     });
@@ -1953,6 +2041,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 None,
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
+                None,
+                // A resume builds no new lock.
                 None,
             )
             .await
@@ -2282,6 +2372,30 @@ pub(crate) fn resolve_wallet_and_coordinator(
     Ok((wallet, coordinator))
 }
 
+/// The coordinator half of [`resolve_wallet_and_coordinator`], with the same
+/// errors. It blocks on the runtime, so it must not run on one of its async
+/// workers: call it from the export's thread or from `spawn_blocking`.
+pub(crate) fn resolve_shielded_coordinator(
+    handle: Handle,
+) -> Result<
+    std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    PlatformWalletFFIResult,
+> {
+    match PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_coordinator())
+    }) {
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        )),
+        Some(None) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured: call platform_wallet_manager_configure_shielded first",
+        )),
+        Some(Some(coordinator)) => Ok(coordinator),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2380,6 +2494,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    anchor_height: None,
                 },
             )
             .expect("seed malformed durable metadata");
@@ -2947,6 +3062,81 @@ mod tests {
         assert!(message_of(&result).contains("this request was not started"));
     }
 
+    /// A protocol-version refusal from the store read a private send or
+    /// accept makes before paying keeps the blanket conversion's split: a
+    /// lasting refusal is code 70, a transient one the catch-all.
+    #[test]
+    fn map_spend_result_keeps_a_protocol_version_refusal_typed() {
+        let refused = |cause: Option<Box<dash_sdk::Error>>| {
+            map_spend_result(
+                Err(PlatformWalletError::Sdk(
+                    dash_sdk::Error::ProtocolVersionNotActive {
+                        method: "get_private_document_entries",
+                        required: 15,
+                        feature: None,
+                        network: 14,
+                        pinned: false,
+                        cause,
+                    },
+                )),
+                "private contact request",
+            )
+        };
+        let lasting = refused(None);
+        assert_eq!(
+            lasting.code,
+            PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive
+        );
+        assert_eq!(lasting.code as i32, 70);
+        let transient = refused(Some(Box::new(dash_sdk::Error::Generic(
+            "no node answered".to_string(),
+        ))));
+        assert_eq!(transient.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            map_spend_result(
+                Err(PlatformWalletError::PrivateContactPaymentsNotRestored),
+                "private contact request",
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+        );
+    }
+
+    /// A persister that cannot keep a private payment's recovery state is
+    /// refused by the explicit private send and accept before anything is
+    /// sealed or paid; the refusal keeps its own code (73) through the spend
+    /// mapper they use, as the in-kind accept's blanket conversion does.
+    #[test]
+    fn map_spend_result_keeps_the_storage_configuration_refusal_at_73() {
+        let result = map_spend_result(
+            Err(PlatformWalletError::PrivateContactRecoveryUnsupported),
+            "private contact request",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRecoveryUnsupported
+        );
+        assert_eq!(result.code as i32, 73);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResult::from(PlatformWalletError::PrivateContactRecoveryUnsupported)
+                .code
+        );
+    }
+
+    /// A private payment refused because its wallet was removed first keeps
+    /// the lifecycle refusal code, not the generic operation failure.
+    #[test]
+    fn map_spend_result_keeps_a_wallet_removed_before_send_at_not_found() {
+        let removed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+        );
+        let result = map_spend_result(removed, "private contact request");
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(result.code as i32, 98);
+        assert!(message_of(&result).contains("wallet removed"));
+    }
+
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet
     /// layer must keep code 31 through `map_spend_result` (the shield from
     /// identity path) instead of flattening to `ErrorWalletOperation`; a
@@ -3081,6 +3271,23 @@ mod tests {
         );
         assert!(message_of(&not_tracked).contains("is not tracked by this wallet"));
 
+        // A resume naming another recipient than the row recorded is the one
+        // refusal a host must render as "wrong destination", never as a
+        // generic operation failure.
+        let recipient_mismatch = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockRecipientMismatch {
+                out_point,
+                recorded: [1; 43],
+                requested: [2; 43],
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            recipient_mismatch.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&recipient_mismatch).contains("cannot be resumed to"));
+
         let mismatch = map_asset_lock_funding_result(
             Err(PlatformWalletError::AssetLockFundingMismatch {
                 out_point,
@@ -3096,6 +3303,20 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
         );
         assert!(message_of(&mismatch).contains("is ineligible for"));
+
+        // The input-cap refusal of a resumed lock: the host offers coin
+        // consolidation on this code and nothing else.
+        let too_many_inputs = map_asset_lock_funding_result(
+            Err(PlatformWalletError::AssetLockTooManyInputs {
+                count: 101,
+                max: 100,
+            }),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            too_many_inputs.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
+        );
 
         // The resume endpoint is where the double-spend screen fires, and
         // it funnels through this same wrapper. The screen
@@ -3150,6 +3371,37 @@ mod tests {
         assert!(
             message_of(&contested).contains("provisional"),
             "the contested Display must say the verdict is provisional"
+        );
+
+        let rejected = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcast(
+                "bad-txns".to_owned(),
+            )),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            rejected.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+        );
+        let unconfirmed = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "timeout".to_owned(),
+            )),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        let resume_unconfirmed = map_asset_lock_funding_result(
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "timeout".to_owned(),
+            )),
+            "shielded resume fund-from-asset-lock",
+        );
+        assert_eq!(
+            resume_unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
         );
 
         let unrelated = map_asset_lock_funding_result(
@@ -3229,5 +3481,11 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
         );
+
+        let awaiting = PlatformWalletError::AssetLockFundsAwaitingFinality { waiting: 600 };
+        let rendered = awaiting.to_string();
+        let result = map_asset_lock_funding_result(Err(awaiting), "shielded fund-from-asset-lock");
+        assert_eq!(result.code as i32, 29);
+        assert_eq!(message_of(&result), rendered);
     }
 }

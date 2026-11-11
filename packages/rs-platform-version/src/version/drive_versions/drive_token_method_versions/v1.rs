@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_token_method_versions::{
     DriveTokenDistributionMethodVersions, DriveTokenFetchMethodVersions, DriveTokenMethodVersions,
-    DriveTokenProveMethodVersions, DriveTokenUpdateMethodVersions,
+    DriveTokenOrderEscrowMethodVersions, DriveTokenProveMethodVersions,
+    DriveTokenUpdateMethodVersions,
 };
 
 pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenMethodVersions {
@@ -68,5 +69,19 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         add_once_per_identity_distribution: 0,
         mark_once_per_identity_release_as_distributed: 0,
         evonode_participation_rewards: 0,
+    },
+    // The token marketplace's escrow is active from protocol version 15
+    // (`DRIVE_TOKEN_METHOD_VERSIONS_V3`).
+    order_escrow: DriveTokenOrderEscrowMethodVersions {
+        add_tokens: None,
+        set_tokens: None,
+        remove_tokens: None,
+        fetch_tokens: None,
+        add_credits: None,
+        set_credits: None,
+        remove_credits: None,
+        fetch_credits: None,
+        estimated_costs_for_tokens: None,
+        estimated_costs_for_credits: None,
     },
 };

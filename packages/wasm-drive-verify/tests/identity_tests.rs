@@ -7,6 +7,7 @@ use wasm_drive_verify::identity_verification::*;
 
 mod common;
 use common::*;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -109,8 +110,8 @@ fn test_verify_identity_nonce_invalid_identity_id() {
 /// A bincode-encoded GroveDB proof envelope discriminant with no payload.
 /// The latest protocol version requires at least version 1.
 fn envelope_only_proof(version: u32) -> Uint8Array {
-    let bytes = bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
-        .expect("encode envelope version");
+    let bytes =
+        bincode::encode_to_vec(version, PLATFORM_BINCODE_CONFIG).expect("encode envelope version");
     Uint8Array::from(&bytes[..])
 }
 

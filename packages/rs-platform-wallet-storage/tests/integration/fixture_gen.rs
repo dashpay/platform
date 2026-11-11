@@ -90,7 +90,6 @@ fn first_external_info(byte: u8) -> key_wallet::AddressInfo {
 /// A chain-locked transaction record at height 200, so the migrated store can
 /// be asserted to preserve both the height column and the blob's own context.
 fn one_tx_record() -> key_wallet::managed_account::transaction_record::TransactionRecord {
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, Transaction, Txid};
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,

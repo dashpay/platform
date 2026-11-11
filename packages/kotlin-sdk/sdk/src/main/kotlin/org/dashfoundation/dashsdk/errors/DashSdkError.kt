@@ -84,6 +84,13 @@ sealed class DashSdkError(
     class DriveInternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
+    /** The transition may have executed; reconcile it before submitting again. */
+    class StateTransitionResultUnconfirmed(message: String, cause: Throwable? = null) :
+        DashSdkError(message, cause) {
+        override val userMessage: String get() =
+            "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again."
+    }
+
     class InternalError(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
 
@@ -236,8 +243,20 @@ sealed class DashSdkError(
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
-        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        /**
+         * Code 60: the asset lock exceeds the input cap, either a full drain or a fixed
+         * amount held only in many small coins. Nothing was submitted, and no partial drain.
+         */
         class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * Code 61: a shielded fund-from-asset-lock resume named a different Orchard
+         * recipient than the one the tracked lock recorded when it was built. Nothing
+         * was submitted or paid; resume with the recorded recipient. Locks tracked
+         * before the recipient was recorded carry none and accept the caller's.
+         */
+        class AssetLockRecipientMismatch(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -306,31 +325,32 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
-         * (transfer / unshield / withdraw / shield) was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already be on chain. Rust intentionally KEEPS the spent notes'
-         * reservations, so the caller must NOT retry (a retry would rebuild
-         * the bundle against other notes and could double-spend); the next
-         * shielded sync reconciles the outcome. The Android analog of
+         * (transfer / unshield / withdraw / shield from Platform addresses)
+         * may have reached a node and its result is not proved (a failed
+         * result wait, a node's refusal or a consensus verdict, stale address
+         * nonce included), so it may already be on chain. Do NOT retry: a
+         * retry signs a second transition. Spends keep their notes reserved
+         * for the wallet to resolve; a shield stays pending until the
+         * shielded scan observes its note. The Android analog of
          * Swift's `PlatformWalletError.shieldedSpendUnconfirmed`, which the
          * iOS send flow surfaces as a non-retryable "may have gone through"
          * outcome rather than an error.
          */
         class ShieldedSpendUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the spend may already be on chain; " +
-                    "the wallet keeps the spent notes reserved until the next " +
-                    "shielded sync reconciles the outcome)",
+                "$message (do NOT retry: it may already be on chain or may " +
+                    "still execute, and a retry signs a second transition)",
                 cause,
             )
 
         /**
          * `ErrorMasternodeWithdrawalUnconfirmed` (native code 42). A
-         * masternode (evonode) identity credit withdrawal was broadcast and
-         * accepted, but its execution result couldn't be confirmed — it may
-         * already have executed, and the identity nonce was consumed for it,
-         * so a blind retry could submit a SECOND withdrawal. Do NOT retry;
-         * re-read the identity's claimable balance and reconcile first. The
+         * masternode (evonode) identity credit withdrawal may have reached a
+         * node and its remaining balance is not proved (a failed result wait,
+         * a node's refusal or a consensus verdict included). It may have
+         * executed; a retry signs a second withdrawal with the next identity
+         * nonce. Do NOT retry; re-read the claimable balance first. Only a
+         * failure before anything was sent keeps an ordinary code. The
          * Android analog of Swift's
          * `PlatformWalletError.masternodeWithdrawalUnconfirmed`.
          */
@@ -343,10 +363,10 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedBroadcastFailed` (native code 16). A DEFINITIVE
-         * non-execution outcome — relay/CheckTx rejected the transaction
-         * before it entered the chain, and any note reservations were
-         * released. Safe to retry (the opposite of the ambiguous
-         * [ShieldedSpendUnconfirmed]).
+         * non-execution outcome: the transition never left the wallet
+         * (refused before anything was sent), so it can never execute, and
+         * any note reservations were released. Safe to retry (the opposite
+         * of the ambiguous [ShieldedSpendUnconfirmed]).
          */
         class ShieldedBroadcastFailed(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
@@ -373,16 +393,15 @@ sealed class DashSdkError(
         )
 
         /**
-         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A core
-         * transaction broadcast had an AMBIGUOUS outcome — it may already be
-         * on the network. The wallet keeps the spent inputs reserved so a
-         * retry can't double-spend; the reservation TTL or a later sync
-         * reconciles the outcome. Do **NOT** auto-retry.
+         * `ErrorTransactionBroadcastUnconfirmed` (native code 20). A Core
+         * transaction or Platform state transition may already have executed,
+         * but its result is unconfirmed. Reconcile the original operation
+         * before submitting again. Do **NOT** auto-retry.
          */
         class TransactionBroadcastUnconfirmed(message: String, cause: Throwable? = null) :
             PlatformWallet(
-                "$message (do NOT retry: the transaction may already be on the network; " +
-                    "the wallet keeps its inputs reserved until a sync reconciles the outcome)",
+                "$message (do NOT retry: the submission may already have executed; " +
+                    "reconcile the original operation before submitting again)",
                 cause,
             )
 
@@ -695,6 +714,139 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorPrivateContactRequestNeedsPrivateReply` (native code 68). The
+         * contact requests with that identity came or went privately
+         * (protocol version 15), so a public request to it, in reply or as a
+         * rotation, would publish the relationship. The public accept and
+         * send refuse it and nothing was sent. Accept it with
+         * `PlatformWalletManager.acceptContactRequestReplyingInKind` (which
+         * picks the reply itself) or `acceptPrivateContactRequest`, or send
+         * with `PlatformWalletManager.sendPrivateContactRequest`. Not
+         * retryable as-is: the same public call is refused again.
+         * ← Swift `PlatformWalletError.privateContactRequestNeedsPrivateReply`
+         * (`PlatformWalletResult.swift`).
+         */
+        class PrivateContactRequestNeedsPrivateReply(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedBuildRequired` (native code 69). The operation needs
+         * the shielded pool and the native library was built without the
+         * `shielded` feature (`./build_android.sh --no-shielded`): today,
+         * accepting a contact request that came privately with
+         * `PlatformWalletManager.acceptContactRequestReplyingInKind`. Nothing
+         * was sent; a public or adopted reply works on such a build. Not
+         * retryable on the same build.
+         * ← Swift `PlatformWalletError.shieldedBuildRequired`.
+         */
+        class ShieldedBuildRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorProtocolVersionNotActive` (native code 70). The SDK did not
+         * send the request: the network is proven at a protocol version below
+         * the one that serves it, for example DashPay's private contact
+         * request store before protocol version 15. Expected on such a
+         * network, so a host may stay quiet about it; it lifts when the
+         * network upgrades. A refusal that may lift sooner (the version could
+         * not be confirmed) arrives as [Generic] instead, and an SDK pinned
+         * below the version as [SdkPinnedBelowProtocolVersion].
+         * ← Swift `PlatformWalletError.protocolVersionNotActive`.
+         */
+        class ProtocolVersionNotActive(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPrivateContactRequestPending` (native code 71). A private
+         * contact request to that identity is pending: in flight (another
+         * private send or reply reserved it), paid for and not yet read back
+         * from the store, or a private payment the shielded store's journal
+         * keeps unresolved holds the pair. Nothing new was paid. Pending, not
+         * failed: do not submit it again. A `Dashpay.syncPrivateContactRequests`
+         * that reads the entry back frees it, as does the payment proven never
+         * to execute; an endpoint's refusal of the payment does not.
+         * `Dashpay.privateRepliesPending` reads whether the pair is still held.
+         * An unfinished private store read is [PrivateContactStoreNotRead].
+         * ← Swift `PlatformWalletError.privateContactRequestPending`.
+         */
+        class PrivateContactRequestPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPrivateContactPaymentsNotRestored` (native code 72). The
+         * wallet, not one contact, is held: its private payments are not
+         * restored from the shielded store's journal, so no contact request,
+         * public or private, is sent or accepted, nothing signed or
+         * broadcast. The wallet was published with no shielded store
+         * configured (configure it when the manager is activated, before
+         * loading or creating wallets, and again after a failure), it bound a
+         * shielded account in an earlier process, its last restoration failed
+         * or waits for a busy store, or the identity was loaded marking a
+         * private payment that may be unresolved.
+         * `PlatformWalletManager.configureShielded` or binding the wallet's
+         * shielded account restores them; a private sync does not.
+         * `Dashpay.privateContactReadiness` reads whether they are and
+         * whether the last restoration failed, and
+         * `Dashpay.privatePaymentsRestoreFailure` why.
+         * ← Swift `PlatformWalletError.privateContactPaymentsNotRestored`.
+         */
+        class PrivateContactPaymentsNotRestored(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPrivateContactRecoveryUnsupported` (native code 73). The
+         * wallet's storage cannot keep a private payment's recovery state
+         * across a restart (it does not declare the private contact request
+         * scan state together with atomic changesets), so a private send or
+         * reply is refused before anything is sealed or paid. A
+         * configuration error of the store, not something a retry fixes.
+         * ← Swift `PlatformWalletError.privateContactRecoveryUnsupported`.
+         */
+        class PrivateContactRecoveryUnsupported(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPrivateContactStoreNotRead` (native code 74). DashPay's
+         * private contact request store could not be read to its end for the
+         * identity before a contact request or acceptance, public or private,
+         * was decided: a node behind the store already seen, or keys that
+         * kept changing, stop the read. Nothing was reserved, sent or paid;
+         * calling again continues the read. Not a pending request.
+         * ← Swift `PlatformWalletError.privateContactStoreNotRead`.
+         */
+        class PrivateContactStoreNotRead(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorSdkPinnedBelowProtocolVersion` (native code 75). The SDK is
+         * pinned below the protocol version the request needs, so it did not
+         * send it, whatever the network runs. A network upgrade does not lift
+         * it; only raising or removing the SDK's protocol version pin does: a
+         * developer's setting.
+         * ← Swift `PlatformWalletError.sdkPinnedBelowProtocolVersion`.
+         */
+        class SdkPinnedBelowProtocolVersion(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorPublicContactRequestUnconfirmed` (native code 76). A public
+         * contact request to that identity was broadcast and may have been
+         * delivered, and no proof settled its outcome yet, so the wallet
+         * holds the pair and signed nothing new to it, public or private.
+         * The send or accept that broadcast it threw
+         * [TransactionBroadcastUnconfirmed] (20). Not retryable as it is: a
+         * DashPay sync settles it (the request found: recorded as sent; its
+         * nonce proved used: the pair freed), and
+         * `Dashpay.publicContactRequestsUnconfirmed` reads whether it still
+         * stands. Not a private request pending ([PrivateContactRequestPending]).
+         * ← Swift `PlatformWalletError.publicContactRequestUnconfirmed`.
+         */
+        class PublicContactRequestUnconfirmed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -710,7 +862,7 @@ sealed class DashSdkError(
         /**
          * Offset the JNI bridge adds to a `PlatformWalletFFIResultCode`
          * before throwing it as a `DashSDKException`, keeping it clear of the
-         * rs-sdk-ffi `DashSDKErrorCode` range (1–10). Must stay in lockstep
+         * rs-sdk-ffi `DashSDKErrorCode` range (1–11, 99). Must stay in lockstep
          * with `support::PWFFI_CODE_OFFSET` in `rs-unified-sdk-jni`.
          */
         const val PLATFORM_WALLET_CODE_OFFSET = 1000
@@ -740,6 +892,7 @@ sealed class DashSdkError(
                 8 -> Timeout(message, e)
                 9 -> NotImplemented(message, e)
                 10 -> DriveInternalError(message, e)
+                11 -> StateTransitionResultUnconfirmed(message, e)
                 else -> InternalError(message, e)
             }
         }
@@ -819,6 +972,7 @@ sealed class DashSdkError(
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
+            61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
             63 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.InvitationKeysAlreadyRegistered(
@@ -908,6 +1062,17 @@ sealed class DashSdkError(
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
+            // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
+            // public accept or send refused a contact that went private.
+            68 -> PlatformWallet.PrivateContactRequestNeedsPrivateReply(message, cause)
+            69 -> PlatformWallet.ShieldedBuildRequired(message, cause) // ErrorShieldedBuildRequired
+            70 -> PlatformWallet.ProtocolVersionNotActive(message, cause) // ErrorProtocolVersionNotActive
+            71 -> PlatformWallet.PrivateContactRequestPending(message, cause) // ErrorPrivateContactRequestPending
+            72 -> PlatformWallet.PrivateContactPaymentsNotRestored(message, cause) // ErrorPrivateContactPaymentsNotRestored
+            73 -> PlatformWallet.PrivateContactRecoveryUnsupported(message, cause) // ErrorPrivateContactRecoveryUnsupported
+            74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
+            75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
+            76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

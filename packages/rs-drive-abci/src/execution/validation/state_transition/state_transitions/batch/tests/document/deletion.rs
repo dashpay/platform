@@ -17,8 +17,10 @@ mod deletion_tests {
             // increases byte-billed contract-tree reads.
             // The app-connect and moderation charters contracts each add one sibling to the
             // genesis contracts tree, increasing the bytes billed when reading that tree
-            // (protocol 14 only).
-            1817440,
+            // (protocol 14 only). The decision proposals and token market contracts add two more
+            // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
+            // DashPay v3's privateContactRequest type makes its sibling node larger (+2_860).
+            1773020,
         )
         .await;
     }
@@ -895,6 +897,9 @@ mod deletion_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
+        // an IV plus whole AES blocks, as the label's `encryptedFor` requires from protocol
+        // version 15
+        document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
 
         let mut altered_document = document.clone();
 

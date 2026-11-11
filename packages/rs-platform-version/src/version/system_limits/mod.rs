@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -22,6 +23,47 @@ pub struct SystemLimits {
     /// document type parser generation 3 (protocol version 14), the only generation that
     /// parses typed arrays, and never reached before.
     pub max_typed_array_items: u16,
+    /// Maximum bytes of an index property name: 255, the longest key GroveDB stores. Read by
+    /// the native schema check of registration (`check_document_type_schema` 1, protocol
+    /// version 15), which refuses a longer name; the document meta-schema checked before it
+    /// admitted 256 characters. Never reached before protocol version 15.
+    pub max_index_property_name_bytes: u16,
+    /// Maximum bytes of a contract stored compiled (format version 2, its document types
+    /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
+    /// `None` in the earlier tables, which store no contract compiled. The format transitions
+    /// carry is capped by `max_serialized_size`, but compiling turns a contract into more
+    /// bytes than its schemas take. Contract registration and update refuse a contract over
+    /// it, and a token configuration update one it would take over it
+    /// (`DataContractCompiledMaxSizeExceededError`); Drive refuses to store one, and proof
+    /// verification refuses a compiled contract over it.
+    pub max_compiled_contract_size: Option<u32>,
+    /// Most bytes an entry of a private document type may take (`private.entrySize`, protocol
+    /// version 15): 4096 from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no
+    /// private document type. Read by `parse_private_document` 0 of parser generation 3
+    /// (`apply_private_document`) under full validation: registration refuses a larger
+    /// `entrySize`; a contract read back from state passed it. Drive stores each entry with a 16-byte header of its own, which
+    /// this does not count.
+    pub max_private_document_entry_size: Option<u32>,
+    /// The bytes a compacted chunk of a private document store is kept near (protocol version
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// document type. Read with the two chunk power bounds below by Drive's
+    /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
+    /// type's store; the chunk power it picks is committed into the store, so a store keeps the
+    /// rule of the protocol version that created it.
+    pub private_document_store_target_chunk_bytes: Option<u32>,
+    /// The smallest chunk power a private document store takes, whatever its entry size: 4 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    pub private_document_store_min_chunk_power: Option<u8>,
+    /// The largest chunk power a private document store takes, whatever its entry size: 11 from
+    /// `SYSTEM_LIMITS_V5`, `None` before. Read with `private_document_store_target_chunk_bytes`.
+    /// At most 15: a page of a store reads up to a whole chunk, and a page reads at most
+    /// u16::MAX entries (Drive's `should_keep_a_whole_chunk_within_one_page`).
+    pub private_document_store_max_chunk_power: Option<u8>,
+    /// Most entries one `PrivateDocumentCreateFromShieldedPool` transition may append to a
+    /// private document type's store (protocol version 15): 16 from `SYSTEM_LIMITS_V5`, `None`
+    /// in the earlier tables, which refuse the transition before validating it. Read by the
+    /// transition's basic structure 0.
+    pub max_private_document_entries_per_transition: Option<u16>,
     /// Maximum number of references one document of a document type may carry, counted at
     /// contract registration or update from the type's `refersTo` declarations: one for each
     /// property that declares one (an identifier, or a key id carrying a key reference), one
@@ -205,7 +247,10 @@ pub struct SystemLimits {
     /// a P2PKH output at the default 3000 duffs/kB). From protocol version 14 an expired
     /// withdrawal whose whole amount is below the threshold of its output script is marked
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
-    /// method version 2). `None` for the protocol versions that predate the rule.
+    /// method version 2). From protocol version 15 a withdrawal whose whole amount is below
+    /// that threshold also keeps asset unlock payload version 1 when it is pooled
+    /// (`build_untied_withdrawal_transactions_from_documents` method version 1), so FAILED only
+    /// ever ends a version 1 withdrawal. `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
     /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
     /// `None` preserves the behavior of protocol versions that predate this limit.
@@ -239,6 +284,35 @@ pub struct SystemLimits {
     /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
     /// structure validation v0 (protocol version 14) and never reached before.
     pub max_contract_moderation_reason_length: u16,
+    /// The largest fixed minimum voting power a yes/no vote poll may require, read by
+    /// `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power: u32,
+    /// The largest share of the total voting power, in percent, a yes/no vote poll's minimum may
+    /// require, read by `YesNoVotePoll::validate_parameters` (protocol version 15).
+    pub max_yes_no_vote_poll_minimum_voting_power_percent_of_total: u8,
+    /// The longest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: four weeks, the longest election window a contract may declare. Read by
+    /// `Drive::open_yes_no_vote_poll` (protocol version 15).
+    pub max_yes_no_vote_poll_duration_ms: u64,
+    /// The shortest a yes/no vote poll may run, in milliseconds from the block that opens it to
+    /// its end date: one week, so masternode operators have time to see a poll before it
+    /// closes. Read by `YesNoVotePoll::end_date_window` (protocol version 15), which the
+    /// decision proposal create validation and the poll opener share.
+    pub min_yes_no_vote_poll_duration_ms: u64,
+    /// The smallest pass threshold a yes/no vote poll may set, in percent: a poll passes when
+    /// yes is more than `supermajority_numerator / supermajority_denominator` of yes plus no,
+    /// and that fraction may not be below this. 50 is a simple majority, so a poll cannot pass
+    /// with fewer yes than no. Read by `YesNoVotePoll::validate_parameters` (protocol version
+    /// 15).
+    pub min_yes_no_vote_poll_supermajority_percent: u8,
+    /// The voting power a regular masternode's yes/no vote carries, and what it adds to the
+    /// masternode list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_masternode_vote_strength: u8,
+    /// The voting power an evonode's yes/no vote carries, and what it adds to the masternode
+    /// list total a share minimum is measured against. Read by masternode vote
+    /// `transform_into_action` v1 and `check_for_ended_vote_polls` v1 (protocol version 15).
+    pub yes_no_vote_poll_evonode_vote_strength: u8,
     /// Maximum number of warnings one identity may carry on a contract's warning list at a
     /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
     /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
@@ -510,10 +584,11 @@ mod tests {
     fn mock_platform_versions_carry_the_same_documents_batch_cap() {
         use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
         use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
         use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
 
-        let versions =
-            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        let versions = PLATFORM_TEST_VERSIONS
+            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
         assert!(
             !versions.is_empty(),
             "the mock version registry is empty; this test would assert nothing"

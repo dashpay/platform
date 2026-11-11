@@ -56,6 +56,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     }
 }
 
+impl DocumentV0 {
+    /// This document in serialization format 3, whatever the version of its contract or of the
+    /// contract's config. A private document payload holds a type's properties as format 3
+    /// writes them (`encode_private_document_payload`), including for a type whose contract keeps
+    /// a version 0 config, whose documents [`DocumentPlatformConversionMethodsV0::serialize`]
+    /// writes in format 0. Format 3 writes each property at its type's width, and a version 0
+    /// config parses every integer as an `I64`, so the properties come out as format 0 writes
+    /// them too.
+    pub(crate) fn serialize_in_format_3(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        DocumentV0::serialize_v3(self, document_type)
+    }
+}
+
 impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
     /// Format 0 — implementation in [`v0`].
     fn from_bytes_v0(

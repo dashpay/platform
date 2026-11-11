@@ -525,8 +525,10 @@ mod replacement_tests {
             // increases byte-billed contract-tree reads.
             // The app-connect and moderation charters contracts each add one sibling to the
             // genesis contracts tree, increasing the bytes billed when reading that tree
-            // (protocol 14 only).
-            1546140,
+            // (protocol 14 only). The decision proposals and token market contracts add two more
+            // at protocol 15, which reshape the tree so the contract read is billed fewer bytes (-47_280).
+            // DashPay v3's privateContactRequest type makes its sibling node larger (+2_860).
+            1501720,
         )
         .await;
     }
@@ -1313,6 +1315,11 @@ mod replacement_tests {
         document.set("recipientKeyIndex", Value::U32(1));
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
+        // an IV plus whole AES blocks, as the label's `encryptedFor` requires from protocol
+        // version 15; earlier versions keep the generated label their fee pins were taken with
+        if protocol_version >= 15 {
+            document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
+        }
 
         let mut altered_document = document.clone();
 
@@ -1424,7 +1431,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            460940, // v14: stamped documents (see happy-path baseline note)
+            460740, // v14: stamped documents (see happy-path baseline note); from v15 a 48-byte label
         )
         .await;
     }

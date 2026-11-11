@@ -21,6 +21,7 @@ protocol ModelFetching: Sendable {
 private enum AssetLockPersistenceError: Error {
     case malformedRecord
     case duplicateOperationId
+    case conflictingShieldedRecipient
     case missingRecord
     case requiresChangeset
 }
@@ -587,6 +588,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
                     existing.operationId = entry.operationId ?? existing.operationId
+                    existing.shieldedRecipientRaw43 =
+                        entry.shieldedRecipientRaw43 ?? existing.shieldedRecipientRaw43
                     existing.updatedAt = Date()
                 } else {
                     let record = PersistentAssetLock(
@@ -599,7 +602,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         amountDuffs: entry.amountDuffs,
                         statusRaw: entry.statusRaw,
                         proofBytes: entry.proofBytes,
-                        operationId: entry.operationId
+                        operationId: entry.operationId,
+                        shieldedRecipientRaw43: entry.shieldedRecipientRaw43
                     )
                     backgroundContext.insert(record)
                 }
@@ -694,6 +698,48 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 $0.outPointHex != hex
             }) else { throw AssetLockPersistenceError.duplicateOperationId }
             record.operationId = operationId
+        }
+    }
+
+    /// Shielded-recipient sidecar for the frozen legacy FFI row, saved with
+    /// the base upsert by endChangeset. Like the UUID, a recorded recipient can
+    /// never change: a resume must pay the recipient the lock was built for.
+    func persistAssetLockShieldedRecipient(walletId: Data, outPoint: Data, recipientRaw43: Data) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard outPoint.count == 36, recipientRaw43.count == 43 else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let previous = record.shieldedRecipientRaw43, previous != recipientRaw43 {
+                throw AssetLockPersistenceError.conflictingShieldedRecipient
+            }
+            record.shieldedRecipientRaw43 = recipientRaw43
+        }
+    }
+
+    /// A missing base row is a failed read, not evidence of a legacy nil
+    /// recipient; a stored value of the wrong size is corruption, not absence.
+    func loadAssetLockShieldedRecipient(walletId: Data, outPoint: Data) throws -> Data? {
+        try onQueue {
+            guard outPoint.count == 36 else { throw AssetLockPersistenceError.malformedRecord }
+            let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPoint)
+            let descriptor = FetchDescriptor<PersistentAssetLock>(predicate: #Predicate {
+                $0.walletId == walletId && $0.outPointHex == hex
+            })
+            guard let record = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                throw AssetLockPersistenceError.missingRecord
+            }
+            if let recipient = record.shieldedRecipientRaw43, recipient.count != 43 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            return record.shieldedRecipientRaw43
         }
     }
 
@@ -1050,6 +1096,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     throw AssetLockPersistenceError.duplicateOperationId
                 }
             }
+            if let recipient = record.shieldedRecipientRaw43, recipient.count != 43 {
+                throw AssetLockPersistenceError.malformedRecord
+            }
             return AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
                 transactionBytes: record.transactionBytes,
@@ -1059,7 +1108,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes,
-                operationId: record.operationId
+                operationId: record.operationId,
+                shieldedRecipientRaw43: record.shieldedRecipientRaw43
             )
         }
     }
@@ -1079,6 +1129,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         public let statusRaw: Int
         public let proofBytes: Data?
         public var operationId: Data? = nil
+        /// Raw 43-byte Orchard recipient of a shielded funding; see
+        /// `PersistentAssetLock.shieldedRecipientRaw43`.
+        public var shieldedRecipientRaw43: Data? = nil
     }
 
     /// Owned snapshot of an `InvitationEntryFFI` row. All-POD — the callback
@@ -3257,6 +3310,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
+                | PlatformWalletPersistenceCapabilities.assetLockShieldedRecipients
+                | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
         )
     }
 
@@ -3296,6 +3351,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_persist_asset_lock_operation_id_fn = persistAssetLockOperationIdCallback
         extensionCallbacks.on_load_asset_lock_operation_id_fn = loadAssetLockOperationIdCallback
+        extensionCallbacks.on_persist_asset_lock_shielded_recipient_fn =
+            persistAssetLockShieldedRecipientCallback
+        extensionCallbacks.on_load_asset_lock_shielded_recipient_fn =
+            loadAssetLockShieldedRecipientCallback
+        extensionCallbacks.on_persist_private_contact_scan_state_fn = persistPrivateContactScanStateCallback
+        extensionCallbacks.on_load_private_contact_scan_state_fn = loadPrivateContactScanStateCallback
+        extensionCallbacks.on_load_private_contact_scan_state_free_fn =
+            loadPrivateContactScanStateFreeCallback
+        extensionCallbacks.on_load_private_contact_scan_state_wallets_fn =
+            loadPrivateContactScanStateWalletsCallback
+        extensionCallbacks.on_load_private_contact_scan_state_wallets_free_fn =
+            loadPrivateContactScanStateWalletsFreeCallback
         return extensionCallbacks
     }
 
@@ -4386,54 +4453,42 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     ///
     /// The owner identity is required to exist in SwiftData before
     /// the row is inserted — the relationship is non-optional and
-    /// `networkRaw` is read off it. If a flush carries a contact
-    /// upsert for an owner identity Swift hasn't seen yet (race with
-    /// a first-time identity flush), the row is skipped; the next
-    /// flush will replay it after the identity row lands. In
-    /// practice the changeset is one round, so this only matters
-    /// for the very first identity registration where the contact
-    /// changeset and identity changeset arrive in the same store()
-    /// call — within a round, identities apply before contacts (see
-    /// the ordering in `FFIPersister::store`), so the lookup here
-    /// will normally succeed.
+    /// `networkRaw` is read off it. Within a round identities apply
+    /// before contacts (see the ordering in `FFIPersister::store`), and
+    /// the wallet only stores contact requests of the identities it
+    /// manages, so the owner is there. When it is not, or a fetch fails,
+    /// this throws, and the callback fails the round: the store declares
+    /// the private contact request scan state, so a round acknowledged
+    /// without its contact requests would let the wallet store a read
+    /// position past a request that was never saved, and no later scan
+    /// would read it again. A failed round leaves the wallet's read
+    /// position where it was, so the next scan stores the request.
     func persistContacts(
         walletId: Data,
         upserts: [ContactRequestSnapshot],
         removedSent: [ContactRequestRemovalSnapshot],
         removedIncoming: [ContactRequestRemovalSnapshot],
         ignored: [ContactIgnoredSenderSnapshot]
-    ) {
-        onQueue {
+    ) throws {
+        try onQueue {
             for entry in upserts {
                 let ownerId = entry.ownerIdentityId
                 let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate { $0.identityId == ownerId }
                 )
-                guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
-                    // Owner identity hasn't landed yet. Within a
-                    // single round identities apply before contacts,
-                    // so we'd only hit this if the FFI changeset
-                    // surfaces a contact for an identity that isn't
-                    // managed by any wallet locally — there's no
-                    // identity row to hang it off, and the contract's
-                    // `ownerId` invariant means the row would be
-                    // orphaned anyway. The recurring sweep replays it
-                    // once the owner row exists; log so a contact that
-                    // is somehow dropped permanently (e.g. an
-                    // out-of-wallet owner with no PersistentIdentity)
-                    // is at least observable rather than vanishing
-                    // silently.
+                guard let owner = try backgroundContext.fetch(ownerDescriptor).first else {
                     SDKLogger.event(
-                        "persistence_contact_deferred",
+                        "persistence_contact_refused",
                         category: .persistence,
-                        severity: .warning,
+                        severity: .error,
                         fields: [
                             "identity_reference": .reference(entry.ownerIdentityId),
                             "operation": .publicText("contact_upsert"),
                             "reason": .publicText("identity_missing"),
                         ]
                     )
-                    continue
+                    throw PlatformWalletError.walletOperation(
+                        "contact request owner identity is not persisted")
                 }
 
                 let networkRaw = owner.networkRaw
@@ -4447,7 +4502,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                             && $0.isOutgoing == isOutgoing
                     }
                 )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try backgroundContext.fetch(descriptor).first {
                     // Refresh in place — every column is overwritten
                     // because the FFI snapshot is authoritative for
                     // the underlying `ContactRequest` document. This
@@ -4500,14 +4555,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             for tomb in removedSent {
-                deleteContactRow(
+                try deleteContactRow(
                     ownerId: tomb.ownerIdentityId,
                     contactId: tomb.contactIdentityId,
                     isOutgoing: true
                 )
             }
             for tomb in removedIncoming {
-                deleteContactRow(
+                try deleteContactRow(
                     ownerId: tomb.ownerIdentityId,
                     contactId: tomb.contactIdentityId,
                     isOutgoing: false
@@ -4522,16 +4577,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // without (2) the ignored sender resurfaces on the
                     // next post-relaunch sweep. Per-sender (no
                     // accountReference): ALL the sender's incoming rows go.
-                    deleteIgnoredSenderIncomingRows(
+                    try deleteIgnoredSenderIncomingRows(
                         ownerId: row.ownerIdentityId,
                         senderId: row.senderIdentityId
                     )
-                    upsertIgnoredSender(row)
+                    try upsertIgnoredSender(row)
                 } else {
                     // Un-ignore: delete the ignored-sender row so the
                     // sender's requests resurface on the next sweep (the
                     // Rust side rewinds the cursor to re-fetch them).
-                    deleteIgnoredSender(
+                    try deleteIgnoredSender(
                         ownerId: row.ownerIdentityId,
                         senderId: row.senderIdentityId
                     )
@@ -4549,10 +4604,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// identity belongs to exactly one network — so we don't have to
     /// fan out the predicate across networks. Silent on miss (no
     /// existing row): the FFI changeset replays tombstones, and an
-    /// already-removed row is the success state.
+    /// already-removed row is the success state. A failed fetch throws,
+    /// failing the round.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteContactRow(ownerId: Data, contactId: Data, isOutgoing: Bool) {
+    private func deleteContactRow(ownerId: Data, contactId: Data, isOutgoing: Bool) throws {
         let direction = isOutgoing
         let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
             predicate: #Predicate {
@@ -4561,7 +4617,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.isOutgoing == direction
             }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = try backgroundContext.fetch(descriptor).first {
             backgroundContext.delete(existing)
         }
     }
@@ -4573,7 +4629,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// miss: an already-removed row is the success state.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteIgnoredSenderIncomingRows(ownerId: Data, senderId: Data) {
+    private func deleteIgnoredSenderIncomingRows(ownerId: Data, senderId: Data) throws {
         let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
             predicate: #Predicate {
                 $0.ownerIdentityId == ownerId
@@ -4581,10 +4637,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.isOutgoing == false
             }
         )
-        if let rows = try? backgroundContext.fetch(descriptor) {
-            for row in rows {
-                backgroundContext.delete(row)
-            }
+        for row in try backgroundContext.fetch(descriptor) {
+            backgroundContext.delete(row)
         }
     }
 
@@ -4598,27 +4652,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Upsert keyed `(networkRaw, ownerIdentityId, ignoredSenderId)` — the
     /// Rust per-sender suppression key. Idempotent: a replay of the same
     /// ignore is a no-op. Requires the owner `PersistentIdentity` to exist
-    /// (the row hangs off it); skipped + logged if it hasn't landed yet —
-    /// the next sync round replays it.
+    /// (the row hangs off it); throws, failing the round, when it does not
+    /// or a fetch fails, as `persistContacts` does for a contact row.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func upsertIgnoredSender(_ row: ContactIgnoredSenderSnapshot) {
+    private func upsertIgnoredSender(_ row: ContactIgnoredSenderSnapshot) throws {
         let ownerId = row.ownerIdentityId
         let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
             predicate: #Predicate { $0.identityId == ownerId }
         )
-        guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+        guard let owner = try backgroundContext.fetch(ownerDescriptor).first else {
             SDKLogger.event(
-                "persistence_contact_deferred",
+                "persistence_contact_refused",
                 category: .persistence,
-                severity: .warning,
+                severity: .error,
                 fields: [
                     "identity_reference": .reference(row.ownerIdentityId),
                     "operation": .publicText("ignored_sender"),
                     "reason": .publicText("identity_missing"),
                 ]
             )
-            return
+            throw PlatformWalletError.walletOperation(
+                "ignored sender owner identity is not persisted")
         }
 
         let networkRaw = owner.networkRaw
@@ -4630,7 +4685,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     && $0.ignoredSenderId == senderId
             }
         )
-        if (try? backgroundContext.fetch(descriptor).first) == nil {
+        if try backgroundContext.fetch(descriptor).first == nil {
             backgroundContext.insert(
                 PersistentDashpayIgnoredSender(
                     owner: owner,
@@ -4645,14 +4700,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// success state.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteIgnoredSender(ownerId: Data, senderId: Data) {
+    private func deleteIgnoredSender(ownerId: Data, senderId: Data) throws {
         let descriptor = FetchDescriptor<PersistentDashpayIgnoredSender>(
             predicate: #Predicate {
                 $0.ownerIdentityId == ownerId
                     && $0.ignoredSenderId == senderId
             }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
+        if let existing = try backgroundContext.fetch(descriptor).first {
             backgroundContext.delete(existing)
         }
     }
@@ -5111,6 +5166,177 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard let row = try backgroundContext.fetch(descriptor).first else { return nil }
             return BlockTime(height: UInt64(bitPattern: row.platformHeight), core_height: row.coreHeight,
                              timestamp: UInt64(bitPattern: row.timestampMillis))
+        }
+    }
+
+    // MARK: - Private contact request scan state (additive persistence extension)
+
+    /// One identity's read position in DashPay's private contact request store.
+    struct PrivateContactRequestsPositionRow: Equatable {
+        let identityId: Data
+        let position: UInt64
+        /// Opaque to this side: stored and handed back as it came.
+        let keyFingerprint: Data
+        /// Stored and handed back as it came.
+        var privatePaymentsUnresolved: Bool = false
+    }
+
+    /// The shielded address `contactId`'s private request to `ownerId` carries.
+    struct PrivateShieldedAddressRow: Equatable {
+        let ownerId: Data
+        let contactId: Data
+        let address: Data
+    }
+
+    /// The `(owner, contact)` pair of a shielded address the round removed.
+    struct PrivateShieldedAddressKey: Equatable {
+        let ownerId: Data
+        let contactId: Data
+    }
+
+    /// The network the scan state of `walletId` is stored under, as for the
+    /// identity rows it belongs with: this handler's, else the wallet row's.
+    /// Nil when neither is known (a handler configured with no network, and
+    /// the wallet's row already gone). A write then refuses rather than file
+    /// the state under a guessed network, and a read takes the wallet's rows
+    /// under every stored network: a position record kept marked for a
+    /// removed wallet carries the network it was stored under, and guessing
+    /// one would read a kept record as absent.
+    private func scanStateNetworkRaw(walletId: Data) -> UInt32? {
+        (self.network ?? walletNetwork(walletId: walletId))?.rawValue
+    }
+
+    /// Apply a round's scan state. Identities the round removed lose theirs
+    /// first, so a new position or address in the same round stands.
+    func persistPrivateContactScanState(
+        walletId: Data,
+        positions: [PrivateContactRequestsPositionRow],
+        addresses: [PrivateShieldedAddressRow],
+        removedAddresses: [PrivateShieldedAddressKey],
+        clearedIdentities: [Data]
+    ) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation(
+                    "Private contact request scan state requires a changeset")
+            }
+            guard let networkRaw = scanStateNetworkRaw(walletId: walletId) else {
+                throw PlatformWalletError.walletOperation(
+                    "No network to store the private contact request scan state under")
+            }
+            for identityId in clearedIdentities {
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.ownerId == identityId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+            }
+            for row in positions {
+                let identityId = row.identityId
+                let existing = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+                    })).first
+                if let existing {
+                    existing.position = Int64(bitPattern: row.position)
+                    existing.keyFingerprint = row.keyFingerprint
+                    existing.privatePaymentsUnresolved = row.privatePaymentsUnresolved
+                } else {
+                    backgroundContext.insert(PersistentPrivateContactRequestsPosition(
+                        networkRaw: networkRaw, walletId: walletId, identityId: identityId,
+                        position: row.position, keyFingerprint: row.keyFingerprint,
+                        privatePaymentsUnresolved: row.privatePaymentsUnresolved))
+                }
+            }
+            for row in addresses {
+                let ownerId = row.ownerId
+                let contactId = row.contactId
+                let existing = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.ownerId == ownerId && $0.contactId == contactId
+                    })).first
+                if let existing {
+                    existing.address = row.address
+                } else {
+                    backgroundContext.insert(PersistentPrivateShieldedAddress(
+                        networkRaw: networkRaw, walletId: walletId, ownerId: ownerId,
+                        contactId: contactId, address: row.address))
+                }
+            }
+            for key in removedAddresses {
+                let ownerId = key.ownerId
+                let contactId = key.contactId
+                for row in try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw && $0.walletId == walletId
+                            && $0.ownerId == ownerId && $0.contactId == contactId
+                    })) {
+                    backgroundContext.delete(row)
+                }
+            }
+            // endChangeset performs the atomic save with the round's contacts.
+        }
+    }
+
+    /// The ids of every wallet this handler's network keeps private contact
+    /// request scan state for, a removed wallet whose marked position
+    /// records outlived it included. Rust reads each one its wallet-list
+    /// load does not return and hands its marked records to the wallet as
+    /// retained. A handler configured with no network lists the wallets of
+    /// every stored network rather than guess one: a kept record carries the
+    /// network it was stored under. Throws when the store cannot be read.
+    func loadPrivateContactScanStateWalletIds() throws -> [Data] {
+        try onQueue {
+            let positions: [PersistentPrivateContactRequestsPosition]
+            if let networkRaw = self.network?.rawValue {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw }))
+            } else {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>())
+            }
+            var seen = Set<Data>()
+            return positions.compactMap { seen.insert($0.walletId).inserted ? $0.walletId : nil }
+        }
+    }
+
+    /// The stored scan state of `walletId`. Throws when the store cannot be
+    /// read, so the load fails rather than reading the store from its start.
+    func loadPrivateContactScanState(walletId: Data) throws
+        -> (positions: [PrivateContactRequestsPositionRow], addresses: [PrivateShieldedAddressRow]) {
+        try onQueue {
+            let positions: [PersistentPrivateContactRequestsPosition]
+            let addresses: [PersistentPrivateShieldedAddress]
+            if let networkRaw = scanStateNetworkRaw(walletId: walletId) {
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+                addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate { $0.networkRaw == networkRaw && $0.walletId == walletId }))
+            } else {
+                // No network known: every stored scope, not a guessed one.
+                positions = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateContactRequestsPosition>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+                addresses = try backgroundContext.fetch(FetchDescriptor<PersistentPrivateShieldedAddress>(
+                    predicate: #Predicate { $0.walletId == walletId }))
+            }
+            return (
+                positions.map {
+                    PrivateContactRequestsPositionRow(
+                        identityId: $0.identityId, position: UInt64(bitPattern: $0.position),
+                        keyFingerprint: $0.keyFingerprint,
+                        privatePaymentsUnresolved: $0.privatePaymentsUnresolved)
+                },
+                addresses.map {
+                    PrivateShieldedAddressRow(ownerId: $0.ownerId, contactId: $0.contactId, address: $0.address)
+                }
+            )
         }
     }
 
@@ -6653,6 +6879,35 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     where !claimedNetworks.contains(row.networkRaw) {
                     backgroundContext.delete(row)
                 }
+                // The private contact request scan state carries the same
+                // explicit network key, so it is purged by the same rule,
+                // except a position record whose unresolved-payment marker
+                // is set: it stands for a private payment that may still
+                // execute, so it outlives the wallet until a record stored
+                // cleared for the same wallet and identity replaces it, and
+                // the next load hands it back as retained
+                // (`loadPrivateContactScanStateWalletIds`).
+                let positions: FetchDescriptor<PersistentPrivateContactRequestsPosition>
+                let addresses: FetchDescriptor<PersistentPrivateShieldedAddress>
+                if let raw = metadataNetwork?.rawValue {
+                    positions = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                    addresses = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    positions = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                    addresses = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                for row in try backgroundContext.fetch(positions)
+                    where !claimedNetworks.contains(row.networkRaw) && !row.privatePaymentsUnresolved {
+                    backgroundContext.delete(row)
+                }
+                for row in try backgroundContext.fetch(addresses)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
 
                 if let walletRow = walletRow {
                     // Wallet → identities is `.nullify`; this delete
@@ -7155,6 +7410,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 \.account,
                 // Read once per row by the asset-lock spend guard below.
                 \.spendingTransaction,
+                // Read once per row for the txid and the creating
+                // transaction's context in `buildUtxoRestoreBuffer`.
+                \.transaction,
             ]
             // Bail with `errored = true` on a SwiftData failure rather
             // than degrading to an empty bucket map. Without this, Rust
@@ -7744,6 +8002,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             utxo.is_confirmed = record.isConfirmed
             utxo.is_instantlocked = record.isInstantLocked
             utxo.is_locked = record.isLocked
+            // The creating transaction's row, copied as-is: the loader
+            // raises a coin that lags its own transaction's confirmation.
+            // A placeholder parent row carries context 0 and adds nothing.
+            utxo.parent_context = record.transaction?.context ?? 0
+            utxo.parent_block_height = record.transaction?.blockHeight ?? 0
             buf[written] = utxo
             written += 1
         }
@@ -10650,7 +10913,7 @@ private func persistContactsCallback(
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
-        return 0
+        return -1
     }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
@@ -10758,14 +11021,20 @@ private func persistContactsCallback(
         }
     }
 
-    handler.persistContacts(
-        walletId: walletId,
-        upserts: upserts,
-        removedSent: removedSent,
-        removedIncoming: removedIncoming,
-        ignored: ignored
-    )
-    return 0
+    // A contact row that cannot be staged fails the round rather than
+    // acknowledging it without the row (see `persistContacts`).
+    do {
+        try handler.persistContacts(
+            walletId: walletId,
+            upserts: upserts,
+            removedSent: removedSent,
+            removedIncoming: removedIncoming,
+            ignored: ignored
+        )
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 /// Copy a fixed 32-byte C tuple into an owned `Data`. Used by the
@@ -11890,6 +12159,37 @@ private func loadAssetLockOperationIdCallback(
     } catch { return -1 }
 }
 
+private func persistAssetLockShieldedRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPoint: UnsafePointer<UInt8>?, recipientRaw43: UnsafePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let recipientRaw43 else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistAssetLockShieldedRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36),
+            recipientRaw43: Data(bytes: recipientRaw43, count: 43))
+        return 0
+    } catch { return -1 }
+}
+
+private func loadAssetLockShieldedRecipientCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, outPoint: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outRecipientRaw43: UnsafeMutablePointer<UInt8>?
+) -> Int32 {
+    guard let context, let walletId, let outPoint, let outFound, let outRecipientRaw43 else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let recipient = try handler.loadAssetLockShieldedRecipient(
+            walletId: Data(bytes: walletId, count: 32), outPoint: Data(bytes: outPoint, count: 36)) {
+            recipient.copyBytes(to: outRecipientRaw43, count: 43)
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
+}
+
 private func persistIdentityBalanceBlockTimeCallback(
     context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
     identityId: UnsafePointer<UInt8>?, blockTime: UnsafePointer<BlockTime>?
@@ -11902,6 +12202,166 @@ private func persistIdentityBalanceBlockTimeCallback(
             blockTime: blockTime?.pointee)
         return 0
     } catch { return -1 }
+}
+
+/// C shim for `on_persist_private_contact_scan_state_fn`. Copies every row
+/// before calling the handler, so Rust can drop its arrays on return.
+private func persistPrivateContactScanStateCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    positions: UnsafePointer<PrivateContactRequestsPositionFFI>?, positionsCount: UInt,
+    addresses: UnsafePointer<PrivateShieldedAddressFFI>?, addressesCount: UInt,
+    removedAddresses: UnsafePointer<ContactRequestRemovalFFI>?, removedAddressesCount: UInt,
+    clearedIdentities: UnsafePointer<FFIByteTuple32>?, clearedIdentitiesCount: UInt
+) -> Int32 {
+    guard let context, let walletId else { return -1 }
+    func rows<T>(_ pointer: UnsafePointer<T>?, _ count: UInt) -> UnsafeBufferPointer<T>? {
+        guard count > 0 else { return UnsafeBufferPointer(start: nil, count: 0) }
+        guard let pointer else { return nil }
+        return UnsafeBufferPointer(start: pointer, count: Int(count))
+    }
+    guard let positionRows = rows(positions, positionsCount),
+          let addressRows = rows(addresses, addressesCount),
+          let removedRows = rows(removedAddresses, removedAddressesCount),
+          let clearedRows = rows(clearedIdentities, clearedIdentitiesCount) else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistPrivateContactScanState(
+            walletId: Data(bytes: walletId, count: 32),
+            positions: positionRows.map {
+                .init(identityId: dataFromTuple32($0.identity_id), position: $0.position,
+                      keyFingerprint: dataFromTuple32($0.key_fingerprint),
+                      privatePaymentsUnresolved: $0.private_payments_unresolved)
+            },
+            addresses: addressRows.map {
+                var address = $0.address
+                return .init(ownerId: dataFromTuple32($0.owner_id), contactId: dataFromTuple32($0.contact_id),
+                             address: Swift.withUnsafeBytes(of: &address) { Data($0) })
+            },
+            removedAddresses: removedRows.map {
+                .init(ownerId: dataFromTuple32($0.owner_id), contactId: dataFromTuple32($0.contact_id))
+            },
+            clearedIdentities: clearedRows.map { dataFromTuple32($0) })
+        return 0
+    } catch { return -1 }
+}
+
+/// C shim for `on_load_private_contact_scan_state_fn`. Hands Rust two
+/// arrays of flat rows, released by the free shim below. A stored row whose
+/// bytes have the wrong length cannot cross the ABI: the load fails, as for
+/// an unreadable store, rather than handing back the rest without it.
+private func loadPrivateContactScanStateCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    outPositions: UnsafeMutablePointer<UnsafePointer<PrivateContactRequestsPositionFFI>?>?,
+    outPositionsCount: UnsafeMutablePointer<UInt>?,
+    outAddresses: UnsafeMutablePointer<UnsafePointer<PrivateShieldedAddressFFI>?>?,
+    outAddressesCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let walletId, let outPositions, let outPositionsCount,
+          let outAddresses, let outAddressesCount else { return -1 }
+    outPositions.pointee = nil
+    outPositionsCount.pointee = 0
+    outAddresses.pointee = nil
+    outAddressesCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let stored: (positions: [PlatformWalletPersistenceHandler.PrivateContactRequestsPositionRow],
+                 addresses: [PlatformWalletPersistenceHandler.PrivateShieldedAddressRow])
+    do {
+        stored = try handler.loadPrivateContactScanState(walletId: Data(bytes: walletId, count: 32))
+    } catch { return -1 }
+    // Every row is checked before either output is allocated.
+    guard stored.positions.allSatisfy({ $0.identityId.count == 32 && $0.keyFingerprint.count == 32 }),
+          stored.addresses.allSatisfy({
+              $0.ownerId.count == 32 && $0.contactId.count == 32 && $0.address.count == 43
+          }) else { return -1 }
+    let positions = stored.positions
+    let addresses = stored.addresses
+    if !positions.isEmpty {
+        let buffer = UnsafeMutablePointer<PrivateContactRequestsPositionFFI>.allocate(capacity: positions.count)
+        for (index, row) in positions.enumerated() {
+            var entry = PrivateContactRequestsPositionFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.identity_id) { _ = row.identityId.copyBytes(to: $0) }
+            entry.position = row.position
+            Swift.withUnsafeMutableBytes(of: &entry.key_fingerprint) { _ = row.keyFingerprint.copyBytes(to: $0) }
+            entry.private_payments_unresolved = row.privatePaymentsUnresolved
+            (buffer + index).initialize(to: entry)
+        }
+        outPositions.pointee = UnsafePointer(buffer)
+        outPositionsCount.pointee = UInt(positions.count)
+    }
+    if !addresses.isEmpty {
+        let buffer = UnsafeMutablePointer<PrivateShieldedAddressFFI>.allocate(capacity: addresses.count)
+        for (index, row) in addresses.enumerated() {
+            var entry = PrivateShieldedAddressFFI()
+            Swift.withUnsafeMutableBytes(of: &entry.owner_id) { _ = row.ownerId.copyBytes(to: $0) }
+            Swift.withUnsafeMutableBytes(of: &entry.contact_id) { _ = row.contactId.copyBytes(to: $0) }
+            Swift.withUnsafeMutableBytes(of: &entry.address) { _ = row.address.copyBytes(to: $0) }
+            (buffer + index).initialize(to: entry)
+        }
+        outAddresses.pointee = UnsafePointer(buffer)
+        outAddressesCount.pointee = UInt(addresses.count)
+    }
+    return 0
+}
+
+/// C shim for `on_load_private_contact_scan_state_free_fn`: the rows are
+/// flat, so releasing the two arrays is all there is to it.
+private func loadPrivateContactScanStateFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    positions: UnsafePointer<PrivateContactRequestsPositionFFI>?, positionsCount: UInt,
+    addresses: UnsafePointer<PrivateShieldedAddressFFI>?, addressesCount: UInt
+) {
+    if let positions {
+        let buffer = UnsafeMutablePointer(mutating: positions)
+        buffer.deinitialize(count: Int(positionsCount))
+        buffer.deallocate()
+    }
+    if let addresses {
+        let buffer = UnsafeMutablePointer(mutating: addresses)
+        buffer.deinitialize(count: Int(addressesCount))
+        buffer.deallocate()
+    }
+}
+
+/// C shim for `on_load_private_contact_scan_state_wallets_fn`: the ids of
+/// the wallets the handler keeps scan state for, as one array of 32-byte ids
+/// released by the free shim below. A stored id that is not 32 bytes cannot
+/// cross: the load fails, as for an unreadable store.
+private func loadPrivateContactScanStateWalletsCallback(
+    context: UnsafeMutableRawPointer?,
+    outWalletIds: UnsafeMutablePointer<UnsafePointer<FFIByteTuple32>?>?,
+    outWalletIdsCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context, let outWalletIds, let outWalletIdsCount else { return -1 }
+    outWalletIds.pointee = nil
+    outWalletIdsCount.pointee = 0
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let ids: [Data]
+    do {
+        ids = try handler.loadPrivateContactScanStateWalletIds()
+    } catch { return -1 }
+    guard ids.allSatisfy({ $0.count == 32 }) else { return -1 }
+    guard !ids.isEmpty else { return 0 }
+    let buffer = UnsafeMutablePointer<FFIByteTuple32>.allocate(capacity: ids.count)
+    for (index, id) in ids.enumerated() {
+        var tuple: FFIByteTuple32 = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        Swift.withUnsafeMutableBytes(of: &tuple) { _ = id.copyBytes(to: $0) }
+        (buffer + index).initialize(to: tuple)
+    }
+    outWalletIds.pointee = UnsafePointer(buffer)
+    outWalletIdsCount.pointee = UInt(ids.count)
+    return 0
+}
+
+/// C shim for `on_load_private_contact_scan_state_wallets_free_fn`.
+private func loadPrivateContactScanStateWalletsFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIds: UnsafePointer<FFIByteTuple32>?, walletIdsCount: UInt
+) {
+    guard let walletIds else { return }
+    let buffer = UnsafeMutablePointer(mutating: walletIds)
+    buffer.deinitialize(count: Int(walletIdsCount))
+    buffer.deallocate()
 }
 
 private func loadIdentityBalanceBlockTimeCallback(

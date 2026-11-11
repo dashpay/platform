@@ -1,4 +1,6 @@
+use crate::drive::contract::serialize_contract_for_storage;
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
@@ -20,15 +22,13 @@ use crate::util::object_size_info::{DriveKeyInfo, PathKeyElementInfo};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::PlatformSerializable;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::status::TokenStatus;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
 use grovedb::Element::SumItem;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Insert a contract.
@@ -56,13 +56,11 @@ impl Drive {
             platform_version,
         )?;
 
-        Drive::calculate_fee(
+        self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )
     }
 
@@ -84,17 +82,9 @@ impl Drive {
             None
         };
 
-        let serialized_contract =
-            contract.serialize_to_bytes_with_platform_version(platform_version)?;
-
-        if serialized_contract.len() as u64 > u32::MAX as u64
-            || serialized_contract.len() as u32
-                > platform_version.dpp.contract_versions.max_serialized_size
-        {
-            // This should normally be caught by DPP, but there is a rare possibility that the
-            // re-serialized size is bigger than the original serialized data contract.
-            return Err(Error::DataContract(DataContractError::ContractTooBig(format!("Trying to insert a data contract of size {} that is over the max allowed insertion size {}", serialized_contract.len(), platform_version.dpp.contract_versions.max_serialized_size))));
-        }
+        // Edited in place: protocol versions 9 to 13 select this generation, and store and cap
+        // contracts in format version 1 there, the bytes it serialized before
+        let serialized_contract = serialize_contract_for_storage(contract, platform_version)?;
 
         Ok(Element::Item(
             serialized_contract,
@@ -115,11 +105,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
+        let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
         let batch_operations = self.insert_contract_operations_v1(
             contract_element,
             contract,
@@ -147,9 +133,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -174,9 +158,7 @@ impl Drive {
         contract_element: Element,
         contract: &DataContract,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

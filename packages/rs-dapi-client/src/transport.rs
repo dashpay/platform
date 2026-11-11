@@ -42,6 +42,26 @@ pub async fn sleep(duration: Duration) {
     wasm_channel::into_send_sleep(duration).await;
 }
 
+/// Base URL for the gRPC-Web client, without a trailing slash.
+///
+/// `tonic-web-wasm-client` appends the request path (`/org.dash.platform.dapi.v0.Platform/getStatus`)
+/// to the base URL as-is, and [Uri]'s string form of `https://host:1443` is `https://host:1443/`.
+/// Without trimming, requests go to `https://host:1443//org.dash...`, which only gateways that
+/// merge slashes route; others answer `Unimplemented` or 404.
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn grpc_web_base_url(uri: &str) -> &str {
+    uri.trim_end_matches('/')
+}
+
+/// Request-specific disposition of a failed dispatched attempt.
+#[derive(Debug, Clone, Copy)]
+pub struct RequestErrorClassification {
+    /// Delivery may have happened; this is not an execution verdict.
+    pub possibly_accepted: bool,
+    /// Whether another transport attempt is eligible within the existing budget.
+    pub retry: bool,
+}
+
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
 pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
@@ -75,6 +95,29 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// an empty list with an empty result, so the request is sent.
     fn names_nothing(&self) -> Option<&'static str> {
         None
+    }
+
+    /// The lowest protocol version at which every node of a network serves this request as
+    /// asked. Below it some nodes run a release that does not know the request's method or
+    /// one of its fields: they answer UNIMPLEMENTED, or drop the field and answer a different
+    /// question, and either gets them banned. `None` when nodes of every version serve it.
+    ///
+    /// The SDK's fetch paths refuse such a request until the network has proven that
+    /// version; a caller that executes the request directly owns the check.
+    ///
+    /// A `GetDocumentsRequest` declares nothing: which networks serve it depends on the
+    /// features of the query it was encoded from, which `DocumentQuery::required_protocol_version`
+    /// (in `dash-platform-queries`) reads from the version tables before the query is encoded.
+    fn needs_protocol_version(&self) -> Option<u32> {
+        None
+    }
+
+    /// Classify a dispatched failure. Reads retain their existing retry behavior.
+    fn classify_error(&self, error: &TransportError) -> RequestErrorClassification {
+        RequestErrorClassification {
+            possibly_accepted: false,
+            retry: error.can_retry(),
+        }
     }
 
     /// Perform transport request asynchronously.
@@ -132,6 +175,12 @@ impl CanRetry for TransportError {
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         match self {
             TransportError::Grpc(status) => status.rate_limit_ban_duration(),
+        }
+    }
+
+    fn is_node_busy(&self) -> bool {
+        match self {
+            TransportError::Grpc(status) => status.is_node_busy(),
         }
     }
 }
@@ -199,6 +248,40 @@ pub trait TransportClient: Send + Sized {
 mod tests {
     use super::*;
     use dapi_grpc::tonic::Code;
+
+    #[test]
+    fn test_grpc_web_base_url_joins_request_path_with_one_slash() {
+        let path = "/org.dash.platform.dapi.v0.Platform/getStatus";
+        let cases = [
+            // `Uri` renders an authority-only address with a trailing slash.
+            (
+                Uri::from_static("https://127.0.0.1:1443").to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443/".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            (
+                "https://127.0.0.1:1443".to_string(),
+                "https://127.0.0.1:1443",
+            ),
+            // A path prefix (node behind a proxy) is kept.
+            (
+                "https://example.org/dapi/".to_string(),
+                "https://example.org/dapi",
+            ),
+        ];
+
+        for (address, expected) in cases {
+            let base = grpc_web_base_url(&address);
+            assert_eq!(base, expected, "base URL for {address}");
+            assert!(
+                !format!("{base}{path}").contains("//org."),
+                "request URL for {address} has a double slash"
+            );
+        }
+    }
 
     #[test]
     fn test_tonic_status_can_retry_retryable_codes() {

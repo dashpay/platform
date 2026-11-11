@@ -544,9 +544,9 @@ impl IdentityWallet {
     ///
     /// The claim itself — refetching the funding transaction, rebuilding the
     /// asset-lock proof, the lookups that keep a claim Platform would refuse
-    /// and charge for from being broadcast, the stale-islock → ChainLock
-    /// fallback and adopting an earlier claim that a lagging node let through
-    /// — is
+    /// and charge for from being broadcast, the IS → ChainLock fallback (a
+    /// stale islock, or a claim too large with the IS proof) and adopting an
+    /// earlier claim that a lagging node let through — is
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
     ///
@@ -721,14 +721,14 @@ mod tests {
         impl EventHandler for NoopEventHandler {}
         impl PlatformEventHandler for NoopEventHandler {}
 
-        fn seed() -> [u8; 64] {
+        fn seed() -> zeroize::Zeroizing<[u8; 64]> {
             Mnemonic::from_phrase(TEST_MNEMONIC)
                 .expect("valid mnemonic")
                 .to_seed("")
         }
 
         fn master() -> ExtendedPrivKey {
-            ExtendedPrivKey::new_master(Network::Testnet, &seed()).expect("master key")
+            ExtendedPrivKey::new_master(Network::Testnet, &seed()[..]).expect("master key")
         }
 
         /// A registered wallet. The manager keeps its seed outside the
@@ -1117,7 +1117,7 @@ mod tests {
                 .expect("wallet creation");
             let iw = wallet.identity();
 
-            let crypto_provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+            let crypto_provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
             let err = iw
                 .create_invitation(
                     1_000_000,
