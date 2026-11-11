@@ -59,18 +59,25 @@ fn refused(message: String) -> DataContractError {
 }
 
 /// Whether a `refersTo` declaration names its target through the referring document: its
-/// `contractId` or its `documentType` is read from it (`"$self.<property>"`), or it
-/// carries `documentTypeRequirements`, which describe a type the schema does not name.
+/// `contractId` or its `documentType` is read from it (`"$self.<property>"`).
+///
+/// Nothing else tells one. This runs on every parse, the reading of a contract stored
+/// under an earlier protocol version included, and must read such a contract as that
+/// version did. No stored declaration is written this way: before protocol version 15 a
+/// `contractId` that is no identifier does not parse, and a `documentType` names a document
+/// type that exists, whose name holds no `$` and no dot. `documentTypeRequirements` beside
+/// a target the schema names is another matter: earlier versions did not read the key, so
+/// a stored declaration may carry it, and it stays unread here. Registration refuses it
+/// (the native schema check), like every key a declaration does not take.
 pub(super) fn declares_dynamic_target(refers_to_value: &Value) -> bool {
     refers_to_value
         .to_btree_ref_string_map()
         .is_ok_and(|declaration| {
-            declaration.contains_key(property_names::DOCUMENT_TYPE_REQUIREMENTS)
-                || TARGET_KEYS.iter().any(|key| {
-                    declaration
-                        .get(*key)
-                        .is_some_and(|value| read_from_referring_document(value).is_some())
-                })
+            TARGET_KEYS.iter().any(|key| {
+                declaration
+                    .get(*key)
+                    .is_some_and(|value| read_from_referring_document(value).is_some())
+            })
         })
 }
 
