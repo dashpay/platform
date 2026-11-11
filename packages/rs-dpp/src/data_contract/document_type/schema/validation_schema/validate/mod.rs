@@ -3,7 +3,7 @@
 //! 15 selects, is in `v0`.
 
 use super::ValidationSchema;
-use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use platform_version::version::FeatureVersion;
@@ -71,9 +71,16 @@ impl DocumentSchemaValidator {
         &self.schema
     }
 
-    pub fn validate(&self, instance: &JsonValue) -> Result<Option<JsonSchemaError>, ProtocolError> {
+    /// The first violation of `instance` as the consensus error reporting it, with a value
+    /// nested past `max_value_depth` refused as the document validator's depth check refuses
+    /// it (`None` for no limit). The generation that built the validator checks it.
+    pub fn validate(
+        &self,
+        instance: &JsonValue,
+        max_value_depth: Option<usize>,
+    ) -> Result<Option<ConsensusError>, ProtocolError> {
         match self.generation {
-            0 => self.validate_v0(instance),
+            0 => self.validate_v0(instance, max_value_depth),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentSchemaValidator::validate".to_string(),
                 known_versions: vec![0],

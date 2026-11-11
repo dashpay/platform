@@ -32,6 +32,9 @@ use super::super::{
 };
 use super::DocumentSchemaValidator;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::basic::value_error::ValueError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use fraction::{BigFraction, BigUint};
@@ -149,11 +152,27 @@ impl DocumentSchemaValidator {
     pub(super) fn validate_v0(
         &self,
         instance: &JsonValue,
-    ) -> Result<Option<JsonSchemaError>, ProtocolError> {
-        let mut walk = Walk::new(self, false);
-        walk.node(&self.schema.root, instance, 0)?;
-        Ok(walk.violation)
+        max_value_depth: Option<usize>,
+    ) -> Result<Option<ConsensusError>, ProtocolError> {
+        let mut walk = Walk::new(self, false, max_value_depth);
+        walk.node(&self.schema.root, instance, 0, 0)?;
+        if let Some(depth) = *walk.too_deep.borrow() {
+            // Guarded only when a limit is set, so one is
+            let max = max_value_depth.unwrap_or(depth);
+            return Ok(Some(document_value_depth_error(depth, max)));
+        }
+        Ok(walk
+            .violation
+            .map(|violation| ConsensusError::BasicError(BasicError::JsonSchemaError(violation))))
     }
+}
+
+/// The error the document validator's depth check reports for a value nested past the
+/// system maximum, which the walk returns for a value its own caller let past that check.
+fn document_value_depth_error(actual: usize, max: usize) -> ConsensusError {
+    ConsensusError::BasicError(BasicError::ValueError(ValueError::new_from_string(
+        format!("document value depth {actual} exceeds system maximum {max}"),
+    )))
 }
 
 /// One check of a value against the schema, stopping at the first failure it meets. The
@@ -183,6 +202,15 @@ struct Walk<'v, 'i> {
     /// without this a value nested `d` deep under both keywords is checked `2^d` times;
     /// recording each pair that holds checks it once.
     held: Rc<RefCell<HashSet<(usize, usize)>>>,
+    /// The value-nesting depth past which the walk refuses the value, as the document
+    /// validator's own depth check refuses it before the walk, or `None` for no limit. The
+    /// walk descends into a value as deep as the value nests, so a self-referential schema
+    /// that the depth check did not refuse (a contract stored before this version, whose
+    /// schema the depth check does not re-read) could otherwise recurse as deep as the value.
+    max_value_depth: Option<usize>,
+    /// The value-nesting depth at which the walk first went past `max_value_depth`, shared
+    /// with the walks a `contains` spawns so one going too deep refuses the whole value.
+    too_deep: Rc<RefCell<Option<usize>>>,
     /// Ties the walk to the checked value's lifetime `'i`, so the borrow checker refuses a
     /// value that does not outlive the walk: every address in `held` stays valid while it is
     /// held, and a temporary can never be checked against the cache.
@@ -198,20 +226,10 @@ enum Segment<'v> {
 }
 
 impl<'v, 'i> Walk<'v, 'i> {
-    fn new(validator: &'v DocumentSchemaValidator, matching_only: bool) -> Self {
-        Self::with_held(
-            validator,
-            matching_only,
-            Rc::new(RefCell::new(HashSet::new())),
-        )
-    }
-
-    /// A walk sharing `held`, the pairs already shown to hold, with the walk that spawned it,
-    /// so a `contains` walk does not recheck what the enclosing walk has.
-    fn with_held(
+    fn new(
         validator: &'v DocumentSchemaValidator,
         matching_only: bool,
-        held: Rc<RefCell<HashSet<(usize, usize)>>>,
+        max_value_depth: Option<usize>,
     ) -> Self {
         Self {
             validator,
@@ -221,7 +239,28 @@ impl<'v, 'i> Walk<'v, 'i> {
             schema_path: Vec::new(),
             reference_sites: Vec::new(),
             violation: None,
-            held,
+            held: Rc::new(RefCell::new(HashSet::new())),
+            max_value_depth,
+            too_deep: Rc::new(RefCell::new(None)),
+            instance: PhantomData,
+        }
+    }
+
+    /// A walk to match an element against a `contains` schema, sharing with this walk the
+    /// pairs already shown to hold, the value-depth limit, and where the value first went too
+    /// deep, so neither is rechecked or lost across the boundary.
+    fn contains_walk(&self) -> Self {
+        Self {
+            validator: self.validator,
+            matching_only: true,
+            failed: false,
+            instance_path: Vec::new(),
+            schema_path: Vec::new(),
+            reference_sites: Vec::new(),
+            violation: None,
+            held: Rc::clone(&self.held),
+            max_value_depth: self.max_value_depth,
+            too_deep: Rc::clone(&self.too_deep),
             instance: PhantomData,
         }
     }
@@ -291,7 +330,20 @@ impl<'v, 'i> Walk<'v, 'i> {
         node: &'v SchemaNode,
         instance: &'i JsonValue,
         references_in_a_row: usize,
+        value_depth: usize,
     ) -> Result<(), ProtocolError> {
+        // The value is nested past the depth the document validator allows. Its own depth
+        // check refuses such a value before the walk, so this is reached only by a caller
+        // that skipped it; the walk stops here rather than recurse as deep as the value, and
+        // the value is refused as the depth check refuses it.
+        if self.max_value_depth.is_some_and(|max| value_depth > max) {
+            let mut too_deep = self.too_deep.borrow_mut();
+            if too_deep.is_none() {
+                *too_deep = Some(value_depth);
+            }
+            self.failed = true;
+            return Ok(());
+        }
         // A pair already shown to hold holds again: `contains` and `items`, and the schemas
         // a `$ref` reaches, can lead the walk back to the same value and schema node, and the
         // walk's verdict on a pair is the pair's alone, so checking it once is enough. Only a
@@ -304,7 +356,7 @@ impl<'v, 'i> Walk<'v, 'i> {
         if self.held.borrow().contains(&pair) {
             return Ok(());
         }
-        self.node_inner(node, instance, references_in_a_row)?;
+        self.node_inner(node, instance, references_in_a_row, value_depth)?;
         if !self.failed {
             self.held.borrow_mut().insert(pair);
         }
@@ -316,6 +368,7 @@ impl<'v, 'i> Walk<'v, 'i> {
         node: &'v SchemaNode,
         instance: &'i JsonValue,
         references_in_a_row: usize,
+        value_depth: usize,
     ) -> Result<(), ProtocolError> {
         if let Some(reference) = &node.reference {
             let validator = self.validator;
@@ -334,7 +387,7 @@ impl<'v, 'i> Walk<'v, 'i> {
             // The JSON Schema validator reports a target's violations as if the target sat
             // in the place of the `$ref`
             self.reference_sites.push(self.schema_path.len());
-            self.node(target, instance, references_in_a_row + 1)?;
+            self.node(target, instance, references_in_a_row + 1, value_depth)?;
             self.reference_sites.pop();
             if self.done() {
                 return Ok(());
@@ -397,12 +450,12 @@ impl<'v, 'i> Walk<'v, 'i> {
         match instance {
             JsonValue::Object(map) => {
                 if let Some(object) = node.object.as_deref() {
-                    self.object(object, map)?;
+                    self.object(object, map, value_depth)?;
                 }
             }
             JsonValue::Array(items) => {
                 if let Some(array) = node.array.as_deref() {
-                    self.array(array, items)?;
+                    self.array(array, items, value_depth)?;
                 }
             }
             JsonValue::String(string) => {
@@ -444,6 +497,7 @@ impl<'v, 'i> Walk<'v, 'i> {
         &mut self,
         object: &'v ObjectConstraints,
         map: &'i JsonMap<String, JsonValue>,
+        value_depth: usize,
     ) -> Result<(), ProtocolError> {
         // The declared properties the value holds: each name is declared once, so when they
         // are all its keys, it holds no other
@@ -456,7 +510,7 @@ impl<'v, 'i> Walk<'v, 'i> {
             self.schema_path.push(Segment::Name("properties"));
             self.schema_path.push(Segment::Name(name));
             self.instance_path.push(Segment::Name(name));
-            self.node(property, value, 0)?;
+            self.node(property, value, 0, value_depth + 1)?;
             self.instance_path.pop();
             self.schema_path.pop();
             self.schema_path.pop();
@@ -550,12 +604,13 @@ impl<'v, 'i> Walk<'v, 'i> {
         &mut self,
         array: &'v ArrayConstraints,
         items: &'i [JsonValue],
+        value_depth: usize,
     ) -> Result<(), ProtocolError> {
         if let Some(element) = array.items.as_deref() {
             self.schema_path.push(Segment::Name("items"));
             for (index, item) in items.iter().enumerate() {
                 self.instance_path.push(Segment::Index(index));
-                self.node(element, item, 0)?;
+                self.node(element, item, 0, value_depth + 1)?;
                 self.instance_path.pop();
                 if self.done() {
                     break;
@@ -569,8 +624,8 @@ impl<'v, 'i> Walk<'v, 'i> {
         if let Some(contains) = array.contains.as_deref() {
             let mut matched = false;
             for item in items {
-                let mut walk = Walk::with_held(self.validator, true, self.held.clone());
-                walk.node(contains, item, 0)?;
+                let mut walk = self.contains_walk();
+                walk.node(contains, item, 0, value_depth + 1)?;
                 if !walk.failed {
                     matched = true;
                     break;
