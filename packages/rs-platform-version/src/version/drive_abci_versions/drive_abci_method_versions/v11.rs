@@ -97,11 +97,12 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// `on_yes_no_vote_poll_finished` are `Some(0)`, `None` in every earlier table), in
 /// `core_based_updates.update_core_info`, which is 1 rather than 0: init chain and a block that
 /// move the chain locked Core height record, the first time they see it, that Core's V24 is
-/// active there (the coinbase of that Core block has payload version 4 or higher), and Core is
-/// not asked again once it is recorded; in the asset unlocks it emits for withdrawals, described
-/// below; in the voter key of a masternode that returns to a voting address, described below; in
-/// the consensus evidence policy; and in the chain lock verification. The chain lock
-/// changes only work as a whole:
+/// active there (the coinbase of that Core block has payload version 4 or higher), and
+/// `update_core_info` does not ask Core again once it is recorded (the masternode list's
+/// operator key normalization reads the record too, as described below); in the asset unlocks
+/// it emits for withdrawals, described below; in the voter key of a masternode that returns to a
+/// voting address, described below; in the consensus evidence policy; and in the chain lock
+/// verification. The chain lock changes only work as a whole:
 /// - `core_chain_lock.verify_chain_lock_locally` is 1 rather than 0: a chain lock is rejected
 ///   locally only when Platform holds exactly the quorums active at its signing height, using
 ///   Dash Core's DKG mining schedule in `core_chain_lock.dkg_mining_schedules`. When a quorum may

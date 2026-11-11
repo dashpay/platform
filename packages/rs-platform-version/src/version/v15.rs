@@ -405,12 +405,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     Core block has payload version 4 or higher, which Core requires exactly while V24 is
 ///     active. The first block that sees it active stores the height in `Misc`
 ///     (`CORE_FORK_V24_ACTIVATION_KEY`, a big endian `u32` written once, through
-///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and no
-///     later block asks Core about V24. A chain born at this version asks at init chain, at
-///     the genesis core height. A block that keeps the chain locked height asks nothing, so
-///     a chain upgraded to this version records V24 at its first block that moves the height
-///     to one where V24 is active, which can be a few blocks after Core activated it. A Core
-///     error or a coinbase without a payload fails the block, as other Core errors in
+///     `DRIVE_VERSION_V10`'s `platform_system` methods), where the app hash covers it, and
+///     `update_core_info` does not ask Core about V24 again. The masternode list's operator
+///     key normalization reads the record too (`update_masternode_list` 2, note 32), where
+///     `update_state_masternode_list` v0 and v1 ask Core at the block's chain locked height
+///     when Core re-reports an operator key unchanged or re-encoded. A chain born at this
+///     version asks at init chain, at the genesis core height. A block that keeps the chain
+///     locked height asks nothing, so a chain upgraded to this version records V24 at its
+///     first block that moves the height to one where V24 is active. The recorded height is
+///     the chain locked height at which Platform first observed V24 active, not Core's
+///     activation height, and it can trail that height without bound: on a chain where V24
+///     was active long before the upgrade, it is the chain locked height of that first block.
+///     A Core error or a coinbase without a payload fails the block, as other Core errors in
 ///     `update_core_info` do. Protocol v14 and earlier keep `update_core_info` 0, which
 ///     neither asks nor records.
 ///
@@ -471,8 +477,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     so the returning key stayed disabled, every vote of the masternode was refused
 ///     (`PublicKeyIsDisabledError`), and the key of the address it left stayed enabled,
 ///     though it cannot vote for the masternode. Version 1 (`DRIVE_ABCI_METHOD_VERSIONS_V11`)
-///     re-enables the key of the returning identity. Protocol v14 and earlier keep
-///     `update_voter_identity` 0.
+///     re-enables the key of the returning identity. It applies to voting address changes from
+///     this protocol version on and repairs nothing at activation: a masternode whose returning
+///     key version 0 left disabled cannot vote until its voting address changes again, and
+///     that change leaves the key of the identity it moves to enabled, as for any other
+///     masternode. Protocol v14 and earlier keep `update_voter_identity` 0.
 ///
 /// 23. **An identity create's identity id is checked in basic structure**: the identity create
 ///     `basic_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses, without a fee, an
@@ -596,7 +605,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     so refused every such query. The query states both branch caps itself
 ///     (`single_document_path_query` 1, `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`), as the merge of
 ///     `GROVE_V5` (note 26) no longer derives one above a subquery. The ordinary branch follows
-///     the current-revision pointer in the composite history layout (note 33). No state
+///     the current-revision pointer in the composite history layout (note 35). No state
 ///     transition is proved in this status, so block execution and its proofs are unchanged.
 ///
 /// 30. **A chain asset lock proof is not held to the input cap**: the asset lock transaction
@@ -617,7 +626,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// 31. **A single document is looked up at a block time**: in a document type that keeps
 ///     history, `single_document_path_query` 1 (`DRIVE_DOCUMENT_METHOD_VERSIONS_V5`) selects
 ///     the newest retained revision at or before the requested time, clamped to `i64::MAX`.
-///     With composite history (note 33), it walks time-and-revision keys descending, taking
+///     With composite history (note 35), it walks time-and-revision keys descending, taking
 ///     the highest revision at equal times. Before the first retained revision it returns
 ///     absence. Migrated histories retain the last write at each old timestamp. The legacy
 ///     layout instead excludes the latest-version pointer below its time keys.
@@ -661,7 +670,48 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     `update_masternode_list` 0 or 1, `update_operator_identity` 0 and
 ///     `add_new_keys_to_masternode_identity` 0.
 ///
-/// 33. **Composite document history**: retained revisions move to per-type history trees,
+/// 33. **A reference whose target the document names**: `CONTRACT_VERSIONS_V7` selects
+///     `apply_property_reference` 1: a `permanentDocument` or `moderatedDocument` `refersTo`
+///     on an identifier property may read its `contractId` and its `documentType` from the
+///     referring document, each written `"$self.<property>"` for a top-level property of
+///     it (an identifier and a string), with `documentTypeRequirements`: up to
+///     `max_document_type_requirement_slots` (4, `SYSTEM_LIMITS_V5`, backfilled) named
+///     slots, each a top-level property the named type must have (`name`: `"$any"`, a
+///     property name, or `"$self.<a string property of the referring document>"`;
+///     `type`; `maxBytes`; `distinctFrom`, one or several other slots it is filled by a
+///     different property than), and `require`, `anyOf` / `allOf` over slot names, every
+///     slot when absent. The native schema check of note 7 admits the keys and meta-schema
+///     v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
+///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
+///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
+///     `creatorRefersTo`, and no rule, derived index property or chained query reads through
+///     it, each of which resolves the referenced type from the schema. Registration checks
+///     the declaration and the properties it reads alone, none of which a moderator may be
+///     given to write (`moderatorAbilities.changeFields`). `document_reference_validation` 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the target when a document is written:
+///     the document names a contract and a document type (`ReferencedEntityNotFoundError`,
+///     40120, when it does not), they exist (`ReferencedDocumentTypeNotFoundError`, 40121),
+///     the type is not private (`ReferencedDocumentTypePrivateError`, 40150) and not
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146), meets the
+///     requirements (`ReferencedDocumentTypeRequirementNotMetError`, 40153, new) and is of
+///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
+///     moderated one a replace keeps, was removed on the record. A replace checks the
+///     reference again when its value or a property it reads the target from changed.
+///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
+///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
+///
+/// 34. **A key with a budget or an expiry signs no data contract**: a budget counts what the
+///     transitions a key signs take from its identity, and an expiry ends its signing, while a
+///     data contract commits its owner beyond the transition that sets it up or changes it.
+///     `validate_state_transition_identity_signed` 2 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`)
+///     refuses, unpaid, a `DataContractCreate` and a `DataContractUpdate` signed by a key that
+///     carries a budget or an expiry
+///     (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018). Protocol v14 keeps
+///     `validate_state_transition_identity_signed` 1, so the blocks committed under it replay
+///     with the same results.
+///
+/// 35. **Composite document history**: retained revisions move to per-type history trees,
 ///     primary entries reference the current revision, and matching queries and verifiers
 ///     authenticate history pages. The first block crossing into v15 migrates existing
 ///     history after the operator-payout reconciliation (note 32) and all other activation
@@ -682,11 +732,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     limits and wire bounds, and cannot admit an erase.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 33); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); history delete 1, insert 2, lifecycle and erase operations, and typed single-document verification 1 extend retained history (note 36)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); history delete 1, insert 2, lifecycle and erase operations, and typed single-document verification 1 extend retained history (note 36)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 33); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); delete structure 2 and erase structure/state Some(0) admit the lifecycle (note 36)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3); contract update transform_into_action 1 holds an update to the compiled size cap in check_tx (note 8); batch advanced_structure 2 refuses a token config update on a read-only contract (note 9); masternode vote transform_into_action 1 looks up a masternode's previous answer on a yes/no poll (note 10); document_reference_validation 1 keeps what a consumed commitment's lookup read (note 11); document create structure_validation 2 holds a decision proposal to its fund, rule and end date (note 12); data trigger bindings 3 refuse a replace or a delete of a token market order (note 17) and drop the DashPay bindings (note 24); document create state_validation 3 keeps a create outside a contest off the values of a live one its index values do not decide (note 19); identity create basic_structure 1 checks the identity id before the asset lock proof and advanced_structure 2 no longer does (note 23); contract user moderation transform_into_action 1 writes a moderator's field change in the name of whoever holds the document's storage (note 28); delete structure 2 and erase structure/state Some(0) admit the lifecycle (note 36); validate_state_transition_identity_signed 2 refuses a contract create or update signed by a key with a budget or an expiry (note 34)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: getDocumentHistory accepts V1 only
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

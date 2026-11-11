@@ -70,6 +70,7 @@ use crate::data_contract::document_type::schema::validation_schema::keep_native_
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
+use super::dynamic_reference::validate_dynamic_reference_sources;
 #[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
@@ -663,6 +664,12 @@ fn parse_generation_3(
     // The same for the properties a `refersTo` lookup reads to assemble its key,
     // the lookup of the `ownerRefersTo` declaration included.
     validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // and for the properties a reference naming its target through the referring document
+    // reads the contract, the document type and its slots' property names from. No
+    // version before protocol version 15 parses such a reference, so there is none to
+    // check there.
+    validate_dynamic_reference_sources(DocumentTypeRef::V2(&v2), name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The `propertyConstraints` rules are parsed onto the type here, where the
     // integer properties they read and their transient flags are known; their
@@ -1777,10 +1784,12 @@ fn with_own_contract_id_omitted(
                     .collect(),
             );
         }
+        // A dynamic reference names no contract in the schema
         DocumentPropertyReferenceTarget::Identity
         | DocumentPropertyReferenceTarget::Contract { .. }
         | DocumentPropertyReferenceTarget::Token
-        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. }
+        | DocumentPropertyReferenceTarget::DynamicDocument(_) => {}
     }
     target
 }
@@ -2071,6 +2080,8 @@ mod refusal_test_support;
 #[cfg(all(test, feature = "validation"))]
 mod summable_off_count_index_tests;
 
+#[cfg(all(test, feature = "validation"))]
+mod dynamic_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod generated_from_tests;
 #[cfg(all(test, feature = "validation"))]
