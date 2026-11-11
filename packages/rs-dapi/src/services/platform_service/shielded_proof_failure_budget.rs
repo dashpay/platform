@@ -584,7 +584,7 @@ mod tests {
         let now = Instant::now();
         let oversized = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
             ShieldedTransferTransitionV0 {
-                actions: actions(1_000),
+                actions: actions(usize::from(MAX_SHIELDED_ACTIONS) + 1),
                 value_balance: 1,
                 anchor: [7; 32],
                 proof: vec![0; 100],
