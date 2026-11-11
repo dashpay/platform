@@ -931,95 +931,110 @@ mod tests {
         assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
     }
 
+    /// A profile delete's estimate at protocol version 14 and at the latest version. Protocol
+    /// version 15 describes an index's entries as references and prices each height of a
+    /// delete's climb with the layer deleted in there (protocol v15 note 14); protocol version 14
+    /// keeps its own estimate.
     #[test]
     fn test_delete_dashpay_documents_without_apply() {
-        let drive = setup_drive_with_initial_state_structure(None);
+        for (platform_version, estimated_processing_fee) in [
+            (
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                72064200,
+            ),
+            // estimated_size v1 adds the contract-version stamp varint to the worst-case
+            // document size
+            (PlatformVersion::latest(), 73034400),
+        ] {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let db_transaction = drive.grove.start_transaction();
+            let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::latest();
+            let contract = setup_contract(
+                &drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                Some(&db_transaction),
+                Some(platform_version),
+            );
 
-        let contract = setup_contract(
-            &drive,
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
-            None,
-            None,
-            None::<fn(&mut DataContract)>,
-            Some(&db_transaction),
-            None,
-        );
+            let document_type = contract
+                .document_type_for_name("profile")
+                .expect("expected to get profile document type");
 
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get profile document type");
+            let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+            let dashpay_profile_document = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/profile0.json",
+                Some(random_owner_id.into()),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to get cbor document");
 
-        let dashpay_profile_document = json_document_to_document(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(random_owner_id.into()),
-            document_type,
-            platform_version,
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
-            0,
-            random_owner_id,
-        )));
-        let fee_result = drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&dashpay_profile_document, storage_flags)),
-                        owner_id: None,
+            let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+                0,
+                random_owner_id,
+            )));
+            let fee_result = drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &dashpay_profile_document,
+                                storage_flags,
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
                     },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                Some(&db_transaction),
-                platform_version,
-            )
-            .expect("expected to insert a document successfully");
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(&db_transaction),
+                    platform_version,
+                )
+                .expect("expected to insert a document successfully");
 
-        let added_bytes = fee_result.storage_fee
-            / FeeVersion::first()
-                .storage
-                .storage_disk_usage_credit_per_byte;
-        // We added 1558 bytes
-        assert_eq!(added_bytes, 1559);
+            let added_bytes = fee_result.storage_fee
+                / FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte;
+            // We added 1558 bytes
+            assert_eq!(added_bytes, 1559);
 
-        let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
-            .into_vec()
-            .expect("should decode")
-            .as_slice()
-            .try_into()
-            .expect("this be 32 bytes");
+            let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
+                .into_vec()
+                .expect("should decode")
+                .as_slice()
+                .try_into()
+                .expect("this be 32 bytes");
 
-        // Let's delete the document at the third epoch
-        let fee_result = drive
-            .delete_document_for_contract(
-                document_id,
-                &contract,
-                "profile",
-                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
-                false,
-                Some(&db_transaction),
-                platform_version,
-            )
-            .expect("expected to be able to delete the document");
+            // Let's delete the document at the third epoch
+            let fee_result = drive
+                .delete_document_for_contract(
+                    document_id,
+                    &contract,
+                    "profile",
+                    BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
+                    false,
+                    Some(&db_transaction),
+                    platform_version,
+                )
+                .expect("expected to be able to delete the document");
 
-        assert!(fee_result.fee_refunds.0.is_empty());
-        assert_eq!(fee_result.storage_fee, 0);
-        // estimated_size v1 adds the contract-version stamp varint to the
-        // worst-case document size; from protocol version 15 the delete's estimate describes
-        // an index's entries as references and prices each height of its climb with the layer
-        // deleted in there (protocol v15 note 14)
-        assert_eq!(fee_result.processing_fee, 73034400);
+            assert!(fee_result.fee_refunds.0.is_empty());
+            assert_eq!(fee_result.storage_fee, 0);
+            assert_eq!(
+                fee_result.processing_fee, estimated_processing_fee,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
     }
 
     #[test]
