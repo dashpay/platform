@@ -1063,6 +1063,19 @@ pub enum PlatformWalletError {
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
 
+    /// A spend run against a `ShieldedSpendPlan` selected different notes, or a
+    /// different fee, than the plan: the wallet's notes changed since it was made (a sync
+    /// added or spent one, or another spend reserved one). Refused before any note was
+    /// reserved or anything built; plan again and confirm the new fee.
+    #[error(
+        "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a fee \
+         of {fresh_fee}; plan the spend again"
+    )]
+    ShieldedPlanChanged {
+        fresh_fee: u64,
+        fresh_note_count: usize,
+    },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),

@@ -25,8 +25,9 @@ use super::activity_recorder::{
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
-    select_notes_with_fee, ShieldedFeeKind,
+    ensure_allowed_denomination, ensure_plan_holds, ensure_positive_amount,
+    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind, ShieldedSpendAmount,
+    ShieldedSpendKind, ShieldedSpendPlan, SPEND_MIN_ACTIONS,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
@@ -1514,6 +1515,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
         identity_id,
         amount,
         prover,
+        None,
     )
     .await
     .map(|(result, _)| result)
@@ -1533,13 +1535,21 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     identity_id: Identifier,
     amount: u64,
     prover: &P,
+    expected_plan: Option<&[u8; 32]>,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
 
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::IdentityTopUp).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::IdentityTopUp,
+        expected_plan,
+    )
+    .await?;
 
     info!(
         account,
@@ -2261,6 +2271,26 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    unshield_with_plan(
+        sdk, store, persister, wallet_id, keys, account, to_address, amount, prover, None,
+    )
+    .await
+}
+
+/// [`unshield`] against a plan, refused as [`transfer_with_plan`] is when it moved.
+#[allow(clippy::too_many_arguments)]
+pub async fn unshield_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PlatformAddress,
+    amount: u64,
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -2273,8 +2303,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
     // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
     // debug assert below would fire).
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::Unshield,
+        expected_plan,
+    )
+    .await?;
 
     info!(
         account,
@@ -2446,6 +2483,29 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    transfer_with_plan(
+        sdk, store, persister, wallet_id, keys, account, to_address, amount, memo, prover, None,
+    )
+    .await
+}
+
+/// [`transfer`], refused with [`PlatformWalletError::ShieldedPlanChanged`] before anything is
+/// reserved or built when `expected_plan` is given and its notes no longer select the
+/// [`ShieldedSpendPlan::digest`] it names ([`plan_spend`]).
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    memo: [u8; 36],
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
@@ -2453,8 +2513,15 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
     // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::Transfer,
+        expected_plan,
+    )
+    .await?;
 
     info!(
         account,
@@ -2600,6 +2667,37 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    withdraw_with_plan(
+        sdk,
+        store,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        core_fee_per_byte,
+        prover,
+        None,
+    )
+    .await
+}
+
+/// [`withdraw`] against a plan, refused as [`transfer_with_plan`] is when it moved.
+#[allow(clippy::too_many_arguments)]
+pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &dashcore::Address,
+    amount: u64,
+    core_fee_per_byte: u32,
+    prover: &P,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -2613,8 +2711,15 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
     // below would fire).
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        ShieldedSpendKind::Withdrawal,
+        expected_plan,
+    )
+    .await?;
 
     info!(
         account,
@@ -3503,17 +3608,48 @@ async fn mark_notes_spent<S: ShieldedStore>(
 /// (on failure); until the notes are handed over
 /// ([`NoteReservation::hand_over`]), the returned guard releases them when
 /// the spend is dropped.
+///
+/// With `expected_plan`, a selection that does not match that [`ShieldedSpendPlan::digest`]
+/// is refused with [`PlatformWalletError::ShieldedPlanChanged`] before any note is reserved.
 async fn reserve_unspent_notes<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
     amount: u64,
-    outputs: usize,
-    fee_kind: ShieldedFeeKind,
+    kind: ShieldedSpendKind,
+    expected_plan: Option<&[u8; 32]>,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
     // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
     ensure_positive_amount(amount)?;
-    reserve_notes_covering(sdk, store, id, amount, outputs, fee_kind).await
+    reserve_notes_matching(
+        sdk,
+        store,
+        id,
+        amount,
+        SPEND_MIN_ACTIONS,
+        kind.fee_kind(),
+        expected_plan.map(|digest| (kind, digest)),
+    )
+    .await
+}
+
+/// Plan a `kind` spend of `amount` from `account`'s notes: the notes the spend would select
+/// now and their exact fee ([`note_selection::plan_spend`](super::note_selection::plan_spend)).
+/// Reads the store only; nothing is reserved.
+pub async fn plan_spend<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    wallet_id: WalletId,
+    account: u32,
+    kind: ShieldedSpendKind,
+    amount: ShieldedSpendAmount,
+) -> Result<ShieldedSpendPlan, PlatformWalletError> {
+    let unspent = store
+        .read()
+        .await
+        .get_unspent_notes(SubwalletId::new(wallet_id, account))
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    super::note_selection::plan_spend(&unspent, kind, amount, sdk.version())
 }
 
 /// Select and reserve, in one write-locked critical section, notes covering
@@ -3530,12 +3666,30 @@ async fn reserve_notes_covering<S: ShieldedStore>(
     outputs: usize,
     fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
+    reserve_notes_matching(sdk, store, id, amount, outputs, fee_kind, None).await
+}
+
+/// [`reserve_notes_covering`], refusing with [`PlatformWalletError::ShieldedPlanChanged`],
+/// before any note is reserved, a selection that does not match `expected_plan`: the plan
+/// digest of a spend of that kind.
+async fn reserve_notes_matching<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    amount: u64,
+    outputs: usize,
+    fee_kind: ShieldedFeeKind,
+    expected_plan: Option<(ShieldedSpendKind, &[u8; 32])>,
+) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
     let mut guard = store.write().await;
     let unspent = guard
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
         select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
+    if let Some((kind, expected)) = expected_plan {
+        ensure_plan_holds(expected, kind, amount, exact_fee, total_input, &selected)?;
+    }
     let reservation = mark_notes_pending(&mut *guard, store, id, &selected)?;
     Ok((selected, total_input, exact_fee, reservation))
 }
@@ -8171,5 +8325,218 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+#[cfg(test)]
+mod spend_plan_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dashcore::Network;
+    use dpp::shielded::compute_minimum_shielded_fee;
+    use dpp::version::PlatformVersion;
+    use grovedb_commitment_tree::ProvingKey;
+
+    /// A note worth 1 DASH, so the fee never decides how many notes an amount needs.
+    const NOTE: u64 = 100_000_000_000;
+    const WALLET_ID: WalletId = [0x71; 32];
+    const ID: SubwalletId = SubwalletId {
+        wallet_id: WALLET_ID,
+        account_index: 0,
+    };
+
+    struct UnreachableProver;
+    impl OrchardProver for UnreachableProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    fn note(position: u8, value: u64) -> ShieldedNote {
+        ShieldedNote {
+            position: position.into(),
+            cmx: [position; 32],
+            nullifier: [position; 32],
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data: vec![],
+        }
+    }
+
+    fn sdk() -> Arc<dash_sdk::Sdk> {
+        Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(PlatformVersion::latest())
+                .build()
+                .expect("a mock SDK"),
+        )
+    }
+
+    async fn store_with(notes: &[ShieldedNote]) -> Arc<RwLock<InMemoryShieldedStore>> {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        for note in notes {
+            store.write().await.save_note(ID, note).expect("a note");
+        }
+        store
+    }
+
+    async fn unspent(store: &Arc<RwLock<InMemoryShieldedStore>>) -> usize {
+        store
+            .read()
+            .await
+            .get_unspent_notes(ID)
+            .expect("notes")
+            .len()
+    }
+
+    async fn plan(store: &Arc<RwLock<InMemoryShieldedStore>>, amount: u64) -> ShieldedSpendPlan {
+        plan_spend(
+            &sdk(),
+            store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Exact(amount),
+        )
+        .await
+        .expect("plans")
+    }
+
+    /// Planning an amount that needs five notes prices five actions and reserves nothing.
+    #[tokio::test]
+    async fn should_plan_five_notes_at_their_fee_without_reserving_them() {
+        let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+
+        let plan = plan(&store, 4 * NOTE + 1).await;
+
+        assert_eq!(plan.note_count(), 5);
+        assert_eq!(
+            plan.fee,
+            compute_minimum_shielded_fee(5, PlatformVersion::latest()).expect("fee")
+        );
+        assert_eq!(unspent(&store).await, 6, "a plan reserves nothing");
+    }
+
+    /// A spend whose notes did not move since the plan reserves exactly the planned notes.
+    #[tokio::test]
+    async fn should_reserve_the_planned_notes_when_nothing_moved() {
+        let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+        let amount = 4 * NOTE + 1;
+        let plan = plan(&store, amount).await;
+
+        let (selected, total_input, fee, reservation) = reserve_unspent_notes(
+            &sdk(),
+            &store,
+            ID,
+            amount,
+            ShieldedSpendKind::Transfer,
+            Some(&plan.digest),
+        )
+        .await
+        .expect("the plan holds");
+
+        let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
+        nullifiers.sort_unstable();
+        assert_eq!(
+            (nullifiers, total_input, fee),
+            (plan.nullifiers.clone(), plan.total_input, plan.fee)
+        );
+        assert_eq!(unspent(&store).await, 1, "the planned notes are reserved");
+        reservation.cancel().await;
+    }
+
+    /// A note added or spent after the plan moves the selection: the spend is refused and
+    /// no note is left reserved.
+    #[tokio::test]
+    async fn should_refuse_a_plan_whose_notes_moved_and_reserve_nothing() {
+        let amount = 4 * NOTE + 1;
+        for change in ["added", "spent"] {
+            let store = store_with(&(0..6).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+            let plan = plan(&store, amount).await;
+            match change {
+                "added" => store
+                    .write()
+                    .await
+                    .save_note(ID, &note(9, 10 * NOTE))
+                    .expect("a note"),
+                _ => {
+                    store
+                        .write()
+                        .await
+                        .mark_spent(ID, &plan.nullifiers[0])
+                        .expect("spent");
+                }
+            }
+            let before = unspent(&store).await;
+
+            let refused = reserve_unspent_notes(
+                &sdk(),
+                &store,
+                ID,
+                amount,
+                ShieldedSpendKind::Transfer,
+                Some(&plan.digest),
+            )
+            .await;
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::ShieldedPlanChanged { .. })
+                ),
+                "a note {change} after the plan must refuse it, got {:?}",
+                refused.map(|(selected, ..)| selected.len())
+            );
+            assert_eq!(unspent(&store).await, before, "nothing reserved ({change})");
+        }
+    }
+
+    /// The spend itself runs the check before it builds anything: a moved plan is refused
+    /// with its notes left spendable, and a plan that holds goes on to build (here refused
+    /// later by the mock's anchor fetch, never by the plan check).
+    #[tokio::test]
+    async fn should_run_a_transfer_against_its_plan_or_refuse_it_unbuilt() {
+        let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+        let store = store_with(&(0..3).map(|i| note(i, NOTE)).collect::<Vec<_>>()).await;
+        let amount = NOTE;
+        let plan = plan(&store, amount).await;
+        let transfer = |expected: [u8; 32]| {
+            let (store, keys) = (Arc::clone(&store), &keys);
+            async move {
+                transfer_with_plan(
+                    &sdk(),
+                    &store,
+                    None,
+                    WALLET_ID,
+                    keys,
+                    0,
+                    &keys.default_address,
+                    amount,
+                    [0; 36],
+                    &UnreachableProver,
+                    Some(&expected),
+                )
+                .await
+            }
+        };
+
+        let held = transfer(plan.digest).await;
+        assert!(
+            !matches!(held, Err(PlatformWalletError::ShieldedPlanChanged { .. })),
+            "a plan that holds proceeds, got {held:?}"
+        );
+
+        store
+            .write()
+            .await
+            .save_note(ID, &note(9, 10 * NOTE))
+            .expect("a note");
+        let moved = transfer(plan.digest).await;
+        assert!(
+            matches!(moved, Err(PlatformWalletError::ShieldedPlanChanged { .. })),
+            "got {moved:?}"
+        );
+        assert_eq!(unspent(&store).await, 4, "nothing reserved");
     }
 }

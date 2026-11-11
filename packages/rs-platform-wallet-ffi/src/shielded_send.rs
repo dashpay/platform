@@ -51,6 +51,9 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
+use platform_wallet::wallet::shielded::note_selection::{
+    ShieldedSpendAmount, ShieldedSpendKind, ShieldedSpendPlan,
+};
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{
@@ -65,7 +68,9 @@ use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
-use crate::shielded_types::{ShieldedIdentityDebitRecoveryRecordFFI, ShieldedShieldPreflightFFI};
+use crate::shielded_types::{
+    ShieldedIdentityDebitRecoveryRecordFFI, ShieldedShieldPreflightFFI, ShieldedSpendPlanFFI,
+};
 use crate::types::read_identifier;
 use crate::unwrap_result_or_return;
 
@@ -255,6 +260,117 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
     }
 }
 
+/// Map a spend `kind` byte, numbered as [`shielded_fee_formula`] numbers the
+/// spends' fee kinds, to the spend it plans; `None` for any other byte.
+fn shielded_spend_kind(kind: u8) -> Option<ShieldedSpendKind> {
+    match kind {
+        0 => Some(ShieldedSpendKind::Transfer),
+        1 => Some(ShieldedSpendKind::Unshield),
+        2 => Some(ShieldedSpendKind::Withdrawal),
+        4 => Some(ShieldedSpendKind::IdentityTopUp),
+        _ => None,
+    }
+}
+
+impl From<&ShieldedSpendPlan> for ShieldedSpendPlanFFI {
+    fn from(plan: &ShieldedSpendPlan) -> Self {
+        Self {
+            kind: match plan.kind {
+                ShieldedSpendKind::Transfer => 0,
+                ShieldedSpendKind::Unshield => 1,
+                ShieldedSpendKind::Withdrawal => 2,
+                ShieldedSpendKind::IdentityTopUp => 4,
+            },
+            amount: plan.amount,
+            fee: plan.fee,
+            total_input: plan.total_input,
+            total_debited: plan.total_debited(),
+            // A spend's notes are bounded far below u32::MAX by the transition's action cap.
+            note_count: u32::try_from(plan.note_count()).unwrap_or(u32::MAX),
+            digest: plan.digest,
+        }
+    }
+}
+
+/// Read a 32-byte plan digest.
+///
+/// # Safety
+/// `digest` must point to 32 readable bytes.
+unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    std::ptr::copy_nonoverlapping(digest, out.as_mut_ptr(), 32);
+    out
+}
+
+/// Plan a shielded spend from `account`'s notes before it is confirmed: the
+/// notes the spend would select now and their exact fee, which grows with the
+/// number of notes. Nothing is reserved or broadcast.
+///
+/// `kind` numbers the spend as `platform_wallet_shielded_estimate_fee` does:
+/// `0` transfer, `1` unshield, `2` withdrawal, `4` identity top-up (`3`, the
+/// shield from an identity, spends no notes). With `sweep_all`, the spend
+/// sends every spendable note minus the fee for all of them, and `amount` must
+/// be `0`; otherwise it sends `amount` credits and the fee comes on top.
+///
+/// Writes the plan to `out_plan`. Run it with the spend's `_with_plan` export
+/// and the plan's `digest`, which refuses with `ErrorShieldedPlanChanged`
+/// when the notes moved since. An unknown `kind`, or a sweep with an amount,
+/// returns `ErrorInvalidParameter`; notes that cannot pay the amount and its
+/// fee, or a zero amount, return `ErrorWalletOperation`, as the spends do.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `out_plan` must point to a writable `ShieldedSpendPlanFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    kind: u8,
+    amount: u64,
+    sweep_all: bool,
+    out_plan: *mut ShieldedSpendPlanFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(out_plan);
+
+    let Some(kind) = shielded_spend_kind(kind) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("unknown shielded spend kind {kind} (expected 0/1/2/4)"),
+        );
+    };
+    let amount = match (sweep_all, amount) {
+        (false, amount) => ShieldedSpendAmount::Exact(amount),
+        (true, 0) => ShieldedSpendAmount::Sweep,
+        (true, _) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "a sweep_all plan takes amount 0",
+            );
+        }
+    };
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+    let result = block_on_worker(async move {
+        wallet
+            .shielded_plan_spend(&coordinator, account, kind, amount)
+            .await
+    });
+    match result {
+        Ok(plan) => {
+            *out_plan = ShieldedSpendPlanFFI::from(&plan);
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => map_spend_result(Err(e), "shielded spend plan"),
+    }
+}
+
 /// Encode an optional host-supplied memo string into the on-chain
 /// 36-byte `DashMemo` layout via [`ShieldedMemo`].
 ///
@@ -324,6 +440,66 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
+    shielded_transfer_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        recipient_raw_43,
+        amount,
+        memo_text,
+        None,
+    )
+}
+
+/// [`platform_wallet_manager_shielded_transfer`] against a plan from
+/// [`platform_wallet_manager_shielded_plan_spend`]: when the wallet's notes no
+/// longer select the plan `expected_plan_digest` names, the transfer is
+/// refused with `ErrorShieldedPlanChanged` before anything is reserved,
+/// built or broadcast.
+///
+/// # Safety
+/// As [`platform_wallet_manager_shielded_transfer`], and
+/// `expected_plan_digest` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer_with_plan(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    expected_plan_digest: *const u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(expected_plan_digest);
+    shielded_transfer_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        recipient_raw_43,
+        amount,
+        memo_text,
+        Some(read_plan_digest(expected_plan_digest)),
+    )
+}
+
+/// Body of the transfer exports; `expected_plan` is the plan digest, if any.
+///
+/// # Safety
+/// Identical contract to [`platform_wallet_manager_shielded_transfer`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_transfer_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    recipient_raw_43: *const u8,
+    amount: u64,
+    memo_text: *const c_char,
+    expected_plan: Option<[u8; 32]>,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(recipient_raw_43);
@@ -376,7 +552,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_transfer_to(
+            .shielded_transfer_to_with_plan(
                 &coordinator,
                 seed.as_ref(),
                 account,
@@ -384,6 +560,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
                 amount,
                 memo,
                 &prover,
+                expected_plan.as_ref(),
             )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
@@ -422,6 +599,58 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
+    shielded_unshield_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        to_platform_addr_cstr,
+        amount,
+        None,
+    )
+}
+
+/// [`platform_wallet_manager_shielded_unshield`] against a plan, refused as
+/// [`platform_wallet_manager_shielded_transfer_with_plan`] is when it moved.
+///
+/// # Safety
+/// As [`platform_wallet_manager_shielded_unshield`], and
+/// `expected_plan_digest` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield_with_plan(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_platform_addr_cstr: *const c_char,
+    amount: u64,
+    expected_plan_digest: *const u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(expected_plan_digest);
+    shielded_unshield_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        to_platform_addr_cstr,
+        amount,
+        Some(read_plan_digest(expected_plan_digest)),
+    )
+}
+
+/// Body of the unshield exports; `expected_plan` is the plan digest, if any.
+///
+/// # Safety
+/// Identical contract to [`platform_wallet_manager_shielded_unshield`].
+unsafe fn shielded_unshield_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_platform_addr_cstr: *const c_char,
+    amount: u64,
+    expected_plan: Option<[u8; 32]>,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_platform_addr_cstr);
@@ -454,13 +683,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_unshield_to(
+            .shielded_unshield_to_with_plan(
                 &coordinator,
                 seed.as_ref(),
                 account,
                 &to_addr_str,
                 amount,
                 &prover,
+                expected_plan.as_ref(),
             )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
@@ -496,6 +726,64 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     amount: u64,
     core_fee_per_byte: u32,
 ) -> PlatformWalletFFIResult {
+    shielded_withdraw_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        to_core_address_cstr,
+        amount,
+        core_fee_per_byte,
+        None,
+    )
+}
+
+/// [`platform_wallet_manager_shielded_withdraw`] against a plan, refused as
+/// [`platform_wallet_manager_shielded_transfer_with_plan`] is when it moved.
+///
+/// # Safety
+/// As [`platform_wallet_manager_shielded_withdraw`], and
+/// `expected_plan_digest` must point to 32 readable bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw_with_plan(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_core_address_cstr: *const c_char,
+    amount: u64,
+    core_fee_per_byte: u32,
+    expected_plan_digest: *const u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(expected_plan_digest);
+    shielded_withdraw_inner(
+        handle,
+        wallet_id_bytes,
+        mnemonic_resolver_handle,
+        account,
+        to_core_address_cstr,
+        amount,
+        core_fee_per_byte,
+        Some(read_plan_digest(expected_plan_digest)),
+    )
+}
+
+/// Body of the withdraw exports; `expected_plan` is the plan digest, if any.
+///
+/// # Safety
+/// Identical contract to [`platform_wallet_manager_shielded_withdraw`].
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_withdraw_inner(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    to_core_address_cstr: *const c_char,
+    amount: u64,
+    core_fee_per_byte: u32,
+    expected_plan: Option<[u8; 32]>,
+) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(to_core_address_cstr);
@@ -528,7 +816,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_withdraw_to(
+            .shielded_withdraw_to_with_plan(
                 &coordinator,
                 seed.as_ref(),
                 account,
@@ -536,6 +824,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
                 amount,
                 core_fee_per_byte,
                 &prover,
+                expected_plan.as_ref(),
             )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
@@ -650,6 +939,9 @@ pub(crate) fn map_spend_result(
         | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
             e.into()
         }
+        // The notes moved since the spend was planned: nothing was reserved
+        // or built; the host plans again and confirms the new fee.
+        Err(e @ PlatformWalletError::ShieldedPlanChanged { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -1385,6 +1677,39 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_p
             account,
             identity_id,
             amount,
+            None,
+        )
+    })
+}
+
+/// [`platform_wallet_manager_shielded_identity_top_up_from_pool`] against a
+/// plan, refused as [`platform_wallet_manager_shielded_transfer_with_plan`]
+/// is when it moved.
+///
+/// # Safety
+/// As [`platform_wallet_manager_shielded_identity_top_up_from_pool`], and
+/// `expected_plan_digest` must point to 32 readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    identity_id: *const u8,
+    amount: u64,
+    expected_plan_digest: *const u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(expected_plan_digest);
+    let expected_plan = read_plan_digest(expected_plan_digest);
+    catch_spend_panic("shielded identity top up from pool", || {
+        shielded_identity_top_up_from_pool_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            identity_id,
+            amount,
+            Some(expected_plan),
         )
     })
 }
@@ -1401,6 +1726,7 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
     account: u32,
     identity_id: *const u8,
     amount: u64,
+    expected_plan: Option<[u8; 32]>,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
@@ -1426,13 +1752,14 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         let r = wallet
-            .shielded_identity_top_up_from_pool(
+            .shielded_identity_top_up_from_pool_with_plan(
                 &coordinator,
                 seed.as_ref(),
                 account,
                 &identity_id,
                 amount,
                 &prover,
+                expected_plan.as_ref(),
             )
             .await;
         poke_sync_on_unconfirmed(&r, handle);
@@ -2859,6 +3186,152 @@ mod tests {
                  unknown handle must be a hard error"
             );
         }
+    }
+
+    #[test]
+    fn should_reject_a_spend_plan_with_null_pointers_or_an_unknown_kind() {
+        unsafe {
+            let wallet_id = [0u8; 32];
+            let mut out = ShieldedSpendPlanFFI::default();
+            let plan = |wallet_id: *const u8, kind: u8, amount: u64, sweep: bool, out| {
+                platform_wallet_manager_shielded_plan_spend(
+                    0, wallet_id, 0, kind, amount, sweep, out,
+                )
+                .code
+            };
+            assert_eq!(
+                plan(std::ptr::null(), 0, 1, false, &mut out),
+                PlatformWalletFFIResultCode::ErrorNullPointer
+            );
+            assert_eq!(
+                plan(wallet_id.as_ptr(), 0, 1, false, std::ptr::null_mut()),
+                PlatformWalletFFIResultCode::ErrorNullPointer
+            );
+            // Kind 3 is the shield from an identity, which spends no notes.
+            for kind in [3, 5, 255] {
+                assert_eq!(
+                    plan(wallet_id.as_ptr(), kind, 1, false, &mut out),
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    "kind {kind}"
+                );
+            }
+            assert_eq!(
+                plan(wallet_id.as_ptr(), 0, 1, true, &mut out),
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "a sweep names no amount"
+            );
+            assert_eq!(
+                plan(wallet_id.as_ptr(), 0, 1, false, &mut out),
+                PlatformWalletFFIResultCode::ErrorInvalidHandle
+            );
+            assert_eq!(out, ShieldedSpendPlanFFI::default(), "nothing written");
+        }
+    }
+
+    #[test]
+    fn should_marshal_a_spend_plan_with_the_fee_kind_numbering() {
+        for (kind, byte) in [
+            (ShieldedSpendKind::Transfer, 0),
+            (ShieldedSpendKind::Unshield, 1),
+            (ShieldedSpendKind::Withdrawal, 2),
+            (ShieldedSpendKind::IdentityTopUp, 4),
+        ] {
+            assert_eq!(shielded_spend_kind(byte), Some(kind));
+            let plan = ShieldedSpendPlan {
+                kind,
+                amount: 10,
+                fee: 3,
+                total_input: 20,
+                nullifiers: vec![[1; 32], [2; 32]],
+                digest: [9; 32],
+            };
+            assert_eq!(
+                ShieldedSpendPlanFFI::from(&plan),
+                ShieldedSpendPlanFFI {
+                    kind: byte,
+                    amount: 10,
+                    fee: 3,
+                    total_input: 20,
+                    total_debited: 13,
+                    note_count: 2,
+                    digest: [9; 32],
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_a_plan_spend_without_its_digest() {
+        unsafe {
+            let wallet_id = [0u8; 32];
+            let bytes = [0u8; 43];
+            let text = c"x";
+            let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+            let codes = [
+                platform_wallet_manager_shielded_transfer_with_plan(
+                    0,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    0,
+                    bytes.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                )
+                .code,
+                platform_wallet_manager_shielded_unshield_with_plan(
+                    0,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    0,
+                    text.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                )
+                .code,
+                platform_wallet_manager_shielded_withdraw_with_plan(
+                    0,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    0,
+                    text.as_ptr(),
+                    1,
+                    1,
+                    std::ptr::null(),
+                )
+                .code,
+                platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan(
+                    0,
+                    wallet_id.as_ptr(),
+                    resolver,
+                    0,
+                    bytes.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                )
+                .code,
+            ];
+            assert_eq!(codes, [PlatformWalletFFIResultCode::ErrorNullPointer; 4]);
+        }
+    }
+
+    #[test]
+    fn should_keep_a_changed_plan_at_its_own_code() {
+        let changed = || PlatformWalletError::ShieldedPlanChanged {
+            fresh_fee: 225_000_000,
+            fresh_note_count: 5,
+        };
+        let result = map_spend_result(Err(changed()), "shielded transfer");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+        );
+        assert_eq!(result.code as i32, 77);
+        assert!(message_of(&result).contains("plan the spend again"));
+        assert_eq!(
+            PlatformWalletFFIResult::from(changed()).code,
+            PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+        );
     }
 
     #[test]

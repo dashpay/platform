@@ -15,6 +15,7 @@ use dpp::shielded::{
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use sha2::{Digest, Sha256};
 
 /// Which consensus fee formula the wallet must reserve notes against for a spend.
 ///
@@ -222,6 +223,199 @@ pub fn select_notes_with_fee<'a>(
     }
 
     Ok((selected, total, exact_fee))
+}
+
+/// The minimum Orchard action count of an amount-based spend: one spend plus the recipient
+/// output, so a single note is still charged for two actions.
+pub const SPEND_MIN_ACTIONS: usize = 2;
+
+/// An amount-based spend from the shielded pool, whose fee depends on the notes it selects.
+///
+/// `IdentityCreateFromShieldedPool` is not one: its whole denomination leaves the pool and the
+/// fee is metered from it at execution ([`select_notes_for_denomination`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShieldedSpendKind {
+    /// ShieldedTransfer to an Orchard address.
+    Transfer,
+    /// Unshield to a Platform address.
+    Unshield,
+    /// ShieldedWithdrawal to a Core address.
+    Withdrawal,
+    /// IdentityTopUpFromShieldedPool.
+    IdentityTopUp,
+}
+
+impl ShieldedSpendKind {
+    /// The fee formula the spend reserves its notes against.
+    pub fn fee_kind(self) -> ShieldedFeeKind {
+        match self {
+            ShieldedSpendKind::Transfer => ShieldedFeeKind::Base,
+            ShieldedSpendKind::Unshield => ShieldedFeeKind::Unshield,
+            ShieldedSpendKind::Withdrawal => ShieldedFeeKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp => ShieldedFeeKind::IdentityTopUp,
+        }
+    }
+
+    fn tag(self) -> u8 {
+        match self {
+            ShieldedSpendKind::Transfer => 0,
+            ShieldedSpendKind::Unshield => 1,
+            ShieldedSpendKind::Withdrawal => 2,
+            ShieldedSpendKind::IdentityTopUp => 3,
+        }
+    }
+}
+
+/// What a planned spend sends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShieldedSpendAmount {
+    /// Exactly this many credits reach the recipient; the fee comes on top.
+    Exact(Credits),
+    /// Every spendable note: the recipient gets their sum minus the fee for all of them.
+    Sweep,
+}
+
+/// A spend's note selection made ahead of the spend, with the exact fee it pays.
+///
+/// Made by [`plan_spend`] from the same selection the spend runs; nothing is reserved. A spend
+/// given the plan's [`digest`](Self::digest) refuses with
+/// [`PlatformWalletError::ShieldedPlanChanged`] when its own selection differs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShieldedSpendPlan {
+    pub kind: ShieldedSpendKind,
+    /// What the recipient gets.
+    pub amount: Credits,
+    /// The exact fee for the selected notes.
+    pub fee: Credits,
+    /// The sum of the selected notes.
+    pub total_input: Credits,
+    /// The selected notes' nullifiers, sorted.
+    pub nullifiers: Vec<[u8; 32]>,
+    /// Commits to the kind, the amount, the fee and the selected notes.
+    pub digest: [u8; 32],
+}
+
+impl ShieldedSpendPlan {
+    fn new(
+        kind: ShieldedSpendKind,
+        amount: Credits,
+        fee: Credits,
+        total_input: Credits,
+        mut nullifiers: Vec<[u8; 32]>,
+    ) -> Self {
+        nullifiers.sort_unstable();
+        let mut hasher = Sha256::new();
+        hasher.update(b"shielded-spend-plan");
+        hasher.update([kind.tag()]);
+        hasher.update(amount.to_le_bytes());
+        hasher.update(fee.to_le_bytes());
+        for nullifier in &nullifiers {
+            hasher.update(nullifier);
+        }
+        Self {
+            kind,
+            amount,
+            fee,
+            total_input,
+            nullifiers,
+            digest: hasher.finalize().into(),
+        }
+    }
+
+    /// How many notes the spend consumes.
+    pub fn note_count(&self) -> usize {
+        self.nullifiers.len()
+    }
+
+    /// What leaves the pool: the amount plus the fee (any rest returns as change).
+    pub fn total_debited(&self) -> Credits {
+        // Selection guarantees `amount + fee <= total_input`, so this cannot overflow.
+        self.amount.saturating_add(self.fee)
+    }
+}
+
+/// Plan a `kind` spend of `amount` from `unspent`: the notes the spend would select
+/// ([`select_notes_with_fee`] at [`SPEND_MIN_ACTIONS`]) and their exact fee.
+///
+/// A [`ShieldedSpendAmount::Sweep`] sends the sum of every spendable note minus the fee for all
+/// of them.
+pub fn plan_spend(
+    unspent: &[ShieldedNote],
+    kind: ShieldedSpendKind,
+    amount: ShieldedSpendAmount,
+    platform_version: &PlatformVersion,
+) -> Result<ShieldedSpendPlan, PlatformWalletError> {
+    let fee_kind = kind.fee_kind();
+    let amount = match amount {
+        ShieldedSpendAmount::Exact(amount) => amount,
+        ShieldedSpendAmount::Sweep => {
+            let spendable: Vec<&ShieldedNote> = unspent.iter().filter(|n| !n.is_spent).collect();
+            if spendable.is_empty() {
+                return Err(PlatformWalletError::ShieldedNoUnspentNotes);
+            }
+            let balance = spendable
+                .iter()
+                .try_fold(0u64, |acc, n| acc.checked_add(n.value))
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(
+                        "shielded note values sum overflows u64".to_string(),
+                    )
+                })?;
+            let fee = fee_kind
+                .compute(spendable.len().max(SPEND_MIN_ACTIONS), platform_version)
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+            match balance.checked_sub(fee) {
+                Some(amount) if amount > 0 => amount,
+                _ => {
+                    return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                        available: balance,
+                        required: fee.saturating_add(1),
+                    })
+                }
+            }
+        }
+    };
+    ensure_positive_amount(amount)?;
+    let (selected, total_input, fee) = select_notes_with_fee(
+        unspent,
+        amount,
+        SPEND_MIN_ACTIONS,
+        fee_kind,
+        platform_version,
+    )?;
+    Ok(ShieldedSpendPlan::new(
+        kind,
+        amount,
+        fee,
+        total_input,
+        selected.iter().map(|n| n.nullifier).collect(),
+    ))
+}
+
+/// Refuse a spend whose fresh selection (`selected`, `total_input`, `fee` for `kind` and
+/// `amount`) does not match the plan whose digest is `expected`.
+pub(crate) fn ensure_plan_holds(
+    expected: &[u8; 32],
+    kind: ShieldedSpendKind,
+    amount: Credits,
+    fee: Credits,
+    total_input: Credits,
+    selected: &[ShieldedNote],
+) -> Result<(), PlatformWalletError> {
+    let fresh = ShieldedSpendPlan::new(
+        kind,
+        amount,
+        fee,
+        total_input,
+        selected.iter().map(|n| n.nullifier).collect(),
+    );
+    if fresh.digest != *expected {
+        return Err(PlatformWalletError::ShieldedPlanChanged {
+            fresh_fee: fresh.fee,
+            fresh_note_count: fresh.note_count(),
+        });
+    }
+    Ok(())
 }
 
 /// Reject a zero spend `amount`. Lock-free, so callers can run it before taking the store lock
@@ -632,6 +826,208 @@ mod tests {
         assert!(matches!(
             result,
             Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
+        ));
+    }
+
+    /// A note worth 1 DASH, so the fee never decides how many notes an amount needs.
+    const NOTE: u64 = 100_000_000_000;
+
+    /// An amount that needs five notes is planned at the fee for five actions, not two, and
+    /// lists exactly those five notes.
+    #[test]
+    fn should_plan_a_five_note_spend_at_the_five_action_fee() {
+        let platform_version = PlatformVersion::latest();
+        let notes: Vec<ShieldedNote> = (0..6).map(|i| test_note(NOTE, i)).collect();
+        let amount = 4 * NOTE + 1;
+
+        let plan = plan_spend(
+            &notes,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Exact(amount),
+            platform_version,
+        )
+        .expect("five notes cover the amount");
+
+        let five_action_fee = compute_minimum_shielded_fee(5, platform_version).expect("fee");
+        assert_eq!(plan.fee, five_action_fee);
+        assert!(plan.fee > compute_minimum_shielded_fee(2, platform_version).expect("fee"));
+        assert_eq!(plan.note_count(), 5);
+        assert_eq!(plan.amount, amount);
+        assert_eq!(plan.total_input, 5 * NOTE);
+        assert_eq!(plan.total_debited(), amount + five_action_fee);
+        // The plan is the spend's own selection.
+        let (selected, total, fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            SPEND_MIN_ACTIONS,
+            ShieldedFeeKind::Base,
+            platform_version,
+        )
+        .expect("selects");
+        let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
+        nullifiers.sort_unstable();
+        assert_eq!(
+            (plan.nullifiers, plan.total_input, plan.fee),
+            (nullifiers, total, fee)
+        );
+    }
+
+    /// Each kind plans against its own fee formula.
+    #[test]
+    fn should_plan_each_kind_against_its_spend_fee() {
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![test_note(NOTE, 0)];
+        for (kind, fee) in [
+            (
+                ShieldedSpendKind::Transfer,
+                compute_minimum_shielded_fee(2, platform_version),
+            ),
+            (
+                ShieldedSpendKind::Unshield,
+                compute_shielded_unshield_fee(2, platform_version),
+            ),
+            (
+                ShieldedSpendKind::Withdrawal,
+                compute_shielded_withdrawal_fee(2, platform_version),
+            ),
+            (
+                ShieldedSpendKind::IdentityTopUp,
+                compute_shielded_identity_top_up_fee(2, platform_version),
+            ),
+        ] {
+            let plan = plan_spend(
+                &notes,
+                kind,
+                ShieldedSpendAmount::Exact(1),
+                platform_version,
+            )
+            .expect("one note covers it");
+            assert_eq!(plan.fee, fee.expect("fee"), "{kind:?}");
+            assert_eq!((plan.kind, plan.note_count()), (kind, 1));
+        }
+    }
+
+    /// A sweep sends the balance minus the fee for every spendable note.
+    #[test]
+    fn should_plan_a_sweep_as_the_balance_minus_the_fee_for_every_note() {
+        let platform_version = PlatformVersion::latest();
+        let mut notes: Vec<ShieldedNote> = (0..3).map(|i| test_note(NOTE + i, i)).collect();
+        let mut spent = test_note(NOTE, 9);
+        spent.is_spent = true;
+        notes.push(spent);
+        let balance = 3 * NOTE + 3;
+
+        let plan = plan_spend(
+            &notes,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Sweep,
+            platform_version,
+        )
+        .expect("the notes cover their own fee");
+
+        let fee = compute_shielded_unshield_fee(3, platform_version).expect("fee");
+        assert_eq!(plan.amount, balance - fee);
+        assert_eq!(plan.fee, fee);
+        assert_eq!(plan.total_debited(), balance);
+        assert_eq!(plan.note_count(), 3);
+    }
+
+    /// Notes worth no more than their fee cannot be swept.
+    #[test]
+    fn should_refuse_a_sweep_the_fee_eats() {
+        let platform_version = PlatformVersion::latest();
+        let fee = compute_minimum_shielded_fee(2, platform_version).expect("fee");
+        let notes = vec![test_note(fee, 0)];
+        assert!(matches!(
+            plan_spend(
+                &notes,
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendAmount::Sweep,
+                platform_version,
+            ),
+            Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
+        ));
+        assert!(matches!(
+            plan_spend(
+                &[],
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendAmount::Sweep,
+                platform_version,
+            ),
+            Err(PlatformWalletError::ShieldedNoUnspentNotes)
+        ));
+    }
+
+    /// A zero amount is refused as the spend refuses it.
+    #[test]
+    fn should_refuse_to_plan_a_zero_amount() {
+        let notes = vec![test_note(NOTE, 0)];
+        assert!(matches!(
+            plan_spend(
+                &notes,
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendAmount::Exact(0),
+                PlatformVersion::latest(),
+            ),
+            Err(PlatformWalletError::ShieldedBuildError(_))
+        ));
+    }
+
+    /// The digest changes with the selection, and the plan check refuses a selection that
+    /// moved while accepting the one planned.
+    #[test]
+    fn should_hold_a_plan_only_for_its_own_selection() {
+        let platform_version = PlatformVersion::latest();
+        let kind = ShieldedSpendKind::Transfer;
+        let notes: Vec<ShieldedNote> = (0..3).map(|i| test_note(NOTE, i)).collect();
+        let amount = ShieldedSpendAmount::Exact(2 * NOTE);
+        let plan = plan_spend(&notes, kind, amount, platform_version).expect("plans");
+        let selected = |notes: &[ShieldedNote]| -> (Vec<ShieldedNote>, u64, u64) {
+            let (refs, total, fee) =
+                select_notes_with_fee(notes, 2 * NOTE, 2, kind.fee_kind(), platform_version)
+                    .expect("selects");
+            (refs.into_iter().cloned().collect(), total, fee)
+        };
+
+        let (same, total, fee) = selected(&notes);
+        ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &same)
+            .expect("an unchanged selection holds");
+
+        // A larger note arrives: one note now covers it, at a different fee.
+        let mut grown = notes.clone();
+        grown.push(test_note(10 * NOTE, 7));
+        let (moved, total, fee) = selected(&grown);
+        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &moved)
+            .expect_err("a moved selection must not hold");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedPlanChanged {
+                    fresh_note_count: 1,
+                    ..
+                }
+            ),
+            "got {err:?}"
+        );
+        assert_ne!(
+            plan_spend(&grown, kind, amount, platform_version)
+                .expect("plans")
+                .digest,
+            plan.digest
+        );
+        // The same notes for another kind or amount are another plan.
+        let err = ensure_plan_holds(
+            &plan.digest,
+            kind,
+            2 * NOTE - 1,
+            plan.fee,
+            plan.total_input,
+            &same,
+        )
+        .expect_err("another amount");
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedPlanChanged { .. }
         ));
     }
 }
