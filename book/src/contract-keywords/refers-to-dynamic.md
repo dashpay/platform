@@ -60,7 +60,7 @@ The two come together: a declaration names its target in the schema or through t
 |---|---|---|
 | `name` | `"$any"`, a property name, or `"$self.<a string property of the referring document>"` | Which property may fill the slot: any property matching the rest; the one called this; or the one the referring document names in that property of its own. |
 | `type` | `"string"`, `"identifier"`, `"integer"`, `"boolean"`, or `"array"` with `"byteArray": true` | What the property holds. A byte array slot is not filled by an identifier, nor an identifier slot by a byte array. |
-| `maxBytes` | integer, 1 to 4294967295 | On a string or byte array slot: the property can never hold more bytes than this. A string's bound is its `maxBytes`, or four times its `maxLength`; a byte array's is its `maxItems`. A property declaring no bound meets none. |
+| `maxBytes` | integer, 1 to 4294967295 | On a string or byte array slot: the property can never hold more bytes than this. A string's bound is its `maxBytes` or four times its `maxLength`, the smaller of the two when it declares both; a byte array's is its `maxItems`. A property declaring no bound meets none. |
 | `distinctFrom` | a slot name, or a list of slot names | This slot is filled by a different property than each of them. Saying it on one side is enough. |
 
 A slot name is 1 to 64 letters, digits or underscores. A transient property fills nothing: it is never stored.
