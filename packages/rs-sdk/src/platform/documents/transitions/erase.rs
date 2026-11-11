@@ -211,7 +211,7 @@ impl DocumentEraseTransitionBuilder {
                     .document_base_state_transition
                     .default_current_version,
             );
-        if !matches!(base_feature_version, 0 | 1 | 2) {
+        if !matches!(base_feature_version, 0..=2) {
             return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionBuilder::sign".to_string(),
                 known_versions: vec![0, 1, 2],
