@@ -281,9 +281,7 @@ fn validate_document_type_references_v1(
             // A string or byte array property whose value its `findBy` reads in
             // place of an id: as `"."`, filling an index property holding the same
             // kind of value, or revealed into a computed key, a commitment judged
-            // when the document is created only. An unset one is not validated. In
-            // place in generation 0: only the protocol version 14 parser produces
-            // one
+            // when the document is created only. An unset one is not validated
             PropertyReference::Revealed(target) => {
                 let ReferenceHolder::Property(property_path) = holder else {
                     continue;
@@ -329,10 +327,7 @@ fn validate_document_type_references_v1(
                 // stands for the value in the errors; the create's structure
                 // validation refused a value it could not reveal, before any read. A
                 // value read as is has no hash to stand for it, so the errors carry
-                // an all-zero id beside its path. The writer is passed in place in
-                // generation 0, inert before protocol version 14: only meta-schema v3
-                // admits a computed key at all, and the `"$ownerId"` param that reads
-                // the writer
+                // an all-zero id beside its path
                 let (referenced_id, billed_key) = match hash_key {
                     Some((_, key)) => {
                         let Some(billed_key) = hash_lookup_key(
@@ -719,8 +714,7 @@ fn binds_a_changed_property(
 ) -> bool {
     // A lookup with a computed key is judged on a create only: nothing it reads can change,
     // and the commitment it found may be gone. Only a replace asks, which a document type
-    // whose documents are never replaced does not reach. In place in generation 0, reached
-    // from protocol version 14 only, the only version whose parser produces one
+    // whose documents are never replaced does not reach
     if reference_target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
@@ -765,8 +759,7 @@ fn binds_a_changed_property(
         // finds now being the target: an expression holding one is
         // re-validated on every replace through the walk below, and an
         // `ownerRefersTo` one gates every replace on the writer's document
-        // still existing. Reached from protocol version 14 only, the version
-        // whose parser produces it.
+        // still existing.
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => true,
         DocumentPropertyReferenceTarget::IdentityPublicKey {
@@ -804,19 +797,14 @@ fn binds_a_changed_property(
         // never bring a reference back and stay checked when the reference
         // is written, a create or a replace changing it. A reference the
         // owner requirement brings back is checked whole, as a writer
-        // gate's is. In place in generation 0, reached from protocol version
-        // 14 only: the document create and replace state validations that
-        // call this validation run at that version alone, and only its
-        // parser produces `contractRequirements`
+        // gate's is
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => writer_can_change && contract_requirements.owner.is_some(),
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => false,
-        // In place in generation 0, reached from protocol version 14 only,
-        // the only version whose parser produces an expression. A contract
-        // target is never an operand (the parser combines identity and
-        // document targets only), but the flag is passed down so an operand
-        // is judged as the same target alone
+        // A contract target is never an operand (the parser combines identity
+        // and document targets only), but the flag is passed down so an
+        // operand is judged as the same target alone
         DocumentPropertyReferenceTarget::AnyOf(operands)
         | DocumentPropertyReferenceTarget::AllOf(operands) => operands
             .operands()
@@ -887,11 +875,6 @@ struct RevealedValue<'a> {
 /// read is billed as it is made, those of the operands that failed included.
 /// The recursion is as deep as the expression, which registration keeps
 /// within `SystemLimits::max_reference_expression_depth`.
-///
-/// In place in generation 0, which every table selects: its callers, the
-/// document create and replace state validations, reach it from protocol
-/// version 14 only, and only that version's parser produces an expression, so
-/// every earlier write goes straight to the leaf check it always ran.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v1(
     contract: &DataContract,
@@ -1190,8 +1173,7 @@ fn validate_reference_target_v1(
                 )));
             };
             // A commitment is revealed once, by the create; nothing the lookup reads can
-            // change on a replace. In place in generation 0: only the protocol version 14
-            // parser produces a lookup judged on the create alone
+            // change on a replace
             if !is_create
                 && lookup.is_some_and(|lookup| {
                     lookup.is_checked_on_create_only(document_type.documents_mutable())
@@ -1551,8 +1533,7 @@ fn validate_reference_target_v1(
                     // Two typed arrays, which registration pairs with nothing
                     // else, are equal as lists: the same elements in the same
                     // order, each compared by value, a list either document
-                    // leaves out the empty one. In place in generation 0: a
-                    // pair of lists registers from protocol version 14 only
+                    // leaves out the empty one
                     let lists = typed_array_property(
                         referenced_document_type.flattened_properties(),
                         referenced_property,
@@ -1586,10 +1567,6 @@ fn validate_reference_target_v1(
                             // differing value would be.
                             (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
                         };
-                    // In place in generation 0, which every table selects: a
-                    // `where` only parses from protocol version
-                    // 14 (`apply_property_reference` 0), so before it no
-                    // document type carries a pair to reach this comparison
                     if !referring_value.same_scalar_data(&referenced_value) {
                         return Ok(mismatch());
                     }
@@ -1929,8 +1906,6 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// documents that are none can make a create cost more but never refuse it. A `found` or a
 /// candidate missing an ordered property, or a `found` missing `among`, are what registration
 /// rules out, so each is an internal error.
-///
-/// In place in generation 0: only the protocol version 14 parser produces a `chooseFirst`.
 #[allow(clippy::too_many_arguments)]
 fn validate_choose_first_v1(
     choose_first: &LookupChooseFirst,
@@ -2248,9 +2223,6 @@ impl RemovalRecord<'_> {
 /// record was read and billed by the caller. The list elements an entry
 /// comparing typed arrays reads are billed before it compares them
 /// ([`bill_where_list_elements`]), as against a document in state.
-///
-/// In place in generation 0: reached from protocol version 14 only, the only
-/// version whose parser produces a `moderatedDocument` reference.
 #[allow(clippy::too_many_arguments)]
 fn validate_pairs_against_removal(
     property_agreement: &BTreeMap<String, String>,
@@ -2448,10 +2420,6 @@ fn validate_key_id_reference_v1(
         // may add a property carrying this reference to such a type, so a
         // replace setting the key id of an old document names no identity,
         // and is refused as a key id set while its identity property is not.
-        // In place in generation 0, which every table selects: its callers,
-        // the document create and replace state validations, reach it from
-        // protocol version 14 only, the only version whose parser produces a
-        // key reference, so no earlier write gets here
         KeyReferenceIdentityProperty::CreatorId => match creator_id {
             Some(creator_id) => creator_id,
             None => {
