@@ -27,7 +27,8 @@ where
 {
     /// When a voter identity is updated the following events need to happen
     /// The old identity key is disabled (which might make the identity unusable)
-    /// A new identity is added with the new key, this new key is a non unique key.
+    /// Either a new identity is added with the new key, a non unique key, or the key of the
+    /// existing voter identity of the new voting address is re-enabled.
     ///
     /// Unlike version 0, when the voter identity of the new voting address already exists
     /// (the masternode returns to an address it used before), its keys are re-enabled on that
@@ -92,7 +93,7 @@ where
             keys_ids: old_voter_identity_key_ids,
         }));
 
-        // Part 2 : Create or Update Voting identity based on new key
+        // Create the voter identity of the new voting address, or re-enable its key
         let new_voter_identity = Self::create_voter_identity(
             &(pro_tx_hash.to_byte_array()),
             &new_voting_address,
@@ -112,14 +113,13 @@ where
             platform_version,
         )?;
 
-        // two possibilities
         if !new_voter_identity_key_ids.is_empty() {
-            // first is that the new voter key already existed
-            // if it is disabled re-enable it
+            // The masternode used the new voting address before, so its voter identity exists.
+            // Its key is re-enabled whether or not it is disabled.
 
             if new_voter_identity_key_ids.len() > 1 {
                 return Err(Error::Execution(ExecutionError::DriveIncoherence(
-                    "more than one masternode voter identity for an address and pro_tx_hash pair",
+                    "more than one key on the masternode voter identity for an address and pro_tx_hash pair",
                 )));
             }
 
@@ -127,7 +127,7 @@ where
                 identity_id = ?new_voter_identity.id(),
                 keys_ids = ?new_voter_identity_key_ids,
                 method = "update_voter_identity_v1",
-                "re-enable voter identity keys if they already exists and disabled"
+                "re-enable the keys of the existing voter identity"
             );
 
             drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
@@ -141,7 +141,6 @@ where
                 "create a new voter identity"
             );
 
-            // other is that the
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: new_voter_identity,
                 is_masternode_identity: true,

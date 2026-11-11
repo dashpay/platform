@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentInsertContestedMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 /// V5 is protocol version 15's document-method table. Relative to V4:
@@ -19,7 +20,11 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   beacon.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
-///   the insert's does, not as subtrees.
+///   the insert's does, not as subtrees, and under a summable index that layer and the deleted
+///   reference as references with sum items.
+/// * `insert.add_reference_for_index_level_for_contract_operations` is 1: an insert's estimate
+///   describes a summable index's entries for a value as references with sum items, not plain
+///   references.
 /// * `estimation_costs.stateless_delete_of_non_tree_for_costs` is 1: a delete's estimate prices
 ///   each height of the climb with the layer GroveDB deletes in there, not the one above it.
 /// * `update.update_document_for_contract_operations` is 2: when an update names a new owner,
@@ -44,8 +49,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.query
         },
         delete: DriveDocumentDeleteMethodVersions {
-            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
+            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references, with sum items under a summable index
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
+        },
+        insert: DriveDocumentInsertMethodVersions {
+            add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
+            ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
             stateless_delete_of_non_tree_for_costs: 1, // changed: each height gets the layer priced there
