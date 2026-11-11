@@ -2,7 +2,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference};
+use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllReferencesWithSumItem};
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
@@ -28,10 +28,13 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes the terminal reference.
     ///
-    /// v2 (protocol version 15) is v1, describing the `[0]` layer of a non-unique, contested or
-    /// null-field index for an estimate as the references it holds, keyed by document id, as the
-    /// insert walker does (`add_reference_for_index_level_for_contract_operations`). v1 describes
-    /// it as subtrees, so a batch that inserts a document under an index value and deletes
+    /// v2 (protocol version 15) is v1, describing for an estimate the references a delete
+    /// removes as the elements they are, as `add_reference_for_index_level_for_contract_operations`
+    /// 1 does: the `[0]` layer of a non-unique, contested or null-field index (its entries for
+    /// a value, keyed by document id) as references, not subtrees, and both that layer and the
+    /// deleted reference, in it or at a unique index's key `[0]`, as references with sum items
+    /// under a summable index, which GroveDB prices 10 bytes dearer per node. v1 describes the
+    /// layer as subtrees, so a batch that inserts a document under an index value and deletes
     /// another under the same one (a create consuming a document of its own type) described
     /// the layer two ways, and its estimate kept the cheaper subtree description.
     #[inline(always)]
@@ -107,6 +110,18 @@ impl Drive {
         }
 
         let document_type = document_and_contract_info.document_type;
+
+        // A reference the index stores, sized as GroveDB prices it: a `ReferenceWithSumItem`
+        // under a summable index, a plain `Reference` otherwise.
+        let reference_sizes = |key_size: u8| {
+            let reference_size = document_reference_size(document_type);
+            let flags_size = storage_flags.map(|s| s.serialized_size());
+            if index_type.summable.is_some() {
+                AllReferencesWithSumItem(key_size, reference_size, flags_size)
+            } else {
+                AllReference(key_size, reference_size, flags_size)
+            }
+        };
 
         // indexOnly terminal: the member key is the terminal property's
         // value and the stored element is a commitment `Item` (an
@@ -260,21 +275,13 @@ impl Drive {
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllReference(
-                            DEFAULT_HASH_SIZE_U8,
-                            document_reference_size(document_type),
-                            storage_flags.map(|s| s.serialized_size()),
-                        ),
+                        estimated_layer_sizes: reference_sizes(DEFAULT_HASH_SIZE_U8),
                     },
                 );
             }
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(
-                    DEFAULT_HASH_SIZE_U8,
-                    document_reference_size(document_type),
-                    storage_flags.map(|s| s.serialized_size()),
-                ),
+                reference_sizes(DEFAULT_HASH_SIZE_U8),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some(MaybeTree::NotTree),
@@ -299,11 +306,7 @@ impl Drive {
             )?;
         } else {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                AllReference(
-                    1,
-                    document_reference_size(document_type),
-                    storage_flags.map(|s| s.serialized_size()),
-                ),
+                reference_sizes(1),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some(MaybeTree::NotTree),

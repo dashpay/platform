@@ -76,7 +76,13 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
+    use crate::drive::document::fixture_contracts::small_sums;
+    use crate::util::batch::DocumentOperationType;
+    use crate::util::batch::DriveOperation::DocumentOperation;
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Getters;
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
@@ -1035,6 +1041,85 @@ mod tests {
                 platform_version.protocol_version
             );
         }
+    }
+
+    /// A tip's estimates through the batch a transition runs: the tip jar's three summable
+    /// indexes each keep a tip's entry for a value as a reference with a sum item, which GroveDB
+    /// prices 10 bytes dearer per node than a plain reference. From protocol version 15 the
+    /// create's and the delete's estimates describe each index's entries for the tip's value so,
+    /// 138,600 credits more per index than a plain reference description (the entries layer's 33
+    /// estimated nodes, 10 bytes each, at 420 credits a byte), and the delete reads each deleted
+    /// reference as the 10 bytes larger element it is, 200 credits more: 28,499,880 and
+    /// 27,754,220 with plain references.
+    #[test]
+    fn should_estimate_a_tip_with_its_summable_index_entries_sum_items() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("tip")
+            .expect("expected the tip document type");
+        let mut tip = document_type
+            .random_document(Some(5), platform_version)
+            .expect("expected a tip");
+        small_sums(&mut tip, document_type, 3);
+        let create = || {
+            vec![DocumentOperation(DocumentOperationType::AddDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &tip,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, [7; 32]))),
+                    )),
+                    owner_id: None,
+                },
+                contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeName("tip".to_string()),
+                override_document: false,
+            })]
+        };
+
+        let estimated_create = drive
+            .apply_drive_operations(
+                create(),
+                false,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to estimate the create");
+        assert_eq!(estimated_create.processing_fee, 28915680);
+
+        drive
+            .apply_drive_operations(
+                create(),
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to create the tip");
+        let estimated_delete = drive
+            .apply_drive_operations(
+                vec![DocumentOperation(DocumentOperationType::DeleteDocument {
+                    document_id: tip.id(),
+                    contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                    document_type_info: DocumentTypeInfo::DocumentTypeName("tip".to_string()),
+                })],
+                false,
+                &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
+                None,
+                platform_version,
+            )
+            .expect("expected to estimate the delete");
+        assert_eq!(estimated_delete.processing_fee, 28170620);
     }
 
     #[test]

@@ -127,6 +127,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::Document;
@@ -135,7 +136,7 @@ mod tests {
     use grovedb::batch::KeyInfoPath;
     use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
     use grovedb::EstimatedLayerInformation;
-    use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
+    use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem, AllSubtrees};
     use grovedb::EstimatedSumTrees::NoSumTrees;
     use grovedb::TreeType;
 
@@ -253,6 +254,47 @@ mod tests {
                 layer,
                 EstimatedLayerInformation {
                     tree_type: TreeType::NormalTree,
+                    estimated_layer_count: PotentiallyAtMaxElements,
+                    estimated_layer_sizes: entries,
+                },
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// Under the tip jar's summable `byRecipient` index the entries are references with sum
+    /// items, which GroveDB prices 10 bytes dearer per node than plain references: a delete's
+    /// estimate describes them so from protocol version 15, and as subtrees at protocol version
+    /// 14.
+    #[test]
+    fn should_describe_a_summable_index_value_entries_with_their_sum_items_from_protocol_version_15(
+    ) {
+        for (platform_version, entries) in [
+            (
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                AllSubtrees(32, NoSumTrees, None),
+            ),
+            (
+                PlatformVersion::latest(),
+                AllReferencesWithSumItem(32, 42, None),
+            ),
+        ] {
+            let layer = entries_layer(
+                "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
+                "tip",
+                &["recipient"],
+                |document_type| {
+                    document_type
+                        .random_document(Some(5), platform_version)
+                        .expect("expected a tip")
+                },
+                platform_version,
+            );
+            assert_eq!(
+                layer,
+                EstimatedLayerInformation {
+                    tree_type: TreeType::SumTree,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: entries,
                 },
