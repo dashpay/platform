@@ -1436,6 +1436,41 @@ impl PlatformWallet {
             .map(|ks| ks.default_address.to_raw_address_bytes())
     }
 
+    /// A fresh Orchard payment address for `account` at a random
+    /// diversifier index, as the raw 43-byte representation
+    /// ([`AccountViewingKeys::fresh_address`](super::shielded::AccountViewingKeys::fresh_address)).
+    /// `Ok(None)` if the shielded sub-wallet hasn't been bound or
+    /// `account` isn't bound on it. Writes no state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the OS CSPRNG fails.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_fresh_address(
+        &self,
+        account: u32,
+    ) -> Result<Option<[u8; 43]>, PlatformWalletError> {
+        let guard = self.shielded_keys.read().await;
+        let Some(views) = guard.as_ref().and_then(|keys| keys.get(&account)) else {
+            return Ok(None);
+        };
+        Ok(Some(views.fresh_address()?.to_raw_address_bytes()))
+    }
+
+    /// Whether the raw `recipient` bytes are one of `account`'s own
+    /// Orchard addresses, at any diversifier index — the same test the
+    /// scan classifies sends by. A malformed recipient is `Some(false)`.
+    /// `None` if the shielded sub-wallet hasn't been bound or `account`
+    /// isn't bound on it.
+    #[cfg(feature = "shielded")]
+    pub async fn is_own_shielded_address(&self, account: u32, recipient: &[u8]) -> Option<bool> {
+        let guard = self.shielded_keys.read().await;
+        guard
+            .as_ref()
+            .and_then(|keys| keys.get(&account))
+            .map(|views| views.is_own_recipient(recipient))
+    }
+
     /// Per-account default Orchard payment addresses (raw 43 bytes).
     #[cfg(feature = "shielded")]
     pub async fn shielded_default_addresses(&self) -> std::collections::BTreeMap<u32, [u8; 43]> {

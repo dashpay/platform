@@ -222,13 +222,130 @@
         "description": "The question, in one line",
         "position": 0
       },
-      "description": {
+      "descriptionId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "moderatedDocument",
+          "contractId": "$self.descriptionContractId",
+          "documentType": "$self.descriptionDocumentType",
+          "documentTypeRequirements": {
+            "when": {
+              "allOf": [
+                {
+                  "contains": [
+                    "$electedAbilities",
+                    {
+                      "const": "deleteDocuments"
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "absent": "$moderatorAbilities.deleteWithin"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "present": "$moderatorAbilities.deleteSettled"
+                        },
+                        {
+                          "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "body": {
+                "name": "$any",
+                "type": "string",
+                "when": {
+                  "allOf": [
+                    {
+                      "not": {
+                        "contains": [
+                          "$moderatorAbilities.deleteKeepsFields",
+                          "$property"
+                        ]
+                      }
+                    },
+                    {
+                      "not": {
+                        "contains": [
+                          "$moderatorAbilities.changeFields",
+                          "$property"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              "bodyBytes": {
+                "name": "$any",
+                "type": "array",
+                "byteArray": true,
+                "when": {
+                  "allOf": [
+                    {
+                      "not": {
+                        "contains": [
+                          "$moderatorAbilities.deleteKeepsFields",
+                          "$property"
+                        ]
+                      }
+                    },
+                    {
+                      "not": {
+                        "contains": [
+                          "$moderatorAbilities.changeFields",
+                          "$property"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "require": {
+              "anyOf": [
+                "body",
+                "bodyBytes"
+              ]
+            }
+          }
+        },
+        "description": "The document saying what is being decided, when the proposal points at one: a document of a moderated type its contract's elected team may delete, at any time after it is written, holding text its author wrote that the removal takes away with it. Left out, with the two properties naming where it lives, by a proposal described at its url",
+        "position": 1
+      },
+      "descriptionContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "refersTo": {
+          "type": "contract",
+          "contractRequirements": {
+            "moderation": "elected",
+            "ownerProtected": false
+          }
+        },
+        "description": "The contract the description document lives in, one whose moderators the masternodes elect and whose owner they may moderate like anyone. Given with descriptionId, and only with it",
+        "position": 2
+      },
+      "descriptionDocumentType": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 4096,
-        "maxBytes": 4096,
-        "description": "What is being decided",
-        "position": 1
+        "maxLength": 64,
+        "description": "The document type of the description document. Given with descriptionId, and only with it",
+        "position": 3
       },
       "url": {
         "type": "string",
@@ -236,20 +353,19 @@
         "minLength": 1,
         "maxLength": 512,
         "maxBytes": 512,
-        "description": "Where the proposal is discussed",
-        "position": 2
+        "description": "Where what is being decided is described, for a proposal that points at no description document; where it is discussed, for one that does. Required when descriptionId is left out",
+        "position": 4
       },
       "open": {
         "type": "boolean",
         "description": "Whether anyone may enter choices; only the proposal's owner may when it is false",
-        "position": 3
+        "position": 5
       }
     },
     "required": [
       "$createdAt",
       "$updatedAt",
       "title",
-      "description",
       "open"
     ],
     "immutable": [
@@ -269,7 +385,35 @@
         }
       },
       {
-        "property": "description",
+        "property": "descriptionId",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            7200000
+          ]
+        }
+      },
+      {
+        "property": "descriptionContractId",
+        "when": {
+          "greaterThan": [
+            {
+              "subtract": [
+                "$updatedAt",
+                "$createdAt"
+              ]
+            },
+            7200000
+          ]
+        }
+      },
+      {
+        "property": "descriptionDocumentType",
         "when": {
           "greaterThan": [
             {
@@ -297,8 +441,35 @@
         }
       }
     ],
+    "propertyConstraints": {
+      "describedByADocumentOrAUrl": {
+        "anyOf": [
+          {
+            "present": "descriptionId"
+          },
+          {
+            "present": "url"
+          }
+        ]
+      },
+      "descriptionDocumentNamedWhole": {
+        "in": [
+          {
+            "countPresent": [
+              "descriptionId",
+              "descriptionContractId",
+              "descriptionDocumentType"
+            ]
+          },
+          [
+            0,
+            3
+          ]
+        ]
+      }
+    },
     "additionalProperties": false,
-    "description": "A question put to the masternodes whose answers are the choices entered for it. Anyone may enter choices when it is open, and only its owner when it is not. Its title, description and url may be edited for two hours after it is created; whether it is open never changes, and it is never deleted"
+    "description": "A question put to the masternodes whose answers are the choices entered for it. What is being decided is said in one of two places, or both: a document the proposal points at, of a moderated type of a contract whose moderators the masternodes elect, so that they can take it down; or a url, which nothing on chain moderates. Anyone may enter choices when it is open, and only its owner when it is not. Its title, url and the description it points at may be changed for two hours after it is created; whether it is open never changes, and it is never deleted"
   },
   "choice": {
     "type": "object",

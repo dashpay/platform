@@ -150,7 +150,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    pattern. This accepts a value that parses but that the engine does not
 ///    compile, and one that names a Unicode property the engine holds no
 ///    character class for; a value that is not valid regular-expression syntax
-///    is still refused. A document type whose schema the validation
+///    is still refused. A schema's `pattern` is checked for its syntax when
+///    the validation schema is built, and compiled the first time a value
+///    reaches it. A type registered through protocol v14 can hold a pattern
+///    that parses but does not compile only where a `$ref` alone reaches it,
+///    in a value no registration check read as a schema: a string reaching it
+///    is refused with a `format` violation naming it as a `regex`, as protocol
+///    v14 refuses it, and a `contains` element reaching it matches nothing.
+///    Protocol v14 refused every value reaching the schema holding such a
+///    pattern; a value that is not a string, which no pattern applies to, is
+///    now checked against the rest of that schema alone.
+///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
@@ -173,7 +183,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
-///    has its documents checked natively (note 6). It also selects
+///    has its documents checked natively (note 6), and compiles every
+///    `pattern` of the type, one only a `$ref` reaches included, refusing one
+///    that does not compile under the `regex` crate's default size limit
+///    (`InvalidContractStructure`). It also selects
 ///    `validate_max_depth` 2, the depth and cycle check run at registration and
 ///    update, which reads a `$ref` pointer by RFC 6901, as the validators do,
 ///    where generation 1 read it as a `.`-separated path: so a `$ref` the two
@@ -216,6 +229,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    no state validation, hold a contract update to it through
 ///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
 ///    time fields at their widest: a bound on what a block measures.
+///    Measuring the compiled bytes builds each type's validation schema, which
+///    checks every `pattern`'s syntax and compiles none (note 6).
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 ///
@@ -554,6 +569,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     profile create and replace triggers, which made the identity, writer and type byte
 ///     checks and refused with `DataTriggerConditionError` (40500). Protocol v14 keeps
 ///     DashPay v2 and bindings 2, and earlier versions the contract and bindings they had.
+///     DashPay v3 also gives a `contactRequest` one property, the optional
+///     `encryptedShieldedAddress`, last in position: the sender's shielded payment address
+///     for this contact (43 bytes) under the same `encryptedFor` as `encryptedPublicKey`.
+///     Consensus accepts 64 or 80 bytes, an IV plus three or four AES blocks, and refuses
+///     every other length from 64 to 80 (`InvalidEncryptedPropertyShapeError`, 10420).
+///     A 43-byte address encrypts to 64 bytes, which wallets write; they keep 80 for a
+///     later encoding, a convention consensus does not check. A contact request stored
+///     under v1 or v2 ends before the property and reads back without it.
 ///     DashPay v3 also declares `privateContactRequest`, a private type (note 13) of 589-byte
 ///     entries whose properties describe a contact request only its recipient can read:
 ///     `accountReference`, the DIP-15 compact `extendedPublicKey` (69 bytes), and the optional
@@ -732,8 +755,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     backfilled); a property it does not hold for does not fill the slot. Judging the
 ///     named type is billed before it is judged, `requirement_credits_per_comparison`
 ///     (100, added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`, which nothing read for
-///     it before) for each property a slot tries and each node of its `when` for it. The native schema check of note 7 admits the keys and meta-schema v3 refuses
-///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     it before) for each property a slot tries and each node of its `when` for it.
+///     `documentTypeRequirements` takes a `when` of its own, the same condition judged
+///     once for the named type as a whole, reading no `$property`; a `when` may also look
+///     into `$electedAbilities` (the abilities the type's contract gives its elected
+///     moderation team on the type) and test with `present` or `absent` whether the type
+///     declares `moderatorAbilities.deleteWithin` or `moderatorAbilities.deleteSettled`,
+///     or whether that rule sets `approversPredateDocument`. The native schema check of
+///     note 7 admits the keys and meta-schema v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
@@ -750,8 +779,12 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
 ///     moderated one a replace keeps, was removed on the record. A replace checks the
 ///     reference again when its value or a property it reads the target from changed.
-///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
-///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
+///     The decision proposals contract's `multipleChoiceProposal` type uses it for a
+///     description hosted on Platform: a moderated document, of a contract declaring elected
+///     moderation, whose text a moderator's removal takes away (a proposal may give a url
+///     instead, or both). Protocol v14 and earlier keep
+///     `apply_property_reference` 0, which does not read the keys, and
+///     `document_reference_validation` 0, which no dynamic reference reaches.
 ///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
 ///     reference to a document whose `contractId` is written `"$self."`, or a `type` listing
 ///     kinds), so a contract stored before 15 with `"$self."` keys on any other declaration
@@ -801,7 +834,40 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     uses it for the choices of a multiple choice proposal. Protocol v14 and earlier keep
 ///     `parse_contested_documents_resolution` `None` and refuse the value.
 ///
-/// 38. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
+///
+/// 38. **Removing the contested resource votes of a masternode that left the list**:
+///     `remove_all_votes_given_by_identities` 1 (`DRIVE_VOTE_METHOD_VERSIONS_V4`, note 10)
+///     removes every contested resource vote reference of the masternode, and deletes the
+///     vote a reference points at while that vote is stored, once when two references point
+///     at it. Generation 0 deletes at the path of every reference. Protocol v14 and earlier
+///     keep generation 0.
+///
+/// 39. **The contenders of one contest name one poll**: a contest is stored at the path of
+///     its index keys, and its poll is named by an id hashed from its index values.
+///     `canonical_contested_index_values` 1 (`CONTRACT_VERSIONS_V7`) writes every index
+///     value of a contested create the one way its property's type keys it: an integer in
+///     any integer form as the type's own integer, a date as a `u64`, an integer or a float
+///     of a float property as a float, bytes in any form as bytes (none as a missing
+///     value), `"\0"` as the empty string, and an identifier as generation 0 writes it. It
+///     is the value a query of the contest decodes from the key. Generation 0 writes only
+///     identifiers one way, so two contenders sending an integer as `U64(5)` and `U8(5)`
+///     name two polls of one contest. A masternode vote names its poll as sent, at every
+///     version, and is refused unless a prefunded balance is held under that poll
+///     (`PrefundedSpecializedBalanceNotFoundError`, 40401), so a voter sends the values as
+///     the contest query returns them. A contest under way keeps the poll it was opened
+///     under, which names its prefunded balance and its end date: a contender joining a
+///     contest opened in an earlier epoch reads the protocol version that epoch ran
+///     (`fetch_contest_opening_protocol_version` 0, `DRIVE_VOTE_METHOD_VERSIONS_V4`, `None`
+///     before) and writes its index values as that version does, so a contest opened at
+///     protocol version 14 is named as generation 0 names it until it ends. The read is
+///     billed, and made only for a create whose values this version does not write as sent.
+///     Document create advanced structure validation 2
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) compares the poll a create
+///     names with the one its document type expects by contract, document type and index
+///     name, where generation 1, which protocol v14 keeps, compares them whole. Protocol
+///     v14 keeps generation 0 of `canonical_contested_index_values`.
+///
+/// 40. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
 ///     `validate_schema_patterns` 0. Contract registration and update refuse a contract whose
 ///     document schemas and `$defs` hold more than 32 patterns
 ///     (`max_contract_schema_patterns`: every string under a `pattern` key and every
@@ -839,7 +905,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 38)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 40)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
