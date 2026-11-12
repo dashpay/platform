@@ -143,8 +143,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    `validate_document` 2, which checks a document against its type's typed
 ///    validation schema (`document_type::schema::validation_schema`, built by
 ///    `validation_schema` 0) instead of the `jsonschema` crate, reaching the same verdicts and error codes but for
-///    one rule of its own: in a `uniqueItems` list, `0.0` and `-0.0` are one
-///    value however long the list. A document type whose schema the validation
+///    two rules of its own. First, in a `uniqueItems` list, `0.0` and `-0.0` are
+///    one value however long the list. Second, a `format: regex` value is
+///    checked for its syntax alone: whether it parses as a regular expression,
+///    not whether it compiles, since no consensus path uses the value as a
+///    pattern. This accepts a value that parses but that the engine does not
+///    compile, and one that names a Unicode property the engine holds no
+///    character class for; a value that is not valid regular-expression syntax
+///    is still refused. A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
@@ -167,9 +173,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
-///    has its documents checked natively (note 6). The parser is generation 3
-///    at both versions, and loading a stored contract runs no schema check.
-///    Protocol v14 and earlier keep `check_document_type_schema` 0.
+///    has its documents checked natively (note 6). It also selects
+///    `validate_max_depth` 2, the depth and cycle check run at registration and
+///    update, which reads a `$ref` pointer by RFC 6901, as the validators do,
+///    where generation 1 read it as a `.`-separated path: so a `$ref` the two
+///    readings resolve differently, through a key holding a `.`, a `~0`/`~1`
+///    escape or a percent escape, is refused here
+///    (`DataContractMaxDepthExceedError` or `InvalidJsonSchemaRefError`), the
+///    check now seeing the schema the validators walk; a `$ref` pointer holding
+///    none of those resolves and is measured as before. The parser is generation
+///    3 at both versions, and loading a stored contract runs no schema check.
+///    Protocol v14 and earlier keep `check_document_type_schema` 0 and
+///    `validate_max_depth` 1.
 ///
 /// 8. **Contracts stored compiled**: `CONTRACT_VERSIONS_V7` selects
 ///    `contract_storage_serialization_version` 2: Drive stores a contract it creates or

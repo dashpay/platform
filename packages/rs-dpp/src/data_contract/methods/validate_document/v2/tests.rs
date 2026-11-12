@@ -532,3 +532,61 @@ fn should_pass_a_client_document_leaving_out_required_state_generated_decimals()
     let in_consensus = errors(platform_value!({ "tokenId": token }), &consensus);
     assert!(missing(&in_consensus, "decimals"), "{in_consensus:?}");
 }
+
+/// Validation errors for a document `{ "r": value }` against a type whose `r` is a
+/// `format: regex` string, at `platform_version`. The contract is registered then read anew,
+/// so the protocol version decides which validator checks the value.
+fn format_regex_errors(value: &str, platform_version: &PlatformVersion) -> Vec<ConsensusError> {
+    let contract = item_contract(platform_value!({
+        "r": { "type": "string", "format": "regex", "maxLength": 20, "position": 0 },
+    }));
+    document_errors(
+        &read_anew(&contract),
+        platform_value!({ "r": value }),
+        platform_version,
+    )
+}
+
+#[test]
+fn should_accept_a_format_regex_value_that_parses_but_does_not_compile_at_protocol_version_15() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    // A value that parses as a regular expression but that the engine does not compile.
+    let value = r"\pN{3000}";
+    // Protocol version 15 checks the syntax only, so it accepts the value.
+    assert!(format_regex_errors(value, latest).is_empty());
+    // Protocol version 14 compiles the value, so it refuses it.
+    assert!(!format_regex_errors(value, protocol_version_14).is_empty());
+}
+
+#[test]
+fn should_accept_a_format_regex_value_with_an_unknown_unicode_property_at_protocol_version_15() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    // A value that parses as a regular expression but names a Unicode property the engine
+    // holds no character class for.
+    let value = r"\p{Foobar}";
+    // Protocol version 15 reads the syntax alone, so it accepts the value.
+    assert!(format_regex_errors(value, latest).is_empty());
+    // Protocol version 14 translates the parsed value, so it refuses the unknown property.
+    assert!(!format_regex_errors(value, protocol_version_14).is_empty());
+}
+
+#[test]
+fn should_refuse_a_format_regex_value_with_a_syntax_error_at_both_protocol_versions() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    // An unbalanced group is not valid regular expression syntax.
+    let value = "(";
+    assert!(!format_regex_errors(value, latest).is_empty());
+    assert!(!format_regex_errors(value, protocol_version_14).is_empty());
+}
+
+#[test]
+fn should_accept_an_ordinary_format_regex_value_at_both_protocol_versions() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let value = "^[a-z]+$";
+    assert!(format_regex_errors(value, latest).is_empty());
+    assert!(format_regex_errors(value, protocol_version_14).is_empty());
+}

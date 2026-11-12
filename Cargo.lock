@@ -2418,6 +2418,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.8.6",
  "regex",
+ "regex-syntax",
  "rust_decimal",
  "rust_decimal_macros",
  "secp256k1 0.33.1",
