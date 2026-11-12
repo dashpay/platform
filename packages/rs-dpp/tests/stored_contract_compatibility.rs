@@ -408,6 +408,14 @@ fn should_store_every_fixture_contract_at_protocol_version_15_in_the_committed_b
              ones\n\n{CHANGED}",
             line.contract
         );
+        assert!(
+            line.bytes.is_some() == committed_line.bytes.is_some(),
+            "{}: kept whole in the fixture: {}, as the code selects the contracts kept whole: \
+             {}\n\n{CHANGED}",
+            line.contract,
+            committed_line.bytes.is_some(),
+            line.bytes.is_some()
+        );
     }
 }
 
@@ -444,15 +452,20 @@ fn should_read_back_the_committed_bytes_as_the_contract_built_from_its_schemas()
             "{contract}: its committed bytes read back as another contract than its schemas \
              build\n\n{CHANGED}"
         );
-        // What document type equality leaves out: the typed validation schema
+        // What document type equality leaves out: the typed validation schema, which every
+        // document type of a contract kept whole has
         for name in built.document_types().keys() {
+            let validation_schema_of = |of: &DataContract| {
+                of.document_type_validation_schema(name, platform_version)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{contract}: document type {name} has no validation schema: \
+                             {error}\n\n{CHANGED}"
+                        )
+                    })
+            };
             assert!(
-                read_back
-                    .document_type_validation_schema(name, platform_version)
-                    .ok()
-                    == built
-                        .document_type_validation_schema(name, platform_version)
-                        .ok(),
+                validation_schema_of(&read_back) == validation_schema_of(built),
                 "{contract}: document type {name} reads back with another validation schema \
                  than its schema builds\n\n{CHANGED}"
             );
