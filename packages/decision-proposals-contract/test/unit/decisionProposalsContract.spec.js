@@ -250,11 +250,37 @@ describe('Decision Proposals Contract', () => {
       expect(validateType('multipleChoiceProposal', await rawQuestion()).isValid()).to.be.true();
     });
 
-    it('should not need a url', async () => {
+    it('should not need a url when it points at a description document', async () => {
       const raw = await rawQuestion();
       delete raw.url;
 
       expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
+    });
+
+    it('should not need a description document when it gives a url', async () => {
+      const raw = await rawQuestion();
+      delete raw.descriptionId;
+      delete raw.descriptionContractId;
+      delete raw.descriptionDocumentType;
+
+      expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
+    });
+
+    it('should be described by a document, a url or both, the document named whole', () => {
+      // Judged when a proposal is written, not by the JSON Schema of its type
+      const { propertyConstraints } = decisionProposalsContractDocumentsSchema.multipleChoiceProposal;
+
+      expect(propertyConstraints).to.deep.equal({
+        describedByADocumentOrAUrl: {
+          anyOf: [{ present: 'descriptionId' }, { present: 'url' }],
+        },
+        descriptionDocumentNamedWhole: {
+          in: [
+            { countPresent: ['descriptionId', 'descriptionContractId', 'descriptionDocumentType'] },
+            [0, 3],
+          ],
+        },
+      });
     });
 
     it('should keep its text and its description editable for two hours, every version, and never be deleted', () => {
@@ -368,9 +394,6 @@ describe('Decision Proposals Contract', () => {
 
     [
       'title',
-      'descriptionId',
-      'descriptionContractId',
-      'descriptionDocumentType',
       'open',
     ].forEach((property) => {
       it(`should require ${property}`, async () => {

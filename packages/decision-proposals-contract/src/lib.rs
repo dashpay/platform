@@ -224,9 +224,9 @@ mod tests {
                 multiple_choice_proposal::properties::OPEN,
             ])
         );
-        // The question holds no description of its own: it points at a document of a
-        // moderated type, of the contract and the type it names, holding a string or bytes
-        // that a moderator's removal takes away and that its author writes
+        // The question holds no description of its own. When it points at one, it is a
+        // document of a moderated type, of the contract and the type it names, holding a
+        // string or bytes that a moderator's removal takes away and that its author writes
         let taken_with_the_document = serde_json::json!({
             "allOf": [
                 { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
@@ -294,13 +294,38 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect();
+        // A description document is one of two ways to say what is being decided, so none
+        // of the three properties naming it is required, and neither is the url
         for property in [
             multiple_choice_proposal::properties::DESCRIPTION_ID,
             multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
             multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+            multiple_choice_proposal::properties::URL,
         ] {
-            assert!(required.contains(&property), "{property} is required");
+            assert!(!required.contains(&property), "{property} is not required");
         }
+        // A proposal gives one of the two or both, and names a description document whole
+        assert_eq!(
+            question["propertyConstraints"],
+            serde_json::json!({
+                multiple_choice_proposal::rules::DESCRIBED_BY_A_DOCUMENT_OR_A_URL: {
+                    "anyOf": [
+                        { "present": multiple_choice_proposal::properties::DESCRIPTION_ID },
+                        { "present": multiple_choice_proposal::properties::URL }
+                    ]
+                },
+                multiple_choice_proposal::rules::DESCRIPTION_DOCUMENT_NAMED_WHOLE: {
+                    "in": [
+                        { "countPresent": [
+                            multiple_choice_proposal::properties::DESCRIPTION_ID,
+                            multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+                            multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE
+                        ] },
+                        [0, 3]
+                    ]
+                }
+            })
+        );
         // Every question says whether it is open, for good
         assert_eq!(
             question["properties"][multiple_choice_proposal::properties::OPEN]["type"],
