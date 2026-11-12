@@ -157,6 +157,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    in a value no registration check read as a schema: a string reaching it
 ///    is refused with a `format` violation naming it as a `regex`, as protocol
 ///    v14 refuses it, and a `contains` element reaching it matches nothing.
+///    Protocol v14 refused every value reaching the schema holding such a
+///    pattern; a value that is not a string, which no pattern applies to, is
+///    now checked against the rest of that schema alone.
 ///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the

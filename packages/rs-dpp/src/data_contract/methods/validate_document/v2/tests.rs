@@ -883,6 +883,49 @@ fn should_refuse_only_where_a_document_reaches_a_pattern_no_registration_compile
     }
 }
 
+/// A `pattern` applies to strings alone, so a value that is not a string never reaches one.
+/// Through protocol version 14 the JSON Schema validator compiled the schema a `$ref` reaches
+/// before checking any value against it, and so refused every value reaching a schema holding
+/// a pattern that does not compile. From protocol version 15 a value that is not a string is
+/// checked against the rest of that schema alone: an integer element meets a `contains`
+/// whose schema holds nothing but such a pattern, where protocol version 14 found no match.
+#[test]
+fn should_match_a_contains_element_no_pattern_applies_to_where_protocol_version_14_did_not() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let registered = item_contract_registered_at(
+        platform_value!({
+            "title": {
+                "type": "string",
+                "maxLength": 63,
+                "position": 0,
+                "const": { "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT },
+            },
+            "numbers": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "maxItems": 3,
+                "contains": { "$ref": "#/properties/title/const" },
+                "position": 1,
+            },
+        }),
+        protocol_version_14,
+    )
+    .expect("expected protocol version 14 to register the type");
+    let at_14 = read_at(&registered, protocol_version_14, protocol_version_14);
+    let at_15 = read_at(&registered, protocol_version_14, latest);
+    let stored = stored_and_read_back(&at_15);
+
+    let document = platform_value!({ "numbers": [1] });
+    assert_eq!(
+        violated_keyword(&at_14, document.clone(), protocol_version_14).as_deref(),
+        Some("contains")
+    );
+    assert_eq!(violated_keyword(&at_15, document.clone(), latest), None);
+    assert_eq!(violated_keyword(&stored, document, latest), None);
+    assert_eq!(attempted_patterns(&at_15), Some(0));
+}
+
 /// A pattern that does not parse, in the same place, still leaves the type without a
 /// validation schema at protocol version 15: the builder reads every pattern's syntax, so
 /// every document of the type is refused, where protocol version 14 accepted one that never
