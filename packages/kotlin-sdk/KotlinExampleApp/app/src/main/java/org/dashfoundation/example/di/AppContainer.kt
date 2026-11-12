@@ -153,6 +153,8 @@ class AppContainer(private val context: Context) {
             network = sdk.network,
             loadWallets = {
                 val activatedManager = walletManagerStore.activate(sdk.network, sdk)
+                // The manager now serves the SDK its SPV quorum keys.
+                appState.refreshQuorumSource()
                 // Open the shielded store before any wallet is loaded or
                 // created: this app's persister keeps the private contact
                 // request scan state, so Rust holds every wallet published
@@ -199,6 +201,9 @@ class AppContainer(private val context: Context) {
         spvOverlayJob?.cancel()
         spvOverlayJob = applicationScope.launch {
             publisher.progress.collect { p ->
+                // In Auto the SDK's quorum source follows SPV readiness
+                // (← QuorumSourceRefresh in SwiftExampleAppApp.swift).
+                appState.refreshQuorumSource()
                 syncOverlayState.publish(
                     org.dashfoundation.example.state.SpvProgress(
                         phaseTitle = p.phaseTitle,

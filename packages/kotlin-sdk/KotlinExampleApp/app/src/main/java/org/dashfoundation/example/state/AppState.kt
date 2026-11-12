@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,6 +76,41 @@ class AppState(
     private val _rebindTick = MutableStateFlow(0)
     val walletScopedServicesRebindTick: StateFlow<Int> = _rebindTick.asStateFlow()
 
+    /** Which quorum source proof verification uses — port of the Swift `AppState.QuorumMode`. */
+    enum class QuorumMode(val rawValue: String, val label: String, val sdkMode: Sdk.QuorumMode) {
+        /** SPV once its masternode list is synced, trusted before that and for any key SPV cannot serve. */
+        AUTO("auto", "Auto", Sdk.QuorumMode.AUTO),
+
+        /** SPV only; proofs fail closed whenever SPV is not synced. */
+        SPV("spv", "SPV", Sdk.QuorumMode.SPV),
+
+        /** The trusted HTTP quorum service only. */
+        TRUSTED("trusted", "Trusted", Sdk.QuorumMode.TRUSTED);
+
+        companion object {
+            fun fromRawValue(rawValue: String): QuorumMode? =
+                entries.firstOrNull { it.rawValue == rawValue }
+        }
+    }
+
+    /**
+     * The quorum source the user picked — port of the Swift
+     * `AppState.quorumMode`, kept in DataStore under its UserDefaults key and
+     * raw values. Applied to every SDK [initializeSdk] builds before it is
+     * published, and to the current SDK by [setQuorumMode]. This app has one
+     * SDK at a time, so that reaches every SDK it built.
+     */
+    private val _quorumMode = MutableStateFlow(QuorumMode.AUTO)
+    val quorumMode: StateFlow<QuorumMode> = _quorumMode.asStateFlow()
+
+    /**
+     * The source the current SDK asks first for quorum keys — port of the
+     * Swift `AppState.quorumSource`. Drives the settings indicator; it can
+     * lag [quorumMode] while SPV is not synced.
+     */
+    private val _quorumSource = MutableStateFlow(Sdk.QuorumSource.TRUSTED)
+    val quorumSource: StateFlow<Sdk.QuorumSource> = _quorumSource.asStateFlow()
+
     /** Restore persisted preferences; called once from bootstrap. */
     suspend fun restorePreferences() {
         val prefs = dataStore.data.first()
@@ -84,6 +120,7 @@ class AppState(
         _useDockerSetup.value = prefs[KEY_DOCKER] ?: false
         _useLocalhostCore.value = prefs[KEY_USE_LOCAL_CORE] ?: false
         _localCorePeers.value = prefs[KEY_LOCAL_CORE_PEERS] ?: ""
+        prefs[KEY_QUORUM_MODE]?.let { QuorumMode.fromRawValue(it) }?.let { _quorumMode.value = it }
     }
 
     /**
@@ -105,9 +142,20 @@ class AppState(
                     quorumUrl = quorumUrl,
                     useDockerSetup = _useDockerSetup.value,
                 ),
+                Sdk.ContextProviderKind.ADAPTIVE,
             )
+            // Apply the picked mode before anything can verify a proof with
+            // this SDK (Swift `AppState.makeSdk`): built in Auto and switched
+            // later, it would take trusted keys in between.
+            try {
+                newSdk.setQuorumMode(_quorumMode.value.sdkMode)
+            } catch (e: Exception) {
+                newSdk.closeSuspending()
+                throw e
+            }
             val old = _sdk.value
             _sdk.value = newSdk
+            refreshQuorumSource()
             // Eagerly learn the network's protocol version (iOS
             // `refreshProtocolVersion(for:)` parity): reset first so a
             // network switch never carries the previous network's
@@ -161,6 +209,44 @@ class AppState(
         _currentNetwork.value = network
     }
 
+    /**
+     * Pick the quorum source — port of the Swift `AppState.quorumMode`
+     * `didSet`: persist it, apply it to the current SDK and refresh the
+     * indicator. A refusal is reported through [errorMessage].
+     */
+    suspend fun setQuorumMode(mode: QuorumMode) {
+        _quorumMode.value = mode
+        dataStore.edit { it[KEY_QUORUM_MODE] = mode.rawValue }
+        val sdk = _sdk.value ?: return
+        try {
+            sdk.setQuorumMode(mode.sdkMode)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _errorMessage.value = "Failed to apply quorum mode: ${e.message}"
+        }
+        refreshQuorumSource()
+    }
+
+    /**
+     * Read the current SDK's quorum source into [quorumSource] — port of
+     * the Swift `AppState.refreshQuorumSource`. In Auto the adaptive
+     * provider follows SPV readiness by itself, so SPV progress needs only
+     * this refresh, not a mode change. An SDK a rebuild closed meanwhile is
+     * skipped: the rebuild refreshes for its replacement.
+     */
+    suspend fun refreshQuorumSource() {
+        val sdk = _sdk.value ?: return
+        val source = try {
+            sdk.quorumSource()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IllegalStateException) {
+            return
+        }
+        if (_sdk.value === sdk) _quorumSource.value = source
+    }
+
     fun setUseDockerSetup(enabled: Boolean) {
         _useDockerSetup.value = enabled
         scope.launch { dataStore.edit { it[KEY_DOCKER] = enabled } }
@@ -206,5 +292,6 @@ class AppState(
         // Verbatim iOS UserDefaults key names (OptionsView.swift).
         val KEY_USE_LOCAL_CORE = booleanPreferencesKey("useLocalhostCore")
         val KEY_LOCAL_CORE_PEERS = stringPreferencesKey("localCorePeers")
+        val KEY_QUORUM_MODE = stringPreferencesKey("quorumMode")
     }
 }
