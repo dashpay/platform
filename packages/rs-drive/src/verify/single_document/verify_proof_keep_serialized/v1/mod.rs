@@ -64,6 +64,8 @@ impl SingleDocumentDriveQuery {
 
 #[cfg(test)]
 mod tests {
+    mod temporal;
+
     use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
@@ -81,7 +83,9 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
+    use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value::Value;
@@ -110,6 +114,39 @@ mod tests {
             None::<fn(&mut DataContract)>,
             None,
             Some(platform_version),
+        );
+        (drive, contract)
+    }
+
+    fn drive_with_history_domain() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = setup_contract(
+            &drive,
+            DPNS,
+            None,
+            None,
+            Some(|contract: &mut DataContract| {
+                let mut schema = contract
+                    .document_type_for_name("domain")
+                    .unwrap()
+                    .schema()
+                    .clone();
+                schema
+                    .set_value("documentsKeepHistory", true.into())
+                    .unwrap();
+                schema.set_value("canBeDeleted", false.into()).unwrap();
+                contract
+                    .set_document_schema(
+                        "domain",
+                        schema,
+                        false,
+                        &mut vec![],
+                        PlatformVersion::latest(),
+                    )
+                    .unwrap();
+            }),
+            None,
+            None,
         );
         (drive, contract)
     }
@@ -150,13 +187,42 @@ mod tests {
         }
     }
 
+    fn direct_read(
+        drive: &Drive,
+        query: &SingleDocumentDriveQuery,
+        version: &PlatformVersion,
+    ) -> Option<Vec<u8>> {
+        let (mut rows, _) = drive
+            .grove
+            .query_item_value(
+                &query.construct_path_query(version).unwrap(),
+                true,
+                true,
+                false,
+                None,
+                &version.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(rows.len() <= 1);
+        rows.pop()
+    }
+
     /// The document the query proves, verified as the whole proof and as a part of one.
     fn prove_and_verify(
         drive: &Drive,
         contract: &DataContract,
         query: &SingleDocumentDriveQuery,
     ) -> Option<Document> {
-        let platform_version = PlatformVersion::latest();
+        prove_and_verify_at(drive, contract, query, PlatformVersion::latest())
+    }
+
+    fn prove_and_verify_at(
+        drive: &Drive,
+        contract: &DataContract,
+        query: &SingleDocumentDriveQuery,
+        platform_version: &PlatformVersion,
+    ) -> Option<Document> {
         let path_query = query
             .construct_path_query(platform_version)
             .expect("expected to build the query");
@@ -272,6 +338,46 @@ mod tests {
     }
 
     #[test]
+    fn should_verify_a_history_document_in_the_awarded_storage_location() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = drive_with_history_domain();
+        let document = domain(&contract, 1, "quantum");
+        drive
+            .add_document_for_contract(
+                info(&document, &contract, "domain"),
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the document");
+
+        let found = prove_and_verify(
+            &drive,
+            &contract,
+            &maybe_contested(&contract, "domain", document.id().to_buffer(), None),
+        );
+
+        assert_eq!(found.map(|found| found.id()), Some(document.id()));
+    }
+
+    #[test]
+    fn should_verify_a_history_document_waiting_in_a_contest() {
+        let (drive, contract) = drive_with_history_domain();
+        let document = domain(&contract, 1, "quantum");
+        add_to_contest(&drive, &contract, &document);
+
+        let found = prove_and_verify(
+            &drive,
+            &contract,
+            &maybe_contested(&contract, "domain", document.id().to_buffer(), None),
+        );
+
+        assert_eq!(found.map(|found| found.id()), Some(document.id()));
+    }
+
+    #[test]
     fn should_prove_a_document_is_in_neither_place_when_it_may_be_contested() {
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = drive_with_contract(DPNS);
@@ -326,6 +432,8 @@ mod tests {
             .expect("expected to add the document");
         let mut second = first.clone();
         second.set("age", Value::U8(34));
+        // An accepted edit advances the revision, including when its timestamp changes.
+        second.increment_revision().unwrap();
         drive
             .update_document_for_contract(
                 &second,
@@ -388,86 +496,143 @@ mod tests {
     /// first from 1000 and the second from 2000, as a whole proof and as a subset
     #[test]
     fn should_find_the_version_of_a_document_stored_at_or_before_a_block_time() {
-        let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
-        let (first, second) = person_with_two_versions(&drive, &contract);
+        for layout in [0, 1] {
+            let mut caller = PlatformVersion::latest().clone();
+            caller
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = layout;
+            let platform_version = &caller;
+            let producer = if layout == 0 {
+                PlatformVersion::get(14).unwrap()
+            } else {
+                PlatformVersion::latest()
+            };
+            let (drive, contract) = drive_with_contract_at(FAMILY_WITH_HISTORY, producer);
+            let (first, second) = person_with_two_versions_at(&drive, &contract, producer);
 
-        for (block_time_ms, expected) in [
-            // Before the document was first stored there is no version of it
-            (0, None),
-            (999, None),
-            (1000, Some(&first)),
-            (1500, Some(&first)),
-            (1999, Some(&first)),
-            (2000, Some(&second)),
-            (2500, Some(&second)),
-            (u64::MAX, Some(&second)),
-        ] {
-            let found = prove_and_verify(
-                &drive,
-                &contract,
-                &person_at_block_time(&contract, first.id().to_buffer(), block_time_ms),
-            );
+            for (block_time_ms, expected) in [
+                // Before the document was first stored there is no version of it
+                (0, None),
+                (999, None),
+                (1000, Some(&first)),
+                (1500, Some(&first)),
+                (1999, Some(&first)),
+                (2000, Some(&second)),
+                (2500, Some(&second)),
+                (u64::MAX, Some(&second)),
+            ] {
+                let found = prove_and_verify_at(
+                    &drive,
+                    &contract,
+                    &person_at_block_time(&contract, first.id().to_buffer(), block_time_ms),
+                    platform_version,
+                );
 
-            assert_eq!(
-                found.map(|found| serialized(&found, &contract)),
-                expected.map(|expected| serialized(expected, &contract)),
-                "at block time {block_time_ms}"
-            );
+                assert_eq!(
+                    found.map(|found| serialized(&found, &contract)),
+                    expected.map(|expected| serialized(expected, &contract)),
+                    "at block time {block_time_ms}"
+                );
+            }
         }
     }
 
     #[test]
     fn should_prove_a_document_that_was_never_stored_is_absent_at_a_block_time() {
-        let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
-        // Another document, so the type holds a history the proof must tell apart
-        person_with_two_versions(&drive, &contract);
+        for layout in [0, 1] {
+            let mut caller = PlatformVersion::latest().clone();
+            caller
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = layout;
+            let platform_version = &caller;
+            let producer = if layout == 0 {
+                PlatformVersion::get(14).unwrap()
+            } else {
+                PlatformVersion::latest()
+            };
+            let (drive, contract) = drive_with_contract_at(FAMILY_WITH_HISTORY, producer);
+            // Another document, so the type holds a history the proof must tell apart
+            person_with_two_versions_at(&drive, &contract, producer);
 
-        let found = prove_and_verify(
-            &drive,
-            &contract,
-            &person_at_block_time(&contract, [9; 32], 1500),
-        );
+            let found = prove_and_verify_at(
+                &drive,
+                &contract,
+                &person_at_block_time(&contract, [9; 32], 1500),
+                platform_version,
+            );
 
-        assert_eq!(found, None);
+            assert_eq!(found, None);
+        }
     }
 
-    /// A proof shows the newest version at or before its own block time: it does not verify
-    /// at a time that answers otherwise, as a whole proof or as a subset
+    /// Reused temporal proofs must either fail or return the independently read answer.
+    /// A composite history's leftmost entry can also prove an earlier absence.
     #[test]
     fn should_refuse_a_proof_made_for_another_block_time() {
-        let platform_version = PlatformVersion::latest();
-        let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
-        let (first, _) = person_with_two_versions(&drive, &contract);
-
-        // Each pair of times answers with a different version, or with none for one of them
-        for (proved_block_time_ms, verified_block_time_ms) in
-            [(1500, 2500), (2500, 1500), (500, 1500), (1500, 500)]
-        {
-            let proved =
-                person_at_block_time(&contract, first.id().to_buffer(), proved_block_time_ms);
-            let proof = drive
-                .grove_get_proved_path_query(
-                    &proved
-                        .construct_path_query(platform_version)
-                        .expect("expected to build the query"),
-                    None,
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected a proof");
-            let verified = SingleDocumentDriveQuery {
-                block_time_ms: Some(verified_block_time_ms),
-                ..proved
+        for layout in [0, 1] {
+            let mut caller = PlatformVersion::latest().clone();
+            caller
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = layout;
+            let platform_version = &caller;
+            let producer = if layout == 0 {
+                PlatformVersion::get(14).unwrap()
+            } else {
+                PlatformVersion::latest()
             };
+            let (drive, contract) = drive_with_contract_at(FAMILY_WITH_HISTORY, producer);
+            let (first, _) = person_with_two_versions_at(&drive, &contract, producer);
 
-            for is_subset in [false, true] {
-                assert!(
-                    verified
-                        .verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version)
-                        .is_err(),
-                    "a proof at {proved_block_time_ms} verified at {verified_block_time_ms}, \
-                     is_subset {is_subset}"
-                );
+            // Each pair of times answers with a different version, or with none for one of them
+            for (proved_block_time_ms, verified_block_time_ms) in
+                [(1500, 2500), (2500, 1500), (500, 1500), (1500, 500)]
+            {
+                let proved =
+                    person_at_block_time(&contract, first.id().to_buffer(), proved_block_time_ms);
+                let proof = drive
+                    .grove_get_proved_path_query(
+                        &proved
+                            .construct_path_query(platform_version)
+                            .expect("expected to build the query"),
+                        None,
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected a proof");
+                let verified = SingleDocumentDriveQuery {
+                    block_time_ms: Some(verified_block_time_ms),
+                    ..proved
+                };
+
+                let direct = direct_read(&drive, &verified, platform_version);
+                for is_subset in [false, true] {
+                    let result = verified.verify_proof_keep_serialized(
+                        is_subset,
+                        proof.as_slice(),
+                        platform_version,
+                    );
+                    if layout == 0 || (proved_block_time_ms, verified_block_time_ms) != (1500, 500)
+                    {
+                        assert!(result.is_err(), "layout {layout}: {proved_block_time_ms} -> {verified_block_time_ms}, subset {is_subset}: {result:?}");
+                    } else if let Ok((root, found)) = result {
+                        // The leftmost revision can also prove absence before the first write.
+                        assert_eq!(found, direct);
+                        assert_eq!(
+                            root,
+                            drive
+                                .grove
+                                .root_hash(None, &platform_version.drive.grove_version)
+                                .unwrap()
+                                .unwrap()
+                        );
+                    }
+                }
             }
         }
     }
@@ -478,33 +643,49 @@ mod tests {
     /// a whole proof and as a subset
     #[test]
     fn should_refuse_to_look_up_a_document_with_history_that_may_be_contested_at_a_block_time() {
-        let platform_version = PlatformVersion::latest();
-        let (drive, contract) = drive_with_contract(FAMILY_WITH_HISTORY);
-        let (first, _) = person_with_two_versions(&drive, &contract);
-        let outside_a_contest = person_at_block_time(&contract, first.id().to_buffer(), 1500);
-        let proof = drive
-            .grove_get_proved_path_query(
-                &outside_a_contest
-                    .construct_path_query(platform_version)
-                    .expect("expected to build the query"),
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            )
-            .expect("expected a proof");
-        let query = SingleDocumentDriveQuery {
-            contested_status: SingleDocumentDriveQueryContestedStatus::MaybeContested,
-            ..outside_a_contest
-        };
+        for layout in [0, 1] {
+            let mut caller = PlatformVersion::latest().clone();
+            caller
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = layout;
+            let platform_version = &caller;
+            let producer = if layout == 0 {
+                PlatformVersion::get(14).unwrap()
+            } else {
+                PlatformVersion::latest()
+            };
+            let (drive, contract) = drive_with_contract_at(FAMILY_WITH_HISTORY, producer);
+            let (first, _) = person_with_two_versions_at(&drive, &contract, producer);
+            let outside_a_contest = person_at_block_time(&contract, first.id().to_buffer(), 1500);
+            let proof = drive
+                .grove_get_proved_path_query(
+                    &outside_a_contest
+                        .construct_path_query(platform_version)
+                        .expect("expected to build the query"),
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected a proof");
+            let query = SingleDocumentDriveQuery {
+                contested_status: SingleDocumentDriveQueryContestedStatus::MaybeContested,
+                ..outside_a_contest
+            };
 
-        for is_subset in [false, true] {
-            let result =
-                query.verify_proof_keep_serialized(is_subset, proof.as_slice(), platform_version);
+            for is_subset in [false, true] {
+                let result = query.verify_proof_keep_serialized(
+                    is_subset,
+                    proof.as_slice(),
+                    platform_version,
+                );
 
-            assert!(
-                matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(_)))),
-                "is_subset {is_subset}: {result:?}"
-            );
+                assert!(
+                    matches!(result, Err(Error::Query(QuerySyntaxError::Unsupported(ref message))) if message == "a document with history that may be contested can not be looked up at a block time"),
+                    "is_subset {is_subset}: {result:?}"
+                );
+            }
         }
     }
 

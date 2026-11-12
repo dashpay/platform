@@ -28,6 +28,7 @@ use crate::drive::document::expiration::pricing::{
 };
 use crate::drive::document::layout::LayoutRole;
 use crate::drive::document::sdk_value::{map, number, text, texts};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -393,11 +394,11 @@ pub fn document_create_cost(
 }
 
 /// Refuses a platform version whose insert methods are not the ones the
-/// estimate mirrors (those of protocol version 14): another version of any
-/// of them may write other elements.
-/// `add_reference_for_index_level_for_contract_operations` 1 (protocol version
-/// 15) writes the elements 0 does and differs only in how Drive's own fee
-/// estimate describes a summable index's entries, so both are mirrored.
+/// estimate mirrors: another version of any of them may write other elements.
+/// Primary-storage generation 1 uses the per-type history layout. Index-reference
+/// generation 1 writes a keep-history type's references to the primary pointer,
+/// which `writes.rs` mirrors by selecting the v1 constructors, and describes
+/// summable entries with their sum items.
 fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
     let document = &platform_version.drive.methods.document;
     for (method, known, received) in [
@@ -408,7 +409,7 @@ fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<
         ),
         (
             "add_document_to_primary_storage",
-            &[0][..],
+            &[0, 1][..],
             document.insert.add_document_to_primary_storage,
         ),
         (
@@ -683,8 +684,12 @@ fn processing_costs(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<ProcessingCost>, Error> {
     let fee_version = &platform_version.fee_version;
-    // The primary key tree and one tree per first index level.
+    // The primary key tree, retained-history tree and first index levels.
     let type_entries = u64::from(!document_type.index_only())
+        + u64::from(
+            document_type.documents_keep_history()
+                && uses_current_document_history_layout(platform_version)?,
+        )
         + document_type.index_structure().sub_levels().len() as u64;
     let exact = |credits: Credits| Scenarios {
         new_values: credits,

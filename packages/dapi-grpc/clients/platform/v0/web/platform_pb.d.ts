@@ -6566,6 +6566,11 @@ export class GetDocumentHistoryRequest extends jspb.Message {
   getV0(): GetDocumentHistoryRequest.GetDocumentHistoryRequestV0 | undefined;
   setV0(value?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV0): void;
 
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentHistoryRequest.GetDocumentHistoryRequestV1 | undefined;
+  setV1(value?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV1): void;
+
   getVersionCase(): GetDocumentHistoryRequest.VersionCase;
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetDocumentHistoryRequest.AsObject;
@@ -6580,6 +6585,7 @@ export class GetDocumentHistoryRequest extends jspb.Message {
 export namespace GetDocumentHistoryRequest {
   export type AsObject = {
     v0?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.AsObject,
+    v1?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV1.AsObject,
   }
 
   export class GetDocumentHistoryRequestV0 extends jspb.Message {
@@ -6634,9 +6640,109 @@ export namespace GetDocumentHistoryRequest {
     }
   }
 
+  export class GetDocumentHistoryRequestV1 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentTypeName(): string;
+    setDocumentTypeName(value: string): void;
+
+    getDocumentId(): Uint8Array | string;
+    getDocumentId_asU8(): Uint8Array;
+    getDocumentId_asB64(): string;
+    setDocumentId(value: Uint8Array | string): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): google_protobuf_wrappers_pb.UInt32Value | undefined;
+    setLimit(value?: google_protobuf_wrappers_pb.UInt32Value): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    hasStartAtMs(): boolean;
+    clearStartAtMs(): void;
+    getStartAtMs(): string;
+    setStartAtMs(value: string): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): GetDocumentHistoryRequest.GetDocumentHistoryRequestV1.Cursor | undefined;
+    setStartAfter(value?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV1.Cursor): void;
+
+    hasStartAtRevision(): boolean;
+    clearStartAtRevision(): void;
+    getStartAtRevision(): string;
+    setStartAtRevision(value: string): void;
+
+    hasRevision(): boolean;
+    clearRevision(): void;
+    getRevision(): string;
+    setRevision(value: string): void;
+
+    getFilterCase(): GetDocumentHistoryRequestV1.FilterCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentHistoryRequestV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentHistoryRequestV1): GetDocumentHistoryRequestV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentHistoryRequestV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentHistoryRequestV1;
+    static deserializeBinaryFromReader(message: GetDocumentHistoryRequestV1, reader: jspb.BinaryReader): GetDocumentHistoryRequestV1;
+  }
+
+  export namespace GetDocumentHistoryRequestV1 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentTypeName: string,
+      documentId: Uint8Array | string,
+      limit?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
+      prove: boolean,
+      startAtMs: string,
+      startAfter?: GetDocumentHistoryRequest.GetDocumentHistoryRequestV1.Cursor.AsObject,
+      startAtRevision: string,
+      revision: string,
+    }
+
+    export class Cursor extends jspb.Message {
+      getTimeMs(): string;
+      setTimeMs(value: string): void;
+
+      getRevision(): string;
+      setRevision(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Cursor.AsObject;
+      static toObject(includeInstance: boolean, msg: Cursor): Cursor.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Cursor, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Cursor;
+      static deserializeBinaryFromReader(message: Cursor, reader: jspb.BinaryReader): Cursor;
+    }
+
+    export namespace Cursor {
+      export type AsObject = {
+        timeMs: string,
+        revision: string,
+      }
+    }
+
+    export enum FilterCase {
+      FILTER_NOT_SET = 0,
+      START_AT_MS = 6,
+      START_AFTER = 7,
+      START_AT_REVISION = 8,
+      REVISION = 9,
+    }
+  }
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
@@ -6645,6 +6751,11 @@ export class GetDocumentHistoryResponse extends jspb.Message {
   clearV0(): void;
   getV0(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV0 | undefined;
   setV0(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0): void;
+
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV1 | undefined;
+  setV1(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1): void;
 
   getVersionCase(): GetDocumentHistoryResponse.VersionCase;
   serializeBinary(): Uint8Array;
@@ -6660,6 +6771,7 @@ export class GetDocumentHistoryResponse extends jspb.Message {
 export namespace GetDocumentHistoryResponse {
   export type AsObject = {
     v0?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.AsObject,
+    v1?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.AsObject,
   }
 
   export class GetDocumentHistoryResponseV0 extends jspb.Message {
@@ -6751,9 +6863,140 @@ export namespace GetDocumentHistoryResponse {
     }
   }
 
+  export class GetDocumentHistoryResponseV1 extends jspb.Message {
+    hasHistory(): boolean;
+    clearHistory(): void;
+    getHistory(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.History | undefined;
+    setHistory(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.History): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetDocumentHistoryResponseV1.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentHistoryResponseV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentHistoryResponseV1): GetDocumentHistoryResponseV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentHistoryResponseV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentHistoryResponseV1;
+    static deserializeBinaryFromReader(message: GetDocumentHistoryResponseV1, reader: jspb.BinaryReader): GetDocumentHistoryResponseV1;
+  }
+
+  export namespace GetDocumentHistoryResponseV1 {
+    export type AsObject = {
+      history?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.History.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class Entry extends jspb.Message {
+      getTimeMs(): string;
+      setTimeMs(value: string): void;
+
+      getRevision(): string;
+      setRevision(value: string): void;
+
+      getDocument(): Uint8Array | string;
+      getDocument_asU8(): Uint8Array;
+      getDocument_asB64(): string;
+      setDocument(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Entry.AsObject;
+      static toObject(includeInstance: boolean, msg: Entry): Entry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Entry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Entry;
+      static deserializeBinaryFromReader(message: Entry, reader: jspb.BinaryReader): Entry;
+    }
+
+    export namespace Entry {
+      export type AsObject = {
+        timeMs: string,
+        revision: string,
+        document: Uint8Array | string,
+      }
+    }
+
+    export class Lifecycle extends jspb.Message {
+      getState(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap];
+      setState(value: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap]): void;
+
+      getRemainingRevisions(): string;
+      setRemainingRevisions(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Lifecycle.AsObject;
+      static toObject(includeInstance: boolean, msg: Lifecycle): Lifecycle.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Lifecycle, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Lifecycle;
+      static deserializeBinaryFromReader(message: Lifecycle, reader: jspb.BinaryReader): Lifecycle;
+    }
+
+    export namespace Lifecycle {
+      export type AsObject = {
+        state: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap[keyof GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.StateMap],
+        remainingRevisions: string,
+      }
+
+      export interface StateMap {
+        ACTIVE: 0;
+        ABSENT: 1;
+      }
+
+      export const State: StateMap;
+    }
+
+    export class History extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Entry>;
+      setEntriesList(value: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Entry>): void;
+      addEntries(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Entry, index?: number): GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Entry;
+
+      hasLifecycle(): boolean;
+      clearLifecycle(): void;
+      getLifecycle(): GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle | undefined;
+      setLifecycle(value?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): History.AsObject;
+      static toObject(includeInstance: boolean, msg: History): History.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: History, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): History;
+      static deserializeBinaryFromReader(message: History, reader: jspb.BinaryReader): History;
+    }
+
+    export namespace History {
+      export type AsObject = {
+        entriesList: Array<GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Entry.AsObject>,
+        lifecycle?: GetDocumentHistoryResponse.GetDocumentHistoryResponseV1.Lifecycle.AsObject,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      HISTORY = 1,
+      PROOF = 2,
+    }
+  }
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
