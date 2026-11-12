@@ -1,7 +1,7 @@
 use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
 use crate::version::dpp_versions::dpp_contract_versions::{
-    DPPContractVersions, DataContractMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeVersions,
+    DPPContractVersions, DataContractMethodVersions, DocumentTypeMethodVersions,
+    DocumentTypeSchemaVersions, DocumentTypeVersions,
 };
 
 /// Introduced in protocol version 15. Differs from v6 in:
@@ -34,7 +34,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   execution draws the values;
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
-///   format version 1.
+///   format version 1;
+/// - `canonical_contested_index_values`, `Some(1)` rather than `Some(0)`: every index value
+///   of a contest is written the one way its property's type keys it, so the values of one
+///   contest name one poll; 0 wrote only identifiers one way.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -66,6 +69,12 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // and holds arrays to the maximum depth as it does maps
             validate_max_depth: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
+        },
+        methods: DocumentTypeMethodVersions {
+            // changed: every index value of a contest is written the one way its property's
+            // type keys it, where 0 wrote only identifiers one way
+            canonical_contested_index_values: Some(1),
+            ..CONTRACT_VERSIONS_V6.document_type_versions.methods
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions
     },
