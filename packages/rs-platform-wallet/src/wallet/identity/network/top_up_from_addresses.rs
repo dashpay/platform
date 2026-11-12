@@ -127,9 +127,12 @@ impl IdentityWallet {
     /// written: someone else's identity is never recorded as the wallet's
     /// own. Returns the same proof-attested post-spend `AddressInfos`, new
     /// identity balance and proof height as
-    /// [`Self::top_up_from_addresses`]; prefer the composite
+    /// [`Self::top_up_from_addresses`].
+    ///
+    /// Crate-private: it does not check the wallet generation or reconcile
+    /// the spent addresses. Callers outside the crate use
     /// [`PlatformWallet::top_up_external_identity_from_addresses`], which
-    /// also reconciles the spent addresses.
+    /// holds the lifecycle gate and reconciles.
     ///
     /// Returns [`PlatformWalletError::IdentityNotFound`] before anything is
     /// signed or broadcast when Platform has no identity with this id.
@@ -137,7 +140,7 @@ impl IdentityWallet {
     ///
     /// [`PlatformWallet::top_up_external_identity_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_external_identity_from_addresses
-    pub async fn top_up_external_from_addresses<S, I>(
+    pub(crate) async fn top_up_external_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,

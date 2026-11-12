@@ -612,8 +612,8 @@ impl PlatformWallet {
     /// address balances, then reconcile the spent addresses exactly as
     /// [`Self::top_up_from_addresses`] does.
     ///
-    /// See [`IdentityWallet::top_up_external_from_addresses`]: the identity
-    /// is fetched from Platform and never added to the identity manager.
+    /// The identity is fetched from Platform and never added to the identity
+    /// manager.
     ///
     /// Holds the wallet generation's lifecycle gate from the liveness check
     /// through the fetch, signing, broadcast and reconciliation, so a
