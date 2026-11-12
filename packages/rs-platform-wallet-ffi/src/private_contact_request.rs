@@ -457,26 +457,13 @@ pub unsafe extern "C" fn platform_wallet_get_private_payments_restore_failure(
     PlatformWalletFFIResult::ok()
 }
 
-/// Copy an optional Orchard address: null means none.
-///
-/// # Safety
-/// A non-null `ptr` must point to [`SHIELDED_ADDRESS_LEN`] readable bytes.
-unsafe fn read_shielded_address(ptr: *const u8) -> Option<[u8; SHIELDED_ADDRESS_LEN]> {
-    if ptr.is_null() {
-        return None;
-    }
-    let mut address = [0u8; SHIELDED_ADDRESS_LEN];
-    std::ptr::copy_nonoverlapping(ptr, address.as_mut_ptr(), SHIELDED_ADDRESS_LEN);
-    Some(address)
-}
-
 /// Send a DashPay private contact request from `sender_identity_id` to
 /// `recipient_identity_id`, paying for it from `account`'s shielded notes, so
 /// nothing on chain names either identity. The request carries our receiving
 /// xpub for the contact, the masked account reference, `account_label`,
-/// `auto_accept_proof`, and `shielded_address`, the Orchard address the
-/// contact may pay us at privately. It is sealed to the recipient's DashPay
-/// key inside the resolver-backed signer.
+/// `auto_accept_proof`, and an Orchard address the contact may pay us at
+/// privately, which the wallet derives for this contact alone. It is sealed
+/// to the recipient's DashPay key inside the resolver-backed signer.
 ///
 /// `mnemonic_resolver_handle` supplies both the transient Orchard spend
 /// authority and the DashPay keys. `signer_handle` is the identity signer
@@ -497,8 +484,6 @@ unsafe fn read_shielded_address(ptr: *const u8) -> Option<[u8; SHIELDED_ADDRESS_
 ///   string.
 /// - `auto_accept_proof`, when non-null, must point to
 ///   `auto_accept_proof_len` readable bytes; `(null, 0)` omits it.
-/// - `shielded_address`, when non-null, must point to 43 readable bytes;
-///   null omits it.
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   produced by `dash_sdk_signer_create_with_ctx`; the caller retains
 ///   ownership and pins it for the call.
@@ -516,7 +501,6 @@ pub unsafe extern "C" fn platform_wallet_manager_send_private_contact_request(
     account_label: *const c_char,
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -534,7 +518,6 @@ pub unsafe extern "C" fn platform_wallet_manager_send_private_contact_request(
             account_label,
             auto_accept_proof,
             auto_accept_proof_len,
-            shielded_address,
             signer_handle,
             out_request_handle,
         )
@@ -558,7 +541,6 @@ unsafe fn send_private_contact_request_inner(
     account_label: *const c_char,
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_request_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -581,7 +563,6 @@ unsafe fn send_private_contact_request_inner(
         Ok(proof) => proof,
         Err(result) => return result,
     };
-    let shielded_address = read_shielded_address(shielded_address);
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(pair) => pair,
@@ -616,7 +597,6 @@ unsafe fn send_private_contact_request_inner(
                 &recipient,
                 label,
                 AutoAcceptProofSource::from_option(proof),
-                shielded_address,
                 signer,
                 &crypto,
                 &prover,
@@ -637,9 +617,9 @@ unsafe fn send_private_contact_request_inner(
 
 /// Accept a DashPay contact request that came privately, replying privately
 /// and paying for the reply from `account`'s shielded notes, as
-/// [`platform_wallet_manager_send_private_contact_request`] pays.
-/// `shielded_address` is the Orchard address the contact may pay us at
-/// privately; null omits it.
+/// [`platform_wallet_manager_send_private_contact_request`] pays. The reply
+/// carries an Orchard address the contact may pay us at privately, which the
+/// wallet derives for this contact alone.
 ///
 /// `request_handle` is a live `CONTACT_REQUEST_STORAGE` handle of the
 /// incoming request. `signer_handle` is the identity signer the public accept
@@ -651,7 +631,6 @@ unsafe fn send_private_contact_request_inner(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle; the
 ///   caller retains ownership and pins it for the call.
-/// - `shielded_address`, when non-null, must point to 43 readable bytes.
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   produced by `dash_sdk_signer_create_with_ctx`; the caller retains
 ///   ownership and pins it for the call.
@@ -665,7 +644,6 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     request_handle: Handle,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -677,7 +655,6 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_private_contact_request(
             mnemonic_resolver_handle,
             account,
             request_handle,
-            shielded_address,
             signer_handle,
             out_established_handle,
         )
@@ -697,7 +674,6 @@ unsafe fn accept_private_contact_request_inner(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     request_handle: Handle,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -711,7 +687,6 @@ unsafe fn accept_private_contact_request_inner(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let request = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.clone());
     let request = unwrap_option_or_return!(request);
-    let shielded_address = read_shielded_address(shielded_address);
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(pair) => pair,
@@ -738,7 +713,6 @@ unsafe fn accept_private_contact_request_inner(
                 seed.as_ref(),
                 account,
                 &request,
-                shielded_address,
                 signer,
                 &crypto,
                 &prover,
@@ -762,9 +736,9 @@ unsafe fn accept_private_contact_request_inner(
 /// `account`'s shielded notes, when it came privately and no reply exists
 /// yet; otherwise with a `contactRequest` document signed by `signer_handle`,
 /// or by adopting the reply already sent. Which reply a request takes is the
-/// wallet's decision: this is the one accept a host calls. `shielded_address`
-/// is the Orchard address the contact may pay us at privately; null omits it,
-/// and a public reply ignores it. Exported in every build.
+/// wallet's decision: this is the one accept a host calls. A private reply
+/// carries an Orchard address the contact may pay us at privately, which the
+/// wallet derives for this contact alone. Exported in every build.
 ///
 /// Only a private reply needs shielded support and the spend authority: the
 /// shielded coordinator is looked up, and the mnemonic read through
@@ -786,7 +760,6 @@ unsafe fn accept_private_contact_request_inner(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `mnemonic_resolver_handle` must be a valid, non-destroyed handle; the
 ///   caller retains ownership and pins it for the call.
-/// - `shielded_address`, when non-null, must point to 43 readable bytes.
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   produced by `dash_sdk_signer_create_with_ctx`; the caller retains
 ///   ownership and pins it for the call.
@@ -799,7 +772,6 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_contact_request_replying
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     request_handle: Handle,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -810,7 +782,6 @@ pub unsafe extern "C" fn platform_wallet_manager_accept_contact_request_replying
             mnemonic_resolver_handle,
             account,
             request_handle,
-            shielded_address,
             signer_handle,
             out_established_handle,
         )
@@ -913,7 +884,6 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     account: u32,
     request_handle: Handle,
-    shielded_address: *const u8,
     signer_handle: *mut SignerHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
@@ -927,7 +897,6 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let request = CONTACT_REQUEST_STORAGE.with_item(request_handle, |request| request.clone());
     let request = unwrap_option_or_return!(request);
-    let shielded_address = read_shielded_address(shielded_address);
 
     let wallet = match resolve_manager_wallet(handle, &wallet_id) {
         Ok(wallet) => wallet,
@@ -956,36 +925,30 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             let prover = CachedOrchardProver::new();
             let result = wallet
-                .accept_contact_request_replying_in_kind(
-                    &request,
-                    shielded_address,
-                    signer,
-                    &crypto,
-                    || async {
-                        asked.store(true, Ordering::SeqCst);
-                        let parts = tokio::task::spawn_blocking(move || {
-                            // SAFETY: the caller pins the resolver for the call,
-                            // and this export blocks until the task completes.
-                            unsafe { private_reply_payment_parts(handle, wallet_id, resolver_addr) }
-                        })
-                        .await
-                        .unwrap_or_else(|_| {
-                            Err((
-                                PlatformWalletFFIResultCode::ErrorUnknown,
-                                "the private reply's payment lookup panicked".to_string(),
-                            ))
-                        });
-                        match parts {
-                            Ok((coordinator, seed)) => Ok(PrivateReplyPayment {
-                                coordinator,
-                                seed,
-                                account,
-                                prover: &prover,
-                            }),
-                            Err(failure) => Err(record_payment_failure(&failure_slot, failure)),
-                        }
-                    },
-                )
+                .accept_contact_request_replying_in_kind(&request, signer, &crypto, || async {
+                    asked.store(true, Ordering::SeqCst);
+                    let parts = tokio::task::spawn_blocking(move || {
+                        // SAFETY: the caller pins the resolver for the call,
+                        // and this export blocks until the task completes.
+                        unsafe { private_reply_payment_parts(handle, wallet_id, resolver_addr) }
+                    })
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err((
+                            PlatformWalletFFIResultCode::ErrorUnknown,
+                            "the private reply's payment lookup panicked".to_string(),
+                        ))
+                    });
+                    match parts {
+                        Ok((coordinator, seed)) => Ok(PrivateReplyPayment {
+                            coordinator,
+                            seed,
+                            account,
+                            prover: &prover,
+                        }),
+                        Err(failure) => Err(record_payment_failure(&failure_slot, failure)),
+                    }
+                })
                 .await;
             poke_sync_on_unconfirmed(&result, handle);
             result
@@ -1004,7 +967,6 @@ unsafe fn accept_contact_request_replying_in_kind_inner(
                 .dashpay()
                 .accept_contact_request_replying_in_kind(
                     &request,
-                    shielded_address,
                     signer,
                     &crypto,
                     // Refused before any payment could reach the network,
@@ -1144,7 +1106,6 @@ mod tests {
                 std::ptr::null(),
                 std::ptr::null(),
                 0,
-                std::ptr::null(),
                 std::ptr::null_mut(),
                 &mut out,
             )
@@ -1166,7 +1127,6 @@ mod tests {
                 resolver,
                 0,
                 0xDEAD_BEEF,
-                std::ptr::null(),
                 std::ptr::null_mut(),
                 &mut out,
             )
@@ -1188,7 +1148,6 @@ mod tests {
                 resolver,
                 0,
                 0xDEAD_BEEF,
-                std::ptr::null(),
                 std::ptr::null_mut(),
                 &mut out,
             )
@@ -1343,7 +1302,6 @@ mod tests {
                 resolver,
                 0,
                 request_handle,
-                std::ptr::null(),
                 signer,
                 &mut established,
             )
@@ -1734,7 +1692,6 @@ mod tests {
                     resolver,
                     0,
                     request_handle,
-                    std::ptr::null(),
                     signer,
                     &mut established,
                 )

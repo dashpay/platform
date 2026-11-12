@@ -52,6 +52,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         to_user_id: &Identifier,
         account_reference: u32,
     ) -> Result<Option<[u8; 43]>, PlatformWalletError> {
+        #[cfg(test)]
+        if let Some(address) = test_hooks::given() {
+            return Ok(Some(address));
+        }
         #[cfg(not(feature = "shielded"))]
         {
             let _ = (owner_id, to_user_id, account_reference);
@@ -134,5 +138,37 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         Ok(contact_request
             .properties()
             .contains_key(ENCRYPTED_SHIELDED_ADDRESS))
+    }
+}
+
+/// A test's own answer to [`IdentityWallet::contact_shielded_address`], for tests of how
+/// an address a request carries is read, stored and forgotten. They need a request that
+/// carries a known address and not the wallet state the derivation takes it from, which
+/// `shielded/contact_address_tests.rs` covers.
+#[cfg(test)]
+pub(crate) mod test_hooks {
+    use std::cell::Cell;
+
+    thread_local! {
+        static GIVEN: Cell<Option<[u8; 43]>> = const { Cell::new(None) };
+    }
+
+    /// While it lives, every contact request sent from this thread carries the address.
+    pub(crate) struct GivenAddress(());
+
+    /// Have every contact request this thread sends carry `address`.
+    pub(crate) fn give_every_contact(address: [u8; 43]) -> GivenAddress {
+        GIVEN.set(Some(address));
+        GivenAddress(())
+    }
+
+    impl Drop for GivenAddress {
+        fn drop(&mut self) {
+            GIVEN.set(None);
+        }
+    }
+
+    pub(super) fn given() -> Option<[u8; 43]> {
+        GIVEN.get()
     }
 }

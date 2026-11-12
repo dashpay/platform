@@ -296,9 +296,10 @@ internal object DashpayNative {
      * Send a DashPay private contact request, paid from [account]'s
      * shielded notes on [walletId]. [resolverHandle] supplies the Orchard
      * spend authority and the DashPay keys; [signerHandle] is the identity
-     * signer [TokensNative.sendContactRequest] takes. [shieldedAddress]
-     * must be 43 raw Orchard bytes when set. Needs the `shielded` native
-     * feature. Returns the created `ContactRequest` handle (destroy via
+     * signer [TokensNative.sendContactRequest] takes. The wallet derives
+     * the Orchard address the request carries, one for this contact alone.
+     * Needs the `shielded` native feature. Returns the created
+     * `ContactRequest` handle (destroy via
      * [TokensNative.contactRequestDestroy]).
      * ← Swift `PlatformWalletManager.sendPrivateContactRequest`.
      */
@@ -312,15 +313,16 @@ internal object DashpayNative {
         recipientIdentityId: ByteArray,
         accountLabel: String?,
         autoAcceptProof: ByteArray?,
-        shieldedAddress: ByteArray?,
         signerHandle: Long,
     ): Long
 
     /**
      * Accept the incoming contact request [requestHandle] with a private
      * reply, paid from [account]'s shielded notes. Handles as for
-     * [sendPrivateContactRequest]. Returns the `EstablishedContact` handle
-     * (destroy via [TokensNative.establishedContactDestroy]).
+     * [sendPrivateContactRequest], and the wallet derives the Orchard
+     * address the reply carries the same way. Returns the
+     * `EstablishedContact` handle (destroy via
+     * [TokensNative.establishedContactDestroy]).
      * ← Swift `PlatformWalletManager.acceptPrivateContactRequest`.
      */
     @Suppress("LongParameterList")
@@ -330,7 +332,6 @@ internal object DashpayNative {
         resolverHandle: Long,
         account: Int,
         requestHandle: Long,
-        shieldedAddress: ByteArray?,
         signerHandle: Long,
     ): Long
 
@@ -407,7 +408,6 @@ internal object DashpayNative {
         resolverHandle: Long,
         account: Int,
         requestHandle: Long,
-        shieldedAddress: ByteArray?,
         signerHandle: Long,
     ): Long
 }
