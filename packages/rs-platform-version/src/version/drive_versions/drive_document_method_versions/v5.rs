@@ -35,6 +35,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   states both branch caps for every type. In a type that keeps history, a single-document
 ///   lookup at a block time selects the latest retained revision at or before it, and the
 ///   maybe-contested status is refused at a block time.
+/// * `insert.add_indices_for_top_index_level_for_contract_operations` is 3: an insert writes no
+///   entry in a bucket of a time range index with a `ttl` that has expired at the block time,
+///   as an update already does not.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         document_history_storage_layout: 1,
@@ -47,6 +50,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document_to_primary_storage: 1,
+            add_indices_for_top_index_level_for_contract_operations: 3, // changed: no entry in an expired time range bucket
             add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
