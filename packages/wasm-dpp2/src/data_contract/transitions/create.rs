@@ -4,30 +4,81 @@ use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
+use dpp::contract_group::{ContractGroupMembership, ContractGroupRegistration};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{DataContract, IdentityNonce};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_create_transition::accessors::{
+    DataContractCreateTransitionAccessorsV0, DataContractCreateTransitionAccessorsV1,
+};
 use dpp::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionV0,
+    DataContractCreateTransition, DataContractCreateTransitionV0, DataContractCreateTransitionV1,
 };
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{
-    FeatureVersion, ProtocolVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned,
+    FeatureVersion, PlatformVersion, ProtocolVersion, TryFromPlatformVersioned,
+    TryIntoPlatformVersioned,
 };
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * DataContractCreateTransition serialized as a plain object.
+ * Registration of a contract group, carried by a version 1 DataContractCreateTransition.
+ * The owner is the transition's signer and is not part of the object; `admins` are the
+ * identities that may add members alongside the owner.
+ */
+export interface ContractGroupRegistrationObject {
+    admins?: Uint8Array[];
+    name?: string;
+    description?: string;
+}
+
+/**
+ * ContractGroupRegistrationObject serialized as JSON (identifiers as base58 strings).
+ */
+export interface ContractGroupRegistrationJSON {
+    admins?: string[];
+    name?: string;
+    description?: string;
+}
+
+/**
+ * Which part of the created contract joins a contract group.
+ */
+export type ContractGroupMemberObject = "contract" | { documentType: string } | { token: number };
+
+/**
+ * A declaration that a part of the created contract joins a contract group.
+ */
+export interface ContractGroupMembershipObject {
+    contractGroupId: Uint8Array;
+    member: ContractGroupMemberObject;
+}
+
+/**
+ * ContractGroupMembershipObject serialized as JSON (identifiers as base58 strings).
+ */
+export interface ContractGroupMembershipJSON {
+    contractGroupId: string;
+    member: ContractGroupMemberObject;
+}
+
+/**
+ * DataContractCreateTransition serialized as a plain object. Version 1 (protocol version 14)
+ * adds `contractGroup` and `contractGroupMemberships`; both are absent on version 0 and
+ * optional on version 1.
  */
 export interface DataContractCreateTransitionObject {
+    $formatVersion?: string;
     dataContract: DataContractObject;
     identityNonce: bigint;
+    contractGroup?: ContractGroupRegistrationObject | null;
+    contractGroupMemberships?: ContractGroupMembershipObject[];
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: Uint8Array;
@@ -37,8 +88,11 @@ export interface DataContractCreateTransitionObject {
  * DataContractCreateTransition serialized as JSON.
  */
 export interface DataContractCreateTransitionJSON {
+    $formatVersion?: string;
     dataContract: DataContractJSON;
     identityNonce: string;
+    contractGroup?: ContractGroupRegistrationJSON | null;
+    contractGroupMemberships?: ContractGroupMembershipJSON[];
     userFeeIncrease: number;
     signaturePublicKeyId: number;
     signature?: string;
@@ -69,20 +123,41 @@ impl DataContractCreateTransitionWasm {
     ) -> WasmDppResult<DataContractCreateTransitionWasm> {
         let rs_data_contract: DataContract = data_contract.clone().into();
 
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
+        let platform_version = PlatformVersion::try_from(platform_version)?;
 
-        let rs_data_contract_create_transition_v0: DataContractCreateTransitionV0 =
-            DataContractCreateTransitionV0 {
-                data_contract: rs_data_contract
-                    .try_into_platform_versioned(&platform_version.into())?,
+        let data_contract = rs_data_contract.try_into_platform_versioned(&platform_version)?;
+
+        // The platform version decides the transition version, as the Rust SDK does: version 1
+        // exists from protocol version 14 and carries the contract group fields.
+        let rs_data_contract_transition = match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_create_state_transition
+            .default_current_version
+        {
+            0 => DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+                data_contract,
                 identity_nonce,
                 user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: Default::default(),
-            };
-
-        let rs_data_contract_transition =
-            DataContractCreateTransition::V0(rs_data_contract_create_transition_v0);
+            }),
+            1 => DataContractCreateTransition::V1(DataContractCreateTransitionV1 {
+                data_contract,
+                identity_nonce,
+                contract_group: None,
+                contract_group_memberships: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }),
+            version => {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "unknown data contract create transition version {}",
+                    version
+                )));
+            }
+        };
 
         Ok(DataContractCreateTransitionWasm(
             rs_data_contract_transition,
@@ -133,6 +208,66 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(getter = "featureVersion")]
     pub fn feature_version(&self) -> FeatureVersion {
         self.0.feature_version()
+    }
+
+    /// The contract group this transition registers, as a `ContractGroupRegistrationObject`,
+    /// or `undefined` when it registers none (a version 0 transition never does).
+    #[wasm_bindgen(getter = "contractGroup")]
+    pub fn contract_group(&self) -> WasmDppResult<JsValue> {
+        match self.0.contract_group() {
+            Some(registration) => serde_wasm_bindgen::to_value(registration)
+                .map_err(|err| WasmDppError::serialization(err.to_string())),
+            None => Ok(JsValue::UNDEFINED),
+        }
+    }
+
+    /// Registers a contract group with this transition, or clears the registration with
+    /// `undefined`. Needs a version 1 transition (protocol version 14).
+    #[wasm_bindgen(js_name = "setContractGroup")]
+    pub fn set_contract_group(&mut self, registration: JsValue) -> WasmDppResult<()> {
+        let registration: Option<ContractGroupRegistration> =
+            if registration.is_undefined() || registration.is_null() {
+                None
+            } else {
+                Some(
+                    serde_wasm_bindgen::from_value(registration)
+                        .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?,
+                )
+            };
+        match &mut self.0 {
+            DataContractCreateTransition::V1(transition) => {
+                transition.contract_group = registration;
+                Ok(())
+            }
+            DataContractCreateTransition::V0(_) => Err(WasmDppError::invalid_argument(
+                "contract groups need a version 1 data contract create transition (protocol version 14)",
+            )),
+        }
+    }
+
+    /// The contract group memberships the created contract declares, as
+    /// `ContractGroupMembershipObject[]`; empty on a version 0 transition.
+    #[wasm_bindgen(getter = "contractGroupMemberships")]
+    pub fn contract_group_memberships(&self) -> WasmDppResult<JsValue> {
+        serde_wasm_bindgen::to_value(self.0.contract_group_memberships())
+            .map_err(|err| WasmDppError::serialization(err.to_string()))
+    }
+
+    /// Declares which contract groups the created contract, its document types or its tokens
+    /// join. Needs a version 1 transition (protocol version 14).
+    #[wasm_bindgen(js_name = "setContractGroupMemberships")]
+    pub fn set_contract_group_memberships(&mut self, memberships: JsValue) -> WasmDppResult<()> {
+        let memberships: Vec<ContractGroupMembership> = serde_wasm_bindgen::from_value(memberships)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        match &mut self.0 {
+            DataContractCreateTransition::V1(transition) => {
+                transition.contract_group_memberships = memberships;
+                Ok(())
+            }
+            DataContractCreateTransition::V0(_) => Err(WasmDppError::invalid_argument(
+                "contract groups need a version 1 data contract create transition (protocol version 14)",
+            )),
+        }
     }
 
     #[wasm_bindgen(js_name = "verifyProtocolVersion")]

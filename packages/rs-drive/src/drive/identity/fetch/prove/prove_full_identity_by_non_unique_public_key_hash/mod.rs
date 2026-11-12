@@ -4,14 +4,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
     /// Generates a proof for an identity associated with a given non-unique public key hash.
     ///
-    /// This function retrieves an identity along with its associated proofs from storage.
+    /// This function proves the first matching identity and its index selection at one root.
     /// It utilizes versioning to call the appropriate handler based on the provided
     /// `PlatformVersion`.
     ///
@@ -28,16 +27,14 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing an [`IdentityAndNonUniquePublicKeyHashDoubleProof`], which
-    /// includes both the proof of the identity and the proof linking the public key hash to
-    /// an identity ID. If the operation fails or the platform version is unsupported, an `Error`
-    /// is returned.
+    /// Returns one complete GroveDB proof binding the index selection and identity.
+    /// Absence proves the entire remaining index range.
     ///
     /// # Errors
     ///
     /// This function will return an `Error` if:
     /// - The identity retrieval operation fails.
-    /// - The provided public key hash does not correspond to a known identity.
+    /// - Concurrent commits change the root on every bounded attempt.
     /// - The requested platform version is unknown or not supported.
     ///
     /// # Versioning
@@ -51,7 +48,7 @@ impl Drive {
         after: Option<[u8; 32]>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<IdentityAndNonUniquePublicKeyHashDoubleProof, Error> {
+    ) -> Result<Vec<u8>, Error> {
         match platform_version
             .drive
             .methods

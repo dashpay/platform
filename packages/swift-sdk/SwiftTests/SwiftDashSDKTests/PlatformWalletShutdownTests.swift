@@ -97,6 +97,46 @@ final class PlatformWalletShutdownTests: XCTestCase {
         XCTAssertEqual(third.totalMilliseconds, m1.totalMilliseconds)
     }
 
+    func testShouldHoldDrainAdmissionThroughDetachedResultConversion() async throws {
+        let recorder = TeardownRecorder()
+        let manager = PlatformWalletManager.makeForTesting(handle: 84, calls: Self.makeCalls(recorder: recorder))
+        let entered = expectation(description: "Drain result conversion entered")
+        let stopEntered = expectation(description: "Early shutdown stop entered")
+        let gate = DispatchSemaphore(value: 0)
+        let call = Task {
+            try await manager.withWalletDrainNativeOperation("test drain") { handle in
+                XCTAssertEqual(handle, 84)
+                entered.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+                var ffi = WalletDrainPreviewFFI()
+                ffi.status = 0
+                return try WalletDrainPreview(ffi: ffi)
+            }
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        let shutdown = Task {
+            await manager.shutdown()
+        }
+        // Observe public handle revocation, which happens synchronously before
+        // shutdown waits for the admitted operation. No guessed sleep interval.
+        let subscription = manager.$isConfigured.dropFirst().sink { configured in
+            if !configured { stopEntered.fulfill() }
+        }
+        defer { gate.signal(); subscription.cancel() }
+        await fulfillment(of: [stopEntered], timeout: 1)
+        XCTAssertEqual(recorder.count(named: "destroy"), 0)
+        call.cancel()
+        XCTAssertEqual(recorder.count(named: "destroy"), 0)
+        do {
+            _ = try await manager.withWalletDrainNativeOperation("late drain") { _ in 0 }
+            XCTFail("Shutdown must reject new drain operations")
+        } catch {}
+        gate.signal()
+        _ = try await call.value
+        _ = await shutdown.value
+        XCTAssertEqual(recorder.count(named: "destroy"), 1)
+    }
+
     // MARK: - Take-once handle
 
     func testShutdownConsumesHandleExactlyOnce() async {

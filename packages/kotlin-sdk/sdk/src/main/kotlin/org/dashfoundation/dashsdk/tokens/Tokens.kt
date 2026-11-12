@@ -275,7 +275,7 @@ class Tokens internal constructor(private val walletHandle: Long,
         }
     }
 
-    /** Claim a distribution payout of [distributionType] (pre-programmed / perpetual). */
+    /** Claim a distribution payout of [distributionType] (pre-programmed / perpetual / once per identity). */
     suspend fun claim(
         identityId: ByteArray,
         tokenContractId: ByteArray,
@@ -338,6 +338,8 @@ class Tokens internal constructor(private val walletHandle: Long,
 enum class TokenDistributionType(val value: Int) {
     PRE_PROGRAMMED(0),
     PERPETUAL(1),
+    /** A fixed amount every identity may claim exactly once. */
+    ONCE_PER_IDENTITY(2),
 }
 
 /**

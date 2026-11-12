@@ -5,7 +5,6 @@
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-use once_cell::sync::Lazy;
 #[cfg(feature = "server")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "server")]
@@ -51,9 +50,7 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
@@ -165,9 +162,6 @@ pub fn setup(
 ) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
     let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
@@ -234,7 +228,6 @@ pub fn setup(
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to add document");
         }
@@ -354,9 +347,6 @@ fn test_proved_primary_key_cursor_pages_over_history_in_both_directions() {
 fn test_query_historical_first_platform_version() {
     let platform_version = PlatformVersion::first();
     let (drive, contract) = setup(10, None, 73509, platform_version);
-
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -1218,7 +1208,6 @@ fn test_query_historical_first_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -1264,7 +1253,6 @@ fn test_query_historical_first_platform_version() {
             true,
             Some(&db_transaction),
             platform_version,
-            None,
         )
         .expect("document should be inserted");
 
@@ -1756,9 +1744,6 @@ fn test_query_historical_protocol_14() {
     let platform_version = PlatformVersion::get(14).unwrap();
     let (drive, contract) = setup(10, None, 73509, platform_version);
 
-    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
@@ -1771,8 +1756,8 @@ fn test_query_historical_protocol_14() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            54, 181, 217, 82, 201, 205, 230, 125, 186, 252, 4, 136, 247, 204, 234, 159, 14, 239,
-            59, 72, 69, 192, 182, 54, 122, 100, 192, 158, 183, 88, 31, 255,
+            154, 194, 44, 125, 179, 94, 9, 234, 111, 237, 91, 245, 165, 141, 253, 76, 143, 141,
+            245, 7, 243, 30, 75, 19, 125, 230, 89, 223, 137, 197, 4, 7
         ]
     );
 
@@ -2621,7 +2606,6 @@ fn test_query_historical_protocol_14() {
             true,
             Some(&db_transaction),
             platform_version,
-            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -2667,7 +2651,6 @@ fn test_query_historical_protocol_14() {
             true,
             Some(&db_transaction),
             platform_version,
-            None,
         )
         .expect("document should be inserted");
 
@@ -3149,8 +3132,8 @@ fn test_query_historical_protocol_14() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            74, 167, 180, 31, 0, 73, 101, 156, 93, 253, 230, 154, 157, 52, 205, 74, 148, 69, 143,
-            223, 85, 165, 216, 188, 121, 29, 94, 15, 126, 126, 39, 199,
+            144, 239, 7, 209, 248, 216, 179, 175, 158, 85, 227, 204, 70, 8, 219, 70, 175, 116, 83,
+            174, 23, 60, 153, 207, 128, 99, 192, 173, 93, 231, 31, 147
         ]
     );
 }
@@ -3165,6 +3148,24 @@ fn test_query_historical_protocol_15_uses_composite_history() {
     };
 
     let version = PlatformVersion::get(15).unwrap();
+    // Compiled contract storage changes the fixture root independently of the history layout.
+    let mut carried_storage_version = version.clone();
+    carried_storage_version
+        .dpp
+        .contract_versions
+        .contract_storage_serialization_version = 1;
+    let (carried_drive, _) = setup(10, None, 73509, &carried_storage_version);
+    assert_eq!(
+        carried_drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .unwrap()
+            .unwrap(),
+        [
+            79, 26, 80, 105, 213, 254, 12, 9, 90, 129, 14, 60, 16, 58, 213, 28, 46, 162, 207, 99,
+            226, 207, 30, 164, 65, 222, 123, 33, 180, 85, 47, 229,
+        ]
+    );
     let (drive, contract) = setup(10, None, 73509, version);
     let document_type = contract.document_type_for_name("person").unwrap();
     let root = drive
@@ -3175,8 +3176,8 @@ fn test_query_historical_protocol_15_uses_composite_history() {
     assert_eq!(
         root,
         [
-            61, 61, 109, 216, 215, 227, 93, 117, 118, 209, 116, 229, 95, 28, 205, 206, 254, 129,
-            215, 83, 167, 164, 154, 106, 218, 238, 225, 109, 111, 17, 45, 200,
+            66, 6, 172, 169, 64, 192, 127, 120, 130, 36, 173, 212, 240, 10, 216, 245, 150, 168,
+            189, 249, 167, 237, 65, 203, 155, 74, 134, 83, 84, 43, 231, 80,
         ]
     );
     let current_query = json!({"orderBy": [["firstName", "asc"]], "limit": 100});

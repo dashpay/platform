@@ -3,6 +3,7 @@ use dapi_grpc::platform::v0 as platform_proto;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dpp::data_contract::document_type::schema::allowed_top_level_properties::ALLOWED_TRANSITION_TO_DOCUMENT_SCHEMA_V1_PROPERTIES;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Identifier;
 use serde::Deserialize;
 use std::time::Duration;
@@ -249,9 +250,7 @@ async fn main() {
         contracts_to_check.len()
     );
 
-    let bincode_config = dpp::bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit();
+    let bincode_config = PLATFORM_BINCODE_CONFIG;
 
     let mut total_issues = 0usize;
     let mut checked = 0usize;

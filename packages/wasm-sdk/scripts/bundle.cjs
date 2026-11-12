@@ -45,8 +45,23 @@ if (fs.existsSync(wasmDtsPath)) {
 
 // Produce a sanitized variant of wasm_bindgen JS without the default new URL('...wasm') path,
 // so downstream bundlers importing the wrapper won't see a literal asset URL and won't emit the .wasm file.
-const defaultUrlRegex = /if\s*\(\s*typeof\s+module_or_path\s*===\s*'undefined'\s*\)\s*\{\s*module_or_path\s*=\s*new\s+URL\('wasm_sdk_bg\\.wasm',\s*import\\.meta\\.url\);\s*\}/;
-const sanitizedJs = rawJs.replace(defaultUrlRegex, "if (typeof module_or_path === 'undefined') { }");
+// The wrappers (sdk.js / sdk.compressed.js) always pass the inlined module, so that default is never used.
+// Current wasm-bindgen emits `module_or_path === undefined`; older versions emitted
+// `typeof module_or_path === 'undefined'`. Accept both, and fail the build if the pattern is not found so
+// the sanitized variant can never silently become a copy of the raw glue again.
+const defaultUrlRegex = /if\s*\(\s*(?:typeof\s+module_or_path\s*===\s*'undefined'|module_or_path\s*===\s*undefined)\s*\)\s*\{\s*module_or_path\s*=\s*new\s+URL\(\s*['"]wasm_sdk_bg\.wasm['"]\s*,\s*import\.meta\.url\s*\)\s*;?\s*\}/;
+if (!defaultUrlRegex.test(rawJs)) {
+  throw new Error("bundle.cjs: default `new URL('wasm_sdk_bg.wasm', import.meta.url)` not found in wasm-bindgen output; update defaultUrlRegex");
+}
+// Without a default URL, init() with no module can only fail inside WebAssembly.instantiate(undefined) with
+// an opaque TypeError, so fail early with a clear message instead.
+const sanitizedJs = rawJs.replace(
+  defaultUrlRegex,
+  "if (module_or_path === undefined) { throw new Error('wasm-sdk: init() requires the wasm module or bytes; the default wasm URL is not bundled'); }",
+);
+if (/new\s+URL\(\s*['"]wasm_sdk_bg\.wasm['"]/.test(sanitizedJs)) {
+  throw new Error('bundle.cjs: sanitized glue still references wasm_sdk_bg.wasm');
+}
 fs.writeFileSync(path.join(rawDir, 'wasm_sdk.no_url.js'), sanitizedJs);
 
 // Build single-file wrapper with inlined WASM and worker-based compile in the browser

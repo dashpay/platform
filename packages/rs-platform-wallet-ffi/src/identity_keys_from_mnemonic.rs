@@ -2,13 +2,14 @@
 
 use std::ffi::CString;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
-use key_wallet::mnemonic::Mnemonic;
+use platform_wallet::{
+    master_key_for_mnemonic, parse_mnemonic_any_language, seed_for_mnemonic, PlatformWalletError,
+};
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -53,15 +54,6 @@ pub(crate) unsafe fn zeroize_and_free_row(row: &mut IdentityKeyPreviewFFI) {
     zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
 }
 
-/// Parse a BIP-39 mnemonic against every supported wordlist.
-pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    // Upstream's `from_phrase` IS the auto-detecting parse since
-    // rust-dashcore#981 — one path, English diagnostics preserved when
-    // nothing matches. This wrapper survives only to narrow the error to
-    // the `&'static str` its callers report.
-    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
-}
-
 /// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
 /// [`MnemonicResolverHandle`] and build the master `ExtendedPrivKey`
 /// for `network`.
@@ -78,7 +70,7 @@ pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'st
 ///
 /// The returned master's inner secp256k1 scalar is **not** wiped here —
 /// `ExtendedPrivKey` has no `Drop` / `Zeroize`, so the caller must
-/// `master.private_key.non_secure_erase()` once it's done deriving.
+/// `master.private_key.zeroize()` once it's done deriving.
 /// Mirrors the hygiene in
 /// [`crate::sign_with_mnemonic_resolver::dash_sdk_sign_with_mnemonic_resolver_and_path`].
 ///
@@ -145,14 +137,8 @@ pub(crate) unsafe fn resolve_master_from_resolver_classified(
     wallet_id: &[u8; 32],
     network: Network,
 ) -> Result<ExtendedPrivKey, ResolveFailure> {
-    let seed = resolve_seed_from_resolver_classified(mnemonic_resolver_handle, wallet_id)?;
-    // A seed that cannot yield a master key is the stored material being
-    // wrong, not the moment being wrong.
-    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
-        ResolveFailure::permanent(PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("failed to build master xpriv from resolved mnemonic: {e}"),
-        ))
+    with_resolved_mnemonic(mnemonic_resolver_handle, wallet_id, |mnemonic| {
+        master_key_for_mnemonic(mnemonic, network)
     })
 }
 
@@ -189,6 +175,19 @@ pub(crate) unsafe fn resolve_seed_from_resolver_classified(
     mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
     wallet_id: &[u8; 32],
 ) -> Result<Zeroizing<[u8; 64]>, ResolveFailure> {
+    with_resolved_mnemonic(mnemonic_resolver_handle, wallet_id, seed_for_mnemonic)
+}
+
+/// Reads the mnemonic of `wallet_id` through the resolver into a zeroizing
+/// buffer and returns what `convert` makes of it.
+///
+/// # Safety
+/// Same contract as [`resolve_seed_from_resolver`].
+unsafe fn with_resolved_mnemonic<T>(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+    convert: impl FnOnce(&str) -> Result<T, PlatformWalletError>,
+) -> Result<T, ResolveFailure> {
     use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
     use std::ffi::c_void;
 
@@ -246,16 +245,13 @@ pub(crate) unsafe fn resolve_seed_from_resolver_classified(
             format!("mnemonic resolver: returned invalid UTF-8: {e}"),
         ))
     })?;
-    let mnemonic = parse_mnemonic_any_language(mnemonic_str).map_err(|e| {
+    // What is stored cannot yield a key, however often it is read.
+    convert(mnemonic_str).map_err(|e| {
         ResolveFailure::permanent(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("mnemonic resolver: returned an invalid mnemonic: {e}"),
         ))
-    })?;
-
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
-    drop(mnemonic);
-    Ok(seed)
+    })
 }
 
 /// Build the DIP-9 identity-authentication derivation path
@@ -315,11 +311,10 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
     };
 
     let mnemonic = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(passphrase_str));
+    let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed(passphrase_str);
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
-    let secp = Secp256k1::new();
 
     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
@@ -347,7 +342,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let derived = match master.derive_priv(&secp, &path) {
+        let derived = match master.derive_priv(&path) {
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
@@ -360,7 +355,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
                 );
             }
         };
-        let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+        let extended_pub = ExtendedPubKey::from_priv(&derived);
         let public_key = extended_pub.public_key;
 
         let path_cstring = match CString::new(path.to_string()) {
@@ -374,7 +369,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let pub_bytes: [u8; 33] = public_key.serialize();
+        let pub_bytes: [u8; 33] = public_key.to_compressed();
         let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
         let pub_ptr = pub_box.as_mut_ptr();
         let pub_len = pub_box.len();
@@ -383,7 +378,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
         let dash_private = DashPrivateKey {
             compressed: true,
             network: kw_network,
-            inner: derived.private_key,
+            inner: derived.private_key.clone(),
         };
         let wif_cstring = match CString::new(dash_private.to_wif()) {
             Ok(s) => s,
@@ -404,7 +399,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             public_key: pub_ptr,
             public_key_len: pub_len,
             private_key_wif: wif_cstring.into_raw(),
-            private_key_bytes: derived.private_key.secret_bytes(),
+            private_key_bytes: *derived.private_key.to_bytes(),
         });
     }
 
@@ -628,7 +623,7 @@ mod resolve_classification_tests {
     ) -> i32 {
         let phrase = b"not a bip39 phrase at all";
         assert!(cap >= phrase.len());
-        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out.cast::<u8>(), phrase.len());
         *out_len = phrase.len();
         mnemonic_resolver_result::SUCCESS
     }

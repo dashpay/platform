@@ -3,6 +3,8 @@ use crate::data_contract::conversion::value::v0::DataContractValueConversionMeth
 use crate::data_contract::serialized_version::property_names;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+use crate::data_contract::serialized_version::v2::DataContractInSerializationFormatV2;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContractV1;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -45,9 +47,29 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
                     platform_version,
                 )
             }
+            // A value is not state: a contract in the stored format is read as the untrusted
+            // decoders read one, from its schemas, its compiled types checked against them when
+            // fully validated
+            "2" => {
+                let data_contract_data: DataContractInSerializationFormatV2 =
+                    platform_value::from_value(value).map_err(ProtocolError::ValueError)?;
+                let format = DataContractInSerializationFormat::V2(data_contract_data);
+                let format = if full_validation {
+                    format
+                } else {
+                    format.into_schema_form()
+                };
+
+                DataContractV1::try_from_platform_versioned(
+                    format,
+                    full_validation,
+                    &mut vec![], // this is not used in consensus code
+                    platform_version,
+                )
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractV1::from_value".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version
                     .parse()
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,

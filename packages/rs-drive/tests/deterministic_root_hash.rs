@@ -307,9 +307,16 @@ mod tests {
             // and therefore the root hash after insertion.
             9..=13 => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
             // Protocol version 14 also stores the contract's version as a four-byte
-            // item beside the contract (`[64, id] / 2`), one more element under the
-            // contract's root subtree.
-            _ => "c5f12fcb423d17a25ea7969d3d51ce83f48a796392b7ceaf195f162647ec8206",
+            // item in the contract's other tree (`[64, id, 2] / 64`), one more tree under
+            // the contract's root subtree, serializes every contract with config version 2,
+            // and ships DashPay contract v2 with the optional `shieldedAddress` profile field.
+            14 => "c25bc863d30a4185311546d51bacfdc030ee57671dbae774775d0efd4474220c",
+            // From protocol version 15 the contract is stored compiled (format version 2), its
+            // document types beside its schemas, and is DashPay v3, which declares the checks of
+            // its data triggers and adds the private `privateContactRequest` type, whose store
+            // the insert creates, at chunk power 10 (605-byte stored entries under the 1 MiB
+            // chunk target of `SYSTEM_LIMITS_V5`).
+            _ => "adb6a2e6be5a67bb2730c27ca9a63cc4cacf485b634ec4a0ad998b0da508a7e2",
         };
 
         assert_eq!(

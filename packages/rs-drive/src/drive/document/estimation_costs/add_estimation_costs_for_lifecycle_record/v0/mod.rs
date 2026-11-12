@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -27,7 +27,7 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_lifecycle_record_v0(
         contract: &DataContract,
         document_type: DocumentTypeRef,
-        layers: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        layers: &mut EstimatedLayers,
     ) -> Result<(), Error> {
         let flags_size = Some(StorageFlags::approximate_size(true, None));
         layers.insert(

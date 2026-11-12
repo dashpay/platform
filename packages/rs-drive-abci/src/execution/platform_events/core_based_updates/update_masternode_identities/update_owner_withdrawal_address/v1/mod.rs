@@ -16,7 +16,7 @@ use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
-    AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
 impl<C> Platform<C>
 where
@@ -124,9 +124,8 @@ where
                 "add new withdrawal key to owner identity"
             );
 
-            drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+            drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                 identity_id: owner_identifier,
-                unique_keys_to_add: vec![],
                 non_unique_keys_to_add: vec![new_owner_withdrawal_key],
             }));
         }

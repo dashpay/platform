@@ -58,7 +58,7 @@ final class ErrorHandlingTests: XCTestCase {
         )
 
         // The structured available/required duffs ride the message string —
-        // PlatformWalletFFIResult is ABI-frozen at code + message — so the
+        // PlatformWalletFFIResult carries no per-error value fields, so the
         // typed error must carry them through unaltered.
         let rendered = "asset lock coin selection is short: available 18000000 duffs, "
             + "required 100000000 duffs"
@@ -194,6 +194,208 @@ final class ErrorHandlingTests: XCTestCase {
         }
     }
 
+    // MARK: - Consensus rejections
+
+    /// The four consensus families decode from their generated C constants,
+    /// and the `None` value is absence rather than a family: it is what
+    /// pairs with `consensus_code == 0`.
+    func testShouldMapEveryConsensusErrorKindFromFFI() {
+        let mappings: [(PlatformWalletFFIConsensusErrorKind, PlatformConsensusError.Kind)] = [
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_BASIC, .basic),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_SIGNATURE, .signature),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_FEE, .fee),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE, .state),
+        ]
+        for (ffi, expected) in mappings {
+            XCTAssertEqual(PlatformConsensusError.Kind(ffi: ffi), expected)
+        }
+        XCTAssertNil(
+            PlatformConsensusError.Kind(ffi: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE)
+        )
+    }
+
+    /// A rejection Rust left on the catch-all code reaches the host as the
+    /// typed consensus case, carrying Platform's own code and family plus the
+    /// message the `.unknown` case would have carried. 40722 is the second
+    /// once-per-identity token claim, which the example app branches on.
+    func testShouldSurfaceAConsensusRejectionOnTheCatchAllCode() {
+        let rendered = "Token operation failed: Token claim failed: identity already claimed"
+        let error = PlatformWalletError(
+            code: .errorUnknown,
+            message: rendered,
+            consensus: PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        guard case .consensusRejection(let consensus, let message) = error else {
+            return XCTFail("expected typed consensusRejection error, got \(error)")
+        }
+        XCTAssertEqual(consensus.code, 40722)
+        XCTAssertEqual(consensus.kind, .state)
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+        // The accessor is what callers branch on, so it must agree.
+        XCTAssertEqual(error.consensusError, consensus)
+    }
+
+    /// The catch-all without a verdict stays `.unknown`, and a dedicated code
+    /// keeps its own case even when a verdict rides along: the wallet layer
+    /// chose that classification and it carries what the case exists for.
+    func testShouldNotTurnEveryFailureIntoAConsensusRejection() {
+        let plain = PlatformWalletError(code: .errorUnknown, message: "timed out")
+        guard case .unknown = plain else {
+            return XCTFail("a catch-all with no verdict must stay unknown, got \(plain)")
+        }
+        XCTAssertNil(plain.consensusError)
+
+        let dedicated = PlatformWalletError(
+            code: .errorAddressNonceMismatch,
+            message: "submitted nonce 1, Platform expected 2",
+            consensus: PlatformConsensusError(code: 40603, kind: .state)
+        )
+        guard case .addressNonceMismatch = dedicated else {
+            return XCTFail("a dedicated code must keep its case, got \(dedicated)")
+        }
+        XCTAssertNil(dedicated.consensusError)
+    }
+
+    /// The result wrapper reads the verdict off the C struct's own fields, so
+    /// a result with no rejection reports none rather than a zero code.
+    func testShouldReadTheConsensusVerdictFromTheFFIResult() {
+        let rejected = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
+                message: nil,
+                consensus_code: 40722,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+            )
+        )
+        XCTAssertEqual(
+            rejected.consensusError,
+            PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        // The two-field convenience init is the "this side invented the
+        // failure" shape, and must not fabricate a rejection.
+        let invented = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NULL_POINTER,
+                message: nil
+            )
+        )
+        XCTAssertNil(invented.consensusError)
+    }
+
+    /// rs-sdk-ffi's kind decodes to the same four families from its own
+    /// generated C constants, and its `None` value is absence rather than a
+    /// family.
+    func testShouldMapEveryDashSDKConsensusErrorKindFromFFI() {
+        let mappings: [(DashSDKConsensusErrorKind, PlatformConsensusError.Kind)] = [
+            (ConsensusErrorKindBasic, .basic),
+            (ConsensusErrorKindSignature, .signature),
+            (ConsensusErrorKindFee, .fee),
+            (ConsensusErrorKindState, .state),
+        ]
+        for (ffi, expected) in mappings {
+            XCTAssertEqual(PlatformConsensusError.Kind(ffi: ffi), expected)
+        }
+        XCTAssertNil(PlatformConsensusError.Kind(ffi: ConsensusErrorKindNone))
+    }
+
+    /// An rs-sdk-ffi error that carries Platform's verdict becomes the typed
+    /// consensus case, whatever coarse code the message earned it. 10422 is a
+    /// violated propertyConstraints rule.
+    func testShouldSurfaceAConsensusRejectionFromAnSDKError() {
+        let rendered = "Protocol error: document violates propertyConstraints rule 0"
+        let message = strdup(rendered)
+        defer { free(message) }
+
+        let error = SDKError.fromDashSDKError(
+            DashSDKError(
+                code: DashSDKErrorCode(rawValue: 5), // ProtocolError
+                message: message,
+                consensus_code: 10422,
+                consensus_kind: ConsensusErrorKindBasic
+            )
+        )
+
+        guard case .consensusRejection(let consensus, let text) = error else {
+            return XCTFail("expected typed consensusRejection error, got \(error)")
+        }
+        XCTAssertEqual(consensus, PlatformConsensusError(code: 10422, kind: .basic))
+        XCTAssertEqual(text, rendered)
+        XCTAssertEqual(error.errorDescription, "Rejected by Platform: \(rendered)")
+        // The accessor is what callers branch on, so it must agree.
+        XCTAssertEqual(error.consensusError, consensus)
+    }
+
+    /// Without a verdict the coarse code still picks the case.
+    func testShouldKeepTheCoarseCaseOfAnSDKErrorWithoutAVerdict() {
+        let rendered = "Protocol error: unexpected response"
+        let message = strdup(rendered)
+        defer { free(message) }
+
+        let error = SDKError.fromDashSDKError(
+            DashSDKError(
+                code: DashSDKErrorCode(rawValue: 5), // ProtocolError
+                message: message,
+                consensus_code: 0,
+                consensus_kind: ConsensusErrorKindNone
+            )
+        )
+
+        guard case .protocolError(let text) = error else {
+            return XCTFail("an error with no verdict must keep its coarse case, got \(error)")
+        }
+        XCTAssertEqual(text, rendered)
+        XCTAssertNil(error.consensusError)
+    }
+
+    /// A failed state transition call throws Platform's verdict when the FFI
+    /// error carries one, and the case the call site always threw when it
+    /// does not, with the call site's message either way.
+    func testShouldThrowTheVerdictOfAFailedStateTransitionOnlyWhenThereIsOne() {
+        let refusedByPlatform = DashSDKError(
+            code: DashSDKErrorCode(rawValue: 99), // InternalError
+            message: nil,
+            consensus_code: 41107,
+            consensus_kind: ConsensusErrorKindState
+        )
+        let refused = SDKError.stateTransitionFailure(
+            "Token mint failed: user banned", ffiError: refusedByPlatform)
+        guard case .consensusRejection(let consensus, let text) = refused else {
+            return XCTFail("expected typed consensusRejection error, got \(refused)")
+        }
+        XCTAssertEqual(consensus, PlatformConsensusError(code: 41107, kind: .state))
+        XCTAssertEqual(text, "Token mint failed: user banned")
+
+        let noVerdict = DashSDKError(
+            code: DashSDKErrorCode(rawValue: 99), // InternalError
+            message: nil,
+            consensus_code: 0,
+            consensus_kind: ConsensusErrorKindNone
+        )
+        let failed = SDKError.stateTransitionFailure(
+            "Token mint failed: timed out", ffiError: noVerdict)
+        guard case .internalError(let failedText) = failed else {
+            return XCTFail("a failure with no verdict must stay internalError, got \(failed)")
+        }
+        XCTAssertEqual(failedText, "Token mint failed: timed out")
+        XCTAssertNil(failed.consensusError)
+
+        // A call site that threw protocolError keeps it, and a missing FFI
+        // error is no verdict either.
+        guard case .protocolError = SDKError.stateTransitionFailure(
+            "Broadcast failed", ffiError: noVerdict, otherwise: SDKError.protocolError
+        ) else {
+            return XCTFail("the call site's own case must survive without a verdict")
+        }
+        guard case .internalError = SDKError.stateTransitionFailure(
+            "Unknown error", ffiError: nil
+        ) else {
+            return XCTFail("a missing FFI error must not become a rejection")
+        }
+    }
+
     func testPlatformWalletNotFoundFFIResultMapping() {
         // Code 98 (the blanket Option→result miss) stays typed inside the
         // wallet-error family — the mapping Kotlin now converges on
@@ -235,6 +437,207 @@ final class ErrorHandlingTests: XCTestCase {
         ) else { return XCTFail("lost typed keys-required error") }
         XCTAssertEqual(corruptedMessage, detail)
         XCTAssertEqual(keyMessage, detail)
+    }
+
+    func testShouldPreserveSpvProcessRestartRequiredFromFFI() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED
+        )
+        XCTAssertEqual(code, .errorSpvProcessRestartRequired)
+        XCTAssertEqual(code.rawValue, 59)
+        let detail = "teardown task 12 panicked with message \"boom\""
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .spvProcessRestartRequired(let message) = error else {
+            return XCTFail("lost typed restart-required error")
+        }
+        XCTAssertEqual(message, detail)
+        // The panic detail is log material; the alert text is fixed.
+        XCTAssertEqual(error.failureReason, detail)
+        XCTAssertEqual(
+            error.errorDescription,
+            "Sync could not be stopped cleanly. Restart the app to use it again."
+        )
+    }
+
+    func testShouldRouteAPrivatelyReceivedRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_NEEDS_PRIVATE_REPLY
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestNeedsPrivateReply)
+        XCTAssertEqual(code.rawValue, 68)
+        let detail = "the contact requests with 9fRYTJZW came or went privately; "
+            + "reply to or rotate with it privately"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestNeedsPrivateReply(let message) = error else {
+            return XCTFail("lost typed private-reply error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldTellAPrivateReplyOnABuildWithoutShieldedSupportByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BUILD_REQUIRED
+        )
+        XCTAssertEqual(code, .errorShieldedBuildRequired)
+        XCTAssertEqual(code.rawValue, 69)
+        let detail = "this contact request needs a private reply, which is paid "
+            + "from the shielded pool; this build has no shielded support"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .shieldedBuildRequired(let message) = error else {
+            return XCTFail("lost typed shielded-build error")
+        }
+        XCTAssertEqual(message, detail)
+        XCTAssertEqual(error.errorDescription, detail)
+    }
+
+    func testShouldTellARequestTheNetworkDoesNotServeYetByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PROTOCOL_VERSION_NOT_ACTIVE
+        )
+        XCTAssertEqual(code, .errorProtocolVersionNotActive)
+        XCTAssertEqual(code.rawValue, 70)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the network is proven at protocol version 14"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .protocolVersionNotActive(let message) = error else {
+            return XCTFail("lost typed protocol-version error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    func testShouldReportAPendingPrivateRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_REQUEST_PENDING
+        )
+        XCTAssertEqual(code, .errorPrivateContactRequestPending)
+        XCTAssertEqual(code.rawValue, 71)
+        let detail = "a private contact request to 9fRYTJZW is in flight or not yet read "
+            + "back from the store; sync private contact requests to settle it"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactRequestPending(let message) = error else {
+            return XCTFail("lost typed pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// Unrestored private payments are the wallet's hold, not one contact's
+    /// pending request: their own code and typed case, apart from 71.
+    func testShouldReportUnrestoredPrivatePaymentsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_PAYMENTS_NOT_RESTORED
+        )
+        XCTAssertEqual(code, .errorPrivateContactPaymentsNotRestored)
+        XCTAssertEqual(code.rawValue, 72)
+        let detail = "the wallet's private payments are not restored from the shielded store yet"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .privateContactPaymentsNotRestored(let message) = error else {
+            return XCTFail("lost typed not-restored error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A store that cannot keep a private payment's recovery state has its
+    /// own code and typed case.
+    func testShouldReportUnsupportedPrivateContactRecoveryByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_RECOVERY_UNSUPPORTED
+        )
+        XCTAssertEqual(code, .errorPrivateContactRecoveryUnsupported)
+        XCTAssertEqual(code.rawValue, 73)
+        let detail = "the persister does not keep the private contact request scan state atomically"
+        guard case .privateContactRecoveryUnsupported(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed recovery-unsupported error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A private store read that did not finish before a contact request was
+    /// decided has its own code and typed case, apart from a pending request
+    /// (71): nothing was reserved, and calling again continues the read.
+    func testShouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PRIVATE_CONTACT_STORE_NOT_READ
+        )
+        XCTAssertEqual(code, .errorPrivateContactStoreNotRead)
+        XCTAssertEqual(code.rawValue, 74)
+        let detail = "the private contact request store was not read to its end for 9fRYTJZW"
+        guard case .privateContactStoreNotRead(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed store-not-read error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// An SDK pinned below the protocol version a request needs has its own
+    /// code and typed case, apart from a network below it (70), which lifts by
+    /// itself.
+    func testShouldReportAnSdkPinnedBelowTheProtocolVersionByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SDK_PINNED_BELOW_PROTOCOL_VERSION
+        )
+        XCTAssertEqual(code, .errorSdkPinnedBelowProtocolVersion)
+        XCTAssertEqual(code.rawValue, 75)
+        let detail = "get_private_document_entries needs protocol version 15; "
+            + "the SDK is pinned at protocol version 14"
+        guard case .sdkPinnedBelowProtocolVersion(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed pinned-SDK error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A public contact request whose outcome is unconfirmed holds the pair by
+    /// its own code and typed case, apart from a private request pending (71).
+    func testShouldReportAnUnconfirmedPublicRequestByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED
+        )
+        XCTAssertEqual(code, .errorPublicContactRequestUnconfirmed)
+        XCTAssertEqual(code.rawValue, 76)
+        let detail = "a public contact request to 9fRYTJZW was broadcast and its outcome is not proved"
+        guard case .publicContactRequestUnconfirmed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed public-unconfirmed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    func testShouldReadEveryFieldOfThePrivateContactReadiness() {
+        var ffi = PrivateContactReadinessFFI()
+        ffi.private_payments_restored = false
+        ffi.private_store_read = true
+        ffi.unresolved_private_payment = true
+        ffi.private_payments_restore_failed = true
+        XCTAssertEqual(
+            PrivateContactReadiness(ffi: ffi),
+            PrivateContactReadiness(
+                privatePaymentsRestored: false,
+                privateStoreRead: true,
+                unresolvedPrivatePayment: true,
+                privatePaymentsRestoreFailed: true))
+        // Each flag reaches its own field: clearing only the failure flag
+        // reads as a payment not restored yet.
+        ffi.private_payments_restore_failed = false
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestoreFailed)
+        XCTAssertFalse(PrivateContactReadiness(ffi: ffi).privatePaymentsRestored)
+    }
+
+    func testShouldReadEveryFieldOfAPrivateContact() {
+        var ffi = PrivateContactFFI()
+        ffi.received_privately = true
+        ffi.has_shielded_address = true
+        withUnsafeMutableBytes(of: &ffi.shielded_address) { raw in
+            for i in raw.indices { raw[i] = UInt8(i) }
+        }
+        let info = PrivateContactInfo(ffi: ffi)
+        XCTAssertTrue(info.receivedPrivately)
+        XCTAssertFalse(info.sentPrivately)
+        XCTAssertEqual(info.shieldedAddress, Data((0..<43).map { UInt8($0) }))
+
+        ffi.has_shielded_address = false
+        XCTAssertNil(PrivateContactInfo(ffi: ffi).shieldedAddress)
     }
 
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {

@@ -4,14 +4,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Deletes a document and adds the operations to the given list.
@@ -23,7 +22,7 @@ impl Drive {
     /// * `block_info`: The block this delete belongs to.
     /// * `deleter_id`: The identity credited with the lifecycle record a
     ///   keep-history delete writes; `None` credits nobody.
-    /// * `estimated_costs_only_with_layer_info`: An optional hashmap with layer information for estimated costs.
+    /// * `estimated_costs_only_with_layer_info`: An optional `EstimatedLayers` with layer information for estimated costs.
     /// * `transaction`: The transaction argument.
     /// * `drive_operations`: A mutable vector of low level drive operations.
     /// * `platform_version`: The platform version to select the correct function version to run.
@@ -39,9 +38,7 @@ impl Drive {
         document_type_name: &str,
         block_info: &BlockInfo,
         deleter_id: Option<Identifier>,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,

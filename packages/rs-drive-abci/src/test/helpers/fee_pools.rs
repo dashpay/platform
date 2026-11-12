@@ -93,6 +93,8 @@ fn create_test_mn_share_document(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into();
 
@@ -117,7 +119,6 @@ fn create_test_mn_share_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert a document successfully");
 

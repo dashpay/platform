@@ -1,5 +1,5 @@
 //! The contract version item: the value stored at [`CONTRACT_VERSION_KEY`] under a
-//! contract's root subtree from protocol version 14, and what `getDataContractsLatestVersions`
+//! contract's other tree (`[64, id, 2]`) from protocol version 14, and what `getDataContractsLatestVersions`
 //! reads and proves when the contracts themselves are not requested.
 
 use crate::drive::contract::paths::CONTRACT_VERSION_KEY;

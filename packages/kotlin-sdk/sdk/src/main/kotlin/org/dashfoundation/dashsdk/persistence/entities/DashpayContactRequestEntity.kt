@@ -81,6 +81,16 @@ data class DashpayContactRequestEntity(
      * `contactAcceptedAccounts` (`[UInt32]`).
      */
     val contactAcceptedAccounts: ByteArray? = null,
+    /**
+     * `EstablishedContact::external_account_reference` — the incoming
+     * `accountReference` the registered outbound (sending) account was
+     * built from; null when no account is known to be built for the
+     * current reference. Relationship-level (both established rows), null
+     * on pending rows. Restoring it is what stops native from tearing the
+     * outbound account down and rebuilding it on every cold start
+     * (dashpay/platform#4302).
+     */
+    val externalAccountReference: Int? = null,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),
 )

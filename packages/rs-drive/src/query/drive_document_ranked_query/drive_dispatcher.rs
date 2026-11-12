@@ -17,12 +17,13 @@
 use super::mode_detection::detect_ranked_mode;
 use super::{RankedPage, RankedPaginationInputs};
 use crate::drive::Drive;
-use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
 use crate::query::ResolvedTimeRange;
-use crate::query::{OrderClause, WhereClause};
+use crate::query::{
+    key_array_element_clauses, refuse_several_window_selections, OrderClause, WhereClause,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -146,24 +147,25 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentRankedResponse, Error> {
-        // A transform's source must be its index's first property, so no
-        // single index can serve two resolved buckets; rejected before
-        // routing, mirroring `DriveDocumentQuery::select_best_index`.
-        if request.resolved_time_ranges.len() > 1 {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one time-range selection (IN_TIME_RANGE) is supported per ranked \
-                 query; this one resolves {:?}, and no single index can bucket more than \
-                 one field",
-                request.resolved_time_ranges
-            ))));
-        }
+        // No single index can serve two resolved buckets; rejected before
+        // routing, as `DriveDocumentQuery::select_best_index` rejects them.
+        refuse_several_window_selections(request.resolved_time_ranges, "ranked query")?;
 
+        // A typed array's elements are keyed first: one pinned element
+        // (`contains`) at most, since rankings under several are not merged
+        // per document (see [`key_array_element_clauses`]).
+        let where_clauses = key_array_element_clauses(
+            request.where_clauses.to_vec(),
+            request.document_type,
+            false,
+            platform_version,
+        )?;
         let mode = detect_ranked_mode(
             &request.select,
             request.group_by,
             request.having,
             request.order_by,
-            request.where_clauses,
+            &where_clauses,
             RankedPaginationInputs {
                 limit: request.limit,
                 offset: request.offset,

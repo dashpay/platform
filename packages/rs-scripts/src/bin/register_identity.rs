@@ -88,7 +88,6 @@ use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::dashcore::consensus::encode::{deserialize, serialize};
-use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{
@@ -515,11 +514,12 @@ async fn run() -> Result<(), String> {
     } else {
         // FRESH: generate a one-time key, build + Core-sign + broadcast the
         // asset lock, capturing all recovery credentials BEFORE broadcast.
-        let secp = Secp256k1::new();
-        let mut secp_rng = dpp::dashcore::secp256k1::rand::thread_rng();
-        let one_time_secret = dpp::dashcore::secp256k1::SecretKey::new(&mut secp_rng);
-        let one_time_private_key = PrivateKey::new(one_time_secret, network);
-        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let mut secp_rng = dpp::secp256k1::rand::rng();
+        let one_time_secret = dpp::secp256k1::SecretKey::new(&mut secp_rng);
+        let one_time_private_key =
+            PrivateKey::from_byte_array(one_time_secret.as_secret_bytes(), network)
+                .map_err(|e| format!("failed to construct asset-lock private key: {e}"))?;
+        let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
         let one_time_address = Address::p2pkh(&one_time_public_key, network);
 
@@ -809,15 +809,17 @@ fn build_asset_lock_transaction(
             "faucet wallet has insufficient spendable funds: need {target} duffs, have {selected}"
         ));
     }
-    // Platform rejects an asset-lock proof whose transaction has more than
-    // `max_asset_lock_transaction_inputs` inputs. Core would still sign, mine,
-    // and chainlock such a tx, but every Platform use of its proof would be
-    // invalid — the locked output permanently unusable. Refuse before signing.
+    // Dash Core treats an asset lock with more than
+    // `max_asset_lock_transaction_inputs` inputs as non-standard
+    // (`assetlocktx-too-many-inputs`): peers do not relay it, and
+    // `sendrawtransaction` refuses it where standard transactions are required.
+    // Before protocol 15 Platform also refuses every proof of one, chain proofs
+    // included. Refuse before signing.
     if inputs.len() > max_inputs as usize {
         return Err(format!(
-            "funding this amount needs {} inputs, but Platform's asset-lock cap is {} \
-             (max_asset_lock_transaction_inputs); the lock would be unusable. Consolidate the \
-             faucet wallet into fewer, larger UTXOs or lock a smaller amount",
+            "funding this amount needs {} inputs, but the asset-lock input cap is {} \
+             (max_asset_lock_transaction_inputs; Dash Core does not relay a larger asset lock). \
+             Consolidate the faucet wallet into fewer, larger UTXOs or lock a smaller amount",
             inputs.len(),
             max_inputs
         ));

@@ -47,6 +47,8 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateContactRequestsPositionEntity
+import org.dashfoundation.dashsdk.persistence.entities.PrivateShieldedAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
@@ -134,8 +136,8 @@ class PlatformWalletPersistenceHandler(
     /**
      * Where the sweep pass gets a stored loser's input outpoints (the
      * outpoint-keyed hold, see `applySweptTransactions`). The production
-     * default decodes the stored consensus bytes through key-wallet-ffi's
-     * `transaction_decode`; tests inject a fake keyed by txid, since the
+     * default decodes the stored consensus bytes through platform-wallet-ffi's
+     * `platform_wallet_transaction_decode`; tests inject a fake keyed by txid, since the
      * native library is not loadable under Robolectric.
      */
     private val storedTransactionInputs: StoredTransactionInputs =
@@ -154,7 +156,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_WALLET_RESTORE or
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
-            CAPABILITY_CORE_SWEEP_REMOVAL
+            CAPABILITY_CORE_SWEEP_REMOVAL or
+            CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -775,6 +778,95 @@ class PlatformWalletPersistenceHandler(
      * height, no collection), so a chainlock-advancing round collects too,
      * not only a header round.
      */
+    /**
+     * The wallet's DashPay coreHeight backfill record (dashpay/platform#4302):
+     * whole-record replace of the three `wallets.dashPayBackfill*` columns,
+     * staged into the round so it commits with — or rolls back with — the
+     * lowered `syncedHeight` the header slot wrote moments earlier in the
+     * same round. A record that vouches for a cursor the round never
+     * committed must not survive on its own.
+     */
+    override fun onWalletChangesetDashPayBackfill(
+        walletId: ByteArray,
+        floor: Int,
+        rewoundFrom: Int,
+        covered: ByteArray,
+        coveredCount: Int,
+    ): Int = guarded {
+        require(covered.size == coveredCount * DASHPAY_BACKFILL_COVERED_ENTRY_SIZE) {
+            "DashPay backfill cover set must be $DASHPAY_BACKFILL_COVERED_ENTRY_SIZE bytes per contact"
+        }
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
+            db.walletDao().upsert(
+                wallet.copy(
+                    dashPayBackfillFloor = floor,
+                    dashPayBackfillRewoundFrom = rewoundFrom,
+                    dashPayBackfillCovered = covered.copyOf(),
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        0
+    }
+
+    /**
+     * Port of `PlatformWalletPersistenceHandler.swift`'s
+     * `persistPrivateContactScanState`: staged into the round, so the read
+     * position commits with, or rolls back with, the contact requests read
+     * before it. Identities the round removed lose theirs first, so a new
+     * position or address in the same round stands.
+     */
+    override fun onPersistPrivateContactScanState(
+        walletId: ByteArray,
+        positions: ByteArray,
+        addresses: ByteArray,
+        removedAddresses: ByteArray,
+        clearedIdentities: ByteArray,
+    ): Int = guarded {
+        val positionRows = unpackPrivatePositions(walletId, positions)
+        val addressRows = unpackPrivateAddresses(walletId, addresses)
+        val removed = chunks(removedAddresses, NativePersistenceBridge.PRIVATE_ADDRESS_REMOVAL_ENTRY_SIZE)
+            .map { it.copyOfRange(0, 32) to it.copyOfRange(32, 64) }
+        val cleared = chunks(clearedIdentities, NativePersistenceBridge.PRIVATE_CLEARED_IDENTITY_ENTRY_SIZE)
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            db.walletDao().getByWalletId(walletId) ?: return@stage
+            val dao = db.privateContactScanStateDao()
+            for (identityId in cleared) {
+                dao.deletePositionsOfIdentity(walletId, identityId)
+                dao.deleteAddressesOfIdentity(walletId, identityId)
+            }
+            positionRows.forEach { dao.upsertPosition(it) }
+            addressRows.forEach { dao.upsertAddress(it) }
+            for ((ownerId, contactId) in removed) {
+                dao.deleteAddress(walletId, ownerId, contactId)
+            }
+        }
+        0
+    }
+
+    /** The stored scan state of [walletId], packed as it was stored. */
+    override fun onLoadPrivateContactScanState(walletId: ByteArray): Array<ByteArray> =
+        loadOrThrow {
+            runBlockingResult {
+                val dao = database.privateContactScanStateDao()
+                arrayOf(
+                    packPrivatePositions(dao.positionsByWallet(walletId)),
+                    packPrivateAddresses(dao.addressesByWallet(walletId)),
+                )
+            }
+        }
+
+    override fun onLoadPrivateContactScanStateWallets(): ByteArray =
+        loadOrThrow {
+            runBlockingResult {
+                database.privateContactScanStateDao().walletIdsWithPositions()
+                    .fold(ByteArray(0)) { packed, id -> packed + id }
+            }
+        }
+
     override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
         val round = openRound(walletId)
         round?.finalityAdvanced = true
@@ -795,11 +887,11 @@ class PlatformWalletPersistenceHandler(
      * store's `collect_finalized_tombstones`. Delete this wallet's swept
      * tombstones whose winner's mined height the chainlock finality
      * boundary `min(chainlockHeight, syncedHeight)` has reached —
-     * key-wallet's `prune_finalized_observed_spends` condition verbatim.
-     * Both halves must be on record: without a numeric chainlock height
-     * nothing is provably final, and without filter coverage up to the
-     * winner's height the funding output could still be delivered by the
-     * unscanned range.
+     * key-wallet's `prune_finalized_observed_spends` condition over applied
+     * chainlocks. Both halves must be on record: without a numeric
+     * chainlock height nothing is provably final, and without filter
+     * coverage up to the winner's height the funding output could still be
+     * delivered by the unscanned range.
      *
      * Runs ONCE per round, at the end — from [onChangesetEnd], after every
      * account slice and after every sweep batch, gated by
@@ -1863,6 +1955,10 @@ class PlatformWalletPersistenceHandler(
         contractBoundsKind: Byte,
         contractBoundsId: ByteArray,
         contractBoundsDocumentType: String?,
+        totalBudgetIsSome: Boolean,
+        totalBudget: Long,
+        expiresAtIsSome: Boolean,
+        expiresAt: Long,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -1977,10 +2073,13 @@ class PlatformWalletPersistenceHandler(
             val identityBase58 = identityId.toBase58String()
             val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
             // ContractBounds projection → the legacy JSON blob column +
-            // doc-type name (Swift stores `[base64(contractId)]` JSON).
-            val boundsData = if ((contractBoundsKind.toInt() and 0xFF) != 0)
+            // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
+            // the kind itself: the blob holds the contract group id for kind
+            // 3, which the other two columns cannot tell from kind 1.
+            val boundsKind = contractBoundsKind.toInt() and 0xFF
+            val boundsData = if (boundsKind != 0)
                 contractBoundsIdToJson(contractBoundsId) else null
-            val docTypeName = if ((contractBoundsKind.toInt() and 0xFF) == 2)
+            val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
                 id = existing?.id ?: 0,
@@ -1990,9 +2089,14 @@ class PlatformWalletPersistenceHandler(
                 keyType = (keyType.toInt() and 0xFF).toString(),
                 readOnly = readOnly,
                 disabledAt = if (disabledAtIsSome) disabledAt else null,
+                // Usage limits (protocol version 14); a key limits update
+                // upserts the same key id with the raised values.
+                totalBudget = if (totalBudgetIsSome) totalBudget else null,
+                expiresAt = if (expiresAtIsSome) expiresAt else null,
                 publicKeyData = publicKeyData,
                 contractBoundsData = boundsData,
                 contractBoundsDocumentTypeName = docTypeName,
+                contractBoundsKind = boundsKind,
                 // Set to the Keystore identifier when the deriver stored the
                 // scalar; otherwise preserve any prior identifier (idempotent
                 // re-persist) and fall back to watch-only (null) for
@@ -2083,6 +2187,7 @@ class PlatformWalletPersistenceHandler(
 
     // ── Contacts ──────────────────────────────────────────────────────
 
+    /** Marker-less form: same row, no outbound-account marker (stored as NULL). */
     override fun onPersistContactUpsert(
         walletId: ByteArray,
         ownerId: ByteArray,
@@ -2102,11 +2207,48 @@ class PlatformWalletPersistenceHandler(
         isHidden: Boolean,
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+        hasExternalAccountReference = false,
+        externalAccountReference = 0,
+    )
+
+    override fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean,
+        externalAccountReference: Int,
     ): Int = guarded {
         stage(walletId) { db ->
-            // Owner identity must exist; skip silently otherwise (replayed
-            // next round), reading networkRaw off the owner.
-            val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+            // The owner identity must exist (networkRaw is read off it).
+            // Within a round identities apply before contacts, and native
+            // stores contact requests only of identities it manages, so it
+            // is there; when it is not, the round fails rather than being
+            // acknowledged without the row: this store declares the private
+            // contact request scan state, so an acknowledged round would let
+            // native store a read position past a request that was never
+            // saved, and no later scan would read it again.
+            val owner = db.identityDao().getByIdentityId(ownerId)
+                ?: throw IllegalStateException("contact request owner identity is not persisted")
             db.dashpayDao().upsertContactRequest(
                 DashpayContactRequestEntity(
                     networkRaw = owner.networkRaw,
@@ -2127,6 +2269,8 @@ class PlatformWalletPersistenceHandler(
                     contactHidden = isHidden,
                     contactAccountLabel = contactAccountLabel,
                     contactAcceptedAccounts = encodeAcceptedAccounts(acceptedAccounts),
+                    externalAccountReference =
+                        if (hasExternalAccountReference) externalAccountReference else null,
                     lastUpdated = now(),
                 ),
             )
@@ -2153,9 +2297,10 @@ class PlatformWalletPersistenceHandler(
         stage(walletId) { db ->
             if (isIgnored) {
                 db.dashpayDao().deleteContactRequest(ownerId, senderId, isOutgoing = false)
-                // Owner identity must exist (networkRaw is read off it);
-                // skip silently otherwise — replayed next round.
-                val owner = db.identityDao().getByIdentityId(ownerId) ?: return@stage
+                // The owner identity must exist (networkRaw is read off it);
+                // the round fails otherwise, as for a contact upsert.
+                val owner = db.identityDao().getByIdentityId(ownerId)
+                    ?: throw IllegalStateException("ignored sender owner identity is not persisted")
                 db.dashpayDao().upsertIgnoredSender(
                     DashpayIgnoredSenderEntity(
                         networkRaw = owner.networkRaw,
@@ -2661,6 +2806,15 @@ class PlatformWalletPersistenceHandler(
                 // slice.
                 val lastAppliedChainLockBytes =
                     w.lastAppliedChainLockBytes ?: ByteArray(0)
+                // Persisted DashPay backfill record — the durable half of the
+                // contact rescan guard. Present only when every column is set
+                // (one round writes all three); otherwise native treats the
+                // wallet as never backfilled and rewinds once, as before.
+                val backfillFloor = w.dashPayBackfillFloor
+                val backfillRewoundFrom = w.dashPayBackfillRewoundFrom
+                val backfillCovered = w.dashPayBackfillCovered
+                val hasBackfill =
+                    backfillFloor != null && backfillRewoundFrom != null && backfillCovered != null
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -2682,7 +2836,14 @@ class PlatformWalletPersistenceHandler(
                         unresolvedAssetLockTxRecords = unresolvedAssetLockTxRecords,
                         providerSpecialTxs = providerSpecialTxs,
                         lastAppliedChainLockBytes = lastAppliedChainLockBytes,
-                    ),
+                    ).apply {
+                        if (hasBackfill) {
+                            hasDashPayBackfill = true
+                            dashPayBackfillFloor = backfillFloor!!
+                            dashPayBackfillRewoundFrom = backfillRewoundFrom!!
+                            dashPayBackfillCovered = backfillCovered!!
+                        }
+                    },
                 )
             }
             out.toTypedArray()
@@ -2849,17 +3010,35 @@ class PlatformWalletPersistenceHandler(
                 .sortedBy { it.keyId }
                 .map { pk ->
                     // ContractBounds → (kind, 32-byte id, doc-type). Inverse
-                    // of `contractBoundsIdToJson` on the persist side:
-                    //   * no blob        → kind 0 (unbounded)
-                    //   * blob + docType → kind 2 (SingleContractDocumentType)
-                    //   * blob, no docType → kind 1 (SingleContract)
+                    // of `contractBoundsIdToJson` on the persist side. The
+                    // stored kind decides:
+                    //   * no blob          → kind 0 (unbounded)
+                    //   * stored kind 3    → kind 3 (ContractGroup, no docType)
+                    //   * stored kind 2    → kind 2 with its docType; without
+                    //                        one it demotes to kind 1, as the
+                    //                        Rust loader does
+                    //   * stored kind 1    → kind 1 (SingleContract)
+                    //   * stored kind 0, or a kind this build does not know
+                    //                      → kind 0, the same fallback the
+                    //                        Swift restore path applies,
+                    //                        rather than asserting a
+                    //                        SingleContract bound the key
+                    //                        never had
+                    // A NULL stored kind is a legacy row (schema < 13) and
+                    // keeps the inference those rows have always used:
+                    // blob + docType → kind 2, blob alone → kind 1.
                     // A blob that fails to decode to 32 bytes degrades to
                     // kind 0 rather than crashing FFI marshalling.
                     val boundsId = pk.contractBoundsData?.let { contractBoundsJsonToId(it) }
+                    val hasDocType = !pk.contractBoundsDocumentTypeName.isNullOrEmpty()
+                    val storedKind = pk.contractBoundsKind
                     val (kind, id) = when {
                         boundsId == null -> 0.toByte() to ByteArray(0)
-                        pk.contractBoundsDocumentTypeName != null -> 2.toByte() to boundsId
-                        else -> 1.toByte() to boundsId
+                        storedKind == 3 -> 3.toByte() to boundsId
+                        storedKind == 1 -> 1.toByte() to boundsId
+                        storedKind == 2 || storedKind == null ->
+                            (if (hasDocType) 2 else 1).toByte() to boundsId
+                        else -> 0.toByte() to ByteArray(0)
                     }
                     IdentityKeyRestoreData(
                         keyId = pk.keyId,
@@ -2872,6 +3051,10 @@ class PlatformWalletPersistenceHandler(
                         contractBoundsId = id,
                         contractBoundsDocumentType =
                             if (kind.toInt() == 2) pk.contractBoundsDocumentTypeName else null,
+                        totalBudgetIsSome = pk.totalBudget != null,
+                        totalBudget = pk.totalBudget ?: 0L,
+                        expiresAtIsSome = pk.expiresAt != null,
+                        expiresAt = pk.expiresAt ?: 0L,
                     )
                 }.toTypedArray()
             // DashPay contact rows — pending + established requests with
@@ -2901,7 +3084,12 @@ class PlatformWalletPersistenceHandler(
                         isHidden = c.contactHidden,
                         contactAccountLabel = c.contactAccountLabel,
                         acceptedAccounts = decodeAcceptedAccounts(c.contactAcceptedAccounts),
-                    )
+                    ).apply {
+                        c.externalAccountReference?.let { reference ->
+                            hasExternalAccountReference = true
+                            externalAccountReference = reference
+                        }
+                    }
                 }.toTypedArray()
             // Ignored senders (per-sender mute) — restores the Rust
             // `ignored_senders` set so a previously-ignored sender doesn't
@@ -3109,10 +3297,21 @@ class PlatformWalletPersistenceHandler(
      * except here the single row is skipped rather than failing the
      * whole load, matching this builder's per-row-skip convention.
      */
+    /** The txid of the transaction that created this coin: the row's own column, else the outpoint's txid half. */
+    private fun TxoEntity.creatingTxid(): ByteArray = txid ?: outpoint.copyOfRange(0, minOf(32, outpoint.size))
+
     private suspend fun buildUtxoRestoreData(walletId: ByteArray): Array<UtxoRestoreData> {
         val rows = database.txoDao().observeUnspentByWallet(walletId).first()
         if (rows.isEmpty()) return emptyArray()
         val out = ArrayList<UtxoRestoreData>(rows.size)
+        // The creating transactions' rows, read once for the whole batch:
+        // each coin carries its transaction's stored context so the Rust
+        // loader can raise a coin that lags its own transaction's
+        // confirmation.
+        val parentByTxid = chunkedFlatMap(
+            rows.map { it.creatingTxid() }.distinctBy { it.toHex() },
+        ) { database.transactionDao().getConfirmationsByTxids(it) }
+            .associateBy { it.txid.toHex() }
         // Per-call memo of address → account row (a wallet's UTXOs
         // cluster on few addresses/accounts; avoids N duplicate joins).
         val accountByAddress = HashMap<String, AccountEntity?>()
@@ -3160,11 +3359,12 @@ class PlatformWalletPersistenceHandler(
                 continue
             }
             val typeTag = account.accountType.toByte()
-            val prevTxid = txo.txid ?: txo.outpoint.copyOfRange(0, minOf(32, txo.outpoint.size))
+            val prevTxid = txo.creatingTxid()
             if (prevTxid.size != 32) {
                 Log.w(TAG, "load: skipping UTXO with ${prevTxid.size}-byte txid")
                 continue
             }
+            val parent = parentByTxid[prevTxid.toHex()]
             out.add(
                 UtxoRestoreData(
                     typeTag = typeTag,
@@ -3183,6 +3383,8 @@ class PlatformWalletPersistenceHandler(
                     isConfirmed = txo.isConfirmed,
                     isInstantLocked = txo.isInstantLocked,
                     isLocked = txo.isLocked,
+                    parentContext = parent?.context ?: 0,
+                    parentBlockHeight = parent?.blockHeight ?: 0,
                 ),
             )
         }
@@ -3515,6 +3717,12 @@ class PlatformWalletPersistenceHandler(
             database.shieldedDao().deleteActivityByWallet(walletId)
             database.shieldedDao().deleteSyncStatesByWallet(walletId)
             database.shieldedDao().deleteViewingKeysByWallet(walletId)
+            // A position record marked unresolved outlives the wallet: its
+            // private payment may still execute, and the next load hands it
+            // back as retained, so a wallet registered again holds the
+            // identity it names.
+            database.privateContactScanStateDao().deleteUnmarkedPositionsByWallet(walletId)
+            database.privateContactScanStateDao().deleteAddressesByWallet(walletId)
 
             // The wallet row itself — cascades accounts → core / platform
             // addresses.
@@ -3990,8 +4198,18 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
         internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
         internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
+        /**
+         * Bytes per receival account in the opaque cover set
+         * [onWalletChangesetDashPayBackfill] delivers: owner id (32),
+         * contact id (32), account index (4), covered-from height (4).
+         */
+        internal const val DASHPAY_BACKFILL_COVERED_ENTRY_SIZE: Int = 32 + 32 + 4 + 4
+
         internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
             NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
+
+        internal const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
+            NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
 
         private const val TAG = "DashPersistence"
 
@@ -4137,8 +4355,8 @@ fun interface StoredTransactionInputs {
 }
 
 /**
- * Production [StoredTransactionInputs]: key-wallet-ffi's
- * `transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
+ * Production [StoredTransactionInputs]: platform-wallet-ffi's
+ * `platform_wallet_transaction_decode` through [org.dashfoundation.dashsdk.keywallet.TransactionDecoder].
  * The decoder is a stateless marshaler — it takes no wallet-manager lock —
  * so calling it from inside a persistence callback (which runs while Rust
  * holds that lock) cannot deadlock; the "no native calls under
@@ -4410,6 +4628,79 @@ internal fun contractBoundsJsonToId(blob: ByteArray): ByteArray? {
 
 private fun now(): java.util.Date = java.util.Date()
 private fun nowSeconds(): Long = System.currentTimeMillis() / 1000
+
+/** [packed] split into its rows of [size] bytes; a partial row is refused. */
+internal fun chunks(packed: ByteArray, size: Int): List<ByteArray> {
+    require(packed.size % size == 0) { "packed rows must be $size bytes each" }
+    return (0 until packed.size / size).map { packed.copyOfRange(it * size, (it + 1) * size) }
+}
+
+/** Rows of [NativePersistenceBridge.onPersistPrivateContactScanState]'s `positions`. */
+internal fun unpackPrivatePositions(
+    walletId: ByteArray,
+    packed: ByteArray,
+): List<PrivateContactRequestsPositionEntity> =
+    chunks(packed, NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE).map { row ->
+        PrivateContactRequestsPositionEntity(
+            walletId = walletId.copyOf(),
+            identityId = row.copyOfRange(0, 32),
+            position = java.nio.ByteBuffer.wrap(row, 32, 8)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).long,
+            keyFingerprint = row.copyOfRange(40, 72),
+            privatePaymentsUnresolved = when (row[72].toInt()) {
+                0 -> false
+                1 -> true
+                else -> throw IllegalArgumentException("the unresolved private payment marker must be 0 or 1")
+            },
+        )
+    }
+
+/** Rows of [NativePersistenceBridge.onPersistPrivateContactScanState]'s `addresses`. */
+internal fun unpackPrivateAddresses(
+    walletId: ByteArray,
+    packed: ByteArray,
+): List<PrivateShieldedAddressEntity> =
+    chunks(packed, NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE).map { row ->
+        PrivateShieldedAddressEntity(
+            walletId = walletId.copyOf(),
+            ownerId = row.copyOfRange(0, 32),
+            contactId = row.copyOfRange(32, 64),
+            address = row.copyOfRange(64, 107),
+        )
+    }
+
+/**
+ * [rows] packed as [NativePersistenceBridge.onLoadPrivateContactScanState]
+ * hands them back. A stored row whose bytes have the wrong length (Room
+ * keeps any blob) cannot cross the ABI: it throws, which fails the load
+ * through [PlatformWalletPersistenceHandler.onLoadPrivateContactScanState]'s
+ * `loadOrThrow`, rather than handing back the rest without it.
+ */
+internal fun packPrivatePositions(rows: List<PrivateContactRequestsPositionEntity>): ByteArray {
+    require(rows.all { it.identityId.size == 32 && it.keyFingerprint.size == 32 }) {
+        "a stored private contact request read position has a malformed id or fingerprint"
+    }
+    val buffer = java.nio.ByteBuffer
+        .allocate(rows.size * NativePersistenceBridge.PRIVATE_POSITION_ENTRY_SIZE)
+        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    for (row in rows) {
+        buffer.put(row.identityId).putLong(row.position).put(row.keyFingerprint)
+            .put(if (row.privatePaymentsUnresolved) 1.toByte() else 0.toByte())
+    }
+    return buffer.array()
+}
+
+/** See [packPrivatePositions]. */
+internal fun packPrivateAddresses(rows: List<PrivateShieldedAddressEntity>): ByteArray {
+    require(rows.all { it.ownerId.size == 32 && it.contactId.size == 32 && it.address.size == 43 }) {
+        "a stored private shielded address has a malformed id or address"
+    }
+    val buffer = java.nio.ByteBuffer.allocate(rows.size * NativePersistenceBridge.PRIVATE_ADDRESS_ENTRY_SIZE)
+    for (row in rows) {
+        buffer.put(row.ownerId).put(row.contactId).put(row.address)
+    }
+    return buffer.array()
+}
 
 /**
  * Split a DIP-0018 bech32m platform address into `(addressType, 20-byte

@@ -1,0 +1,82 @@
+{
+  "$formatVersion": "1",
+  "id": "FmNtTTiJ9X8sJdKvkpK58yzUAx78PW61bCpwW8dZnpMC",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "room": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "capacity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "position": 0
+        }
+      },
+      "required": [
+        "capacity"
+      ],
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "moderatorAbilities": {
+        "delete": true
+      },
+      "properties": {
+        "roomId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "room"
+          },
+          "position": 0
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "indices": [
+        {
+          "name": "byRoom",
+          "properties": [
+            {
+              "roomId": "asc"
+            }
+          ],
+          "countable": "countable"
+        }
+      ],
+      "propertyConstraints": {
+        "cap": {
+          "lessThanOrEqual": [
+            {
+              "countOf": [
+                "entry",
+                {
+                  "roomId": "roomId"
+                }
+              ]
+            },
+            {
+              "referenced": [
+                "roomId",
+                "capacity"
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

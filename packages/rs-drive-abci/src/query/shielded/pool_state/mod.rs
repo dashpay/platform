@@ -91,6 +91,7 @@ mod tests {
         let request = GetShieldedPoolStateRequest {
             version: Some(RequestVersion::V0(GetShieldedPoolStateRequestV0 {
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -121,6 +122,7 @@ mod tests {
         let request = GetShieldedPoolStateRequest {
             version: Some(RequestVersion::V0(GetShieldedPoolStateRequestV0 {
                 prove: true,
+                token_id: None,
             })),
         };
 

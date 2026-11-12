@@ -55,7 +55,7 @@ impl Drive {
                 if matches!(query.filter, DocumentHistoryFilter::Revision(_)) {
                     limit = 1;
                 }
-                (revision > 1).then_some((revision - 1) as u16)
+                Some((revision - 1) as u16)
             }
         };
         Ok(PathQuery::new(

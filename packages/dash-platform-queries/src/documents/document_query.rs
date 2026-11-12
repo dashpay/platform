@@ -11,13 +11,15 @@ use dapi_grpc::platform::v0::{
         document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
-        having_aggregate, having_clause, order_clause,
+        having_aggregate, having_clause,
+        integer_range_selection::Grid as ProtoIntegerRangeGrid,
+        order_clause,
         time_range_selection::{Grid as ProtoTimeRangeGrid, Selector as ProtoTimeRangeSelector},
         DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
         GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
-        HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
-        TimeRangeSelection as ProtoTimeRangeSelection, WhereClause as ProtoWhereClause,
-        WhereOperator as ProtoWhereOperator,
+        HavingClause as ProtoHavingClause, IntegerRangeSelection as ProtoIntegerRangeSelection,
+        OrderClause as ProtoOrderClause, TimeRangeSelection as ProtoTimeRangeSelection,
+        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -26,7 +28,8 @@ use dpp::dashcore::Network;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::{
     data_contract::{
-        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+        accessors::v0::DataContractV0Getters,
+        document_type::{accessors::DocumentTypeV0Getters, IndexBucketing},
     },
     document::Document,
     platform_value::{platform_value, Value},
@@ -34,12 +37,15 @@ use dpp::{
     InvalidVectorSizeError, ProtocolError,
 };
 use drive::config::DEFAULT_QUERY_LIMIT;
+use drive::error::Error as DriveError;
 use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
+    refuse_several_window_selections, resolve_integer_range_bucket_clause,
     resolve_time_range_bucket_clause, validate_resolved_time_range_clause_shapes,
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
-    HavingRightOperand, InternalClauses, OrderClause, ResolvedTimeRange, SelectFunction,
-    SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator,
+    HavingRightOperand, IntegerRangeGridSpec, InternalClauses, OrderClause, ResolvedTimeRange,
+    SelectFunction, SelectProjection, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
+    WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 
@@ -61,6 +67,23 @@ pub struct TimeRangeClause {
     /// the field carries a single grid.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub grid: Option<TimeRangeGridSpec>,
+}
+
+/// One pending `IN_INTEGER_RANGE` selection: the integer field, the start
+/// of the window it selects, and — when the contract buckets the field with
+/// more than one `integerRange` grid — the grid it targets (`None` means the
+/// field's sole grid).
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct IntegerRangeClause {
+    /// The bucketed integer field the selection is on.
+    pub field: String,
+    /// The selected window's start: an integer on the grid.
+    pub start: Value,
+    /// The grid targeted, as the contract declares it; `None` when the field
+    /// carries a single grid.
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub grid: Option<IntegerRangeGridSpec>,
 }
 
 /// Request that is used to query documents from the Dash Platform.
@@ -109,6 +132,14 @@ pub struct DocumentQuery {
     /// [`Self::with_time_range_grid`].
     #[cfg_attr(feature = "mocks", serde(default))]
     pub time_range_clauses: Vec<TimeRangeClause>,
+    /// Integer-range (`IN_INTEGER_RANGE`) selections on an integer field
+    /// covered by an `integerRange` index, each naming one window by its
+    /// start. Emitted as `IN_INTEGER_RANGE` clauses on the v1 wire; the
+    /// server and the verifier resolve the same window from the query
+    /// alone. See [`Self::with_integer_range`] and
+    /// [`Self::with_integer_range_grid`].
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub integer_range_clauses: Vec<IntegerRangeClause>,
     /// SQL `GROUP BY` field names, in left-to-right order. Empty =
     /// no explicit grouping (aggregate count for `select=Count`).
     /// Only meaningful when `select=Count`; non-empty with
@@ -216,6 +247,7 @@ impl DocumentQuery {
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             group_by: Vec::new(),
             having: Vec::new(),
             order_by_clauses: vec![],
@@ -236,15 +268,26 @@ impl DocumentQuery {
         Ok(())
     }
 
+    /// A count, sum or average view verifies grouped totals, not a `having` clause. Nodes from
+    /// protocol version 14 answer a grouped query with one as a having-range page, which only
+    /// the having view verifies, and every node refuses one without a grouping.
+    pub(super) fn ensure_no_having(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.having.is_empty() {
+            return Err(having_page_refusal());
+        }
+        Ok(())
+    }
+
     /// Create new document query based on a [DriveDocumentQuery].
     ///
     /// Preserves sub-queries, including their contracts and bindings.
     ///
-    /// Fails when the drive query carries time-range resolution provenance
-    /// (`resolved_time_ranges`): the resolved bucket equality cannot be
+    /// Fails when the drive query carries window resolution provenance
+    /// (`resolved_time_ranges`): the resolved window equality cannot be
     /// represented without it — see the `TryFrom` impl. Build the query
-    /// with [`Self::with_time_range`] / [`Self::with_time_range_grid`]
-    /// instead for time-range selections.
+    /// with [`Self::with_time_range`] / [`Self::with_time_range_grid`] or
+    /// [`Self::with_integer_range`] / [`Self::with_integer_range_grid`]
+    /// instead for window selections.
     pub fn new_with_drive_query(d: &DriveDocumentQuery) -> Result<Self, crate::error::Error> {
         Self::try_from(d)
     }
@@ -314,6 +357,47 @@ impl DocumentQuery {
         self.time_range_clauses.push(TimeRangeClause {
             field: field.into(),
             selector,
+            grid: Some(grid),
+        });
+        self
+    }
+
+    /// Restrict the query to one window of `field` (an integer covered by an
+    /// `integerRange` index): the window starting at `start`, which must be
+    /// a window start of the grid (`phase + k * step` within the field's
+    /// integer type, or the type's minimum for a clamped bottom window).
+    /// Emitted as an `IN_INTEGER_RANGE` clause on the v1 wire; the server
+    /// and the proof verifier resolve the same window from the query alone.
+    /// Requires protocol version 14+.
+    ///
+    /// The bare selection is unambiguous only while exactly one grid buckets
+    /// `field`; when the contract declares several, use
+    /// [`Self::with_integer_range_grid`].
+    ///
+    /// Existing integer-range selections are preserved.
+    pub fn with_integer_range(mut self, field: impl Into<String>, start: impl Into<Value>) -> Self {
+        self.integer_range_clauses.push(IntegerRangeClause {
+            field: field.into(),
+            start: start.into(),
+            grid: None,
+        });
+        self
+    }
+
+    /// [`Self::with_integer_range`] naming a specific grid — required when
+    /// the contract buckets `field` with more than one `integerRange` grid.
+    /// The spec's `range` / `step` / `phase` are the contract's own, verbatim.
+    ///
+    /// Existing integer-range selections are preserved.
+    pub fn with_integer_range_grid(
+        mut self,
+        field: impl Into<String>,
+        start: impl Into<Value>,
+        grid: IntegerRangeGridSpec,
+    ) -> Self {
+        self.integer_range_clauses.push(IntegerRangeClause {
+            field: field.into(),
+            start: start.into(),
             grid: Some(grid),
         });
         self
@@ -493,6 +577,9 @@ impl DocumentQuery {
     /// specific [`PlatformVersion`] to pick V0 vs V1. The dispatch
     /// boundary is the document_query feature-version on the
     /// platform_version: `0` → V0, `1` → V1.
+    ///
+    /// A caller that sends the request itself owns checking
+    /// [`Self::required_protocol_version`] against the network first.
     pub fn try_into_request_for_version(
         self,
         platform_version: &PlatformVersion,
@@ -504,6 +591,14 @@ impl DocumentQuery {
 impl FromProof<DocumentQuery> for Document {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
+
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        <Documents as FromProof<Self::Request>>::check_request(request, platform_version)
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -525,6 +620,8 @@ impl FromProof<DocumentQuery> for Document {
                 provider,
             )?;
 
+        // The documents are verified here, so every honest node proves the same ones: several
+        // of them are the query's doing, not the node's.
         match documents {
             None => Ok((None, metadata, proof)),
             Some(docs) => match docs.len() {
@@ -533,8 +630,11 @@ impl FromProof<DocumentQuery> for Document {
                     metadata,
                     proof,
                 )),
-                n => Err(drive_proof_verifier::Error::ResponseDecodeError {
-                    error: format!("expected 1 element, got {}", n),
+                n => Err(drive_proof_verifier::Error::UnusableVerifiedResult {
+                    reason: format!(
+                        "a single-document fetch matched {n} documents; narrow the query to \
+                         one document, or fetch several documents"
+                    ),
                 }),
             },
         }
@@ -544,6 +644,58 @@ impl FromProof<DocumentQuery> for Document {
 impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
+
+    /// The verifier below rebuilds a documents query whatever the request selects, so an
+    /// aggregate select, which the server answers with an aggregate proof, can never verify.
+    /// A grouping or a `having` clause has no meaning for a documents select, and every node
+    /// refuses it. A projection field on the documents select is left alone: the server
+    /// refuses it on the V1 wire, and the V0 encoder drops it, so the documents served verify.
+    /// The window selections are resolved as the verifier resolves them, which refuses one that
+    /// does not resolve, or an `In` or range clause beside it on the field it buckets. The
+    /// resolved query is then handed to the verifier's own check, which builds Drive's path query
+    /// from it as the verifier does before reading the proof, so a query no index serves is
+    /// refused too.
+    fn check_request(
+        request: &Self::Request,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        request.ensure_no_sub_queries()?;
+        if request.select.function != SelectFunction::Documents {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "Document / Documents require the documents projection; got {:?}. Fetch \
+                     an aggregate as DocumentCount, DocumentSum, DocumentAverage or one of \
+                     their split, ranked or having views",
+                    request.select
+                ),
+            });
+        }
+        if !request.group_by.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "a documents select returns the documents themselves, so it cannot be \
+                     grouped (group by {}); select a count, sum or average to group them",
+                    request.group_by.join(", ")
+                ),
+            });
+        }
+        if !request.having.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "a documents select returns the documents themselves, so it cannot \
+                        be grouped or filtered by an aggregate (having); select a count, sum \
+                        or average to filter groups"
+                    .to_string(),
+            });
+        }
+        // The verifier rebuilds the resolved query as Drive's before it reads the proof.
+        let (resolved, resolved_time_ranges) = request.resolved_for_checking()?;
+        let drive_query = drive_query_with_provenance(&resolved, resolved_time_ranges)?;
+        <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::check_request(
+            &drive_query,
+            platform_version,
+        )
+    }
+
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
@@ -566,7 +718,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         // the aggregate verifiers also use) before the `DriveDocumentQuery`
         // conversion so the engine sees ordinary equality clauses.
         let mut resolved_time_ranges = Vec::new();
-        if !request.time_range_clauses.is_empty() {
+        if !request.time_range_clauses.is_empty() || !request.integer_range_clauses.is_empty() {
             // The generated `VersionedGrpcResponse::metadata()` handles both
             // response envelopes (and any future one), so no hand-written
             // version match is needed here.
@@ -575,23 +727,14 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
                 .metadata()
                 .map(|metadata| metadata.time_ms)
                 .map_err(|_| drive_proof_verifier::Error::ResponseDecodeError {
-                    error: "time range query proof response is missing block-time metadata"
+                    error: "window selection query proof response is missing its metadata"
                         .to_string(),
                 })?;
             resolved_time_ranges =
                 normalize_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
         }
 
-        let mut drive_query: DriveDocumentQuery =
-            (&request)
-                .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
-                })?;
-        // The conversion cannot recover which equalities came from resolution,
-        // so the provenance is carried across here; index selection reads it
-        // to pin the query to the index that buckets the field.
-        drive_query.resolved_time_ranges = resolved_time_ranges;
+        let drive_query = drive_query_with_provenance(&request, resolved_time_ranges)?;
 
         <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
@@ -601,6 +744,31 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
             provider,
         )
     }
+}
+
+/// The refusal of a `having` clause in a count, sum or average view.
+pub(super) fn having_page_refusal() -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: "a having clause is answered as a having-range page, which a count, sum or \
+                average view cannot verify; fetch a grouped query with one as \
+                DocumentHavingEntries"
+            .to_string(),
+    }
+}
+
+/// Drive's query for `resolved`, a documents select whose window selections are already
+/// resolved, carrying the resolution provenance `resolved_time_ranges`. The conversion cannot
+/// recover which equalities came from resolution, so the provenance is carried across here;
+/// index selection reads it to pin the query to the index that buckets the field. The check
+/// before sending and the verifier both build their query here, so neither can drop it.
+fn drive_query_with_provenance(
+    resolved: &DocumentQuery,
+    resolved_time_ranges: Vec<ResolvedTimeRange>,
+) -> Result<DriveDocumentQuery<'_>, drive_proof_verifier::Error> {
+    let mut drive_query =
+        DriveDocumentQuery::try_from(resolved).map_err(unconvertible_documents_query)?;
+    drive_query.resolved_time_ranges = resolved_time_ranges;
+    Ok(drive_query)
 }
 
 /// Resolve a request's pending time-range (`IN_TIME_RANGE`) selections into
@@ -641,24 +809,105 @@ pub(super) fn normalize_time_range_clauses_with_metadata_time(
     let resolved_time_ranges = resolve_time_range_clauses_with_metadata_time(request, time_ms)?;
     validate_resolved_time_range_clause_shapes(&request.where_clauses, &resolved_time_ranges)
         .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("invalid time range query shape: {}", e),
+            error: format!("invalid window selection query shape: {}", e),
         })?;
     Ok(resolved_time_ranges)
+}
+
+/// A block time well inside any network's lifetime, at which a check before sending resolves
+/// a relative time-range selection (newest or oldest window). The checks read that the
+/// resolved clause is one equality on the bucketed field, and a ranked or having-range check
+/// encodes its value as a timestamp key, which every window start encodes alike, so any block
+/// time an answer can carry gives them the same outcome. It is past every grid's phase, which
+/// contract validation keeps under a year, so a window resolves here exactly when it resolves
+/// at the block time of a real answer.
+const CHECKING_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+
+impl DocumentQuery {
+    /// This query with its pending window selections resolved as a verifier resolves them
+    /// from an answer's block time, and their provenance, for checking it before it is sent.
+    ///
+    /// A selection that does not resolve here does not resolve for any answer, so it is
+    /// refused here as the verifier refuses it. An integer-range selection, and a time-range
+    /// one by start, resolve from the query alone. A newest or oldest window resolves at the
+    /// answer's block time, but at any block time past the grid's phase it fails only for the
+    /// grid: no index buckets the field, or none declares the grid it names. A window by start
+    /// is resolved at its own start, where it is never past its TTL: whether it has expired
+    /// depends on the answer's block time, so the server and the verifier decide that.
+    ///
+    /// Refused as well, as every verifier refuses them for any answer: a document type the
+    /// contract lacks, a resolved query whose shape no verifier accepts (an `In` or range
+    /// clause on a field a selection buckets), and windows on two fields, which no index
+    /// serves since an index buckets one field.
+    pub(super) fn resolved_for_checking(
+        &self,
+    ) -> Result<(DocumentQuery, Vec<ResolvedTimeRange>), drive_proof_verifier::Error> {
+        let mut query = self.clone();
+        if query.time_range_clauses.is_empty() && query.integer_range_clauses.is_empty() {
+            return Ok((query, Vec::new()));
+        }
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(unknown_window_document_type)?;
+        let mut resolved_time_ranges = Vec::new();
+        for TimeRangeClause {
+            field,
+            selector,
+            grid,
+        } in std::mem::take(&mut query.time_range_clauses)
+        {
+            // An absolute selection names its window, and is never expired at its own start.
+            let block_time_ms = match selector {
+                TimeRangeSelector::ByStart { start_ms } => start_ms,
+                TimeRangeSelector::Newest | TimeRangeSelector::Oldest => CHECKING_BLOCK_TIME_MS,
+            };
+            let (clause, resolved) = resolve_time_range_bucket_clause(
+                &field,
+                selector,
+                grid,
+                document_type,
+                block_time_ms,
+            )
+            .map_err(unresolved_time_range)?;
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        for IntegerRangeClause { field, start, grid } in
+            std::mem::take(&mut query.integer_range_clauses)
+        {
+            let (clause, resolved) =
+                resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+                    .map_err(unresolved_integer_range)?;
+            query.where_clauses.push(clause);
+            resolved_time_ranges.push(resolved);
+        }
+        validate_resolved_time_range_clause_shapes(&query.where_clauses, &resolved_time_ranges)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!("invalid window selection query shape: {}", e),
+            })?;
+        // Drive's rule, in Drive's words: the only clear refusal of two windows the aggregate,
+        // ranked and having checks get, which would otherwise only find no index to serve them.
+        refuse_several_window_selections(&resolved_time_ranges, "query").map_err(|e| {
+            drive_proof_verifier::Error::RequestError {
+                error: e.to_string(),
+            }
+        })?;
+        Ok((query, resolved_time_ranges))
+    }
 }
 
 pub(super) fn resolve_time_range_clauses_with_metadata_time(
     request: &mut DocumentQuery,
     time_ms: u64,
 ) -> Result<Vec<ResolvedTimeRange>, drive_proof_verifier::Error> {
-    if request.time_range_clauses.is_empty() {
+    if request.time_range_clauses.is_empty() && request.integer_range_clauses.is_empty() {
         return Ok(Vec::new());
     }
     let data_contract = Arc::clone(&request.data_contract);
     let document_type = data_contract
         .document_type_for_name(&request.document_type_name)
-        .map_err(|e| drive_proof_verifier::Error::RequestError {
-            error: format!("document type not found for time range query: {}", e),
-        })?;
+        .map_err(unknown_window_document_type)?;
     let time_range_clauses = std::mem::take(&mut request.time_range_clauses);
     let mut resolved_time_ranges = Vec::with_capacity(time_range_clauses.len());
     for TimeRangeClause {
@@ -669,13 +918,52 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
     {
         let (clause, resolved) =
             resolve_time_range_bucket_clause(&field, selector, grid, document_type, time_ms)
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to resolve time range clause: {}", e),
-                })?;
+                .map_err(unresolved_time_range)?;
+        request.where_clauses.push(clause);
+        resolved_time_ranges.push(resolved);
+    }
+    // Integer-range selections name their window absolutely: resolved
+    // from the query alone, exactly as the server resolved them.
+    let integer_range_clauses = std::mem::take(&mut request.integer_range_clauses);
+    for IntegerRangeClause { field, start, grid } in integer_range_clauses {
+        let (clause, resolved) =
+            resolve_integer_range_bucket_clause(&field, &start, grid, document_type)
+                .map_err(unresolved_integer_range)?;
         request.where_clauses.push(clause);
         resolved_time_ranges.push(resolved);
     }
     Ok(resolved_time_ranges)
+}
+
+/// The refusal of a documents select Drive's query cannot be built from.
+fn unconvertible_documents_query(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("Failed to convert DocumentQuery to DriveQuery: {}", error),
+    }
+}
+
+/// The refusal of a window selection on a document type the contract lacks.
+fn unknown_window_document_type(error: impl std::fmt::Display) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!(
+            "document type not found for window selection query: {}",
+            error
+        ),
+    }
+}
+
+/// The refusal of a time-range selection that does not resolve.
+fn unresolved_time_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve time range clause: {}", error),
+    }
+}
+
+/// The refusal of an integer-range selection that does not resolve.
+fn unresolved_integer_range(error: DriveError) -> drive_proof_verifier::Error {
+    drive_proof_verifier::Error::RequestError {
+        error: format!("failed to resolve integer range clause: {}", error),
+    }
 }
 
 /// Version-aware encoder. The dispatch is driven by the
@@ -686,8 +974,11 @@ pub(super) fn resolve_time_range_clauses_with_metadata_time(
 /// V0 lacks `selects` / `group_by` / `having` / `offset` and the
 /// optional-limit semantics — callers that set those features get
 /// `Error::Config` with a clear "requires Platform v3.1+" message
-/// rather than a silently-truncated request. Time-range clauses are
-/// additionally gated on the v14 contract grammar — see the `1 =>` arm.
+/// rather than a silently-truncated request.
+///
+/// The encoder decides nothing about which networks serve the query:
+/// callers check [`DocumentQuery::required_protocol_version`] against
+/// the network first.
 impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
     type Error = Error;
 
@@ -704,6 +995,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             document_type_name,
             where_clauses,
             time_range_clauses,
+            integer_range_clauses,
             group_by,
             having,
             order_by_clauses,
@@ -728,6 +1020,18 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
 
         match feature_version {
             0 => {
+                // The v0 CBOR where clauses have no operator that reads the elements of a
+                // typed array.
+                if where_clauses
+                    .iter()
+                    .any(|clause| clause.operator.reads_array_elements())
+                {
+                    return Err(Error::Config(
+                        "contains and containsAny queries require the V1 documents wire; the \
+                         v0 getDocuments wire has no element operator"
+                            .to_string(),
+                    ));
+                }
                 if !sub_queries.is_empty() {
                     return Err(Error::Config(
                         "composite document queries require the V1 documents wire (Platform v3.1+)"
@@ -738,6 +1042,13 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     return Err(Error::Config(
                         "time range (IN_TIME_RANGE) queries require protocol version 14+; the \
                          v0 getDocuments wire has no time-range operator"
+                            .to_string(),
+                    ));
+                }
+                if !integer_range_clauses.is_empty() {
+                    return Err(Error::Config(
+                        "integer range (IN_INTEGER_RANGE) queries require protocol version \
+                         14+; the v0 getDocuments wire has no integer-range operator"
                             .to_string(),
                     ));
                 }
@@ -754,43 +1065,21 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     &having,
                 )
             }
-            1 => {
-                // The v1 wire predates time-range indexes: protocol
-                // versions 12 and 13 also serve it, but their contract
-                // grammar (document meta-schema generations 1 and 2)
-                // cannot host a `timeRange` index. Gate on the grammar
-                // generation — the same table the server's parser reads —
-                // rather than emitting an operator a pre-v14 server
-                // rejects as an unknown discriminant.
-                let grammar_generation = platform_version
-                    .dpp
-                    .contract_versions
-                    .document_type_versions
-                    .schema
-                    .document_type_schema;
-                if !time_range_clauses.is_empty() && grammar_generation < 3 {
-                    return Err(Error::Config(format!(
-                        "time range (IN_TIME_RANGE) queries require protocol version 14+ — the \
-                         first version whose contract grammar hosts `timeRange` indexes; this \
-                         network runs protocol version {}",
-                        platform_version.protocol_version
-                    )));
-                }
-                encode_v1(
-                    data_contract.id().to_vec(),
-                    document_type_name,
-                    where_clauses,
-                    time_range_clauses,
-                    order_by_clauses,
-                    limit,
-                    offset,
-                    start,
-                    select,
-                    group_by,
-                    having,
-                    sub_queries_to_proto(sub_queries)?,
-                )
-            }
+            1 => encode_v1(
+                data_contract.id().to_vec(),
+                document_type_name,
+                where_clauses,
+                time_range_clauses,
+                integer_range_clauses,
+                order_by_clauses,
+                limit,
+                offset,
+                start,
+                select,
+                group_by,
+                having,
+                sub_queries_to_proto(sub_queries)?,
+            ),
             n => Err(Error::Config(format!(
                 "GetDocumentsRequest wire encoder does not support feature_version={n} \
                  (drive_abci.query.document_query) on PlatformVersion v{}",
@@ -806,6 +1095,7 @@ fn encode_v1(
     document_type: String,
     where_clauses: Vec<WhereClause>,
     time_range_clauses: Vec<TimeRangeClause>,
+    integer_range_clauses: Vec<IntegerRangeClause>,
     order_by_clauses: Vec<OrderClause>,
     limit: u32,
     offset: Option<u32>,
@@ -852,6 +1142,26 @@ fn encode_v1(
                     range: spec.range_seconds,
                     step: spec.step_seconds,
                     phase: spec.phase_seconds,
+                }),
+            }),
+            integer_range: None,
+        });
+    }
+    // Integer-range selections ride as `IN_INTEGER_RANGE` clauses carrying
+    // the typed `integer_range` operand: the window start (coerced through
+    // the schema on the server like any value) and, when named, the grid.
+    for IntegerRangeClause { field, start, grid } in integer_range_clauses {
+        where_clauses.push(ProtoWhereClause {
+            field,
+            operator: ProtoWhereOperator::InIntegerRange as i32,
+            value: None,
+            time_range: None,
+            integer_range: Some(ProtoIntegerRangeSelection {
+                start: Some(value_to_proto(start)?),
+                grid: grid.map(|spec| ProtoIntegerRangeGrid {
+                    range: spec.range,
+                    step: spec.step,
+                    phase: spec.phase,
                 }),
             }),
         });
@@ -1021,15 +1331,24 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     /// contract then rejects the request, while a contract with a competing
     /// plain index returns a different — but validly proven — result.
     fn try_from(value: &'a DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
-        if !value.resolved_time_ranges.is_empty() {
-            return Err(Error::Config(
-                "a drive query carrying time-range resolution provenance cannot be \
-                 converted to a DocumentQuery: the resolved bucket equality would be \
-                 demoted to a raw-timestamp predicate. Build the DocumentQuery with \
-                 `with_time_range` / `with_time_range_grid` instead, so the selector \
-                 is resolved against the signed response metadata"
-                    .to_string(),
-            ));
+        if let Some(resolved) = value.resolved_time_ranges.first() {
+            let builders = match resolved.transform {
+                IndexBucketing::Time(_) => {
+                    "`with_time_range` / `with_time_range_grid` instead, so the selector is \
+                     resolved against the signed response metadata"
+                }
+                IndexBucketing::Integer(_) => {
+                    "`with_integer_range` / `with_integer_range_grid` instead, so the window is \
+                     resolved from the query as the server resolves it"
+                }
+            };
+            return Err(Error::Config(format!(
+                "a drive query carrying {} resolution provenance cannot be converted to a \
+                 DocumentQuery: the resolved window equality would be demoted to a raw-value \
+                 predicate. Build the DocumentQuery with {}",
+                resolved.kind(),
+                builders
+            )));
         }
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
@@ -1056,6 +1375,7 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             document_type_name: document_type_name.to_string(),
             where_clauses,
             time_range_clauses: Vec::new(),
+            integer_range_clauses: Vec::new(),
             group_by: Vec::new(),
             having: Vec::new(),
             order_by_clauses,
@@ -1095,11 +1415,11 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
         // broader query than the prover ran, so refuse instead: this makes
         // "forgot to resolve" a loud error on every present and future call
         // path rather than a silent verification hole.
-        if !request.time_range_clauses.is_empty() {
+        if !request.time_range_clauses.is_empty() || !request.integer_range_clauses.is_empty() {
             return Err(Error::Config(
-                "the query's time range (IN_TIME_RANGE) selections have not been resolved into \
-                 bucket equalities; resolve them against the response's quorum-signed metadata \
-                 time before building a drive query"
+                "the query's window selections (IN_TIME_RANGE / IN_INTEGER_RANGE) have not been \
+                 resolved into window-start equalities; resolve them (time selections against \
+                 the response's quorum-signed metadata time) before building a drive query"
                     .to_string(),
             ));
         }
@@ -1229,6 +1549,8 @@ pub(crate) fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereCla
         // clause (time-range selections are encoded by `encode_v1` itself,
         // from `time_range_clauses`).
         time_range: None,
+        // Likewise the typed IN_INTEGER_RANGE operand.
+        integer_range: None,
     })
 }
 
@@ -1327,6 +1649,8 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
         WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
         WhereOperator::In => ProtoWhereOperator::In,
         WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
+        WhereOperator::Contains => ProtoWhereOperator::Contains,
+        WhereOperator::ContainsAny => ProtoWhereOperator::ContainsAny,
     }
 }
 
@@ -1438,18 +1762,17 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
 
 #[cfg(test)]
 mod encode_version_gate_tests {
-    //! The `IN_TIME_RANGE` operator is emitted only for protocol versions
-    //! whose contract grammar hosts `timeRange` indexes (document
-    //! meta-schema generation 3, first pinned by protocol version 14).
-    //! Protocol versions 12 and 13 serve the same v1 getDocuments wire but
-    //! predate the grammar — encoding for them must refuse up front
-    //! instead of sending an operator the server rejects as an unknown
-    //! discriminant.
+    //! The encoder emits window selections and element operators on the V1
+    //! wire at every protocol version that has it. Whether a network serves
+    //! them is decided before encoding, against the network's proven version
+    //! (`DocumentQuery::required_protocol_version`); the V0 wire has no such
+    //! operators.
 
     use super::*;
     use dpp::data_contract::DataContractFactory;
     use dpp::platform_value::platform_value;
     use dpp::prelude::{DataContract, Identifier};
+    use dpp::version::PLATFORM_VERSIONS;
     use drive::query::TimeRangeSelector;
 
     fn post_contract() -> Arc<DataContract> {
@@ -1477,22 +1800,36 @@ mod encode_version_gate_tests {
             .with_time_range("$createdAt", TimeRangeSelector::Newest)
     }
 
+    /// The protocol versions whose documents wire is `version`.
+    fn versions_with_wire(version: u16) -> impl Iterator<Item = &'static PlatformVersion> {
+        PLATFORM_VERSIONS.iter().filter(move |platform_version| {
+            platform_version
+                .drive_abci
+                .query
+                .document_query
+                .default_current_version
+                == version
+        })
+    }
+
     #[test]
-    fn a_time_range_query_refuses_to_encode_for_protocol_version_13() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-        let error = GetDocumentsRequest::try_from_platform_versioned(
-            newest_time_range_query(),
-            platform_version,
-        )
-        .expect_err("protocol version 13's contract grammar has no timeRange indexes");
-        let message = match error {
-            Error::Config(message) => message,
-            other => panic!("expected Error::Config, got {other:?}"),
-        };
-        assert!(
-            message.contains("protocol version 14"),
-            "the refusal must name the real version floor, got: {message}"
-        );
+    fn should_encode_a_time_range_query_on_the_v1_wire_whatever_the_version() {
+        for platform_version in versions_with_wire(1) {
+            let request = GetDocumentsRequest::try_from_platform_versioned(
+                newest_time_range_query(),
+                platform_version,
+            )
+            .expect("the V1 wire carries time-range selections");
+            let Some(V1(v1)) = request.version else {
+                panic!("protocol {}: V1", platform_version.protocol_version)
+            };
+            assert_eq!(
+                v1.where_clauses[0].operator,
+                ProtoWhereOperator::InTimeRange as i32,
+                "protocol {}",
+                platform_version.protocol_version
+            );
+        }
     }
 
     #[test]
@@ -1521,6 +1858,108 @@ mod encode_version_gate_tests {
         assert_eq!(selection.selector, ProtoTimeRangeSelector::Newest as i32);
         assert_eq!(selection.start_ms, None);
         assert_eq!(selection.grid, None, "a grid-less selection names no grid");
+    }
+
+    fn contains_query() -> DocumentQuery {
+        DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type")
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Contains,
+                value: platform_value!("dash"),
+            })
+    }
+
+    /// Element operators ride the V1 wire at every version with it, in the page and in a
+    /// sub-query alike; the V0 wire's CBOR clauses have no element operator.
+    #[test]
+    fn should_encode_element_queries_on_the_v1_wire_and_refuse_them_on_v0() {
+        use super::super::composite_document_query::CompositeSubQueryKind;
+
+        let in_sub_query = |operator: WhereOperator| {
+            let value = match operator {
+                WhereOperator::ContainsAny => platform_value!(["dash"]),
+                _ => platform_value!("dash"),
+            };
+            DocumentQuery::new(post_contract(), "post")
+                .expect("the fixture has this document type")
+                .with_limit(10)
+                .with_sub_query(CompositeSubQuery {
+                    data_contract: post_contract(),
+                    document_type_name: "post".to_string(),
+                    kind: CompositeSubQueryKind::Documents,
+                    where_clauses: vec![WhereClause {
+                        field: "hashtag".to_string(),
+                        operator,
+                        value,
+                    }],
+                    order_by_clauses: vec![],
+                    limit: Some(10),
+                    binding: None,
+                })
+        };
+        for platform_version in versions_with_wire(1) {
+            let page = GetDocumentsRequest::try_from_platform_versioned(
+                contains_query(),
+                platform_version,
+            )
+            .expect("the V1 wire carries element operators");
+            let Some(V1(page)) = page.version else {
+                panic!("V1")
+            };
+            assert_eq!(
+                page.where_clauses[0].operator,
+                ProtoWhereOperator::Contains as i32
+            );
+            for (operator, expected) in [
+                (WhereOperator::Contains, ProtoWhereOperator::Contains),
+                (WhereOperator::ContainsAny, ProtoWhereOperator::ContainsAny),
+            ] {
+                let request = GetDocumentsRequest::try_from_platform_versioned(
+                    in_sub_query(operator),
+                    platform_version,
+                )
+                .expect("the V1 wire carries element operators");
+                let Some(V1(v1)) = request.version else {
+                    panic!("V1")
+                };
+                assert_eq!(
+                    v1.sub_queries[0].where_clauses[0].operator, expected as i32,
+                    "protocol {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+        for platform_version in versions_with_wire(0) {
+            let error = GetDocumentsRequest::try_from_platform_versioned(
+                contains_query(),
+                platform_version,
+            )
+            .expect_err("the V0 wire has no element operator");
+            assert!(
+                matches!(&error, Error::Config(message) if message.contains("V1 documents wire")),
+                "protocol {}: {error:?}",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn should_encode_the_element_operators_for_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        for (operator, expected) in [
+            (WhereOperator::Contains, ProtoWhereOperator::Contains),
+            (WhereOperator::ContainsAny, ProtoWhereOperator::ContainsAny),
+        ] {
+            let mut query = contains_query();
+            query.where_clauses[0].operator = operator;
+            let request = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+                .expect("protocol version 14 indexes typed arrays");
+            let Some(V1(v1)) = request.version else {
+                panic!("protocol version 14 encodes on the v1 wire");
+            };
+            assert_eq!(v1.where_clauses[0].operator, expected as i32);
+        }
     }
 
     #[test]
@@ -1574,6 +2013,6 @@ mod encode_version_gate_tests {
         let query = DocumentQuery::new(post_contract(), "post")
             .expect("the fixture has this document type");
         GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
-            .expect("the gate only refuses queries that carry a time-range selection");
+            .expect("a plain query encodes at every version");
     }
 }

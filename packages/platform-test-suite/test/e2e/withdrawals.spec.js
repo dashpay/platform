@@ -52,7 +52,8 @@ describe('Withdrawals', function withdrawalsTest() {
       const walletBalanceBefore = account.getTotalBalance();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = 1000000;
+      // Above the protocol v14 minimum of 1000000 credits plus the Core fee.
+      const amountToWithdraw = 2000000;
 
       await client.platform.identities.withdrawCredits(
         identity,
@@ -121,7 +122,8 @@ describe('Withdrawals', function withdrawalsTest() {
     it('should be able to query recent withdrawal updates', async () => {
       const account = await client.getWalletAccount();
       const withdrawTo = await account.getUnusedAddress();
-      const amountToWithdraw = 1000000;
+      // Above the protocol v14 minimum of 1000000 credits plus the Core fee.
+      const amountToWithdraw = 2000000;
 
       const firstWithdrawalTime = Date.now();
       const { height: withdrawalHeight } = await client.platform.identities.withdrawCredits(
@@ -232,7 +234,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
       await client.platform.identities.withdrawCredits(
         identity,
-        BigInt(1000000),
+        BigInt(2000000),
         {
           toAddress: withdrawTo.address,
         },

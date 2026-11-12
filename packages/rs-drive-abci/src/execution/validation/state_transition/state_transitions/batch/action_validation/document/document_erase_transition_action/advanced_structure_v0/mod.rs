@@ -3,7 +3,7 @@ use dpp::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTypeError,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV3Getters};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionAccessorsV0;

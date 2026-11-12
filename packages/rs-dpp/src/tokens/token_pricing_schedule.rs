@@ -1,6 +1,10 @@
 use crate::balances::credits::TokenAmount;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
@@ -99,10 +103,10 @@ impl From<TokenPricingScheduleRepr> for TokenPricingSchedule {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenPricingSchedule {}
+impl JsonConvertible for TokenPricingSchedule {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenPricingSchedule {}
+impl ValueConvertible for TokenPricingSchedule {}
 
 impl TokenPricingSchedule {
     pub fn minimum_purchase_amount_and_price(&self) -> (TokenAmount, Credits) {

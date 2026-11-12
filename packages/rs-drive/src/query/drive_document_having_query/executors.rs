@@ -21,7 +21,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// One page of groups matching a having bound, read without a proof.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_having_range_no_proof(
+    pub(crate) fn execute_document_having_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
@@ -51,7 +51,7 @@ impl Drive {
     /// reconstructing the same query from the same contract — which is
     /// why index resolution is shared with the no-proof executor.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_having_range_proof(
+    pub(crate) fn execute_document_having_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

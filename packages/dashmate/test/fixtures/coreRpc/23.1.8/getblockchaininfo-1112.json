@@ -1,0 +1,117 @@
+{
+  "chain": "regtest",
+  "blocks": 1112,
+  "headers": 1112,
+  "bestblockhash": "0933f86094f3ded670c18238e70a8eacb06813373657d10e328dba2a31c7f6cd",
+  "difficulty": 4.656542373906925e-10,
+  "time": 1792060531,
+  "mediantime": 1792060530,
+  "verificationprogress": 1,
+  "initialblockdownload": false,
+  "chainwork": "00000000000000000000000000000000000000000000000000000000000008b2",
+  "size_on_disk": 802296,
+  "pruned": false,
+  "softforks": {
+    "bip34": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip66": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip65": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip147": {
+      "type": "buried",
+      "active": true,
+      "height": 0
+    },
+    "csv": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0001": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0003": {
+      "type": "buried",
+      "active": true,
+      "height": 432
+    },
+    "dip0008": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0020": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0024": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "realloc": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "v19": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "v20": {
+      "type": "buried",
+      "active": true,
+      "height": 432
+    },
+    "mn_rr": {
+      "type": "buried",
+      "active": true,
+      "height": 1000
+    },
+    "withdrawals": {
+      "type": "buried",
+      "active": true,
+      "height": 600
+    },
+    "v24": {
+      "type": "bip9",
+      "bip9": {
+        "status": "defined",
+        "start_time": 0,
+        "timeout": 9223372036854775807,
+        "min_activation_height": 0,
+        "ehf": true,
+        "since": 0
+      },
+      "active": false
+    },
+    "testdummy": {
+      "type": "bip9",
+      "bip9": {
+        "status": "active",
+        "start_time": 0,
+        "timeout": 9223372036854775807,
+        "min_activation_height": 0,
+        "ehf": false,
+        "since": 432
+      },
+      "height": 432,
+      "active": true
+    }
+  },
+  "warnings": ""
+}

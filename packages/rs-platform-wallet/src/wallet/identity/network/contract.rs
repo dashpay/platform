@@ -26,6 +26,7 @@
 //!     the rs-sdk-ffi path — classic stack-guard fingerprint, not
 //!     memory unsafety.
 
+use super::signing_key::AvailableSigningKey;
 use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
@@ -42,11 +43,13 @@ use dpp::version::TryFromPlatformVersioned;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::platform::transition::put_contract::PutContract;
+use dash_sdk::platform::transition::put_contract::{
+    ensure_private_document_entries_fit, PutContract,
+};
 use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 use super::*;
 
@@ -148,7 +151,6 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         // 1. Owner identity + signing key from the wallet manager.
-        use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -161,17 +163,19 @@ impl IdentityWallet {
                 .identity(owner_identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+            drop(wm);
             // Contract create requires CRITICAL + AUTHENTICATION +
             // ECDSA_SECP256K1 specifically — DPP rejects HIGH /
             // MEDIUM / non-ECDSA keys on this state-transition
             // shape.
             identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No CRITICAL authentication key found on owner identity \
@@ -297,9 +301,11 @@ impl IdentityWallet {
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put data contract to platform: {e}"
-                ))
+                preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put data contract to platform: {e}"
+                    ))
+                })
             })?;
 
         Ok(confirmed)
@@ -372,7 +378,6 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         // 1. Owner identity + signing key from the wallet manager.
-        use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -385,17 +390,19 @@ impl IdentityWallet {
                 .identity(owner_identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+            drop(wm);
             // Contract update requires the same CRITICAL +
             // AUTHENTICATION + ECDSA_SECP256K1 key as create — DPP
             // rejects HIGH / MEDIUM / non-ECDSA keys on this
             // state-transition shape.
             identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No CRITICAL authentication key found on owner identity \
@@ -499,6 +506,12 @@ impl IdentityWallet {
                         "Failed to build updated contract: {e}\n\nAssembled JSON:\n{serialized}"
                     ))
                 })?;
+
+        // A private document type the update adds, or whose properties it changes, takes entries
+        // that must hold its largest payload, as `PutContract` checks on create; `existing` is the
+        // contract as Platform holds it, so an unchanged type is not checked again.
+        ensure_private_document_entries_fit(&updated_contract, Some(&existing))
+            .map_err(PlatformWalletError::Sdk)?;
 
         // 4. Build + broadcast the update transition. There's no
         //    `UpdateContract` SDK extension mirroring `PutContract`,

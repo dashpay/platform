@@ -13,12 +13,12 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
 cd "$SCRIPT_DIR"
 
-# dashmate pins Node 20–22; bail early instead of failing several
+# dashmate requires Node 24+; bail early instead of failing several
 # minutes into the dashmate startup with a cryptic error.
 node_major=$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)
-if [ "$node_major" -gt 22 ] || [ "$node_major" -lt 20 ]; then
+if [ "$node_major" -lt 24 ]; then
   echo "Node $(node --version 2>/dev/null || echo '<missing>') is not supported by dashmate."
-  echo "Use Node 20–22 (e.g. \`nvm use 22\`) and re-run."
+  echo "Use Node 24 LTS (e.g. \`nvm use 24\`) and re-run."
   exit 1
 fi
 

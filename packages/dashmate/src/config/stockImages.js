@@ -30,6 +30,23 @@ export function stockImagePattern(repository, major) {
 }
 
 /**
+ * Match a prerelease tag of the given major - `5-rc`, never `5`.
+ *
+ * For a migration that ships before the stable release of that major: no release
+ * has stored the stable tag yet, so a config carrying it holds the operator's
+ * own choice.
+ *
+ * @param {string} repository - image repository, e.g. 'dashpay/drive'
+ * @param {number} major
+ * @return {RegExp}
+ */
+export function stockPrereleaseImagePattern(repository, major) {
+  const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return new RegExp(`^${escapedRepository}:${major}-(${STOCK_PRERELEASE_IDS.join('|')})$`);
+}
+
+/**
  * Match a tag published by any release up to major 4, for migrations that move
  * images across majors.
  *

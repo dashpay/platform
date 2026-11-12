@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import wait from '../../util/wait.js';
 import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -196,6 +197,11 @@ export default function resetNodeTaskFactory(
             }
 
             config.set('group', groupName);
+
+            // Resetting platform options clears a fullnode's node identity.
+            // Give it a new one now, so it is saved with the reset config
+            // rather than generated later at render time.
+            ensureTenderdashNodeKey(config);
 
             // Remove service configs
             let serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);

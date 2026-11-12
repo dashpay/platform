@@ -2,8 +2,8 @@
 
 This document exists to keep the Swift SDK and its FFI layer from accreting
 business logic that belongs in Rust. Read this before writing or reviewing
-code in `Sources/SwiftDashSDK/`, `packages/rs-platform-wallet-ffi/`,
-`packages/rs-sdk-ffi/`, or `packages/key-wallet-ffi/`.
+code in `Sources/SwiftDashSDK/`, `packages/rs-platform-wallet-ffi/`, or
+`packages/rs-sdk-ffi/`.
 
 ## The rule
 
@@ -69,6 +69,16 @@ possible:
   add a single FFI entry point that does the whole thing and returns the
   bytes ready to persist.
 
+Keep the two signer handles separate. The document signer (`VTableSigner`
+/ `SignerHandle`) is a vtable that calls back into Swift to sign state
+transitions. The wallet-HD signer (`MnemonicResolverHandle`) lets Rust
+fetch the mnemonic for one operation, derive, and wipe. Raw-secret DashPay
+operations (ECDH, `accountReference`, `contactInfo` encryption) run on the
+wallet-HD side inside the FFI crate's Rust and return only results.
+Merging the handles would either route the mnemonic through the
+document-signing path or move DIP-15 crypto into Swift. What the Keychain
+protection does and does not guarantee is written on `WalletStorage`.
+
 ## Concrete precedent
 
 The correct shape is `platform_wallet_discover_identities` (and its
@@ -78,10 +88,10 @@ derivation + Platform lookups + policy enforcement on the Rust side, and
 hands back a flat array for Swift to render / persist.
 
 Anti-precedent: any code that calls `WalletStorage().retrieveMnemonic(for:)`
-in a Swift view or handler, then `Mnemonic.toSeed`, then
-`KeyDerivation.getIdentityAuthenticationPath`, then a `key_wallet_derive_*`
-FFI, then writes the result somewhere. That pipeline is
-Rust-library-owned. Push it down.
+in a Swift view or handler, then
+`KeyDerivation.getIdentityAuthenticationPath`, then
+`platform_wallet_derive_ext_priv_key_from_mnemonic`, then writes the
+result somewhere. That pipeline is Rust-library-owned. Push it down.
 
 ## How to review
 
@@ -93,3 +103,9 @@ If it's deciding anything — how many, which index, which path, which
 key, which order — move the decision to Rust. If you find a decision
 that Rust doesn't currently let you ask for by a single call, add the
 helper in the Rust library first.
+
+## Parity with the Kotlin SDK
+
+Capability parity between the two SDKs and example apps is tracked in
+`docs/sdk/sdk-parity-manifest.json`. See "Keeping parity with iOS" in
+`packages/kotlin-sdk/CLAUDE.md` for the rules and the regeneration command.

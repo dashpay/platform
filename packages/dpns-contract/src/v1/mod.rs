@@ -18,6 +18,10 @@ pub mod document_types {
             pub const DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
         }
     }
+
+    pub mod preorder {
+        pub const NAME: &str = "preorder";
+    }
 }
 
 pub fn load_documents_schemas() -> Result<Value, Error> {

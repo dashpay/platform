@@ -1,3 +1,4 @@
+import DashSDKFFI
 import Foundation
 import SwiftData
 
@@ -7,20 +8,33 @@ public struct DataContractParser {
     public static func parseDataContract(contractData: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         print("🔵 Parsing data contract with ID: \(contractId.toBase58String())")
 
+        // Read the contract through its long-form view: Rust writes every
+        // property type shorthand (protocol version 14: `"type": "identifier"`,
+        // or `"type": "bytes"` with a `size`) as the byte array it stands for,
+        // so every schema and row persisted below holds one form. What the
+        // caller stores (`PersistentDataContract.serializedContract` and
+        // `binarySerialization`) stays the contract as sent.
+        let contractData = expandingPropertyTypeShorthands(in: contractData)
+
         // Parse tokens if present
         if let tokens = contractData["tokens"] as? [String: Any] {
             print("📦 Found \(tokens.count) tokens in contract")
             try parseTokens(tokens: tokens, contractId: contractId, modelContext: modelContext)
         }
 
-        // Parse document types
+        // Parse document types. A property may be a `$ref` to one of the
+        // contract's definitions, which the serialization format names
+        // `schemaDefs` and the contract itself `$defs`.
+        let definitions = contractData["schemaDefs"] as? [String: Any]
+            ?? contractData["$defs"] as? [String: Any]
+            ?? [:]
         if let documents = contractData["documents"] as? [String: Any] {
             print("📄 Found \(documents.count) document types in contract")
-            try parseDocumentTypes(documentTypes: documents, contractId: contractId, modelContext: modelContext)
+            try parseDocumentTypes(documentTypes: documents, definitions: definitions, contractId: contractId, modelContext: modelContext)
         } else if let documentSchemas = contractData["documentSchemas"] as? [String: Any] {
             // Some contracts use "documentSchemas" instead
             print("📄 Found \(documentSchemas.count) document schemas in contract")
-            try parseDocumentTypes(documentTypes: documentSchemas, contractId: contractId, modelContext: modelContext)
+            try parseDocumentTypes(documentTypes: documentSchemas, definitions: definitions, contractId: contractId, modelContext: modelContext)
         }
 
         // Update contract metadata
@@ -79,6 +93,40 @@ public struct DataContractParser {
         }
     }
 
+    // MARK: - Property Type Shorthands
+
+    /// `contractData` with its property type shorthands written in full, as
+    /// `dash_sdk_data_contract_json_expand_property_type_shorthands` returns
+    /// it: every document type schema and definition reads `"type": "array"`,
+    /// `byteArray` and the sizes where the contract wrote `"identifier"` or
+    /// `"bytes"`. Rust owns what a shorthand means; this only marshals. Logs
+    /// and returns `contractData` unchanged when it cannot be read that way.
+    static func expandingPropertyTypeShorthands(in contractData: [String: Any]) -> [String: Any] {
+        // `JSONSerialization.data(withJSONObject:)` raises, rather than
+        // throws, on a value JSON cannot hold
+        guard JSONSerialization.isValidJSONObject(contractData),
+              let json = try? JSONSerialization.data(withJSONObject: contractData, options: []),
+              let text = String(data: json, encoding: .utf8)
+        else {
+            print("⚠️ Contract is not JSON; reading its property types as sent")
+            return contractData
+        }
+        do {
+            let result = text.withCString { contractJSON in
+                dash_sdk_data_contract_json_expand_property_type_shorthands(contractJSON)
+            }
+            let expanded = try PropertyConstraintJSON.text(of: result)
+            guard let object = try PropertyConstraintJSON.object(from: expanded) as? [String: Any] else {
+                print("⚠️ Expanded contract is not a JSON object; reading its property types as sent")
+                return contractData
+            }
+            return object
+        } catch {
+            print("⚠️ Could not expand the property type shorthands (\(error)); reading them as sent")
+            return contractData
+        }
+    }
+
     // MARK: - Parse Tokens
     private static func parseTokens(tokens: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         // First, get the contract
@@ -124,7 +172,7 @@ public struct DataContractParser {
     }
 
     // MARK: - Parse Document Types
-    private static func parseDocumentTypes(documentTypes: [String: Any], contractId: Data, modelContext: ModelContext) throws {
+    private static func parseDocumentTypes(documentTypes: [String: Any], definitions: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         // First, get the contract
         let descriptor = FetchDescriptor<PersistentDataContract>(
             predicate: #Predicate { $0.id == contractId }
@@ -141,7 +189,8 @@ public struct DataContractParser {
             }
 
             // Extract schema - make sure we store the whole typeDict as schema
-            // and only properties as the properties field
+            // and only properties as the properties field. Both come from the
+            // long-form view, property type shorthands written in full.
             let schemaJSON = try JSONSerialization.data(withJSONObject: typeDict, options: [])
 
             // Extract actual properties for the form
@@ -169,9 +218,20 @@ public struct DataContractParser {
                 docType.indexOnly = indexOnly
             }
 
+            // The protocol-version-14 `immutable` / `immutableAllowSetting`
+            // keywords need no column of their own: `schemaJSON` above is the
+            // whole `typeDict`, so they are persisted with it and read back
+            // through `PersistentDocumentType.immutability`. Keep that true
+            // when touching the schema stored here.
+
             // The actual field name is just "canBeDeleted" not "documentsCanBeDeleted"
             if let canDelete = typeDict["canBeDeleted"] as? Bool {
                 docType.documentsCanBeDeleted = canDelete
+            } else if (typeDict["canBeDeleted"] as? String) == "onlyWhenConsumed" {
+                // Protocol version 14: only a create that consumes the document
+                // (a `refersTo` with `consume`) deletes it. Its owner cannot, so
+                // for the app this is `false`; offering a delete would be refused.
+                docType.documentsCanBeDeleted = false
             }
 
             // The actual field name is "transferable" and it can be an integer (0 = false, non-zero = true)
@@ -236,7 +296,7 @@ public struct DataContractParser {
 
             // Parse properties into separate entities
             if let properties = typeDict["properties"] as? [String: Any] {
-                try parseProperties(properties: properties, contractId: contractId, documentTypeName: typeName, documentType: docType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
+                try parseProperties(properties: properties, definitions: definitions, contractId: contractId, documentTypeName: typeName, documentType: docType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
             }
         }
     }
@@ -307,17 +367,23 @@ public struct DataContractParser {
             if let rangeAverageable = indexData["rangeAverageable"] as? Bool {
                 index.rangeAverageable = rangeAverageable
             }
-            if let rankedCountable = indexData["rankedCountable"] as? Bool {
-                index.rankedCountable = rankedCountable
-            }
-            if let rankedSummable = indexData["rankedSummable"] as? Bool {
-                index.rankedSummable = rankedSummable
-            }
-            if let rankedAverageable = indexData["rankedAverageable"] as? Bool {
-                index.rankedAverageable = rankedAverageable
-            }
+            // A ranking is authored as `true` or as `{ "at": <property or
+            // properties> }`; the column records that it is declared. The
+            // `at` levels and `summableOffCountIndex` have no column: they
+            // are read back off the document type's persisted schema through
+            // `PersistentIndex.rankedCountableAt` (and its siblings) and
+            // `PersistentIndex.summableOffCountIndex`.
+            index.rankedCountable = declaresRanking(indexData["rankedCountable"])
+            index.rankedSummable = declaresRanking(indexData["rankedSummable"])
+            index.rankedAverageable = declaresRanking(indexData["rankedAverageable"])
+            // A composite terminal is an ordered list of component names;
+            // the persisted string keeps them joined, in order, so display
+            // layers show the whole member key.
             if let terminal = indexData["terminal"] as? String {
                 index.terminal = terminal
+            } else if let components = indexData["terminal"] as? [String],
+                      !components.isEmpty {
+                index.terminal = components.joined(separator: " ‖ ")
             }
             if let preallocated = indexData["preallocated"] as? Bool {
                 index.preallocated = preallocated
@@ -348,16 +414,37 @@ public struct DataContractParser {
         }
     }
 
+    /// Whether a ranking keyword's value declares the ranking: `true`, or the
+    /// `{ "at": ... }` object form (protocol version 14).
+    private static func declaresRanking(_ value: Any?) -> Bool {
+        if let flag = value as? Bool {
+            return flag
+        }
+        return value is [String: Any]
+    }
+
     // MARK: - Parse Properties
-    private static func parseProperties(properties: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
+    private static func parseProperties(properties: [String: Any], definitions: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
         for (propertyName, propertyData) in properties {
-            guard let propertyDict = propertyData as? [String: Any] else {
+            guard let declared = propertyData as? [String: Any] else {
                 print("⚠️ Skipping invalid property: \(propertyName)")
                 continue
             }
+            // A property written `{ "$ref": "#/$defs/<name>", ... }` is read
+            // from the definition it names, which DPP reads in place of the
+            // whole property schema
+            let propertyDict = referencedDefinition(of: declared, in: definitions) ?? declared
 
             // Extract type
             let type = propertyDict["type"] as? String ?? "unknown"
+
+            // A protocol-version-14 typed array (an array declaring `items`
+            // instead of `byteArray`) is persisted like any array: `type`
+            // "array", `byteArray` false, `minItems` / `maxItems` counting
+            // elements. Its element schema needs no column of its own:
+            // `schemaJSON` is the whole type dictionary, and
+            // `PersistentDocumentType.typedArrays` reads it back. Keep that
+            // true when touching the schema stored there.
 
             // Create persistent property
             let property = PersistentProperty(
@@ -435,6 +522,23 @@ public struct DataContractParser {
     }
 
     // MARK: - Helper Methods
+
+    /// The definition a property schema's `$ref` names, when the reference is
+    /// `#/$defs/<name>` and `definitions` holds a dictionary under `<name>`;
+    /// `nil` otherwise, and the property is read as written.
+    private static func referencedDefinition(
+        of propertySchema: [String: Any],
+        in definitions: [String: Any]
+    ) -> [String: Any]? {
+        let prefix = "#/$defs/"
+        guard let reference = propertySchema["$ref"] as? String,
+              reference.hasPrefix(prefix)
+        else {
+            return nil
+        }
+        return definitions[String(reference.dropFirst(prefix.count))] as? [String: Any]
+    }
+
     private static func extractTokenName(from tokenDict: [String: Any], position: Int) -> String {
         // Try different possible locations for the name
         if let name = tokenDict["name"] as? String { return name }
@@ -489,6 +593,80 @@ public struct DataContractParser {
             return String(intValue)
         }
         return nil
+    }
+
+    /// Render a once-per-identity `amount` to a canonical decimal string,
+    /// accepting what the carrier type can hold: a non-negative integer that
+    /// fits in `u64`, the protocol's `TokenAmount`.
+    ///
+    /// This checks the encoding, not the rule. rs-dpp's
+    /// `validate_once_per_identity_distribution` narrows the value further
+    /// (1 to `i64::MAX`) and enforced that when the contract was registered,
+    /// so a contract that came from chain cannot carry anything outside it.
+    /// Mirroring that range here would be a second copy of a protocol
+    /// constant living where it cannot be kept in step.
+    ///
+    /// Still stricter than `stringifyDistributionAmount`, which hands any
+    /// string back verbatim and stringifies negative or fractional numbers.
+    /// That leniency is fine for the pre-programmed schedule, whose
+    /// malformed entries are skipped one by one, but here it would make
+    /// `"abc"`, `-5` or `1.5` read as a distribution the token does not
+    /// have.
+    ///
+    /// JSON booleans bridge to `NSNumber` and would otherwise pass as 0 or
+    /// 1, so they are rejected by identity against `CFBoolean` before the
+    /// numeric read.
+    private static func oncePerIdentityAmount(_ value: Any) -> String? {
+        if CFGetTypeID(value as CFTypeRef) == CFBooleanGetTypeID() {
+            return nil
+        }
+        if let string = value as? String {
+            // `UInt64(_:)` rejects a fractional, negative or non-numeric
+            // string and anything above `UInt64.max`; re-rendering the
+            // parsed value drops leading zeros and a leading `+`.
+            guard let parsed = UInt64(string.trimmingCharacters(in: .whitespaces)) else {
+                return nil
+            }
+            return String(parsed)
+        }
+        // `NSNumber` covers every numeric JSON value. `UInt64(exactly:)`
+        // fails on a negative, fractional or out-of-range number, which is
+        // exactly the set the carrier cannot hold.
+        if let number = value as? NSNumber, let exact = UInt64(exactly: number) {
+            return String(exact)
+        }
+        return nil
+    }
+
+    /// Read a token's once-per-identity distribution out of its
+    /// `distributionRules` block (protocol version 14).
+    ///
+    /// rs-dpp emits the block as
+    /// `"oncePerIdentityDistribution": {"$formatVersion": "0", "amount": 5000}`.
+    /// `amount` is a protocol `u64`, so it arrives as a JSON number up to
+    /// 2^53 - 1 and as a decimal string above that; both normalise to an
+    /// exact decimal string, which is what the value type carries.
+    ///
+    /// Returns nil when the block is absent, is not a dictionary, or carries
+    /// an `amount` the `u64` carrier cannot hold. A malformed block
+    /// therefore reads the same as "this token has no once-per-identity
+    /// distribution" rather than claiming an amount that was never authored.
+    /// Which amounts the protocol itself allows (1 to `i64::MAX`) is rs-dpp's
+    /// rule, checked when the contract was registered, and is deliberately
+    /// not mirrored here.
+    ///
+    /// This is the single place that shape is parsed:
+    /// `PersistentToken.oncePerIdentityDistribution` derives its value by
+    /// calling straight back into here.
+    static func parseOncePerIdentityDistribution(
+        _ value: Any?
+    ) -> TokenOncePerIdentityDistribution? {
+        guard let dict = value as? [String: Any],
+              let amountValue = dict["amount"],
+              let amount = oncePerIdentityAmount(amountValue) else {
+            return nil
+        }
+        return TokenOncePerIdentityDistribution(amount: amount)
     }
 
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
@@ -580,8 +758,36 @@ public struct DataContractParser {
                         dist.distributionType = "{}"
                     }
                 }
-                if let recipient = perpetual["distributionRecipient"] as? String {
-                    dist.distributionRecipient = recipient
+                // The recipient arrives as the flat, `$type`-tagged map that
+                // rs-dpp has emitted since 4.0.0-beta.4, for example
+                // {"$type": "contractOwner"} or
+                // {"$type": "identity", "identity": "<base58>"}. The old bare
+                // string shape ("ContractOwner") is neither emitted nor
+                // accepted any more, so it is not parsed here.
+                if let recipient = perpetual["distributionRecipient"] as? [String: Any],
+                   let wireType = recipient["$type"] as? String {
+                    switch wireType {
+                    case TokenDistributionRecipient.WireType.contractOwner:
+                        dist.distributionRecipient = TokenDistributionRecipient.contractOwner.rawValue
+                    case TokenDistributionRecipient.WireType.identity:
+                        if let identityBase58 = recipient["identity"] as? String {
+                            // Already base58 on the wire, store it verbatim.
+                            dist.distributionRecipient = TokenDistributionRecipient.identity(identityBase58)
+                        } else {
+                            // Malformed `identity` variant (missing or
+                            // non-string `identity`): keep the raw `$type`
+                            // instead of crashing or claiming a recipient we
+                            // do not have.
+                            dist.distributionRecipient = wireType
+                        }
+                    case TokenDistributionRecipient.WireType.evonodesByParticipation:
+                        dist.distributionRecipient = TokenDistributionRecipient.evonodesByParticipation.rawValue
+                    default:
+                        // A variant added by a newer protocol version. Store
+                        // the raw discriminator so the value is visible rather
+                        // than silently replaced by the init default.
+                        dist.distributionRecipient = wireType
+                    }
                 }
                 // Set enabled flag if it exists (defaults to true in init)
                 if let enabled = perpetual["enabled"] as? Bool {
@@ -591,6 +797,15 @@ public struct DataContractParser {
                 }
                 token.perpetualDistribution = dist
             }
+
+            // The once-per-identity distribution is parsed too, but not
+            // here: it has no column on `PersistentToken`, so it is derived
+            // from the contract JSON persisted on the owning
+            // `PersistentDataContract` through
+            // `PersistentToken.oncePerIdentityDistribution`, which calls
+            // `parseOncePerIdentityDistribution` above. Adding a stored
+            // property instead would move the model's entity hash and cost a
+            // schema version (see `DashModelContainer.modelTypes`).
 
             // Pre-programmed distribution
             if let preProgrammed = distributionRules["preProgrammedDistribution"] as? [String: Any] {
@@ -713,15 +928,21 @@ public struct DataContractParser {
 
         var controlRules = ChangeControlRules.mostRestrictive()
 
-        // Handle both snake_case (from JSON) and camelCase
-        if let authorized = rule["authorized_to_make_change"] as? String ?? rule["authorizedToMakeChange"] as? String {
+        // Both action-taker fields arrive as the flat, `$type`-tagged
+        // map that rs-dpp has emitted since 4.0.0-beta.4, for example
+        // {"$type": "contractOwner"} or
+        // {"$type": "group", "position": 3}. The old bare string shape
+        // ("ContractOwner") is neither emitted nor accepted any more,
+        // so it is not parsed here.
+        if let authorized = parseAuthorizedActionTakers(rule["authorizedToMakeChange"]) {
             controlRules.authorizedToMakeChange = authorized
         }
 
-        if let admin = rule["admin_action_takers"] as? String ?? rule["adminActionTakers"] as? String {
+        if let admin = parseAuthorizedActionTakers(rule["adminActionTakers"]) {
             controlRules.adminActionTakers = admin
         }
 
+        // The boolean flags are read from both snake_case and camelCase.
         if let flag = rule["changing_authorized_action_takers_to_no_one_allowed"] as? Bool ?? rule["changingAuthorizedActionTakersToNoOneAllowed"] as? Bool {
             controlRules.changingAuthorizedActionTakersToNoOneAllowed = flag
         }
@@ -735,5 +956,46 @@ public struct DataContractParser {
         }
 
         return controlRules
+    }
+
+    /// Map one rs-dpp `AuthorizedActionTakers` wire value onto the
+    /// canonical string the persistence layer stores and the example app
+    /// compares against (see `AuthorizedActionTakers`).
+    ///
+    /// Returns nil when the value is missing or is not a `$type`-tagged
+    /// map, so the caller keeps whatever default it started from.
+    private static func parseAuthorizedActionTakers(_ value: Any?) -> String? {
+        guard let taker = value as? [String: Any],
+              let wireType = taker["$type"] as? String else {
+            return nil
+        }
+
+        switch wireType {
+        case AuthorizedActionTakers.WireType.noOne:
+            return AuthorizedActionTakers.noOne.rawValue
+        case AuthorizedActionTakers.WireType.contractOwner:
+            return AuthorizedActionTakers.contractOwner.rawValue
+        case AuthorizedActionTakers.WireType.mainGroup:
+            return AuthorizedActionTakers.mainGroup.rawValue
+        case AuthorizedActionTakers.WireType.identity:
+            guard let identityBase58 = taker["identity"] as? String else {
+                // Tagged as an identity but carrying no usable id: keep
+                // the discriminator rather than name an identity we do
+                // not have.
+                return wireType
+            }
+            return AuthorizedActionTakers.identity(identityBase58)
+        case AuthorizedActionTakers.WireType.group:
+            // JSONSerialization hands back an NSNumber for `position`.
+            guard let position = taker["position"] as? Int else {
+                return wireType
+            }
+            return AuthorizedActionTakers.group(position)
+        default:
+            // A variant added by a newer protocol version. Store the raw
+            // discriminator so the value stays visible rather than being
+            // silently collapsed to the most restrictive default.
+            return wireType
+        }
     }
 }

@@ -29,6 +29,8 @@ impl DocumentTransitionActionTypeGetter for DocumentTransition {
             DocumentTransition::UpdatePrice(_) => DocumentTransitionActionType::UpdatePrice,
             DocumentTransition::Purchase(_) => DocumentTransitionActionType::Purchase,
             DocumentTransition::IndexOnlyDelete(_) => DocumentTransitionActionType::IndexOnlyDelete,
+            // Protocols through 14 publish no erase bounds, so their accepted batches
+            // never reach this arm.
             DocumentTransition::Erase(_) => DocumentTransitionActionType::Erase,
         }
     }
@@ -48,6 +50,7 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "indexOnlyDelete" | "index_only_delete" => {
                 Ok(DocumentTransitionActionType::IndexOnlyDelete)
             }
+            // Naming the appended kind does not admit it; released protocol bounds reject it.
             "erase" => Ok(DocumentTransitionActionType::Erase),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"

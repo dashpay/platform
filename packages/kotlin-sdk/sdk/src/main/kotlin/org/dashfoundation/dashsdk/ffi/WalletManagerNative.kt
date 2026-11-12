@@ -63,6 +63,16 @@ internal object WalletManagerNative {
         bridge: NativePersistenceBridge,
     ): String?
 
+    /**
+     * The persistence capability bits a manager created with [bridge] would
+     * attest, without creating one: its declaration intersected with the
+     * callbacks JNI wires for it, built exactly as [nativeCreate] builds
+     * them (which methods the bridge overrides decides some of those). The
+     * instrumented suite checks with it that a capability needs every
+     * override it depends on.
+     */
+    external fun nativeEffectivePersistenceCapabilityBits(bridge: NativePersistenceBridge): Long
+
     // ── Wallet creation / restore ─────────────────────────────────────
 
     /**
@@ -396,6 +406,46 @@ internal object WalletManagerNative {
         coreSignerHandle: Long,
     ): ByteArray
 
+    /**
+     * Pay a third party's Platform address from a Core L1 asset lock built
+     * from the wallet balance. Sibling of [walletFundFromAssetLock] with the
+     * same parameters and blob layouts; binds
+     * `platform_address_wallet_fund_from_asset_lock_external_signer`, which
+     * lets explicit-amount rows be any P2PKH address while the single
+     * remainder row must still belong to [platformAccountIndex]. The
+     * returned changeset holds only the wallet's own addresses.
+     *
+     * @param onAssetLockBuilt called at most once with the new lock's raw
+     *   36-byte outpoint, before the lock is persisted or broadcast (see
+     *   [AssetLockBuiltBridge]); null for no callback.
+     */
+    external fun walletFundFromAssetLockExternal(
+        walletHandle: Long,
+        amountDuffs: Long,
+        accountIndex: Int,
+        platformAccountIndex: Int,
+        recipientsBlob: ByteArray,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+        onAssetLockBuilt: AssetLockBuiltBridge?,
+    ): ByteArray
+
+    /**
+     * Resume a stuck external-recipient funding from an already-tracked lock.
+     * Sibling of [walletResumeFundFromAssetLock] with the relaxed recipient
+     * rule of [walletFundFromAssetLockExternal]; binds
+     * `platform_address_wallet_resume_fund_from_asset_lock_external_signer`.
+     */
+    external fun walletResumeFundFromAssetLockExternal(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        platformAccountIndex: Int,
+        recipientsBlob: ByteArray,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ByteArray
+
     // ── Wallet-signed Platform-address credit movement (ADDR-02/04) ───
 
     /**
@@ -700,4 +750,63 @@ internal object WalletManagerNative {
         accountIndex: Int,
         coreFeePerByte: Int,
     ): String?
+
+    // ── Ordered wallet bring-up ───────────────────────────────────────
+
+    /**
+     * Ordered wallet bring-up — identity → contacts → contact-account
+     * drain — run as ONE bounded call so the host can start Core SPV
+     * knowing the DIP-15 contact addresses exist and will be in the first
+     * filter set. Wraps `platform_wallet_manager_start_wallet_subsystems`;
+     * iOS binds the same call (`PlatformWalletManagerStartup.swift`), and
+     * the ordering / retry / budget policy lives Rust-side in
+     * `platform_wallet::manager::startup`.
+     *
+     * Blocks until the sequence finishes or its budget expires — call from
+     * a background dispatcher. Throws [DashSDKException] only for a
+     * malformed request (bad handle, unknown wallet, bad argument); an
+     * unreachable Platform, a failed sync pass or an unfinished drain are
+     * all reported through the returned blob's status, because the host
+     * must be able to start Core SPV regardless.
+     *
+     * @param managerHandle the raw manager handle ([nativeManagerHandle]).
+     * @param walletId the 32-byte wallet id.
+     * @param mnemonicResolverHandle Keychain mnemonic resolver, or 0 for a
+     *   wallet holding resident keys. Without it the drain is skipped and
+     *   the pending count reported.
+     * @param identitySignerHandle identity signer for the DIP-15
+     *   auto-accept pass, or 0 to skip it.
+     * @param budgetSecs ceiling for the whole sequence; 0 = SDK default
+     *   (20s). Never unbounded — this call gates Core SPV.
+     * @param gapLimit identity-discovery gap limit; 0 = SDK default.
+     * @return a fixed 57-byte big-endian outcome blob, decoded by
+     *   `WalletStartupOutcome.decode` (the layouts must match the JNI
+     *   side): offset 0 status (1B), 1 hasIdentityId (1B), 2 identityId
+     *   (32B), 34 discoveryAttempts (u32), 38 dashPaySyncRan (1B),
+     *   39 seedBindingUnverified (1B), 40 identityScanIncomplete (1B),
+     *   41 contactAccountsDrained (u32), 45 contactAccountsPending (u32),
+     *   49 elapsedMs (u64).
+     */
+    external fun startWalletSubsystems(
+        managerHandle: Long,
+        walletId: ByteArray,
+        mnemonicResolverHandle: Long,
+        identitySignerHandle: Long,
+        budgetSecs: Long,
+        gapLimit: Int,
+    ): ByteArray
+}
+
+/**
+ * Native → Kotlin bridge for the asset-lock-built callback of
+ * [WalletManagerNative.walletFundFromAssetLockExternal]. Rust invokes
+ * [onAssetLockBuilt] at most once per call, on the SDK's runtime worker
+ * thread (the JNI trampoline attaches it as a daemon), after the lock
+ * transaction is signed and before the lock's row is persisted or the lock
+ * is broadcast. An exception thrown here is cleared by the trampoline and
+ * does not stop the funding.
+ */
+fun interface AssetLockBuiltBridge {
+    /** @param outPoint 36 bytes: 32-byte txid (wire order) then the 4-byte little-endian vout. */
+    fun onAssetLockBuilt(outPoint: ByteArray)
 }

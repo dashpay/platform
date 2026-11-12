@@ -46,6 +46,10 @@ pub struct IdentityCreateFromShieldedPoolTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub binding_signature: [u8; 64],
     /// Fallback platform address credited if identity creation FAILS a stateful check (a
     /// public-key hash already registered to another identity). On failure the spend is still final

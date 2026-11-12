@@ -1,6 +1,6 @@
 use crate::drive::identity::key::fetch::KeyRequestType::{
-    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, LatestAuthenticationMasterKey,
-    RecentWithdrawalKeys, SearchKey, SpecificKeys,
+    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, ContractGroupBoundKey,
+    LatestAuthenticationMasterKey, RecentWithdrawalKeys, SearchKey, SpecificKeys,
 };
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, IdentityPublicKeyResult, KeyKindRequestType,
@@ -48,14 +48,7 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let fees = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            epoch,
-            self.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
+        let fees = self.calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
         Ok((value, fees))
     }
 
@@ -96,7 +89,8 @@ impl Drive {
             }
             SearchKey(_)
             | ContractBoundKey(_, _, KeyKindRequestType::CurrentKeyOfKindRequest)
-            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
+            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest)
+            | ContractGroupBoundKey(_, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
                 let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_path_query_with_optional(
@@ -110,6 +104,7 @@ impl Drive {
             }
             ContractBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
             | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest)
+            | ContractGroupBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
             | RecentWithdrawalKeys
             | LatestAuthenticationMasterKey => {
                 let path_query = key_request.into_path_query();

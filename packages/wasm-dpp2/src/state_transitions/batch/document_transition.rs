@@ -54,6 +54,7 @@ impl DocumentTransitionWasm {
             DocumentTransitionActionType::UpdatePrice => 5,
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => 6,
             DocumentTransitionActionType::IndexOnlyDelete => 7,
+            // The appended value preserves old discriminants; released protocol bounds reject it.
             DocumentTransitionActionType::Erase => 8,
         }
     }

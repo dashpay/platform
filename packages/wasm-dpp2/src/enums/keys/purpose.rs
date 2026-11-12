@@ -51,19 +51,15 @@ impl TryFrom<&JsValue> for PurposeWasm {
 
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
-            return match enum_val.to_lowercase().as_str() {
-                "authentication" => Ok(PurposeWasm::AUTHENTICATION),
-                "encryption" => Ok(PurposeWasm::ENCRYPTION),
-                "decryption" => Ok(PurposeWasm::DECRYPTION),
-                "transfer" => Ok(PurposeWasm::TRANSFER),
-                "system" => Ok(PurposeWasm::SYSTEM),
-                "voting" => Ok(PurposeWasm::VOTING),
-                "owner" => Ok(PurposeWasm::OWNER),
-                _ => Err(WasmDppError::invalid_argument(format!(
-                    "unsupported purpose value ({})",
-                    enum_val
-                ))),
-            };
+            // The names are the purpose's own wire names, as the schema keywords spell them
+            return Purpose::from_wire_name(&enum_val.to_lowercase())
+                .map(PurposeWasm::from)
+                .ok_or_else(|| {
+                    WasmDppError::invalid_argument(format!(
+                        "unsupported purpose value ({})",
+                        enum_val
+                    ))
+                });
         }
 
         if let Some(enum_val) = value.as_f64() {

@@ -52,7 +52,7 @@ pub unsafe extern "C" fn dash_sdk_token_burn(
     }
 
     // SAFETY: We've verified all pointers are non-null above
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
     let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn dash_sdk_token_burn(
             .token_burn(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to burn token and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to burn token and wait", e)
             })?;
 
         Ok(result)

@@ -58,6 +58,15 @@ type PlatformgetIdentityContractNonce = {
   readonly responseType: typeof platform_pb.GetIdentityContractNonceResponse;
 };
 
+type PlatformgetIdentityKeysRemainingBudgets = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetIdentityKeysRemainingBudgetsRequest;
+  readonly responseType: typeof platform_pb.GetIdentityKeysRemainingBudgetsResponse;
+};
+
 type PlatformgetIdentityBalance = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -148,6 +157,96 @@ type PlatformgetDataContractsByRange = {
   readonly responseType: typeof platform_pb.GetDataContractsResponse;
 };
 
+type PlatformgetContractGroupInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupInfoRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupInfoResponse;
+};
+
+type PlatformgetContractGroupMembers = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupMembersRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupMembersResponse;
+};
+
+type PlatformgetContractGroupsForContract = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractGroupsForContractRequest;
+  readonly responseType: typeof platform_pb.GetContractGroupsForContractResponse;
+};
+
+type PlatformgetContractModerationStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationStatusRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationStatusResponse;
+};
+
+type PlatformgetContractModerationEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationEntriesRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationEntriesResponse;
+};
+
+type PlatformgetContractDocumentRemovals = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractDocumentRemovalsRequest;
+  readonly responseType: typeof platform_pb.GetContractDocumentRemovalsResponse;
+};
+
+type PlatformgetContractTeamActions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractTeamActionsRequest;
+  readonly responseType: typeof platform_pb.GetContractTeamActionsResponse;
+};
+
+type PlatformgetContractTeamActionSigners = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractTeamActionSignersRequest;
+  readonly responseType: typeof platform_pb.GetContractTeamActionSignersResponse;
+};
+
+type PlatformgetContractModerationActionCounts = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractModerationActionCountsRequest;
+  readonly responseType: typeof platform_pb.GetContractModerationActionCountsResponse;
+};
+
+type PlatformgetContractFeePots = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetContractFeePotsRequest;
+  readonly responseType: typeof platform_pb.GetContractFeePotsResponse;
+};
+
 type PlatformgetDocumentHistory = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -191,6 +290,15 @@ type PlatformwaitForStateTransitionResult = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.WaitForStateTransitionResultRequest;
   readonly responseType: typeof platform_pb.WaitForStateTransitionResultResponse;
+};
+
+type PlatformgetRecentStateTransitionStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentStateTransitionStatusRequest;
+  readonly responseType: typeof platform_pb.GetRecentStateTransitionStatusResponse;
 };
 
 type PlatformgetConsensusParams = {
@@ -281,6 +389,24 @@ type PlatformgetVotePollsByEndDate = {
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetVotePollsByEndDateRequest;
   readonly responseType: typeof platform_pb.GetVotePollsByEndDateResponse;
+};
+
+type PlatformgetYesNoVotePollState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetYesNoVotePollStateRequest;
+  readonly responseType: typeof platform_pb.GetYesNoVotePollStateResponse;
+};
+
+type PlatformgetMasternodeYesNoVote = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetMasternodeYesNoVoteRequest;
+  readonly responseType: typeof platform_pb.GetMasternodeYesNoVoteResponse;
 };
 
 type PlatformgetPrefundedSpecializedBalance = {
@@ -562,6 +688,33 @@ type PlatformgetShieldedNullifiers = {
   readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
 };
 
+type PlatformgetPrivateDocumentEntries = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetPrivateDocumentEntriesRequest;
+  readonly responseType: typeof platform_pb.GetPrivateDocumentEntriesResponse;
+};
+
+type PlatformgetOwnerTransactionsInBlock = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetOwnerTransactionsInBlockRequest;
+  readonly responseType: typeof platform_pb.GetOwnerTransactionsInBlockResponse;
+};
+
+type PlatformgetBlocks = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetBlocksRequest;
+  readonly responseType: typeof platform_pb.GetBlocksResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -570,6 +723,7 @@ export class Platform {
   static readonly getIdentitiesContractKeys: PlatformgetIdentitiesContractKeys;
   static readonly getIdentityNonce: PlatformgetIdentityNonce;
   static readonly getIdentityContractNonce: PlatformgetIdentityContractNonce;
+  static readonly getIdentityKeysRemainingBudgets: PlatformgetIdentityKeysRemainingBudgets;
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
   static readonly getIdentitiesBalances: PlatformgetIdentitiesBalances;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
@@ -580,11 +734,22 @@ export class Platform {
   static readonly getDataContractsLatestVersions: PlatformgetDataContractsLatestVersions;
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDataContractsByRange: PlatformgetDataContractsByRange;
+  static readonly getContractGroupInfo: PlatformgetContractGroupInfo;
+  static readonly getContractGroupMembers: PlatformgetContractGroupMembers;
+  static readonly getContractGroupsForContract: PlatformgetContractGroupsForContract;
+  static readonly getContractModerationStatus: PlatformgetContractModerationStatus;
+  static readonly getContractModerationEntries: PlatformgetContractModerationEntries;
+  static readonly getContractDocumentRemovals: PlatformgetContractDocumentRemovals;
+  static readonly getContractTeamActions: PlatformgetContractTeamActions;
+  static readonly getContractTeamActionSigners: PlatformgetContractTeamActionSigners;
+  static readonly getContractModerationActionCounts: PlatformgetContractModerationActionCounts;
+  static readonly getContractFeePots: PlatformgetContractFeePots;
   static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
+  static readonly getRecentStateTransitionStatus: PlatformgetRecentStateTransitionStatus;
   static readonly getConsensusParams: PlatformgetConsensusParams;
   static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
   static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
@@ -595,6 +760,8 @@ export class Platform {
   static readonly getContestedResourceVotersForIdentity: PlatformgetContestedResourceVotersForIdentity;
   static readonly getContestedResourceIdentityVotes: PlatformgetContestedResourceIdentityVotes;
   static readonly getVotePollsByEndDate: PlatformgetVotePollsByEndDate;
+  static readonly getYesNoVotePollState: PlatformgetYesNoVotePollState;
+  static readonly getMasternodeYesNoVote: PlatformgetMasternodeYesNoVote;
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
@@ -626,6 +793,9 @@ export class Platform {
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
+  static readonly getOwnerTransactionsInBlock: PlatformgetOwnerTransactionsInBlock;
+  static readonly getBlocks: PlatformgetBlocks;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -714,6 +884,15 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentityContractNonceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityContractNonceResponse|null) => void
   ): UnaryResponse;
+  getIdentityKeysRemainingBudgets(
+    requestMessage: platform_pb.GetIdentityKeysRemainingBudgetsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysRemainingBudgetsResponse|null) => void
+  ): UnaryResponse;
+  getIdentityKeysRemainingBudgets(
+    requestMessage: platform_pb.GetIdentityKeysRemainingBudgetsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysRemainingBudgetsResponse|null) => void
+  ): UnaryResponse;
   getIdentityBalance(
     requestMessage: platform_pb.GetIdentityBalanceRequest,
     metadata: grpc.Metadata,
@@ -804,6 +983,96 @@ export class PlatformClient {
     requestMessage: platform_pb.GetDataContractsByRangeRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsResponse|null) => void
   ): UnaryResponse;
+  getContractGroupInfo(
+    requestMessage: platform_pb.GetContractGroupInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupInfo(
+    requestMessage: platform_pb.GetContractGroupInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupInfoResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupMembers(
+    requestMessage: platform_pb.GetContractGroupMembersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupMembersResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupMembers(
+    requestMessage: platform_pb.GetContractGroupMembersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupMembersResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupsForContract(
+    requestMessage: platform_pb.GetContractGroupsForContractRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupsForContractResponse|null) => void
+  ): UnaryResponse;
+  getContractGroupsForContract(
+    requestMessage: platform_pb.GetContractGroupsForContractRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractGroupsForContractResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationStatus(
+    requestMessage: platform_pb.GetContractModerationStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationStatusResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationStatus(
+    requestMessage: platform_pb.GetContractModerationStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationStatusResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationEntries(
+    requestMessage: platform_pb.GetContractModerationEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationEntriesResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationEntries(
+    requestMessage: platform_pb.GetContractModerationEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationEntriesResponse|null) => void
+  ): UnaryResponse;
+  getContractDocumentRemovals(
+    requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
+  ): UnaryResponse;
+  getContractDocumentRemovals(
+    requestMessage: platform_pb.GetContractDocumentRemovalsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractDocumentRemovalsResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActions(
+    requestMessage: platform_pb.GetContractTeamActionsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionsResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActions(
+    requestMessage: platform_pb.GetContractTeamActionsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionsResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActionSigners(
+    requestMessage: platform_pb.GetContractTeamActionSignersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getContractTeamActionSigners(
+    requestMessage: platform_pb.GetContractTeamActionSignersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractTeamActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
+  ): UnaryResponse;
+  getContractModerationActionCounts(
+    requestMessage: platform_pb.GetContractModerationActionCountsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractModerationActionCountsResponse|null) => void
+  ): UnaryResponse;
+  getContractFeePots(
+    requestMessage: platform_pb.GetContractFeePotsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractFeePotsResponse|null) => void
+  ): UnaryResponse;
+  getContractFeePots(
+    requestMessage: platform_pb.GetContractFeePotsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetContractFeePotsResponse|null) => void
+  ): UnaryResponse;
   getDocumentHistory(
     requestMessage: platform_pb.GetDocumentHistoryRequest,
     metadata: grpc.Metadata,
@@ -848,6 +1117,15 @@ export class PlatformClient {
   waitForStateTransitionResult(
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.WaitForStateTransitionResultResponse|null) => void
+  ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
+  ): UnaryResponse;
+  getRecentStateTransitionStatus(
+    requestMessage: platform_pb.GetRecentStateTransitionStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentStateTransitionStatusResponse|null) => void
   ): UnaryResponse;
   getConsensusParams(
     requestMessage: platform_pb.GetConsensusParamsRequest,
@@ -938,6 +1216,24 @@ export class PlatformClient {
   getVotePollsByEndDate(
     requestMessage: platform_pb.GetVotePollsByEndDateRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetVotePollsByEndDateResponse|null) => void
+  ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getYesNoVotePollState(
+    requestMessage: platform_pb.GetYesNoVotePollStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetYesNoVotePollStateResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
+  ): UnaryResponse;
+  getMasternodeYesNoVote(
+    requestMessage: platform_pb.GetMasternodeYesNoVoteRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMasternodeYesNoVoteResponse|null) => void
   ): UnaryResponse;
   getPrefundedSpecializedBalance(
     requestMessage: platform_pb.GetPrefundedSpecializedBalanceRequest,
@@ -1217,6 +1513,33 @@ export class PlatformClient {
   getShieldedNullifiers(
     requestMessage: platform_pb.GetShieldedNullifiersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getPrivateDocumentEntries(
+    requestMessage: platform_pb.GetPrivateDocumentEntriesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrivateDocumentEntriesResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getOwnerTransactionsInBlock(
+    requestMessage: platform_pb.GetOwnerTransactionsInBlockRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetOwnerTransactionsInBlockResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
+  ): UnaryResponse;
+  getBlocks(
+    requestMessage: platform_pb.GetBlocksRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
   ): UnaryResponse;
 }
 

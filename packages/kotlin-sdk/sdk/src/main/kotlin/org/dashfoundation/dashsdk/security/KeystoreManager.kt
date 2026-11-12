@@ -34,6 +34,15 @@ import javax.crypto.spec.PSource
  * - [MASTER_ALIAS] `org.dashfoundation.wallet.master` — mnemonics and
  *   general wallet secrets, under a non-auth AES-256-GCM key (name parity
  *   with the iOS keychain service `org.dashfoundation.wallet`).
+ * - [MASTER_ALIAS_UNBOUND] `org.dashfoundation.wallet.master.unbound` —
+ *   the same non-auth AES-256-GCM parameters as [MASTER_ALIAS] but
+ *   guaranteed to NEVER carry `setUnlockedDeviceRequired`. The degradation
+ *   target [WalletStorage] moves mnemonic blobs to on devices whose
+ *   Keystore denies lock-bound operations while `KeyguardManager` reports
+ *   the device unlocked (the persistent false-locked defect — an OEM
+ *   unlock that never satisfies `UNLOCKED_DEVICE_REQUIRED`; see
+ *   [KeystoreDeviceLockedException]). Provisioned lazily on first use,
+ *   only ever on a device that demonstrated the defect.
  * - [KEYS_ALIAS_AUTH_GATED] `org.dashfoundation.wallet.keys.authgated` —
  *   identity private keys under the default [KeySecurityPolicy.AUTH_GATED],
  *   wrapped by an RSA-2048 OAEP(SHA-256) keypair. The PUBLIC key encrypts and
@@ -50,7 +59,15 @@ import javax.crypto.spec.PSource
  *   the [KeySecurityPolicy.DEVICE_BOUND] variant of the identity-keys
  *   alias: the same RSA-2048 OAEP wrapping pair, but withOUT the
  *   user-authentication gate on the private key, for host apps that gate
- *   signing behind their own auth model (see [KeySecurityPolicy]).
+ *   signing behind their own auth model (see [KeySecurityPolicy]). Still
+ *   carries `setUnlockedDeviceRequired` on lock-screen devices.
+ * - [KEYS_ALIAS_DEVICE_BOUND_UNBOUND]
+ *   `org.dashfoundation.wallet.keys.devicebound.unbound` — the identity-key
+ *   counterpart of [MASTER_ALIAS_UNBOUND]: [KEYS_ALIAS_DEVICE_BOUND]'s
+ *   parameters with `setUnlockedDeviceRequired` never applied. The
+ *   degradation target for DEVICE_BOUND identity keys on a device that has
+ *   demonstrated the false-locked defect (MO-972). Provisioned lazily, only
+ *   on such a device; there is deliberately no auth-gated counterpart.
  * - [KEYS_ALIAS] `org.dashfoundation.wallet.keys` — the **legacy** alias that
  *   previously wrapped identity keys (first under an auth-gated AES-256-GCM
  *   key, later under a single RSA keypair — see the [KEYS_ALIAS] KDoc).
@@ -156,6 +173,16 @@ open class KeystoreManager(
      * [KeySecurityPolicy.DEVICE_BOUND] for that state rather than lying
      * AUTH_GATED. Ordering matches [resolveIdentityKeysWriteAlias] so the
      * write path and this report never disagree.
+     *
+     * What this surface CANNOT report: the MO-972 lock-gate degradation. On a
+     * device that has demonstrated the false-locked Keystore defect,
+     * [KeySecurityPolicy.DEVICE_BOUND] writes go to
+     * [KEYS_ALIAS_DEVICE_BOUND_UNBOUND], which has no `setUnlockedDeviceRequired`
+     * — still DEVICE_BOUND by that policy's contract, so DEVICE_BOUND is what
+     * this returns, but hosts auditing the protection level must also read
+     * [WalletStorage.isMasterKeyLockBindingDefectObserved]. That record lives
+     * in [WalletStorage]'s DataStore and is device-scoped, which is why it is
+     * not folded in here (see [KeySecurityPolicy], "Lock-gate degradation").
      */
     open fun effectiveKeySecurityPolicy(): KeySecurityPolicy = when {
         keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND -> KeySecurityPolicy.DEVICE_BOUND
@@ -338,6 +365,18 @@ open class KeystoreManager(
                     e.addSuppressed(deleteError)
                 }
                 throw e
+            } catch (e: Exception) {
+                // A lock-bound identity alias denies exactly like the master
+                // AES key does, and Android reports it with the SAME
+                // `UserNotAuthenticatedException` it uses for a closed auth
+                // window. Left unclassified this arrives at `KeystoreSigner`
+                // looking like an expired auth window on a key that has no
+                // window at all (MO-972: DEVICE_BOUND signing died with
+                // "User not authenticated" one second after a successful
+                // biometric). The mapping is alias-gated — see
+                // [UNAMBIGUOUS_LOCK_BOUND_ALIASES] — so the auth-gated alias
+                // still reaches the BiometricGate untouched.
+                rethrowClassifyingDeviceLockedDenial(e, alias, operation = "decrypt")
             }
             return cipher.doFinal(blob.ciphertext)
         }
@@ -360,8 +399,9 @@ open class KeystoreManager(
 
     /**
      * Map a Keystore device-locked denial on a lock-bound NON-auth-gated
-     * alias (the [MASTER_ALIAS] AES path — `setUnlockedDeviceRequired(true)`
-     * on lock-screen devices, no `setUserAuthenticationRequired`) to the
+     * alias — [MASTER_ALIAS] (AES) or [KEYS_ALIAS_DEVICE_BOUND] (the RSA
+     * identity keypair), both carrying `setUnlockedDeviceRequired(true)` on
+     * lock-screen devices and NO `setUserAuthenticationRequired` — to the
      * typed, retryable [KeystoreDeviceLockedException]; every other
      * exception is rethrown unchanged. The `KeyguardManager` lock state is
      * sampled HERE, at throw time, so the exception records whether the OS
@@ -370,24 +410,30 @@ open class KeystoreManager(
      * lock-state tracking stuck; hit on two QA devices during wallet
      * creation).
      *
-     * ONLY [MASTER_ALIAS] classifies — its key's contract guarantees no
-     * `setUserAuthenticationRequired` gate, which is what makes a
-     * `UserNotAuthenticatedException` from it unambiguous. Every other
+     * ONLY the [UNAMBIGUOUS_LOCK_BOUND_ALIASES] classify — their contracts
+     * guarantee no `setUserAuthenticationRequired` gate, which is what makes
+     * a `UserNotAuthenticatedException` from them unambiguous. Every other
      * alias rethrows unchanged, enforced HERE and not just at the call
-     * sites: the generic AES branches of [encrypt]/[decrypt] accept
-     * arbitrary aliases, and a host-provisioned auth-gated AES alias
-     * throws the same `UserNotAuthenticatedException` to mean "auth window
-     * closed" — classifying that as device-locked would strand the
-     * caller's prompt-and-retry handling (exactly the `BiometricGate`
-     * contract the auth-gated RSA aliases depend on; those return before
-     * reaching this mapping, see [decrypt]).
+     * sites, and the exclusions are deliberate in both directions:
+     *
+     *  - [KEYS_ALIAS_AUTH_GATED] carries BOTH gates, so the same exception
+     *    may equally mean "auth window closed" — and only that reading is
+     *    fixable by prompting. Classifying it would strand the
+     *    `BiometricGate` prompt-and-retry contract it depends on (that path
+     *    returns before reaching this mapping, see [decrypt]).
+     *  - The `*_UNBOUND` aliases carry NEITHER gate, so a denial there is
+     *    not a lock denial at all and must not promise a retry that no
+     *    unlock can satisfy.
+     *  - The generic AES branches of [encrypt]/[decrypt] accept arbitrary
+     *    caller aliases, and a host-provisioned auth-gated AES alias throws
+     *    the same exception to mean "auth window closed".
      */
     internal fun rethrowClassifyingDeviceLockedDenial(
         e: Exception,
         alias: String,
         operation: String,
     ): Nothing {
-        if (alias == MASTER_ALIAS && isDeviceLockedKeystoreDenial(e)) {
+        if (alias in UNAMBIGUOUS_LOCK_BOUND_ALIASES && isDeviceLockedKeystoreDenial(e)) {
             throw KeystoreDeviceLockedException(
                 alias = alias,
                 operation = operation,
@@ -453,6 +499,22 @@ open class KeystoreManager(
      */
     open fun hasLegacyKeysKey(): Boolean =
         (androidKeyStore().getKey(KEYS_ALIAS, null) as? SecretKey) != null
+
+    /**
+     * Whether the never-lock-bound [MASTER_ALIAS_UNBOUND] AES key exists in
+     * THIS device's Keystore.
+     *
+     * Device-local evidence that the false-locked defect was demonstrated
+     * HERE. Keystore keys are non-exportable and never restored by Android
+     * backup or device-to-device transfer, so unlike the DataStore flag that
+     * records the defect this cannot travel to another handset — which is
+     * exactly what [WalletStorage.isMasterKeyLockBindingDefectObserved]
+     * needs to avoid authorizing the lock-gate downgrade on a healthy device
+     * that merely inherited a restored preference. Presence check only: no
+     * crypto, no prompt, and it never generates the key.
+     */
+    open fun hasUnboundMasterKey(): Boolean =
+        (androidKeyStore().getKey(MASTER_ALIAS_UNBOUND, null) as? SecretKey) != null
 
     /**
      * Whether [KEYS_ALIAS] currently holds the **former RSA identity-keys
@@ -612,10 +674,28 @@ open class KeystoreManager(
 
     // ── MASTER_ALIAS: non-auth AES-256-GCM (mnemonics / general secrets) ──
 
-    private fun secretKey(alias: String): SecretKey {
-        (androidKeyStore().getKey(alias, null) as? SecretKey)?.let { return it }
-        return generateAesKey(alias)
-    }
+    /**
+     * Return the AES key at [alias], creating it on first use.
+     *
+     * Lookup-then-generate is serialized on a process-wide lock and
+     * double-checked under it, exactly like [ensureKeysKeyPair] for the RSA
+     * aliases: the AndroidKeyStore alias is process-global while this manager
+     * is instantiated per [WalletStorage], so two callers — a mnemonic write
+     * healing onto [MASTER_ALIAS_UNBOUND] and a denied-read recorder
+     * provisioning the same alias as defect evidence, possibly from different
+     * `WalletStorage` instances — can both observe the alias absent. Unlocked,
+     * both would generate, and the second `generateKey` silently replaces the
+     * key the first already encrypted and persisted a mnemonic under, leaving
+     * that ciphertext permanently unopenable. DataStore's atomic edits and the
+     * ciphertext compare-and-set cannot see the Keystore key lifecycle, so the
+     * lock lives here at the provisioning boundary.
+     */
+    private fun secretKey(alias: String): SecretKey =
+        provisionAliasOnce(
+            lock = MASTER_ALIAS_LOCK,
+            lookup = { androidKeyStore().getKey(alias, null) as? SecretKey },
+            generate = { generateAesKey(alias) },
+        )
 
     private fun generateAesKey(alias: String): SecretKey {
         fun spec(strongBox: Boolean, lockBound: Boolean): KeyGenParameterSpec {
@@ -640,6 +720,19 @@ open class KeystoreManager(
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE,
         )
+        // MASTER_ALIAS_UNBOUND's whole contract is the ABSENCE of lock
+        // binding — it exists only as the false-locked degradation target —
+        // so it never enters the lock-screen ladder: the params are dropped
+        // unconditionally, not probed. StrongBox→TEE fallback still applies.
+        if (alias == MASTER_ALIAS_UNBOUND) {
+            return try {
+                generator.init(spec(strongBox = true, lockBound = false))
+                generator.generateKey()
+            } catch (_: StrongBoxUnavailableException) {
+                generator.init(spec(strongBox = false, lockBound = false))
+                generator.generateKey()
+            }
+        }
         return generateWithLockScreenDegradation(alias) { strongBox, lockBound ->
             generator.init(spec(strongBox, lockBound))
             generator.generateKey()
@@ -846,6 +939,19 @@ open class KeystoreManager(
                 generator.initialize(spec(strongBox = false, lockBound = true))
                 generator.generateKeyPair()
             }
+        } else if (alias == KEYS_ALIAS_DEVICE_BOUND_UNBOUND) {
+            // This alias's whole contract is the ABSENCE of lock binding — it
+            // exists only as the false-locked degradation target — so it never
+            // enters the lock-screen ladder: the parameter is dropped
+            // unconditionally, not probed (the MASTER_ALIAS_UNBOUND rule).
+            // StrongBox→TEE fallback still applies.
+            try {
+                generator.initialize(spec(strongBox = true, lockBound = false))
+                generator.generateKeyPair()
+            } catch (_: StrongBoxUnavailableException) {
+                generator.initialize(spec(strongBox = false, lockBound = false))
+                generator.generateKeyPair()
+            }
         } else {
             // DEVICE_BOUND: no auth gate exists to lie about — dropping the
             // (inherently lock-dependent) setUnlockedDeviceRequired bit on a
@@ -872,6 +978,24 @@ open class KeystoreManager(
 
     companion object {
         const val MASTER_ALIAS = "org.dashfoundation.wallet.master"
+
+        /**
+         * Never-lock-bound variant of [MASTER_ALIAS]: identical non-auth
+         * AES-256-GCM parameters, but `setUnlockedDeviceRequired` is never
+         * applied at generation regardless of the lock-screen probe (see
+         * [generateAesKey]). [WalletStorage] writes mnemonic blobs under
+         * this alias INSTEAD of [MASTER_ALIAS] once a device has
+         * demonstrated the persistent false-locked Keystore defect — the
+         * Keystore denying a lock-bound operation while `KeyguardManager`
+         * reports the device unlocked, past the bounded retry (an OEM
+         * unlock class that never satisfies `UNLOCKED_DEVICE_REQUIRED`;
+         * Google Issue Tracker 506989112). The same downgrade
+         * [generateWithLockScreenDegradation] already performs for lockless
+         * devices (dashpay/platform#4060), here triggered by operational
+         * evidence instead of a missing lock screen. Healthy devices never
+         * provision this alias.
+         */
+        const val MASTER_ALIAS_UNBOUND = "org.dashfoundation.wallet.master.unbound"
 
         /**
          * **Legacy** identity-keys alias. Across the SDK's history this single
@@ -911,6 +1035,35 @@ open class KeystoreManager(
          */
         const val KEYS_ALIAS_DEVICE_BOUND = "org.dashfoundation.wallet.keys.devicebound"
 
+        /**
+         * Never-lock-bound variant of [KEYS_ALIAS_DEVICE_BOUND]: the same
+         * non-auth-gated RSA-2048 OAEP wrapping pair, but
+         * `setUnlockedDeviceRequired` is never applied at generation
+         * regardless of the lock-screen probe (see [ensureKeysKeyPair]).
+         *
+         * The identity-key counterpart of [MASTER_ALIAS_UNBOUND], and the
+         * degradation target [WalletStorage] moves identity-key blobs to on a
+         * device whose Keystore denies lock-bound operations while
+         * `KeyguardManager` reports it unlocked. Dropping the lock binding
+         * costs nothing this policy ever promised —
+         * [KeySecurityPolicy.DEVICE_BOUND] guarantees hardware-backed,
+         * non-exportable and NOT auth-gated, and both survive here; only the
+         * incidental "device must be unlocked right now" hardening is given
+         * up, on a device where that gate is broken anyway.
+         *
+         * There is deliberately NO auth-gated counterpart: dropping lock
+         * binding under [KeySecurityPolicy.AUTH_GATED] would leave that
+         * policy's real control (the authentication gate) as the only
+         * protection while making its failures harder to tell apart, and no
+         * field evidence puts a defective device on that alias. An auth-gated
+         * install on a defective device keeps failing honestly instead.
+         *
+         * Provisioned lazily on first use, only ever on a device that
+         * demonstrated the defect.
+         */
+        const val KEYS_ALIAS_DEVICE_BOUND_UNBOUND =
+            "org.dashfoundation.wallet.keys.devicebound.unbound"
+
         /** Auth window for the auth-gated identity-keys alias, in seconds. */
         const val AUTH_VALIDITY_SECONDS = 30
 
@@ -921,7 +1074,32 @@ open class KeystoreManager(
          * never through the RSA encrypt/decrypt path.
          */
         fun isIdentityKeysAlias(alias: String): Boolean =
-            alias == KEYS_ALIAS_AUTH_GATED || alias == KEYS_ALIAS_DEVICE_BOUND
+            alias == KEYS_ALIAS_AUTH_GATED ||
+                alias == KEYS_ALIAS_DEVICE_BOUND ||
+                alias == KEYS_ALIAS_DEVICE_BOUND_UNBOUND
+
+        /**
+         * Aliases whose keys carry `setUnlockedDeviceRequired` but NO
+         * `setUserAuthenticationRequired` — the only ones where a Keystore
+         * `UserNotAuthenticatedException` is unambiguous. With no
+         * authentication gate to be "not authenticated" against, Keystore
+         * raises it solely for the unlocked-device requirement, so
+         * [rethrowClassifyingDeviceLockedDenial] can safely map it to the
+         * typed, retryable [KeystoreDeviceLockedException].
+         *
+         * [KEYS_ALIAS_AUTH_GATED] is excluded and must stay excluded: it
+         * carries BOTH gates, so the same exception means either "the device
+         * is locked" or "the auth window closed", and only the latter is
+         * fixable by prompting. Classifying it would strand the
+         * `BiometricGate` prompt-and-retry contract.
+         *
+         * The `*_UNBOUND` aliases are excluded for the opposite reason —
+         * they carry neither gate, so a denial there is not a lock denial at
+         * all and must surface raw rather than as a "retry after unlock"
+         * that can never come good.
+         */
+        private val UNAMBIGUOUS_LOCK_BOUND_ALIASES =
+            setOf(MASTER_ALIAS, KEYS_ALIAS_DEVICE_BOUND)
 
         /**
          * Whether the lock-screen-bound key-generation parameters
@@ -1009,15 +1187,15 @@ open class KeystoreManager(
          * [isNoSecureLockScreenKeyGenFailure] style:
          *
          *  - any `UserNotAuthenticatedException` in the chain. Correct ONLY
-         *    for keys with no `setUserAuthenticationRequired` gate (the
-         *    [MASTER_ALIAS] AES key): with no auth gate to be "not
-         *    authenticated" against, Keystore throws it solely for the
-         *    unlocked-device requirement.
+         *    for keys with no `setUserAuthenticationRequired` gate — the
+         *    [MASTER_ALIAS] AES key and the [KEYS_ALIAS_DEVICE_BOUND] RSA
+         *    keypair: with no auth gate to be "not authenticated" against,
+         *    Keystore throws it solely for the unlocked-device requirement.
          *    [rethrowClassifyingDeviceLockedDenial] guarantees this — it
-         *    classifies [MASTER_ALIAS] only, never an arbitrary caller
-         *    alias (which may carry an auth gate) and never the auth-gated
-         *    RSA aliases, where the same exception means "auth window
-         *    closed".
+         *    classifies only [UNAMBIGUOUS_LOCK_BOUND_ALIASES], never an
+         *    arbitrary caller alias (which may carry an auth gate) and never
+         *    [KEYS_ALIAS_AUTH_GATED], where the same exception may mean
+         *    "auth window closed".
          *  - a `KeyStoreException` / `InvalidKeyException` in the chain
          *    whose message explicitly names the locked device ("device
          *    locked" / "device is locked" / "unlocked device") — the
@@ -1097,6 +1275,34 @@ open class KeystoreManager(
         // identity-keys entries across concurrent callers (and across the
         // per-WalletStorage KeystoreManager instances).
         private val KEYS_ALIAS_LOCK = Any()
+
+        // Guards first-use creation of the process-global AES aliases
+        // ([MASTER_ALIAS] / [MASTER_ALIAS_UNBOUND]) the same way; see
+        // [secretKey]. Separate from [KEYS_ALIAS_LOCK] so a slow RSA-2048
+        // generation never stalls an unrelated mnemonic read.
+        private val MASTER_ALIAS_LOCK = Any()
+
+        /**
+         * First-use provisioning of a process-global Keystore alias:
+         * [lookup] outside [lock] for the hot path, then — only when the
+         * alias is absent — re-[lookup] under [lock] and [generate] solely
+         * if it is STILL absent. Concurrent first-use callers therefore
+         * produce exactly one key and all observe that same key; a caller
+         * that lost the race reuses the winner's key instead of replacing
+         * it. Factored out of [secretKey] so the boundary is unit-testable
+         * without an AndroidKeyStore runtime (which has no JVM/Robolectric
+         * provider): see `KeystoreAliasProvisioningTest`.
+         */
+        internal fun <K : Any> provisionAliasOnce(
+            lock: Any,
+            lookup: () -> K?,
+            generate: () -> K,
+        ): K {
+            lookup()?.let { return it }
+            return synchronized(lock) {
+                lookup() ?: generate()
+            }
+        }
 
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"

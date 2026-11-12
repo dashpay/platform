@@ -24,7 +24,9 @@ use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
-use wasm_dpp2::utils::{try_from_options_optional_with, try_from_options_with, try_to_string};
+use wasm_dpp2::utils::{
+    try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u64,
+};
 use wasm_dpp2::IdentitySignerWasm;
 
 #[wasm_bindgen(js_name = "RegisterDpnsNameResult")]
@@ -136,6 +138,16 @@ export interface DpnsRegisterNameOptions {
    * Receives the preorder Document object.
    */
   preorderCallback?: (preorderDocument: Document) => void;
+
+  /**
+   * The most, in credits, the registration pays into the contest a contested
+   * name joins. From protocol version 14 it is charged the fund to join the
+   * contest, which doubles once the contest holds 250 contenders and again
+   * for every 50 more, and is refused, paid, when that is more than this.
+   * The identity must hold what it states. Leave it out to state the fund to
+   * join read just before the domain is submitted.
+   */
+  contestFund?: bigint;
 }
 "#;
 
@@ -278,6 +290,7 @@ impl WasmSdk {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -348,6 +361,11 @@ impl WasmSdk {
         // Extract optional preorder callback
         let preorder_callback = extract_callback_from_options(&options, "preorderCallback")?;
 
+        // The most the registration pays into the contest a contested name joins
+        let contest_fund = try_from_options_optional_with(&options, "contestFund", |v| {
+            try_to_u64(v, "contestFund")
+        })?;
+
         // Set up the callback if provided
         thread_local! {
             static PREORDER_CALLBACK: std::cell::RefCell<Option<js_sys::Function>>
@@ -388,6 +406,7 @@ impl WasmSdk {
             identity_public_key,
             signer,
             preorder_callback: callback_box,
+            contest_fund,
         };
 
         let result = self.as_ref().register_dpns_name(input).await?;

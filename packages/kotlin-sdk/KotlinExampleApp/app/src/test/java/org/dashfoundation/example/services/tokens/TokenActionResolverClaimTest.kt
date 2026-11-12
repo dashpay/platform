@@ -2,8 +2,10 @@ package org.dashfoundation.example.services.tokens
 
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
+import org.dashfoundation.dashsdk.tokens.TokenDistributionType
 import org.dashfoundation.example.util.Base58
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,7 +14,8 @@ import org.junit.Test
  * `newTokensDestinationIdentity` (perpetual) path plus pre-programmed
  * recipients named in the contract's `distributions` map
  * (`{"$formatVersion":"0","distributions":{"<timestampMs>":{"<base58>":amount}}}`,
- * the shape [TokenMaterializer] persists).
+ * the shape [TokenMaterializer] persists), and the once-per-identity kind
+ * (protocol version 14) that makes every identity eligible once.
  */
 class TokenActionResolverClaimTest {
 
@@ -28,6 +31,7 @@ class TokenActionResolverClaimTest {
         perpetual: String? = null,
         destination: ByteArray? = null,
         mintingAllowChoosing: Boolean = true,
+        oncePerIdentity: String? = null,
     ) = TokenEntity(
         id = ByteArray(36),
         contractId = ByteArray(32),
@@ -36,18 +40,33 @@ class TokenActionResolverClaimTest {
         baseSupply = "1000",
         perpetualDistribution = perpetual,
         preProgrammedDistribution = preProgrammed,
+        oncePerIdentityDistribution = oncePerIdentity,
         newTokensDestinationIdentity = destination,
         mintingAllowChoosingDestination = mintingAllowChoosing,
-        hasDistribution = preProgrammed != null || perpetual != null,
+        hasDistribution = preProgrammed != null || perpetual != null || oncePerIdentity != null,
     )
 
-    private fun claim(token: TokenEntity, identity: IdentityEntity): TokenActionPermission =
-        TokenActionResolver.resolve(token, identity, contract = null)
+    private fun claim(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean = false,
+    ): TokenActionPermission =
+        TokenActionResolver.resolve(token, identity, contract = null, oncePerIdentityClaimed)
             .first { it.kind == TokenActionKind.CLAIM }
             .permission
 
+    private fun preferred(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean = false,
+    ): TokenDistributionType? =
+        TokenActionResolver.preferredClaimDistribution(token, identity, oncePerIdentityClaimed)
+
     private fun preProgrammedJson(recipient: String = recipientBase58): String =
         """{"${'$'}formatVersion":"0","distributions":{"1750000000000":{"$recipient":5000}}}"""
+
+    private fun oncePerIdentityJson(amount: String = "5000"): String =
+        """{"${'$'}formatVersion":"0","amount":$amount}"""
 
     @Test
     fun `no distribution schedule is denied`() {
@@ -122,6 +141,146 @@ class TokenActionResolverClaimTest {
         assertEquals(
             TokenActionPermission.Denied("Not a recipient of any pre-programmed release"),
             claim(token(preProgrammed = "not json"), identity()),
+        )
+    }
+
+    @Test
+    fun `once-per-identity distribution allows any identity`() {
+        assertTrue(claim(token(oncePerIdentity = oncePerIdentityJson()), identity()).isAllowed)
+        assertTrue(
+            claim(token(oncePerIdentity = oncePerIdentityJson()), identity(strangerId)).isAllowed,
+        )
+    }
+
+    @Test
+    fun `once-per-identity distribution allows a non-recipient of the pre-programmed releases`() {
+        assertTrue(
+            claim(
+                token(preProgrammed = preProgrammedJson(), oncePerIdentity = oncePerIdentityJson()),
+                identity(strangerId),
+            ).isAllowed,
+        )
+    }
+
+    @Test
+    fun `claimed once-per-identity distribution is denied when it was the only reason`() {
+        assertEquals(
+            TokenActionPermission.Denied("Already claimed the once-per-identity distribution"),
+            claim(
+                token(oncePerIdentity = oncePerIdentityJson()),
+                identity(strangerId),
+                oncePerIdentityClaimed = true,
+            ),
+        )
+        // Alongside a perpetual distribution paid to someone else it is still the
+        // spent claim that explains the denial, not a recipient mismatch.
+        assertEquals(
+            TokenActionPermission.Denied("Already claimed the once-per-identity distribution"),
+            claim(
+                token(
+                    perpetual = "{}",
+                    destination = recipientId,
+                    oncePerIdentity = oncePerIdentityJson(),
+                ),
+                identity(strangerId),
+                oncePerIdentityClaimed = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `claimed once-per-identity distribution keeps the other kinds claimable`() {
+        assertTrue(
+            claim(
+                token(
+                    perpetual = "{}",
+                    destination = recipientId,
+                    oncePerIdentity = oncePerIdentityJson(),
+                ),
+                identity(),
+                oncePerIdentityClaimed = true,
+            ).isAllowed,
+        )
+        assertTrue(
+            claim(
+                token(preProgrammed = preProgrammedJson(), oncePerIdentity = oncePerIdentityJson()),
+                identity(),
+                oncePerIdentityClaimed = true,
+            ).isAllowed,
+        )
+    }
+
+    private fun claimable(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        oncePerIdentityClaimed: Boolean = false,
+    ): List<TokenDistributionType> =
+        TokenActionResolver.claimableDistributions(token, identity, oncePerIdentityClaimed)
+
+    @Test
+    fun `only the kinds the identity is eligible for are offered`() {
+        val perpetualAndOnce = token(
+            perpetual = "{}",
+            destination = recipientId,
+            oncePerIdentity = oncePerIdentityJson(),
+        )
+        // A stranger is only eligible through the once-per-identity kind:
+        // offering perpetual would enable a paid wrong-claimant rejection.
+        assertEquals(
+            listOf(TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(perpetualAndOnce, identity(strangerId)),
+        )
+        assertEquals(
+            TokenDistributionType.ONCE_PER_IDENTITY,
+            preferred(perpetualAndOnce, identity(strangerId)),
+        )
+        // The identity the perpetual distribution pays keeps perpetual first.
+        assertEquals(
+            listOf(TokenDistributionType.PERPETUAL, TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(perpetualAndOnce, identity()),
+        )
+        assertEquals(TokenDistributionType.PERPETUAL, preferred(perpetualAndOnce, identity()))
+
+        val preProgrammedAndOnce =
+            token(preProgrammed = preProgrammedJson(), oncePerIdentity = oncePerIdentityJson())
+        assertEquals(
+            listOf(TokenDistributionType.PRE_PROGRAMMED, TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(preProgrammedAndOnce, identity()),
+        )
+        assertEquals(
+            listOf(TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(preProgrammedAndOnce, identity(strangerId)),
+        )
+        assertEquals(
+            TokenDistributionType.ONCE_PER_IDENTITY,
+            preferred(token(oncePerIdentity = oncePerIdentityJson()), identity(strangerId)),
+        )
+    }
+
+    @Test
+    fun `a spent once-per-identity claim leaves a stranger nothing to claim`() {
+        val perpetualAndOnce = token(
+            perpetual = "{}",
+            destination = recipientId,
+            oncePerIdentity = oncePerIdentityJson(),
+        )
+        // The perpetual distribution pays someone else, so it is not a fallback.
+        assertEquals(
+            emptyList<TokenDistributionType>(),
+            claimable(perpetualAndOnce, identity(strangerId), oncePerIdentityClaimed = true),
+        )
+        assertNull(preferred(perpetualAndOnce, identity(strangerId), oncePerIdentityClaimed = true))
+        assertNull(
+            preferred(
+                token(oncePerIdentity = oncePerIdentityJson()),
+                identity(strangerId),
+                oncePerIdentityClaimed = true,
+            ),
+        )
+        // The identity it pays keeps the perpetual kind after spending the claim.
+        assertEquals(
+            listOf(TokenDistributionType.PERPETUAL),
+            claimable(perpetualAndOnce, identity(), oncePerIdentityClaimed = true),
         )
     }
 

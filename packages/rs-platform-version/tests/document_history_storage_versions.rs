@@ -1,12 +1,38 @@
-use platform_version::version::PlatformVersion;
+#[cfg(feature = "mock-versions")]
+use platform_version::version::mocks::{v2_test::TEST_PLATFORM_V2, v3_test::TEST_PLATFORM_V3};
+use platform_version::version::{PlatformVersion, ALL_VERSIONS};
 
 #[test]
-fn should_keep_released_primary_key_path_queries_unchanged() {
-    for protocol in 1..=14 {
-        let version = PlatformVersion::get(protocol).unwrap();
+fn should_keep_writer_and_history_layout_versions_consistent_for_replay() {
+    for protocol in ALL_VERSIONS {
+        let version = PlatformVersion::get(protocol).expect("supported protocol version");
+        let document = &version.drive.methods.document;
+        let expected = u16::from(protocol >= 15);
+
         assert_eq!(
-            version.drive.methods.document.query.primary_key_path_query, 0,
-            "protocol {protocol} must keep the shipped primary-key query"
+            (
+                document.insert.add_document_to_primary_storage,
+                document.document_history_storage_layout,
+            ),
+            (expected, expected),
+            "protocol {protocol} must select matching writer and history layout generations"
+        );
+    }
+}
+
+#[cfg(feature = "mock-versions")]
+#[test]
+fn should_keep_mock_writer_and_history_layout_on_legacy_storage() {
+    for version in [TEST_PLATFORM_V2, TEST_PLATFORM_V3] {
+        let document = &version.drive.methods.document;
+        assert_eq!(
+            (
+                document.insert.add_document_to_primary_storage,
+                document.document_history_storage_layout,
+            ),
+            (0, 0),
+            "mock protocol {} must retain legacy storage",
+            version.protocol_version
         );
     }
 }
@@ -44,8 +70,14 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
         assert_eq!(document.query.fetch_document_history, 0);
         assert_eq!(document.query.prove_document_history, 0);
         let contract = &version.drive.methods.contract;
-        assert_eq!(contract.insert.insert_contract, 1);
-        assert_eq!(contract.update.update_contract, 1);
+        assert_eq!(
+            contract.insert.insert_contract,
+            if protocol == 14 { 2 } else { 1 }
+        );
+        assert_eq!(
+            contract.update.update_contract,
+            if protocol == 14 { 2 } else { 1 }
+        );
         assert_eq!(
             version
                 .drive
@@ -64,14 +96,22 @@ fn should_keep_released_document_history_storage_and_proofs_unchanged() {
                 .verify_start_at_document_in_proof,
             0
         );
-        assert_eq!(version.drive_abci.query.document_history.max_version, 0);
+        let bounds = &version.drive_abci.query.document_history;
+        assert_eq!(
+            (
+                bounds.min_version,
+                bounds.max_version,
+                bounds.default_current_version
+            ),
+            (0, 0, 0)
+        );
         assert_ne!(
             version
                 .drive_abci
                 .methods
                 .protocol_upgrade
                 .perform_events_on_first_block_of_protocol_change,
-            Some(2)
+            Some(3)
         );
     }
 }
@@ -104,11 +144,21 @@ fn should_activate_storage_migration_and_history_proofs_together() {
     assert_eq!(document.query.fetch_document_history_query, 1);
     assert_eq!(document.query.fetch_document_history, 1);
     assert_eq!(document.query.prove_document_history, 1);
-    assert_eq!(document.query.primary_key_path_query, 1);
+    let grove = &version.drive.grove_version.grovedb_versions;
+    assert_eq!(grove.path_query_methods.merge, 2);
+    assert_eq!(grove.path_query_methods.per_instance_query_offsets, 1);
+    assert_eq!(grove.element.path_query_push, 2);
+    assert_eq!(
+        grove
+            .operations
+            .proof
+            .count_offset_reference_empty_tree_rows,
+        1
+    );
     // Contract writers create the per-type history tree.
     let contract = &version.drive.methods.contract;
-    assert_eq!(contract.insert.insert_contract, 2);
-    assert_eq!(contract.update.update_contract, 2);
+    assert_eq!(contract.insert.insert_contract, 3);
+    assert_eq!(contract.update.update_contract, 3);
     assert_eq!(
         version
             .drive
@@ -127,15 +177,22 @@ fn should_activate_storage_migration_and_history_proofs_together() {
             .verify_start_at_document_in_proof,
         1
     );
-    // The wire keeps the query in its v0 slot; the storage change is
-    // carried by the Drive method versions above, not by a wire version.
-    assert_eq!(version.drive_abci.query.document_history.max_version, 0);
+    // The composite wire shape activates with its storage and proof layout.
+    let bounds = &version.drive_abci.query.document_history;
+    assert_eq!(
+        (
+            bounds.min_version,
+            bounds.max_version,
+            bounds.default_current_version
+        ),
+        (1, 1, 1)
+    );
     assert_eq!(
         version
             .drive_abci
             .methods
             .protocol_upgrade
             .perform_events_on_first_block_of_protocol_change,
-        Some(2)
+        Some(3)
     );
 }

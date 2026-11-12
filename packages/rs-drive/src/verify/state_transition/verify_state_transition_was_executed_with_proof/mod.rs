@@ -28,6 +28,15 @@ impl Drive {
     /// snapshot (keys derived from the transition, values as of the proof's
     /// block), **not** evidence that the transition executed.
     ///
+    /// From protocol version 14 a document batch's proof also carries the
+    /// credit balance of the batch's owner, read from the same state as the
+    /// document; it is a snapshot at the proof's block whatever the outcome's
+    /// guarantee, and `None` for a proof made at an earlier version.
+    ///
+    /// Expects the layout a producer at `platform_version` proves. To verify a proof
+    /// made at another version, use
+    /// [`Self::verify_state_transition_was_executed_with_proof_for_query_version`].
+    ///
     /// # Parameters
     ///
     /// - `state_transition`: A reference to the `StateTransition` that needs to be verified.
@@ -56,6 +65,48 @@ impl Drive {
         known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        Self::verify_state_transition_was_executed_with_proof_for_query_version(
+            state_transition,
+            block_info,
+            proof,
+            known_contracts_provider_fn,
+            platform_version,
+            platform_version,
+        )
+    }
+
+    /// Verifies the producer's execution-proof layout using the caller's verifier rules.
+    ///
+    /// The caller's `platform_version` selects the generation of this method and every
+    /// rule inside it, so a producer's version cannot lower them. `query_platform_version`
+    /// selects only the layout the producer proved. Its `prove_state_transition` generation
+    /// decides whether an owned, fee-paying transition carries the owner's credit balance;
+    /// `document_history_storage_layout` selects the document history layout. The caller
+    /// must authenticate the producer version together with the resulting root.
+    ///
+    /// # Parameters
+    ///
+    /// - `state_transition`, `block_info`, `proof`, `known_contracts_provider_fn`: as for
+    ///   [`Self::verify_state_transition_was_executed_with_proof`].
+    /// - `query_platform_version`: the version the producer signed, which selects the
+    ///   proof layout.
+    /// - `platform_version`: the caller's version, which selects every other rule.
+    ///
+    /// # Returns
+    ///
+    /// The root hash of the proof and the verified outcome, as for
+    /// [`Self::verify_state_transition_was_executed_with_proof`]. A generation this build
+    /// does not know, of this method in the caller's version or of
+    /// `prove_state_transition` or `document_history_storage_layout` in the producer's,
+    /// is reported as [`DriveError::UnknownVersionMismatch`] naming that method.
+    pub fn verify_state_transition_was_executed_with_proof_for_query_version(
+        state_transition: &StateTransition,
+        block_info: &BlockInfo,
+        proof: &[u8],
+        known_contracts_provider_fn: &ContractLookupFn,
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         match platform_version
             .drive
             .methods
@@ -63,16 +114,66 @@ impl Drive {
             .state_transition
             .verify_state_transition_was_executed_with_proof
         {
-            0 => Drive::verify_state_transition_was_executed_with_proof_v0(
+            // Generations 0 and 1 run the same checks. The owner-balance layout comes from
+            // the producer's `prove_state_transition` generation, so either one verifies a
+            // proof from any producer whose prover generation this build knows; an
+            // unknown prover generation is refused. Protocol versions 1 to 13 select
+            // verifier and prover generation 0, and protocol versions from 14 select 1
+            // for both, so a proof checked at the version that made it runs the same body
+            // with the layout that version's verifier generation named.
+            0 | 1 => Drive::verify_state_transition_was_executed_with_proof_v0(
                 state_transition,
                 block_info,
                 proof,
                 known_contracts_provider_fn,
+                Self::proof_carries_owner_balance(query_platform_version)?,
+                Self::proof_document_history_layout(query_platform_version)?,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+
+    /// The producer's document history storage layout, restricted to supported layouts.
+    fn proof_document_history_layout(
+        query_platform_version: &PlatformVersion,
+    ) -> Result<u16, Error> {
+        match query_platform_version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout
+        {
+            layout @ (0 | 1) => Ok(layout),
+            received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "document_history_storage_layout".to_string(),
+                known_versions: vec![0, 1],
+                received,
+            })),
+        }
+    }
+
+    /// Whether a producer at `query_platform_version` proves an owned, fee-paying
+    /// transition together with its owner's credit balance: generation 1 of
+    /// `prove_state_transition` does, generation 0 does not.
+    fn proof_carries_owner_balance(
+        query_platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match query_platform_version
+            .drive
+            .methods
+            .prove
+            .prove_state_transition
+        {
+            0 => Ok(false),
+            1 => Ok(true),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "prove_state_transition".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -82,9 +183,84 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::version::PlatformVersion;
+    use grovedb::PathQuery;
+
+    #[test]
+    fn should_reject_an_unknown_authenticated_document_history_layout() {
+        let mut producer = PlatformVersion::latest().clone();
+        producer
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 2;
+        assert!(matches!(Drive::proof_document_history_layout(&producer),
+            Err(Error::Drive(DriveError::UnknownVersionMismatch { method, received: 2, .. }))
+                if method == "document_history_storage_layout"));
+    }
+
+    #[test]
+    fn should_preserve_execution_queries_for_every_released_caller_and_producer() {
+        for caller in 1..=15 {
+            let caller_version = PlatformVersion::get(caller).expect("released caller");
+            for producer in 1..=15 {
+                let producer_version = PlatformVersion::get(producer).expect("released producer");
+                for keeps_history in [false, true] {
+                    for contested_status in [
+                        SingleDocumentDriveQueryContestedStatus::NotContested,
+                        SingleDocumentDriveQueryContestedStatus::Contested,
+                    ] {
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: [1; 32],
+                            document_type_name: "note".to_string(),
+                            document_type_keeps_history: keeps_history,
+                            document_id: [2; 32],
+                            block_time_ms: None,
+                            contested_status,
+                        };
+                        let mut query_version = caller_version.clone();
+                        query_version
+                            .drive
+                            .methods
+                            .document
+                            .document_history_storage_layout =
+                            Drive::proof_document_history_layout(producer_version).unwrap();
+                        let mut old_query = query.construct_path_query(&query_version).unwrap();
+                        let mut producer_query =
+                            query.construct_path_query(producer_version).unwrap();
+                        assert_eq!(
+                            old_query, producer_query,
+                            "caller {caller}, producer {producer}"
+                        );
+
+                        if producer_version.drive.methods.prove.prove_state_transition == 1 {
+                            old_query.query.limit = None;
+                            producer_query.query.limit = None;
+                            let balance_query = Drive::identity_balance_query(&[3; 32]);
+                            let old_merged = PathQuery::merge(
+                                vec![&old_query, &balance_query],
+                                &caller_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            let producer_merged = PathQuery::merge(
+                                vec![&producer_query, &balance_query],
+                                &producer_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                old_merged, producer_merged,
+                                "caller {caller}, producer {producer}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_verify_state_transition_was_executed_with_proof_unknown_version_mismatch() {
         let mut platform_version = PlatformVersion::latest().clone();
@@ -116,6 +292,98 @@ mod tests {
             ),
             "expected UnknownVersionMismatch, got {:?}",
             result,
+        );
+    }
+
+    fn verify_empty_credit_transfer_proof(
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0::default(),
+        ));
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+        Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            query_platform_version,
+            platform_version,
+        )
+    }
+
+    /// The caller's generation of this verifier selects the checks and the producer's
+    /// prover generation the layout, so an unknown generation of either is refused,
+    /// naming the method whose generation this build does not know.
+    #[test]
+    fn should_reject_unknown_verifier_or_producer_generation() {
+        let mut unknown_verifier = PlatformVersion::latest().clone();
+        unknown_verifier
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof = 255;
+        let mut unknown_prover = PlatformVersion::latest().clone();
+        unknown_prover.drive.methods.prove.prove_state_transition = 255;
+        let known = PlatformVersion::latest();
+
+        for (query_platform_version, platform_version, unknown_method) in [
+            (
+                known,
+                &unknown_verifier,
+                "verify_state_transition_was_executed_with_proof",
+            ),
+            (&unknown_prover, known, "prove_state_transition"),
+        ] {
+            let result =
+                verify_empty_credit_transfer_proof(query_platform_version, platform_version);
+
+            assert!(
+                matches!(
+                    &result,
+                    Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                        method,
+                        received: 255,
+                        ..
+                    })) if method == unknown_method
+                ),
+                "expected UnknownVersionMismatch for {unknown_method}, got {:?}",
+                result,
+            );
+        }
+    }
+
+    /// Which checks run is the verifier's decision: the generation of this verifier
+    /// in the producer's table is never read, so a producer cannot select an older
+    /// or weaker one.
+    #[test]
+    fn should_not_read_the_producers_verifier_generation() {
+        let mut producer = PlatformVersion::latest().clone();
+        producer
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof = 255;
+        let verifier = PlatformVersion::latest();
+
+        let result = verify_empty_credit_transfer_proof(&producer, verifier);
+        assert!(
+            !matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "the producer's verifier generation must not be read, got {:?}",
+            result,
+        );
+        assert_eq!(
+            format!("{:?}", result),
+            format!(
+                "{:?}",
+                verify_empty_credit_transfer_proof(verifier, verifier)
+            ),
         );
     }
 }

@@ -1,6 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
+use crate::serialization::untrusted::decode_txid;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
 use platform_serialization_derive::{
@@ -71,7 +72,7 @@ impl<C> DecodeUntrusted<C> for IdentityAssetLockStateTransitionReplayError {
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         Ok(Self {
-            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            transaction_id: decode_txid(decoder)?,
             output_index: DecodeUntrusted::decode_untrusted(decoder)?,
             state_transition_id: DecodeUntrusted::decode_untrusted(decoder)?,
         })

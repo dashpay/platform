@@ -49,14 +49,7 @@ impl Drive {
             platform_version,
         )?;
         let fee = match epoch {
-            Some(epoch) => Drive::calculate_fee(
-                None,
-                Some(operations),
-                epoch,
-                self.config.epochs_per_era,
-                platform_version,
-                None,
-            )?,
+            Some(epoch) => self.calculate_fee(None, Some(operations), epoch, platform_version)?,
             None => FeeResult::default(),
         };
         Ok((state, fee))
@@ -83,6 +76,22 @@ impl Drive {
             operations,
             &platform_version.drive,
         )?;
+        let lifecycle_path =
+            document_lifecycle_path(contract.id_ref().as_bytes(), document_type.name().as_str());
+        // The lazily created lifecycle container may not exist yet.
+        let record_bytes = self.grove_get_raw_optional_item(
+            lifecycle_path.as_slice().into(),
+            document_id.as_slice(),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            operations,
+            &platform_version.drive,
+        )?;
+        if pointer.is_some() && record_bytes.is_some() {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a document has both a current pointer and a lifecycle record".to_string(),
+            )));
+        }
         if pointer.is_some() {
             let element = self
                 .grove_get(
@@ -106,23 +115,15 @@ impl Drive {
             )));
         }
 
-        let lifecycle_path =
-            document_lifecycle_path(contract.id_ref().as_bytes(), document_type.name().as_str());
-        // A document type whose documents have never been deleted has no
-        // lifecycle tree at all, so a missing path means the same as a missing
-        // key: the id is free.
-        let record_bytes = self.grove_get_raw_optional_item(
-            lifecycle_path.as_slice().into(),
-            document_id.as_slice(),
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            operations,
-            &platform_version.drive,
-        )?;
         let Some(record_bytes) = record_bytes else {
             return Ok(DocumentLifecycleState::Absent);
         };
         let record = DocumentLifecycleRecord::deserialize_from_bytes_trusted(&record_bytes)?;
+        if !record.is_coherent() {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a lifecycle record is incoherent".to_string(),
+            )));
+        }
         if record.is_erasing() {
             return Ok(DocumentLifecycleState::Erasing);
         }

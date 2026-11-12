@@ -1,5 +1,8 @@
 mod error;
 pub mod v1;
+/// Version 2 (protocol version 14): the `claim` document's `distributionType` admits the value 2
+/// (OncePerIdentity), written for once-per-identity distribution claims.
+pub mod v2;
 
 pub use crate::error::Error;
 use platform_value::{Identifier, IdentifierBytes32};
@@ -17,10 +20,10 @@ pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
     match platform_version.system_data_contracts.token_history {
-        1 => Ok(None),
+        1 | 2 => Ok(None),
         version => Err(Error::UnknownVersionMismatch {
             method: "token_history_contract::load_definitions".to_string(),
-            known_versions: vec![1],
+            known_versions: vec![1, 2],
             received: version,
         }),
     }
@@ -28,9 +31,10 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
 pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
     match platform_version.system_data_contracts.token_history {
         1 => v1::load_documents_schemas(),
+        2 => v2::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
             method: "token_history_contract::load_documents_schemas".to_string(),
-            known_versions: vec![1],
+            known_versions: vec![1, 2],
             received: version,
         }),
     }

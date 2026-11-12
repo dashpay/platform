@@ -127,11 +127,12 @@ pub struct ShieldedOutgoingNote {
 }
 
 /// A pending reservation that carries a recorded anchor:
-/// `(nullifier, anchor, activity_id)`. Yielded by
-/// [`ShieldedStore::stale_pending_spends`] for the sync reconcile,
-/// which releases the reservation once `anchor` is no longer in
-/// Platform's recorded set (the spend can then never execute).
-pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
+/// `(nullifier, anchor, activity_id, anchor_height)`, `anchor_height` being a
+/// proved height at which `anchor` was in Platform's recorded set, when known.
+/// Yielded by [`ShieldedStore::stale_pending_spends`] for the sync
+/// reconcile, which releases the reservation once `anchor` is proven pruned
+/// (the spend can then never execute).
+pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>);
 
 /// An unresolved signed transition and its durable retry guard: the signed
 /// transition bytes plus everything the sync-time re-drive needs to
@@ -142,12 +143,15 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 ///
 /// Identity-funded shields arm this record before broadcast and have no input
 /// nullifiers. Their guard survives even after rebroadcasting stops. Note spends
-/// arm it only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
-/// the broadcast was accepted but the result wait failed, so the spend
-/// may or may not have executed. Re-broadcasting the byte-identical
-/// transition is fund-safe — identical nullifiers cannot double-spend —
-/// and converts silence into either a confirmation (next scan sees the
-/// nullifiers spent) or a definitive consensus verdict.
+/// arm it before their first dispatch too, and keep it unless the transition
+/// never left the wallet ([`ShieldedStore::retire_undelivered_spend`]): a
+/// spend that may have reached a node may or may not have executed, and a
+/// process that exits during its broadcast or its result wait leaves the
+/// record to restore its notes' reservation from. Re-broadcasting the
+/// byte-identical transition is fund-safe (identical nullifiers cannot be
+/// spent twice) and converts silence into a confirmation (next scan sees the
+/// nullifiers spent); a spend that never lands keeps its notes held until its
+/// anchor is proven pruned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);
@@ -162,6 +166,16 @@ pub struct PendingRedrive {
     pub st_bytes: Vec<u8>,
     /// Re-broadcast attempts made so far.
     pub attempts: u32,
+    /// A proved height at which [`Self::anchor`] was in Platform's recorded
+    /// anchor set: the height of the set the spend's anchor was read from, or
+    /// of a later set seen holding it
+    /// ([`ShieldedStore::note_anchor_recorded`]). A set proved at or above it
+    /// that lacks the anchor shows it pruned rather than newer. `None` for a
+    /// record saved without it, by a build before heights were kept: its
+    /// anchor is proven pruned only once a set is seen holding it, or by a
+    /// proved pool count reaching the store's bound on the trees its anchors
+    /// were taken from ([`ShieldedStore::legacy_anchor_tree_bound`]).
+    pub anchor_height: Option<u64>,
     /// A proven identity nonce has made this exact debit impossible to execute
     /// again. Stop broadcasting, but keep its unresolved-payment guard until
     /// the scan confirms the outputs. Always false for note-spend redrives.
@@ -171,6 +185,251 @@ pub struct PendingRedrive {
     /// automatic retries and permit separately authorized new payments.
     /// This is never a proof of failure and is always false for note spends.
     pub identity_user_abandoned: bool,
+}
+
+/// The DashPay private contact request a saved spend pays for: which identity
+/// sends it to which, and its account reference. Kept with the spend's
+/// record, so a restart restores the pair's reservation from the record
+/// without the keys that open its entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateContactPayment {
+    /// The identity sending the request.
+    pub sender: [u8; 32],
+    /// The identity it is to.
+    pub recipient: [u8; 32],
+    /// The request's account reference, whose version tells a rotation from
+    /// the request it rotates.
+    pub account_reference: u32,
+}
+
+impl PrivateContactPayment {
+    /// The bytes the file store keeps it as: sender, recipient, then the
+    /// account reference little-endian.
+    pub(super) fn to_bytes(self) -> [u8; 68] {
+        let mut bytes = [0u8; 68];
+        bytes[..32].copy_from_slice(&self.sender);
+        bytes[32..64].copy_from_slice(&self.recipient);
+        bytes[64..].copy_from_slice(&self.account_reference.to_le_bytes());
+        bytes
+    }
+
+    /// The payment [`Self::to_bytes`] wrote, or `None` for other bytes.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 68 {
+            return None;
+        }
+        Some(Self {
+            sender: bytes.get(..32)?.try_into().ok()?,
+            recipient: bytes.get(32..64)?.try_into().ok()?,
+            account_reference: u32::from_le_bytes(bytes.get(64..)?.try_into().ok()?),
+        })
+    }
+}
+
+/// One private contact request payment the wallet may have broadcast, as the
+/// shielded store's private payment journal keeps it: the request it pays
+/// for, the commitment of the entry it appends and the nullifiers its spend
+/// consumes. Saved durably before the payment can reach the network
+/// ([`ShieldedStore::arm_private_contact_payment`]) and kept until the
+/// payment provably resolved ([`ShieldedStore::discharge_private_payment`]),
+/// whatever happens to the spend's notes and redrive record: the pair it
+/// holds is restored from it after a restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivatePaymentRecord {
+    /// The account whose notes pay for it.
+    pub account_index: u32,
+    /// The spend's activity id, which keys its redrive record.
+    pub activity_id: [u8; 32],
+    /// The recorded anchor the spend was built against: once Platform no
+    /// longer records it, the spend can never execute, which with an input
+    /// note still unspent and the entry absent from the store proves the
+    /// payment expired.
+    pub anchor: [u8; 32],
+    /// The proved height of the recorded-anchor set `anchor` was chosen from:
+    /// the anchor was recorded then, so only its absence from a set proved at
+    /// or above this height shows it pruned. `None` when not known, as for a
+    /// payment saved before the journal or the redrive record kept it, whose
+    /// expiry is then proven only by a proved pool count reaching the store's
+    /// bound on the trees its anchors were taken from
+    /// ([`ShieldedStore::legacy_anchor_tree_bound`]). Kept as `u64::MAX` in
+    /// the record's bytes ([`Self::to_bytes`]).
+    pub anchor_height: Option<u64>,
+    /// The commitment of the entry it appends, which keys the record.
+    pub commitment: [u8; 32],
+    /// The request it pays for.
+    pub payment: PrivateContactPayment,
+    /// The nullifiers of the notes its spend consumes; never empty.
+    pub nullifiers: Vec<[u8; 32]>,
+    /// SHA-256 of the whole entry it appends: the expiry's read of the store
+    /// takes the payment as executed only for an entry that hashes to it, not
+    /// for any entry that merely starts with [`Self::commitment`], which
+    /// anyone who saw the commitment can append. `None` for a record saved
+    /// before it was kept (format version 3), which matches on the commitment.
+    pub entry_hash: Option<[u8; 32]>,
+    /// The sender identity's private store read position when the payment was
+    /// made: its entry is appended at or after it, so the expiry's read of the
+    /// store starts there. `None` for a record saved before it was kept, or
+    /// with no position known, which is read from the store's start.
+    pub store_position: Option<u64>,
+}
+
+/// An entry a private contact request payment appends, as its journal record
+/// keeps it ([`ShieldedStore::arm_private_contact_payment`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivatePaymentEntry {
+    /// The entry's first 32 bytes, which key its record.
+    pub commitment: [u8; 32],
+    /// SHA-256 of the whole entry ([`PrivatePaymentRecord::entry_hash`]).
+    pub entry_hash: [u8; 32],
+}
+
+impl PrivatePaymentEntry {
+    /// An entry of `commitment` with a placeholder hash, for tests whose
+    /// expiry never reads the store.
+    #[cfg(test)]
+    pub(crate) fn for_commitment(commitment: [u8; 32]) -> Self {
+        Self {
+            commitment,
+            entry_hash: [0; 32],
+        }
+    }
+}
+
+impl PrivatePaymentRecord {
+    /// How an unknown [`Self::anchor_height`] is kept in the record's bytes:
+    /// no proved height reaches it.
+    const UNKNOWN_ANCHOR_HEIGHT: u64 = u64::MAX;
+
+    /// The format version [`Self::to_bytes`] writes. Versions 1 and 2, written
+    /// before the anchor and its height were kept, do not read back: their
+    /// wallet's holds stay. Version 3, written before the entry's hash and the
+    /// store position were kept, reads back with neither.
+    const FORMAT_VERSION: u8 = 4;
+    /// The version before [`Self::FORMAT_VERSION`], still read.
+    const FORMAT_VERSION_WITHOUT_ENTRY_HASH: u8 = 3;
+    /// The bytes before the nullifiers: version, account index, activity id,
+    /// anchor, anchor height, commitment, sender, recipient, account reference
+    /// and nullifier count.
+    const HEADER_LEN: usize = 1 + 4 + 32 + 32 + 8 + 32 + 32 + 32 + 4 + 2;
+
+    /// The bytes the file store keeps it as: [`Self::FORMAT_VERSION`], the
+    /// account index little-endian, the activity id, the anchor, the anchor
+    /// height little-endian, the commitment, the sender, the recipient, the
+    /// account reference little-endian, the nullifier count as a
+    /// little-endian `u16`, the nullifiers, then the entry's hash and the
+    /// store position, each a presence byte (0 or 1) and, when present, the
+    /// 32 bytes or the position little-endian. `None` when it has no
+    /// nullifier or more than a `u16` counts.
+    pub(super) fn to_bytes(&self) -> Option<Vec<u8>> {
+        let count = u16::try_from(self.nullifiers.len()).ok()?;
+        if count == 0 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(Self::HEADER_LEN + 32 * self.nullifiers.len());
+        bytes.push(Self::FORMAT_VERSION);
+        bytes.extend_from_slice(&self.account_index.to_le_bytes());
+        bytes.extend_from_slice(&self.activity_id);
+        bytes.extend_from_slice(&self.anchor);
+        bytes.extend_from_slice(
+            &self
+                .anchor_height
+                .unwrap_or(Self::UNKNOWN_ANCHOR_HEIGHT)
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(&self.commitment);
+        bytes.extend_from_slice(&self.payment.sender);
+        bytes.extend_from_slice(&self.payment.recipient);
+        bytes.extend_from_slice(&self.payment.account_reference.to_le_bytes());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        for nullifier in &self.nullifiers {
+            bytes.extend_from_slice(nullifier);
+        }
+        match &self.entry_hash {
+            Some(hash) => {
+                bytes.push(1);
+                bytes.extend_from_slice(hash);
+            }
+            None => bytes.push(0),
+        }
+        match self.store_position {
+            Some(position) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&position.to_le_bytes());
+            }
+            None => bytes.push(0),
+        }
+        Some(bytes)
+    }
+
+    /// The record [`Self::to_bytes`] wrote, or one of version 3, or `None`
+    /// for any other bytes: another version, a length that does not match the
+    /// count, or no nullifier.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let (&version, rest) = bytes.split_first()?;
+        if version != Self::FORMAT_VERSION && version != Self::FORMAT_VERSION_WITHOUT_ENTRY_HASH {
+            return None;
+        }
+        let (account_index, rest) = rest.split_first_chunk::<4>()?;
+        let (activity_id, rest) = rest.split_first_chunk::<32>()?;
+        let (anchor, rest) = rest.split_first_chunk::<32>()?;
+        let (anchor_height, rest) = rest.split_first_chunk::<8>()?;
+        let (commitment, rest) = rest.split_first_chunk::<32>()?;
+        let (sender, rest) = rest.split_first_chunk::<32>()?;
+        let (recipient, rest) = rest.split_first_chunk::<32>()?;
+        let (account_reference, rest) = rest.split_first_chunk::<4>()?;
+        let (count, rest) = rest.split_first_chunk::<2>()?;
+        let count = usize::from(u16::from_le_bytes(*count));
+        let (nullifiers, rest) = rest.split_at_checked(32 * count)?;
+        let (nullifiers, remainder) = nullifiers.as_chunks::<32>();
+        if count == 0 || nullifiers.len() != count || !remainder.is_empty() {
+            return None;
+        }
+        let (entry_hash, store_position) = if version == Self::FORMAT_VERSION {
+            let (&has_hash, rest) = rest.split_first()?;
+            let (entry_hash, rest) = match has_hash {
+                0 => (None, rest),
+                1 => {
+                    let (hash, rest) = rest.split_first_chunk::<32>()?;
+                    (Some(*hash), rest)
+                }
+                _ => return None,
+            };
+            let (&has_position, rest) = rest.split_first()?;
+            let (store_position, rest) = match has_position {
+                0 => (None, rest),
+                1 => {
+                    let (position, rest) = rest.split_first_chunk::<8>()?;
+                    (Some(u64::from_le_bytes(*position)), rest)
+                }
+                _ => return None,
+            };
+            if !rest.is_empty() {
+                return None;
+            }
+            (entry_hash, store_position)
+        } else {
+            if !rest.is_empty() {
+                return None;
+            }
+            (None, None)
+        };
+        Some(Self {
+            account_index: u32::from_le_bytes(*account_index),
+            activity_id: *activity_id,
+            anchor: *anchor,
+            anchor_height: Some(u64::from_le_bytes(*anchor_height))
+                .filter(|height| *height != Self::UNKNOWN_ANCHOR_HEIGHT),
+            commitment: *commitment,
+            payment: PrivateContactPayment {
+                sender: *sender,
+                recipient: *recipient,
+                account_reference: u32::from_le_bytes(*account_reference),
+            },
+            nullifiers: nullifiers.to_vec(),
+            entry_hash,
+            store_position,
+        })
+    }
 }
 
 /// What the wallet knows about an identity debit's local recovery state.
@@ -219,7 +478,10 @@ pub(super) struct MarkSpentOutcome {
 ///
 /// All mutating methods take `&mut self` so implementations can
 /// batch writes without interior mutability.
-pub trait ShieldedStore: Send + Sync {
+///
+/// A store is `'static`: a spend dropped before it hands its notes over
+/// releases their reservation on a spawned task when the store is locked.
+pub trait ShieldedStore: Send + Sync + 'static {
     /// The error type returned by storage operations.
     type Error: StdError + Send + Sync + 'static;
 
@@ -248,12 +510,13 @@ pub trait ShieldedStore: Send + Sync {
     /// Returns `true` if the nullifier was newly added to the
     /// pending set, `false` if it was already pending.
     ///
-    /// Pending state is **in-memory only** — it does not survive
-    /// a process restart. The crash-during-broadcast case is
-    /// reconciled by the next note-scan pass after the transition
-    /// lands (scan-based spend detection marks the spent note via
-    /// its nullifier), or, on rejection, leaves the notes
-    /// observable as unspent again on the next launch.
+    /// The reservation itself is held in memory. A spend saves a redrive
+    /// record before its first dispatch ([`Self::arm_redrive`]), which
+    /// carries its nullifiers: a store that persists records restores the
+    /// reservation from it on reopen, so a process that exits during a
+    /// broadcast keeps the notes reserved. A reservation with no saved
+    /// record (its spend exited before saving one, so before anything was
+    /// dispatched) does not survive a restart.
     ///
     /// `unspent_notes` skips notes whose nullifier is in the
     /// pending set, so a successful `mark_pending` immediately
@@ -265,27 +528,79 @@ pub trait ShieldedStore: Send + Sync {
     /// got removed; `false` is a no-op (paired clear from the
     /// rollback path on a transition that never marked pending,
     /// or a stale clear after the spend already promoted to
-    /// `mark_spent`).
+    /// `mark_spent`). Clears whoever holds it: for a resolution of the
+    /// spend (a pruned anchor). A spend attempt releases its own with
+    /// [`Self::clear_pending_reserved_by`].
     fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
         -> Result<bool, Self::Error>;
 
-    /// Attach the recorded `anchor` the spend was built against, and
-    /// the linked `activity_id`, to `id`'s pending reservation for
-    /// `nullifier` (taken earlier by [`Self::mark_pending`]). No-op
-    /// if the nullifier is no longer pending. The sync reconcile uses
-    /// the stored anchor to detect a stranded spend whose anchor
-    /// Platform has pruned (see [`Self::stale_pending_spends`]).
+    /// [`Self::mark_pending`] for the spend attempt `reservation`, which owns
+    /// the reservation: only [`Self::clear_pending_reserved_by`] with the
+    /// same attempt, or a resolution of the spend, clears it.
+    fn mark_pending_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Release `id`'s reservation of `nullifier`, and the redrive records
+    /// carrying it, only while the spend attempt `reservation` still holds
+    /// it ([`Self::mark_pending_by`]), compared and cleared in one call
+    /// under the store lock: a stale attempt's cleanup never releases a
+    /// newer attempt's notes or deletes its records. Returns whether it was
+    /// released.
+    fn clear_pending_reserved_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error>;
+
+    /// Attach the recorded `anchor` the spend was built against, the proved
+    /// height of the anchor set it was read from (`anchor_height`), and the
+    /// linked `activity_id`, to `id`'s pending reservation for `nullifier`
+    /// (taken earlier by [`Self::mark_pending`]). No-op if the nullifier is
+    /// no longer pending. The sync reconcile uses the stored anchor and its
+    /// height to detect a stranded spend whose anchor Platform has pruned
+    /// (see [`Self::stale_pending_spends`]).
     fn set_pending_spend(
         &mut self,
         id: SubwalletId,
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
     ) -> Result<(), Self::Error>;
 
+    /// Note that `anchor` was in Platform's recorded set proved at `height`:
+    /// each of `id`'s reservations built on it and each of its records that
+    /// carry no anchor height get `height`, a record's durably. A set proved
+    /// at or above it that lacks the anchor then shows it pruned. One that
+    /// already carries a height keeps it.
+    fn note_anchor_recorded(
+        &mut self,
+        id: SubwalletId,
+        anchor: &[u8; 32],
+        height: u64,
+    ) -> Result<(), Self::Error>;
+
+    /// An upper bound on the size of the commitment tree any record this store
+    /// loaded at open without an anchor height took its anchor from: the
+    /// largest tree the store has held, kept durably across resets. Such a
+    /// record was saved by an earlier process, whose spends were built on
+    /// roots of its local tree, which only holds proved commitments. So once
+    /// a proved pool count at or below an anchor set's height reaches this
+    /// bound, the anchor was recorded by then, and the set's lack of it shows
+    /// it pruned rather than newer (`PrunedAnchorEvidence::proves_pruned`).
+    /// `None` when the store keeps no such bound: such records stay held.
+    fn legacy_anchor_tree_bound(&self) -> Option<u64> {
+        None
+    }
+
     /// Pending reservations for `id` that carry a recorded anchor —
-    /// `(nullifier, anchor, activity_id)` per built-but-unconfirmed
-    /// spend. Empty when `id` has no anchored reservations (the common
+    /// `(nullifier, anchor, activity_id, anchor_height)` per
+    /// built-but-unconfirmed spend. Empty when `id` has no anchored reservations (the common
     /// case, which lets the sync reconcile skip its network round-trip).
     /// The reconcile checks each anchor against Platform's recorded set
     /// and releases the reservation via [`Self::clear_pending`] when the
@@ -294,8 +609,8 @@ pub trait ShieldedStore: Send + Sync {
 
     // ── Re-drivable unconfirmed spends (per-subwallet) ─────────────────
 
-    /// Persist a re-drivable record for a broadcast-accepted spend whose
-    /// result wait failed ambiguously. Keyed by `redrive.activity_id`;
+    /// Persist the re-drivable record of a spend, saved before its first
+    /// dispatch. Keyed by `redrive.activity_id`;
     /// re-arming the same id overwrites. Unlike the bare `mark_pending`
     /// reservations, redrive records survive a restart where the backend
     /// persists them (the file store does): on reopen both the record
@@ -303,6 +618,96 @@ pub trait ShieldedStore: Send + Sync {
     /// the linked activity row's eventual Confirmed/Failed flip —
     /// continue across relaunches.
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error>;
+
+    /// [`Self::arm_redrive`] for a spend paying for the DashPay private
+    /// contact request `payment`, which is kept with the record and dropped
+    /// with it, and the private payment journal's record of each entry the
+    /// spend appends (`entries`, each with the hash of the whole entry),
+    /// which outlives it ([`PrivatePaymentRecord`]), with the sender's private
+    /// store read position when it paid (`store_position`). All of it is saved
+    /// in one write that is durable once this returns, across a crash or power
+    /// loss too: the spend is broadcast only after it. A store that cannot
+    /// keep all of it durably fails, and the payment is refused.
+    /// `anchor_height` is the proved height of the recorded-anchor set the
+    /// spend's anchor was chosen from ([`PrivatePaymentRecord::anchor_height`]).
+    fn arm_private_contact_payment(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        payment: PrivateContactPayment,
+        entries: &[PrivatePaymentEntry],
+        anchor_height: u64,
+        store_position: Option<u64>,
+    ) -> Result<(), Self::Error>;
+
+    /// The armed records of `wallet_id` that pay for a private contact
+    /// request, each with the request ([`Self::arm_private_contact_payment`]).
+    /// Fails when one of them carries an association that does not read.
+    fn private_contact_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error>;
+
+    // ── Private payment journal (per-wallet) ───────────────────────────
+
+    /// Whether `wallet_id`'s private payment journal is open
+    /// ([`Self::open_private_payment_journal`]): then it is authoritative for
+    /// the wallet's private payments, so one marked unresolved with no record
+    /// in it has resolved or was never broadcast. A journal not open yet, as
+    /// in a store that was deleted or replaced, cannot tell.
+    fn private_payment_journal_open(&self, wallet_id: WalletId) -> Result<bool, Self::Error>;
+
+    /// Open `wallet_id`'s private payment journal, durably: called once a
+    /// restoration of the wallet's private payments from it succeeded, before
+    /// the wallet can pay. Saving a journal record opens it too.
+    fn open_private_payment_journal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    /// Every journal record of `wallet_id`'s private payments. Fails when one
+    /// of the wallet's records, or one whose wallet does not read, does not
+    /// read back.
+    fn private_payment_journal(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PrivatePaymentRecord>, Self::Error>;
+
+    /// Add `records` to `wallet_id`'s journal durably, for payments whose
+    /// redrive record was saved before the journal kept them.
+    fn journal_private_payments(
+        &mut self,
+        wallet_id: WalletId,
+        records: &[PrivatePaymentRecord],
+    ) -> Result<(), Self::Error>;
+
+    /// Remove `wallet_id`'s journal record of the entry `commitment`, once
+    /// its payment provably resolved: the entry was read back, or the payment
+    /// is proven expired (its anchor pruned and its entry absent from the
+    /// store). Returns whether there was one. Only this call and
+    /// [`Self::retire_undelivered_spend`] remove a journal record: not a note
+    /// release, a redrive's removal or a purge.
+    fn discharge_private_payment(
+        &mut self,
+        wallet_id: WalletId,
+        commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error>;
+
+    /// Retire the saved record of `id`'s spend `activity_id`, whose
+    /// transition never left the wallet, together with the journal records of
+    /// `commitments` in `id`'s wallet, the entries it would have appended. One
+    /// durable write removes them all (the file store commits it on its
+    /// recovery connection, at `synchronous=FULL`), so no restart finds the
+    /// journal discharged while the signed transition is still saved, or the
+    /// other way round.
+    ///
+    /// Returns false, changing nothing, when no such record is saved, or when
+    /// a re-broadcast of it was claimed ([`PendingRedrive::attempts`] above
+    /// 0): the transition may then have left the wallet. The notes the spend
+    /// reserved are the caller's to release.
+    fn retire_undelivered_spend(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
+    ) -> Result<bool, Self::Error>;
 
     /// Every armed redrive record for `id`.
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
@@ -469,7 +874,10 @@ pub trait ShieldedStore: Send + Sync {
     /// (scanning through position `N-1` sets this to `N`).
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
-    /// Persist the sync watermark (next index to scan) for `id`.
+    /// Persist the sync watermark (next index to scan) for `id`. Only a
+    /// pass that reached the tip calls this: the setter also records the
+    /// scan coverage and the `ScannedThisSession` balance source behind
+    /// [`local_account_balance`](Self::local_account_balance).
     fn set_last_synced_note_index(
         &mut self,
         id: SubwalletId,
@@ -537,8 +945,8 @@ pub trait ShieldedStore: Send + Sync {
 /// stranded (broadcast-accepted-but-never-landed) spend: once that anchor
 /// is pruned from Platform's recorded set the spend can never execute, and
 /// with the nullifier still unspent the reservation is provably dead and
-/// its note can be freed. All in-memory only — a restart drops every
-/// reservation regardless.
+/// its note can be freed. Held in memory: a restart keeps the reservations
+/// a saved [`PendingRedrive`] restores, and drops the others.
 #[derive(Debug, Clone, Default)]
 pub(super) struct PendingSpend {
     /// The recorded anchor the spend was built against, once known.
@@ -547,6 +955,14 @@ pub(super) struct PendingSpend {
     /// The linked activity-log entry id, so a released reservation can
     /// flip its "Pending" row to "Failed" instead of stranding it.
     pub activity_id: Option<[u8; 32]>,
+    /// The spend attempt that reserved the note
+    /// ([`ShieldedStore::mark_pending_by`]), whose release clears it only
+    /// while it still holds it. `None` for a reservation restored from a
+    /// redrive record, which only a resolution of its spend clears.
+    pub reservation: Option<u64>,
+    /// A proved height at which `anchor` was in Platform's recorded set
+    /// ([`PendingRedrive::anchor_height`]), when known.
+    pub anchor_height: Option<u64>,
 }
 
 /// Per-subwallet note + sync state used by both the in-memory and
@@ -569,11 +985,12 @@ pub(super) struct SubwalletState {
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
     /// concurrent callers can't double-select. Held in memory; a
-    /// pre-broadcast reservation dies with the process, but a
-    /// reservation belonging to an armed [`PendingRedrive`] is
-    /// rehydrated on file-store open (the redrive row carries its
-    /// nullifiers), so an unconfirmed broadcast keeps its notes
-    /// reserved across restarts.
+    /// reservation whose spend has saved no record yet dies with the
+    /// process, but a reservation belonging to an armed
+    /// [`PendingRedrive`], which a spend saves before its first
+    /// dispatch, is rehydrated on file-store open (the redrive row
+    /// carries its nullifiers), so a spend that may have been broadcast
+    /// keeps its notes reserved across restarts.
     pub pending_nullifiers: BTreeMap<[u8; 32], PendingSpend>,
     /// Armed re-drivable unconfirmed spends, keyed by activity id.
     /// See [`PendingRedrive`]. Kept consistent with
@@ -691,6 +1108,42 @@ impl SubwalletState {
         }
     }
 
+    /// [`Self::mark_pending`] for the spend attempt `reservation`, which owns
+    /// the reservation from now on.
+    pub(super) fn mark_pending_by(&mut self, nullifier: &[u8; 32], reservation: u64) -> bool {
+        match self.pending_nullifiers.entry(*nullifier) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(PendingSpend {
+                    reservation: Some(reservation),
+                    ..PendingSpend::default()
+                });
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        }
+    }
+
+    /// Release the reservation of `nullifier` only while the spend attempt
+    /// `reservation` holds it ([`Self::mark_pending_by`]), with the redrive
+    /// records it carries, as [`Self::clear_pending`] does. Returns whether
+    /// it was released: another attempt's reservation, or one restored from
+    /// a redrive record, stays.
+    pub(super) fn clear_pending_reserved_by(
+        &mut self,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> bool {
+        if self
+            .pending_nullifiers
+            .get(nullifier)
+            .is_some_and(|pending| pending.reservation == Some(reservation))
+        {
+            self.clear_pending(nullifier)
+        } else {
+            false
+        }
+    }
+
     /// Attach the built spend's recorded `anchor` and linked
     /// `activity_id` to an existing reservation for `nullifier`.
     /// No-op if the nullifier is no longer pending (e.g. the
@@ -700,11 +1153,43 @@ impl SubwalletState {
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
     ) {
         if let Some(pending) = self.pending_nullifiers.get_mut(nullifier) {
             pending.anchor = Some(anchor);
             pending.activity_id = Some(activity_id);
+            pending.anchor_height = anchor_height;
         }
+    }
+
+    /// Give `height` to each reservation built on `anchor`, and each record
+    /// on it, that carries no anchor height
+    /// ([`ShieldedStore::note_anchor_recorded`]). Returns the activity ids of
+    /// the records given it.
+    pub(super) fn note_anchor_recorded(&mut self, anchor: &[u8; 32], height: u64) -> Vec<[u8; 32]> {
+        for pending in self.pending_nullifiers.values_mut() {
+            if pending.anchor == Some(*anchor) && pending.anchor_height.is_none() {
+                pending.anchor_height = Some(height);
+            }
+        }
+        let mut noted = Vec::new();
+        for redrive in self.redrives.values_mut() {
+            if redrive.anchor == *anchor && redrive.anchor_height.is_none() {
+                redrive.anchor_height = Some(height);
+                noted.push(redrive.activity_id);
+            }
+        }
+        noted
+    }
+
+    /// The activity ids of the records built on `anchor` that carry no anchor
+    /// height.
+    pub(super) fn redrives_without_anchor_height(&self, anchor: &[u8; 32]) -> Vec<[u8; 32]> {
+        self.redrives
+            .values()
+            .filter(|redrive| redrive.anchor == *anchor && redrive.anchor_height.is_none())
+            .map(|redrive| redrive.activity_id)
+            .collect()
     }
 
     /// Reservations that carry a recorded anchor — i.e. built,
@@ -719,7 +1204,7 @@ impl SubwalletState {
             .filter_map(|(nullifier, spend)| {
                 spend
                     .anchor
-                    .map(|anchor| (*nullifier, anchor, spend.activity_id))
+                    .map(|anchor| (*nullifier, anchor, spend.activity_id, spend.anchor_height))
             })
             .collect()
     }
@@ -853,6 +1338,13 @@ pub struct InMemoryShieldedStore {
     checkpoints: Vec<u32>,
     /// Placeholder anchor; production stores compute the real Sinsemilla root.
     anchor: [u8; 32],
+    /// The private contact request each armed record pays for, by subwallet
+    /// and activity id, read joined with the live records.
+    private_contact_payments: BTreeMap<(SubwalletId, [u8; 32]), PrivateContactPayment>,
+    /// The private payment journal's records, by wallet and commitment.
+    private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
+    /// The wallets whose private payment journal is open.
+    private_payment_journals: BTreeSet<WalletId>,
 }
 
 impl InMemoryShieldedStore {
@@ -924,15 +1416,54 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or(false))
     }
 
+    fn mark_pending_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending_by(nullifier, reservation))
+    }
+
+    fn clear_pending_reserved_by(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        reservation: u64,
+    ) -> Result<bool, Self::Error> {
+        let released = self
+            .subwallets
+            .get_mut(&id)
+            .is_some_and(|sw| sw.clear_pending_reserved_by(nullifier, reservation));
+        Ok(released)
+    }
+
     fn set_pending_spend(
         &mut self,
         id: SubwalletId,
         nullifier: &[u8; 32],
         anchor: [u8; 32],
         activity_id: [u8; 32],
+        anchor_height: Option<u64>,
     ) -> Result<(), Self::Error> {
         if let Some(sw) = self.subwallets.get_mut(&id) {
-            sw.set_pending_spend(nullifier, anchor, activity_id);
+            sw.set_pending_spend(nullifier, anchor, activity_id, anchor_height);
+        }
+        Ok(())
+    }
+
+    fn note_anchor_recorded(
+        &mut self,
+        id: SubwalletId,
+        anchor: &[u8; 32],
+        height: u64,
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.note_anchor_recorded(anchor, height);
         }
         Ok(())
     }
@@ -946,8 +1477,137 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
+        self.private_contact_payments
+            .remove(&(id, redrive.activity_id));
         self.subwallets.entry(id).or_default().arm_redrive(redrive);
         Ok(())
+    }
+
+    fn arm_private_contact_payment(
+        &mut self,
+        id: SubwalletId,
+        redrive: PendingRedrive,
+        payment: PrivateContactPayment,
+        entries: &[PrivatePaymentEntry],
+        anchor_height: u64,
+        store_position: Option<u64>,
+    ) -> Result<(), Self::Error> {
+        if redrive.nullifiers.is_empty() {
+            return Err(InMemoryStoreError(
+                "a private payment's record spends no note".to_string(),
+            ));
+        }
+        if !entries.is_empty() {
+            self.private_payment_journals.insert(id.wallet_id);
+        }
+        for entry in entries {
+            self.private_payment_journal.insert(
+                (id.wallet_id, entry.commitment),
+                PrivatePaymentRecord {
+                    account_index: id.account_index,
+                    activity_id: redrive.activity_id,
+                    anchor: redrive.anchor,
+                    anchor_height: Some(anchor_height),
+                    commitment: entry.commitment,
+                    payment,
+                    nullifiers: redrive.nullifiers.clone(),
+                    entry_hash: Some(entry.entry_hash),
+                    store_position,
+                },
+            );
+        }
+        self.private_contact_payments
+            .insert((id, redrive.activity_id), payment);
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
+    fn private_contact_redrives_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<(PendingRedrive, PrivateContactPayment)>, Self::Error> {
+        Ok(self
+            .pending_redrives_for_wallet(wallet_id)?
+            .into_iter()
+            .filter_map(|(id, redrive)| {
+                self.private_contact_payments
+                    .get(&(id, redrive.activity_id))
+                    .map(|payment| (redrive, *payment))
+            })
+            .collect())
+    }
+
+    fn private_payment_journal_open(&self, wallet_id: WalletId) -> Result<bool, Self::Error> {
+        Ok(self.private_payment_journals.contains(&wallet_id))
+    }
+
+    fn open_private_payment_journal(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.private_payment_journals.insert(wallet_id);
+        Ok(())
+    }
+
+    fn private_payment_journal(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<PrivatePaymentRecord>, Self::Error> {
+        Ok(self
+            .private_payment_journal
+            .range((wallet_id, [0u8; 32])..=(wallet_id, [u8::MAX; 32]))
+            .map(|(_, record)| record.clone())
+            .collect())
+    }
+
+    fn journal_private_payments(
+        &mut self,
+        wallet_id: WalletId,
+        records: &[PrivatePaymentRecord],
+    ) -> Result<(), Self::Error> {
+        if records.iter().any(|record| record.nullifiers.is_empty()) {
+            return Err(InMemoryStoreError(
+                "a private payment's record spends no note".to_string(),
+            ));
+        }
+        if !records.is_empty() {
+            self.private_payment_journals.insert(wallet_id);
+        }
+        for record in records {
+            self.private_payment_journal
+                .insert((wallet_id, record.commitment), record.clone());
+        }
+        Ok(())
+    }
+
+    fn discharge_private_payment(
+        &mut self,
+        wallet_id: WalletId,
+        commitment: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .private_payment_journal
+            .remove(&(wallet_id, *commitment))
+            .is_some())
+    }
+
+    fn retire_undelivered_spend(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+        commitments: &[[u8; 32]],
+    ) -> Result<bool, Self::Error> {
+        let Some(subwallet) = self
+            .subwallets
+            .get_mut(&id)
+            .filter(|subwallet| subwallet.redrive_attempts(activity_id) == Some(0))
+        else {
+            return Ok(false);
+        };
+        subwallet.clear_redrive(activity_id);
+        self.private_contact_payments.remove(&(id, *activity_id));
+        for commitment in commitments {
+            self.private_payment_journal
+                .remove(&(id.wallet_id, *commitment));
+        }
+        Ok(true)
     }
 
     fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
@@ -1112,7 +1772,11 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // The private payment journal outlives the purge: the payments it
+        // keeps may still execute.
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        self.private_contact_payments
+            .retain(|(id, _), _| id.wallet_id != wallet_id);
         Ok(())
     }
 
@@ -1134,6 +1798,7 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         self.subwallets.clear();
+        self.private_contact_payments.clear();
         Ok(())
     }
 
@@ -1285,6 +1950,63 @@ mod tests {
         assert!(!store.mark_spent(id, &nullifier).unwrap());
     }
 
+    /// Two notes carrying one nullifier must count once.
+    ///
+    /// A nullifier is what makes a note spendable exactly once, so if two notes in a pool
+    /// share one, only one of them can ever be spent and the other's value is unreachable.
+    /// A wallet that added both to its balance would show funds it cannot move and would
+    /// build transitions that fail against the chain.
+    ///
+    /// `save_note` keys on the nullifier and overwrites, which gives the right answer. That
+    /// behaviour was written to make rescanning idempotent, and its reasoning — that
+    /// nullifiers are unique — is exactly what does not hold here. This pins the outcome
+    /// rather than the reasoning, so the guarantee survives a future rescan mechanism that
+    /// makes the original justification obsolete.
+    #[test]
+    fn should_count_two_notes_sharing_a_nullifier_once() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [7u8; 32];
+        let note = ShieldedNote {
+            position: 3,
+            cmx: [9u8; 32],
+            nullifier,
+            block_height: 10,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![0u8; 115],
+        };
+        // The same note observed again at a later tree position: same commitment, same
+        // nullifier, different provenance.
+        let twin = ShieldedNote {
+            position: 11,
+            block_height: 12,
+            ..note.clone()
+        };
+
+        store.save_note(id, &note).unwrap();
+        store.save_note(id, &twin).unwrap();
+
+        assert_eq!(
+            store.get_all_notes(id).unwrap().len(),
+            1,
+            "a second note sharing a nullifier must replace the first, not join it"
+        );
+        assert_eq!(
+            store.spendable_balance(id).unwrap(),
+            1_000,
+            "BALANCE INFLATION: the wallet counted both notes, but only one is spendable, \
+             so it would offer the holder funds no transition can move"
+        );
+
+        // And the single entry really is the one note: spending it leaves nothing behind.
+        assert!(store.mark_spent(id, &nullifier).unwrap());
+        assert!(
+            store.get_unspent_notes(id).unwrap().is_empty(),
+            "spending the shared nullifier must leave no second note live"
+        );
+    }
+
     /// Resolving any of a redrive's nullifiers — landing (`mark_spent`)
     /// or release (`clear_pending`) — drops the whole record: a
     /// transition lands or dies atomically for all its nullifiers.
@@ -1312,6 +2034,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
 
         // Landing path: mark_spent on one nullifier drops the record.
@@ -1493,18 +2216,18 @@ mod tests {
             "newly reserved"
         );
         store
-            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .set_pending_spend(id, &nullifier, anchor, activity_id, Some(10))
             .unwrap();
 
         assert_eq!(
             store.stale_pending_spends(id).unwrap(),
-            vec![(nullifier, anchor, Some(activity_id))],
+            vec![(nullifier, anchor, Some(activity_id), Some(10))],
             "an armed reservation surfaces as an anchored (stale-checkable) spend"
         );
 
         // Anchor IS still recorded → retain.
         let recorded: HashSet<[u8; 32]> = [anchor].into_iter().collect();
-        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+        for (n, a, _, _) in store.stale_pending_spends(id).unwrap() {
             if !recorded.contains(&a) {
                 store.clear_pending(id, &n).unwrap();
             }
@@ -1518,6 +2241,97 @@ mod tests {
             store.get_unspent_notes(id).unwrap().is_empty(),
             "the retained note stays excluded from selection candidates"
         );
+    }
+
+    /// A journal record's unknown anchor height is `None` in memory and
+    /// `u64::MAX` only in its bytes, as format 3 keeps it; a known one reads
+    /// back as it was.
+    #[test]
+    fn should_keep_an_unknown_journal_anchor_height_as_none_across_its_bytes() {
+        let record = |anchor_height| PrivatePaymentRecord {
+            account_index: 2,
+            activity_id: [0x61; 32],
+            anchor: [0x62; 32],
+            anchor_height,
+            commitment: [0x63; 32],
+            payment: PrivateContactPayment {
+                sender: [0x64; 32],
+                recipient: [0x65; 32],
+                account_reference: 3,
+            },
+            nullifiers: vec![[0x66; 32]],
+            entry_hash: None,
+            store_position: None,
+        };
+        for anchor_height in [None, Some(0), Some(41)] {
+            let bytes = record(anchor_height).to_bytes().expect("encodes");
+            let height_at = 1 + 4 + 32 + 32;
+            assert_eq!(
+                bytes[height_at..height_at + 8],
+                anchor_height.unwrap_or(u64::MAX).to_le_bytes(),
+                "{anchor_height:?}"
+            );
+            assert_eq!(
+                PrivatePaymentRecord::from_bytes(&bytes),
+                Some(record(anchor_height)),
+                "{anchor_height:?}"
+            );
+        }
+    }
+
+    /// A format 4 journal record keeps its entry's hash and its store
+    /// position across its bytes, each present or not; a format 3 record,
+    /// which kept neither, reads back with neither. A presence byte other than
+    /// 0 or 1, or bytes past the last field, do not read.
+    #[test]
+    fn should_keep_a_journal_record_s_entry_hash_and_position_across_its_bytes() {
+        let record = |entry_hash, store_position| PrivatePaymentRecord {
+            account_index: 2,
+            activity_id: [0x61; 32],
+            anchor: [0x62; 32],
+            anchor_height: Some(41),
+            commitment: [0x63; 32],
+            payment: PrivateContactPayment {
+                sender: [0x64; 32],
+                recipient: [0x65; 32],
+                account_reference: 3,
+            },
+            nullifiers: vec![[0x66; 32], [0x68; 32]],
+            entry_hash,
+            store_position,
+        };
+        for (entry_hash, store_position) in [
+            (None, None),
+            (Some([0x67; 32]), None),
+            (None, Some(9)),
+            (Some([0x67; 32]), Some(u64::MAX - 1)),
+        ] {
+            let bytes = record(entry_hash, store_position)
+                .to_bytes()
+                .expect("encodes");
+            assert_eq!(
+                PrivatePaymentRecord::from_bytes(&bytes),
+                Some(record(entry_hash, store_position)),
+                "{entry_hash:?} {store_position:?}"
+            );
+            let mut longer = bytes;
+            longer.push(0);
+            assert_eq!(PrivatePaymentRecord::from_bytes(&longer), None);
+        }
+        // Format 3: the fields up to the nullifiers.
+        let mut format_3 = record(None, None).to_bytes().expect("encodes");
+        format_3.truncate(format_3.len() - 2);
+        format_3[0] = 3;
+        assert_eq!(
+            PrivatePaymentRecord::from_bytes(&format_3),
+            Some(record(None, None))
+        );
+        format_3.push(0);
+        assert_eq!(PrivatePaymentRecord::from_bytes(&format_3), None);
+        let mut unknown_presence = record(None, None).to_bytes().expect("encodes");
+        let at = unknown_presence.len() - 2;
+        unknown_presence[at] = 2;
+        assert_eq!(PrivatePaymentRecord::from_bytes(&unknown_presence), None);
     }
 
     /// The fund-safe release: once the anchor is pruned (absent from the
@@ -1538,13 +2352,13 @@ mod tests {
             .unwrap();
         store.mark_pending(id, &nullifier).unwrap();
         store
-            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .set_pending_spend(id, &nullifier, anchor, activity_id, Some(10))
             .unwrap();
         assert!(store.get_unspent_notes(id).unwrap().is_empty());
 
         // Anchor is ABSENT from the recorded set (pruned) → release.
         let recorded: HashSet<[u8; 32]> = [[0xEE; 32]].into_iter().collect();
-        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+        for (n, a, _, _) in store.stale_pending_spends(id).unwrap() {
             if !recorded.contains(&a) {
                 assert!(store.clear_pending(id, &n).unwrap());
             }
@@ -1617,6 +2431,7 @@ mod tests {
             attempts: 7,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         let note_spend = PendingRedrive {
             activity_id: [0x44; 32],
@@ -1626,6 +2441,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            anchor_height: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();
         store.arm_redrive(id, note_spend).unwrap();

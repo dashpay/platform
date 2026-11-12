@@ -41,9 +41,11 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
-use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
-use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
+use crate::persistence::{
+    build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
+};
+use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception, JVM};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
     jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE,
     JNI_TRUE,
@@ -54,15 +56,19 @@ use platform_wallet_ffi::error::{
 };
 use platform_wallet_ffi::event_handler::{EventHandlerCallbacks, EventHandlerCallbacksExtension};
 use platform_wallet_ffi::handle::Handle;
-use platform_wallet_ffi::persistence::{PersistenceCallbacks, PersistenceCapabilitiesFFI};
+use platform_wallet_ffi::manager::effective_persistence_capabilities;
+use platform_wallet_ffi::persistence::{
+    PersistenceCallbacks, PersistenceCallbacksExtension, PersistenceCapabilitiesFFI,
+};
 use platform_wallet_ffi::types::IdentifierArray;
 use std::ffi::{c_void, CStr};
 use std::os::raw::c_char;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
-use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
+use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, FFINetwork, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -107,59 +113,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             return 0;
         }
 
-        // Read the backend's explicit semantic attestation before installing
-        // any trampolines. NativePersistenceBridge defaults both methods to
-        // zero, so a no-op subclass remains fail-closed even though JNI wires a
-        // structurally complete callback table.
-        let declared_capabilities_version = match env
-            .call_method(
-                &persistence_bridge,
-                "persistenceCapabilitiesVersion",
-                "()I",
-                &[],
-            )
-            .and_then(|value| value.i())
-        {
-            Ok(value) => value as u32,
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 99, "reading persistence capability version failed");
-                return 0;
-            }
-        };
-        let declared_capabilities_bits = match env
-            .call_method(
-                &persistence_bridge,
-                "persistenceCapabilitiesBits",
-                "()J",
-                &[],
-            )
-            .and_then(|value| value.j())
-        {
-            Ok(value) => value as u64,
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 99, "reading persistence capability mask failed");
-                return 0;
-            }
-        };
-
-        // Box the persistence context (GlobalRef → boxed KotlinPersistenceCtx).
-        let persistence_global = match env.new_global_ref(&persistence_bridge) {
-            Ok(g) => g,
-            Err(_) => {
-                throw_sdk_exception(env, 99, "NewGlobalRef(persistence bridge) failed");
-                return 0;
-            }
-        };
-        let persistence_ctx =
-            Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
-        let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
-        let persistence_extension = build_extension(env, &persistence_bridge);
-        let persistence_capabilities = PersistenceCapabilitiesFFI {
-            version: declared_capabilities_version,
-            reserved: 0,
-            bits: declared_capabilities_bits,
+        let Some(BridgePersistence {
+            context: persistence_ctx,
+            callbacks: persistence,
+            extension: persistence_extension,
+            declared: persistence_capabilities,
+        }) = bridge_persistence(env, &persistence_bridge)
+        else {
+            return 0;
         };
 
         // Box the event context.
@@ -205,6 +166,116 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
 
         let bundle = Box::new(ManagerBundle { manager_handle });
         Box::into_raw(bundle) as jlong
+    })
+}
+
+/// `WalletManagerNative.nativeEffectivePersistenceCapabilityBits`: the
+/// persistence capabilities a manager created with `persistence_bridge`
+/// would attest, without creating one. The declaration, the vtable, the
+/// account-writer restriction and the extension (with its `bridge_overrides`
+/// probes) are built exactly as `nativeCreate` builds them, so an
+/// instrumented test can check which bridge overrides keep a capability.
+/// Throws and returns 0 when the declaration cannot be read.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeEffectivePersistenceCapabilityBits(
+    mut env: JNIEnv,
+    _class: JClass,
+    persistence_bridge: JObject,
+) -> jlong {
+    guard(&mut env, 0, |env| {
+        let Some(BridgePersistence {
+            callbacks,
+            extension,
+            declared,
+            ..
+        }) = bridge_persistence(env, &persistence_bridge)
+        else {
+            return 0;
+        };
+        // SAFETY: `extension` is a live, fully sized extension; the vtable's
+        // `release_fn` frees the context before this returns.
+        let effective =
+            unsafe { effective_persistence_capabilities(callbacks, &declared, &extension) };
+        effective.bits() as jlong
+    })
+}
+
+/// The persistence a manager is created with from a Kotlin
+/// `NativePersistenceBridge`: the bridge's declared capabilities, a vtable
+/// over a boxed context holding a global reference to it (with the account
+/// writers it does not override removed), and the extension its overrides
+/// wire. `nativeCreate` creates its manager from it and
+/// `nativeEffectivePersistenceCapabilityBits` asks what that manager would
+/// attest, so the two cannot drift apart.
+struct BridgePersistence {
+    /// The boxed context the vtable points at. Its `release_fn` frees it
+    /// once a manager (or `effective_persistence_capabilities`) takes the
+    /// vtable; a caller that hands it to neither frees it.
+    context: *mut KotlinPersistenceCtx,
+    callbacks: PersistenceCallbacks,
+    extension: PersistenceCallbacksExtension,
+    declared: PersistenceCapabilitiesFFI,
+}
+
+/// Build [`BridgePersistence`] for `persistence_bridge`. The backend's
+/// explicit semantic attestation is read before any trampoline is installed:
+/// `NativePersistenceBridge` defaults both methods to zero, so a no-op
+/// subclass stays fail-closed even though JNI wires a structurally complete
+/// callback table. Throws and returns `None` when the declaration cannot be
+/// read or the global reference made.
+fn bridge_persistence(env: &mut JNIEnv, persistence_bridge: &JObject) -> Option<BridgePersistence> {
+    let version = match env
+        .call_method(
+            persistence_bridge,
+            "persistenceCapabilitiesVersion",
+            "()I",
+            &[],
+        )
+        .and_then(|value| value.i())
+    {
+        Ok(value) => value as u32,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "reading persistence capability version failed");
+            return None;
+        }
+    };
+    let bits = match env
+        .call_method(
+            persistence_bridge,
+            "persistenceCapabilitiesBits",
+            "()J",
+            &[],
+        )
+        .and_then(|value| value.j())
+    {
+        Ok(value) => value as u64,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "reading persistence capability mask failed");
+            return None;
+        }
+    };
+    let global = match env.new_global_ref(persistence_bridge) {
+        Ok(global) => global,
+        Err(_) => {
+            throw_sdk_exception(env, 99, "NewGlobalRef(persistence bridge) failed");
+            return None;
+        }
+    };
+    let context = Box::into_raw(Box::new(KotlinPersistenceCtx::new(global)));
+    let mut callbacks: PersistenceCallbacks = build_vtable(context as *mut c_void);
+    restrict_account_writers(env, persistence_bridge, &mut callbacks);
+    let extension = build_extension(env, persistence_bridge);
+    Some(BridgePersistence {
+        context,
+        callbacks,
+        extension,
+        declared: PersistenceCapabilitiesFFI {
+            version,
+            reserved: 0,
+            bits,
+        },
     })
 }
 
@@ -1949,6 +2020,400 @@ unsafe fn encode_changeset(
     blob
 }
 
+/// Which recipient-ownership rule an asset-lock funding call asks
+/// `platform-wallet` to enforce. The JNI bodies are otherwise identical, so
+/// the choice is a single parameter rather than four copies of the
+/// get/fund/free/destroy sequence.
+#[derive(Clone, Copy)]
+enum FundRecipientScope {
+    /// Every recipient must belong to `platformAccountIndex`
+    /// (`platform_address_wallet_*fund_from_asset_lock_signer`).
+    Owned,
+    /// Explicit-amount recipients may be any P2PKH address; the single
+    /// remainder must still belong to `platformAccountIndex`
+    /// (`platform_address_wallet_*fund_from_asset_lock_external_signer`).
+    External,
+}
+
+/// Run one asset-lock funding FFI against a transient platform-address
+/// wallet handle and return its changeset as a `byte[]` blob.
+///
+/// Resolves the handle (`platform_wallet_get_platform`), calls `fund` with it
+/// and an empty changeset, encodes + frees the changeset on success, then
+/// destroys the handle. The FFI error (if any) is thrown; a destroy error is
+/// thrown only when nothing was thrown before it. Returns null when an
+/// exception is pending.
+fn run_address_funding<F>(env: &mut JNIEnv, wallet_handle: jlong, fund: F) -> jbyteArray
+where
+    F: FnOnce(
+        Handle,
+        *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+    ) -> PlatformWalletFFIResult,
+{
+    let mut addr_handle: Handle = 0;
+    let result = unsafe {
+        platform_wallet_ffi::platform_wallet_get_platform(
+            wallet_handle as Handle,
+            &mut addr_handle as *mut Handle,
+        )
+    };
+    if take_pwffi_error(env, result) {
+        return ptr::null_mut();
+    }
+
+    let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
+        updated: ptr::null_mut(),
+        updated_count: 0,
+    };
+    let fund_result = fund(
+        addr_handle,
+        &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+    );
+
+    let out = if take_pwffi_error(env, fund_result) {
+        ptr::null_mut()
+    } else {
+        let blob = unsafe { encode_changeset(&changeset) };
+        unsafe {
+            platform_wallet_ffi::platform_address_wallet_free_changeset(
+                &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
+            )
+        };
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    };
+
+    let destroy_result =
+        unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
+    if !env.exception_check().unwrap_or(false) {
+        let _ = take_pwffi_error(env, destroy_result);
+    } else {
+        unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
+    }
+
+    out
+}
+
+/// Signature shared by the two fresh-build address-funding FFIs.
+type FundFromAssetLockFfi = unsafe extern "C" fn(
+    Handle,
+    u64,
+    u32,
+    u32,
+    *const platform_wallet_ffi::FundingAddressEntryFFI,
+    usize,
+    *const platform_wallet_ffi::FeeStrategyStepFFI,
+    usize,
+    *mut rs_sdk_ffi::SignerHandle,
+    *mut rs_sdk_ffi::MnemonicResolverHandle,
+    *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+    platform_wallet_ffi::AssetLockBuiltFn,
+    *mut c_void,
+) -> PlatformWalletFFIResult;
+
+/// Signature shared by the two resume address-funding FFIs.
+type ResumeFundFromAssetLockFfi = unsafe extern "C" fn(
+    Handle,
+    *const platform_wallet_ffi::OutPointFFI,
+    u32,
+    *const platform_wallet_ffi::FundingAddressEntryFFI,
+    usize,
+    *const platform_wallet_ffi::FeeStrategyStepFFI,
+    usize,
+    *mut rs_sdk_ffi::SignerHandle,
+    *mut rs_sdk_ffi::MnemonicResolverHandle,
+    *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
+) -> PlatformWalletFFIResult;
+
+/// The fresh-build FFI that enforces `scope`'s recipient rule.
+fn fund_ffi_for(scope: FundRecipientScope) -> FundFromAssetLockFfi {
+    match scope {
+        FundRecipientScope::Owned => {
+            platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_signer
+        }
+        FundRecipientScope::External => {
+            platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_external_signer
+        }
+    }
+}
+
+/// The resume FFI that enforces `scope`'s recipient rule.
+fn resume_ffi_for(scope: FundRecipientScope) -> ResumeFundFromAssetLockFfi {
+    match scope {
+        FundRecipientScope::Owned => {
+            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_signer
+        }
+        FundRecipientScope::External => {
+            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_external_signer
+        }
+    }
+}
+
+/// `AssetLockBuiltFn` trampoline into a Kotlin `AssetLockBuiltBridge`.
+///
+/// Calls `bridge.onAssetLockBuilt(byte[36])` with the raw outpoint
+/// (`txid_le[32] || vout_le[4]`). Rust invokes it at most once, on the
+/// funding call's worker thread, after the lock transaction is signed and
+/// before its row is persisted or it is broadcast. The thread is attached as
+/// a daemon; a Kotlin exception is cleared and a panic caught, because the
+/// callback cannot fail the funding (fire-and-forget, like
+/// `seed_pool_progress_trampoline`).
+///
+/// # Safety
+/// `context`, when non-null, must be a live `GlobalRef` pointer for the
+/// duration of the funding call; `out_point_36`, when non-null, must point
+/// to 36 readable bytes for the duration of this call.
+unsafe extern "C" fn asset_lock_built_trampoline(context: *mut c_void, out_point_36: *const u8) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if context.is_null() || out_point_36.is_null() {
+            return;
+        }
+        let Some(vm) = JVM.get() else { return };
+        let Ok(mut env) = vm.attach_current_thread_as_daemon() else {
+            return;
+        };
+        // SAFETY: `context` is a live GlobalRef pinned for the call duration.
+        let bridge = &*(context as *const GlobalRef);
+        // SAFETY: the FFI hands 36 valid bytes for the duration of this call.
+        let bytes = std::slice::from_raw_parts(out_point_36, 36);
+        let call = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let arr = env.byte_array_from_slice(bytes)?;
+            env.call_method(
+                bridge.as_obj(),
+                "onAssetLockBuilt",
+                "([B)V",
+                &[JValue::Object(&arr)],
+            )?;
+            Ok(())
+        });
+        if call.is_err() {
+            let _ = env.exception_clear();
+        }
+    }));
+}
+
+/// Test-only driver for [`asset_lock_built_trampoline`], bound by
+/// `AssetLockBuiltTrampolineDriver` in the Kotlin androidTest source set.
+///
+/// The funding path reaches the trampoline only after a wallet has built a
+/// lock, so the wallet-free binding tests could not run it. This export
+/// pins each bridge in a `GlobalRef` (as `fund_from_asset_lock` does) and
+/// invokes the production trampoline for each, in order, on ONE freshly
+/// spawned native thread with `out_point` as the payload, joining before it
+/// returns. A throwing bridge followed by a recording one therefore checks
+/// the exception is cleared on the same worker.
+///
+/// Compiled only with `debug_assertions` (`build_android.sh --profile dev`,
+/// which CI's emulator job uses); the release library does not export it.
+#[cfg(debug_assertions)]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_AssetLockBuiltTrampolineDriver_invokeOnNativeThread(
+    mut env: JNIEnv,
+    _this: JObject,
+    bridges: JObjectArray,
+    out_point: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let bytes = match env.convert_byte_array(&out_point) {
+            Ok(bytes) if bytes.len() == 36 => bytes,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "outPoint must be exactly 36 bytes");
+                return;
+            }
+        };
+        let pinned = (|| -> jni::errors::Result<Vec<GlobalRef>> {
+            let len = env.get_array_length(&bridges)?;
+            (0..len)
+                .map(|i| {
+                    let bridge = env.get_object_array_element(&bridges, i)?;
+                    env.new_global_ref(bridge)
+                })
+                .collect()
+        })();
+        let globals = match pinned {
+            Ok(globals) => globals,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "bridges could not be pinned");
+                return;
+            }
+        };
+        // Raw pointers are `!Send`; the addresses cross as `usize`. `globals`
+        // outlives the join, so each pointer stays live for the worker.
+        let contexts: Vec<usize> = globals
+            .iter()
+            .map(|global| global as *const GlobalRef as usize)
+            .collect();
+        let worker = std::thread::spawn(move || {
+            for context in contexts {
+                // SAFETY: `context` is a live GlobalRef (pinned by `globals`
+                // until after the join) and `bytes` holds 36 bytes.
+                unsafe { asset_lock_built_trampoline(context as *mut c_void, bytes.as_ptr()) };
+            }
+        });
+        let joined = worker.join();
+        drop(globals);
+        if joined.is_err() {
+            throw_sdk_exception(
+                env,
+                99,
+                "asset-lock-built trampoline driver thread panicked",
+            );
+        }
+    })
+}
+
+/// Shared body of `walletFundFromAssetLock` / `walletFundFromAssetLockExternal`.
+///
+/// `on_built` is the optional Kotlin `AssetLockBuiltBridge`; it is held as a
+/// `GlobalRef` until the blocking FFI call has returned, so the trampoline
+/// can never see a freed reference.
+#[allow(clippy::too_many_arguments)]
+fn fund_from_asset_lock(
+    env: &mut JNIEnv,
+    scope: FundRecipientScope,
+    wallet_handle: jlong,
+    amount_duffs: jlong,
+    account_index: jni::sys::jint,
+    platform_account_index: jni::sys::jint,
+    recipients_blob: &JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+    on_built: &JObject,
+) -> jbyteArray {
+    // Reject sign errors at the boundary — negatives would otherwise
+    // bit-cast to huge unsigned values on the FFI call.
+    if amount_duffs <= 0 {
+        throw_sdk_exception(env, 1, "amountDuffs must be positive");
+        return ptr::null_mut();
+    }
+    if account_index < 0 {
+        throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+        return ptr::null_mut();
+    }
+    if platform_account_index < 0 {
+        throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
+        return ptr::null_mut();
+    }
+
+    let Some(entries) = decode_funding_recipients(env, recipients_blob) else {
+        return ptr::null_mut();
+    };
+
+    // Box the GlobalRef so the trampoline gets a stable `*const GlobalRef`.
+    let built_global: Option<Box<GlobalRef>> = if on_built.is_null() {
+        None
+    } else {
+        match env.new_global_ref(on_built) {
+            Ok(g) => Some(Box::new(g)),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "NewGlobalRef(asset-lock-built bridge) failed");
+                return ptr::null_mut();
+            }
+        }
+    };
+    let (built_fn, built_ctx): (platform_wallet_ffi::AssetLockBuiltFn, *mut c_void) =
+        match built_global.as_ref() {
+            Some(g) => (
+                Some(asset_lock_built_trampoline),
+                g.as_ref() as *const GlobalRef as *mut c_void,
+            ),
+            None => (None, ptr::null_mut()),
+        };
+
+    let ffi = fund_ffi_for(scope);
+    let out = run_address_funding(env, wallet_handle, |addr_handle, changeset| unsafe {
+        ffi(
+            addr_handle,
+            amount_duffs as u64,
+            account_index as u32,
+            platform_account_index as u32,
+            entries.as_ptr(),
+            entries.len(),
+            // The fee strategy is derived Rust-side; these are ignored.
+            ptr::null(),
+            0,
+            signer_handle as *mut rs_sdk_ffi::SignerHandle,
+            core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+            changeset,
+            built_fn,
+            built_ctx,
+        )
+    });
+    // The FFI can no longer fire the callback; release the bridge now.
+    drop(built_global);
+    out
+}
+
+/// Shared body of `walletResumeFundFromAssetLock` /
+/// `walletResumeFundFromAssetLockExternal`.
+#[allow(clippy::too_many_arguments)]
+fn resume_fund_from_asset_lock(
+    env: &mut JNIEnv,
+    scope: FundRecipientScope,
+    wallet_handle: jlong,
+    out_point_txid: &JByteArray,
+    out_point_vout: jni::sys::jint,
+    platform_account_index: jni::sys::jint,
+    recipients_blob: &JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    // Reject sign errors at the boundary — negatives would otherwise
+    // bit-cast to huge u32s on the FFI call.
+    if out_point_vout < 0 {
+        throw_sdk_exception(env, 1, "outPointVout must be non-negative");
+        return ptr::null_mut();
+    }
+    if platform_account_index < 0 {
+        throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
+        return ptr::null_mut();
+    }
+
+    let txid = match env.convert_byte_array(out_point_txid) {
+        Ok(b) if b.len() == 32 => b,
+        Ok(_) => {
+            throw_sdk_exception(env, 1, "outPointTxid must be exactly 32 bytes");
+            return ptr::null_mut();
+        }
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outPointTxid was null/invalid");
+            return ptr::null_mut();
+        }
+    };
+    let mut txid_arr = [0u8; 32];
+    txid_arr.copy_from_slice(&txid);
+    let out_point = platform_wallet_ffi::OutPointFFI {
+        txid: txid_arr,
+        vout: out_point_vout as u32,
+    };
+
+    let Some(entries) = decode_funding_recipients(env, recipients_blob) else {
+        return ptr::null_mut();
+    };
+
+    let ffi = resume_ffi_for(scope);
+    run_address_funding(env, wallet_handle, |addr_handle, changeset| unsafe {
+        ffi(
+            addr_handle,
+            &out_point as *const platform_wallet_ffi::OutPointFFI,
+            platform_account_index as u32,
+            entries.as_ptr(),
+            entries.len(),
+            // The fee strategy is derived Rust-side; these are ignored.
+            ptr::null(),
+            0,
+            signer_handle as *mut rs_sdk_ffi::SignerHandle,
+            core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+            changeset,
+        )
+    })
+}
+
 /// Fund Platform addresses from a Core L1 asset lock built from the
 /// wallet's balance, returning the resulting changeset (updated address
 /// balances) as a `byte[]` blob.
@@ -1980,81 +2445,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
-        // bit-cast to huge unsigned values on the FFI call.
-        if amount_duffs <= 0 {
-            throw_sdk_exception(env, 1, "amountDuffs must be positive");
-            return ptr::null_mut();
-        }
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        if platform_account_index < 0 {
-            throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-
-        let Some(entries) = decode_funding_recipients(env, &recipients_blob) else {
-            return ptr::null_mut();
-        };
-
-        // Resolve the transient platform-address wallet handle.
-        let mut addr_handle: Handle = 0;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_platform(
-                wallet_handle as Handle,
-                &mut addr_handle as *mut Handle,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
-            updated: ptr::null_mut(),
-            updated_count: 0,
-        };
-        let fund_result = unsafe {
-            platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_signer(
-                addr_handle,
-                amount_duffs as u64,
-                account_index as u32,
-                platform_account_index as u32,
-                entries.as_ptr(),
-                entries.len(),
-                // The fee strategy is derived Rust-side; these are ignored.
-                ptr::null(),
-                0,
-                signer_handle as *mut rs_sdk_ffi::SignerHandle,
-                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
-                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-            )
-        };
-
-        let out = if take_pwffi_error(env, fund_result) {
-            ptr::null_mut()
-        } else {
-            let blob = unsafe { encode_changeset(&changeset) };
-            unsafe {
-                platform_wallet_ffi::platform_address_wallet_free_changeset(
-                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                )
-            };
-            env.byte_array_from_slice(&blob)
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut())
-        };
-
-        let destroy_result =
-            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
-        if !env.exception_check().unwrap_or(false) {
-            let _ = take_pwffi_error(env, destroy_result);
-        } else {
-            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
-        }
-
-        out
+        fund_from_asset_lock(
+            env,
+            FundRecipientScope::Owned,
+            wallet_handle,
+            amount_duffs,
+            account_index,
+            platform_account_index,
+            &recipients_blob,
+            signer_handle,
+            core_signer_handle,
+            &JObject::null(),
+        )
     })
 }
 
@@ -2078,94 +2480,96 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     core_signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        // Reject sign errors at the boundary — negatives would otherwise
-        // bit-cast to huge u32s on the FFI call.
-        if out_point_vout < 0 {
-            throw_sdk_exception(env, 1, "outPointVout must be non-negative");
-            return ptr::null_mut();
-        }
-        if platform_account_index < 0 {
-            throw_sdk_exception(env, 1, "platformAccountIndex must be non-negative");
-            return ptr::null_mut();
-        }
+        resume_fund_from_asset_lock(
+            env,
+            FundRecipientScope::Owned,
+            wallet_handle,
+            &out_point_txid,
+            out_point_vout,
+            platform_account_index,
+            &recipients_blob,
+            signer_handle,
+            core_signer_handle,
+        )
+    })
+}
 
-        let txid = match env.convert_byte_array(&out_point_txid) {
-            Ok(b) if b.len() == 32 => b,
-            Ok(_) => {
-                throw_sdk_exception(env, 1, "outPointTxid must be exactly 32 bytes");
-                return ptr::null_mut();
-            }
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "outPointTxid was null/invalid");
-                return ptr::null_mut();
-            }
-        };
-        let mut txid_arr = [0u8; 32];
-        txid_arr.copy_from_slice(&txid);
-        let out_point = platform_wallet_ffi::OutPointFFI {
-            txid: txid_arr,
-            vout: out_point_vout as u32,
-        };
+/// Pay a third party's Platform address from a Core L1 asset lock built
+/// from the wallet's balance, keeping the remainder on one of the wallet's
+/// own addresses. Sibling of [`walletFundFromAssetLock`] with the same
+/// parameters and blob layouts; calls
+/// `platform_address_wallet_fund_from_asset_lock_external_signer`, whose
+/// pre-flight lets explicit-amount recipients be any P2PKH address while the
+/// single remainder must still belong to `platformAccountIndex`.
+///
+/// The returned changeset holds only the wallet's own addresses (in
+/// practice the remainder); the third party's credit has no local row.
+///
+/// `onAssetLockBuilt` is a Kotlin `AssetLockBuiltBridge` (or null). Rust calls
+/// its `onAssetLockBuilt(byte[36])` at most once, with the new lock's raw
+/// outpoint, before the lock is persisted or broadcast (see
+/// [`asset_lock_built_trampoline`]); it lets the host bind the recipients it
+/// persisted to the lock it must later resume.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletFundFromAssetLockExternal(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    amount_duffs: jlong,
+    account_index: jni::sys::jint,
+    platform_account_index: jni::sys::jint,
+    recipients_blob: JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+    on_asset_lock_built: JObject,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        fund_from_asset_lock(
+            env,
+            FundRecipientScope::External,
+            wallet_handle,
+            amount_duffs,
+            account_index,
+            platform_account_index,
+            &recipients_blob,
+            signer_handle,
+            core_signer_handle,
+            &on_asset_lock_built,
+        )
+    })
+}
 
-        let Some(entries) = decode_funding_recipients(env, &recipients_blob) else {
-            return ptr::null_mut();
-        };
-
-        let mut addr_handle: Handle = 0;
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_get_platform(
-                wallet_handle as Handle,
-                &mut addr_handle as *mut Handle,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        let mut changeset = platform_wallet_ffi::PlatformAddressChangeSetFFI {
-            updated: ptr::null_mut(),
-            updated_count: 0,
-        };
-        let fund_result = unsafe {
-            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_signer(
-                addr_handle,
-                &out_point as *const platform_wallet_ffi::OutPointFFI,
-                platform_account_index as u32,
-                entries.as_ptr(),
-                entries.len(),
-                // The fee strategy is derived Rust-side; these are ignored.
-                ptr::null(),
-                0,
-                signer_handle as *mut rs_sdk_ffi::SignerHandle,
-                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
-                &mut changeset as *mut platform_wallet_ffi::PlatformAddressChangeSetFFI,
-            )
-        };
-
-        let out = if take_pwffi_error(env, fund_result) {
-            ptr::null_mut()
-        } else {
-            let blob = unsafe { encode_changeset(&changeset) };
-            unsafe {
-                platform_wallet_ffi::platform_address_wallet_free_changeset(
-                    &changeset as *const platform_wallet_ffi::PlatformAddressChangeSetFFI,
-                )
-            };
-            env.byte_array_from_slice(&blob)
-                .map(|a| a.into_raw())
-                .unwrap_or(ptr::null_mut())
-        };
-
-        let destroy_result =
-            unsafe { platform_wallet_ffi::platform_address_wallet_destroy(addr_handle) };
-        if !env.exception_check().unwrap_or(false) {
-            let _ = take_pwffi_error(env, destroy_result);
-        } else {
-            unsafe { platform_wallet_ffi_result_free(&mut { destroy_result }) };
-        }
-
-        out
+/// Resume a stuck external-recipient funding from an already-tracked lock by
+/// outpoint. Sibling of [`walletResumeFundFromAssetLock`] (same parameters
+/// and layouts) with the relaxed recipient rule of
+/// [`walletFundFromAssetLockExternal`]; calls
+/// `platform_address_wallet_resume_fund_from_asset_lock_external_signer`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletResumeFundFromAssetLockExternal(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    out_point_txid: JByteArray,
+    out_point_vout: jni::sys::jint,
+    platform_account_index: jni::sys::jint,
+    recipients_blob: JByteArray,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        resume_fund_from_asset_lock(
+            env,
+            FundRecipientScope::External,
+            wallet_handle,
+            &out_point_txid,
+            out_point_vout,
+            platform_account_index,
+            &recipients_blob,
+            signer_handle,
+            core_signer_handle,
+        )
     })
 }
 
@@ -3172,12 +3576,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 
 /// Map the Kotlin `Network.ffiValue` int (0=Mainnet,1=Testnet,2=Devnet,
 /// 3=Regtest) to `FFINetwork`.
-fn ffi_network(value: jni::sys::jint) -> dash_network::ffi::FFINetwork {
+fn ffi_network(value: jni::sys::jint) -> FFINetwork {
     match value {
-        0 => dash_network::ffi::FFINetwork::Mainnet,
-        2 => dash_network::ffi::FFINetwork::Devnet,
-        3 => dash_network::ffi::FFINetwork::Regtest,
-        _ => dash_network::ffi::FFINetwork::Testnet,
+        0 => FFINetwork::Mainnet,
+        2 => FFINetwork::Devnet,
+        3 => FFINetwork::Regtest,
+        _ => FFINetwork::Testnet,
     }
 }
 
@@ -3889,13 +4293,153 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// Success-coded message first (so they can't hand the result to
 /// `take_pwffi_error`, which treats Success as "no error, nothing to free").
 fn throw_pwffi(env: &mut JNIEnv, result: &mut PlatformWalletFFIResult) {
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
+    throw_pwffi_result(env, result);
     unsafe { platform_wallet_ffi_result_free(result) };
+}
+
+/// Ordered wallet bring-up: identity → contacts → contact-account drain, run
+/// as one bounded call so the host can start Core SPV knowing the DIP-15
+/// contact addresses exist and will be in the first filter set — the JNI
+/// bridge over `platform_wallet_manager_start_wallet_subsystems`. The
+/// ordering, retry policy and budget all live Rust-side
+/// (`platform_wallet::manager::startup`); iOS binds the same call as
+/// `PlatformWalletManagerStartup.swift`.
+///
+/// `mnemonicResolverHandle` is nullable (0): required for a Keychain-backed
+/// external-signable wallet; 0 means the wallet holds resident keys. Without
+/// it the drain is skipped and the pending count reported.
+/// `identitySignerHandle` is nullable (0): 0 skips the DIP-15 auto-accept
+/// pass. `budgetSecs` 0 selects the crate default (20s) — the call always
+/// terminates, because it gates Core SPV. `gapLimit` 0 selects the default.
+///
+/// Returns the outcome as a fixed 57-byte big-endian blob (decoded by
+/// `WalletStartupOutcome.decode` in Kotlin — the layouts must match):
+///
+/// | offset | size | field |
+/// |---|---|---|
+/// | 0  | 1  | status (`WalletStartupStatusFFI` discriminant) |
+/// | 1  | 1  | hasIdentityId (0/1) |
+/// | 2  | 32 | identityId (valid only when hasIdentityId=1) |
+/// | 34 | 4  | discoveryAttempts (u32) |
+/// | 38 | 1  | dashpaySyncRan (0/1) |
+/// | 39 | 1  | seedBindingUnverified (0/1) |
+/// | 40 | 1  | identityScanIncomplete (0/1) |
+/// | 41 | 4  | contactAccountsDrained (u32) |
+/// | 45 | 4  | contactAccountsPending (u32) |
+/// | 49 | 8  | elapsedMs (u64) |
+///
+/// Throws only for a malformed request (bad handle, unknown wallet, bad
+/// argument) — an unreachable Platform, a failed sync pass or an unfinished
+/// drain all come back through the blob's status, because the host must be
+/// able to start Core SPV regardless.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_startWalletSubsystems(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    mnemonic_resolver_handle: jlong,
+    identity_signer_handle: jlong,
+    budget_secs: jlong,
+    gap_limit: jint,
+) -> jbyteArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let Some(wallet_id) = read_id32(env, &wallet_id) else {
+            return std::ptr::null_mut();
+        };
+        if budget_secs < 0 {
+            throw_sdk_exception(env, 1, "budgetSecs must be non-negative");
+            return std::ptr::null_mut();
+        }
+        if gap_limit < 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be non-negative");
+            return std::ptr::null_mut();
+        }
+
+        let mut outcome = platform_wallet_ffi::wallet_startup::WalletStartupOutcomeFFI {
+            status: 0,
+            has_identity_id: false,
+            identity_id: [0u8; 32],
+            discovery_attempts: 0,
+            dashpay_sync_ran: false,
+            seed_binding_unverified: false,
+            identity_scan_incomplete: false,
+            contact_accounts_drained: 0,
+            contact_accounts_pending: 0,
+            elapsed_ms: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::wallet_startup::platform_wallet_manager_start_wallet_subsystems(
+                manager_handle as Handle,
+                wallet_id.as_ptr(),
+                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                identity_signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                budget_secs as u64,
+                gap_limit as u32,
+                &mut outcome,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return std::ptr::null_mut();
+        }
+
+        let mut blob = [0u8; 57];
+        blob[0] = outcome.status;
+        blob[1] = outcome.has_identity_id as u8;
+        blob[2..34].copy_from_slice(&outcome.identity_id);
+        blob[34..38].copy_from_slice(&outcome.discovery_attempts.to_be_bytes());
+        blob[38] = outcome.dashpay_sync_ran as u8;
+        blob[39] = outcome.seed_binding_unverified as u8;
+        blob[40] = outcome.identity_scan_incomplete as u8;
+        blob[41..45].copy_from_slice(&outcome.contact_accounts_drained.to_be_bytes());
+        blob[45..49].copy_from_slice(&outcome.contact_accounts_pending.to_be_bytes());
+        blob[49..57].copy_from_slice(&outcome.elapsed_ms.to_be_bytes());
+        match env.byte_array_from_slice(&blob) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "startup outcome blob allocation failed");
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_route_each_fund_scope_to_its_own_ffi() {
+        let owned: FundFromAssetLockFfi =
+            platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_signer;
+        let external: FundFromAssetLockFfi =
+            platform_wallet_ffi::platform_address_wallet_fund_from_asset_lock_external_signer;
+        assert_ne!(owned as usize, external as usize);
+        assert_eq!(
+            fund_ffi_for(FundRecipientScope::Owned) as usize,
+            owned as usize
+        );
+        assert_eq!(
+            fund_ffi_for(FundRecipientScope::External) as usize,
+            external as usize
+        );
+    }
+
+    #[test]
+    fn should_route_each_resume_scope_to_its_own_ffi() {
+        let owned: ResumeFundFromAssetLockFfi =
+            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_signer;
+        let external: ResumeFundFromAssetLockFfi =
+            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_external_signer;
+        assert_ne!(owned as usize, external as usize);
+        assert_eq!(
+            resume_ffi_for(FundRecipientScope::Owned) as usize,
+            owned as usize
+        );
+        assert_eq!(
+            resume_ffi_for(FundRecipientScope::External) as usize,
+            external as usize
+        );
+    }
 }

@@ -121,7 +121,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ | | `CreateIdentityScreen` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. |
+| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ | | `CreateIdentityScreen` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. After a fresh six-key registration, fetch the identity and check that keys 4 and 5 are ECDSA ENCRYPTION / DECRYPTION MEDIUM keys bound to the DashPay contract id and `contactRequest` (the `RegistrationKeys` table). A successful Add Contact does not prove the bounds; no unit test can see what the node stored. |
 | ID-02 | Load / discover identity from wallet | Platform | Essential | ✅ | | `LoadIdentityScreen` / `SearchWalletsForIdentitiesScreen` → `platform_wallet_discover_identities`. |
 | ID-03 | View identity (info / balance / revision / keys) | Platform | Essential | ✅ | | `IdentityDetailScreen`, `KeysListScreen`, `KeyDetailScreen`. |
 | ID-04 | Transfer credits identity → identity | Platform | Essential | ✅ | | `IdentityDetailScreen` → **Transfer Credits** (dialog, `TransferCreditsScreen`) → `platform_wallet_transfer_credits_with_signer` (Keystore-signed). Recipient entered via `RecipientPicker` (local identity / paste base58 id / DPNS name). |
@@ -137,6 +137,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-14 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | multiwallet | `IdentityDetailScreen` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPicker`). Switch to B; verify credit balance rose. |
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify consistency. |
 | ID-16 | Resume identity top-up from a tracked asset lock | Cross | Manual | 🚧 | | Source UI selects the Rust-tracked exact outpoint, excludes locks bound to another identity, and reaches the compiled tracked-lock list/free and existing-lock registration/top-up JNI bridges. Device gate: interrupt after Core broadcast, restart, resume the same Built transaction/outpoint, and verify foreign/untracked/consumed locks return typed failures without creating a replacement funding transaction. |
+| ID-17 | Signing after biometric re-enrollment | Platform | Manual | ✅ | | Physical device with auth-gated Keystore keys. Re-enroll biometrics (add or remove a fingerprint or face), then sign any identity transition: expect `SigningKeyUnavailable` (code 31). Repair the key from the wallet's key-health sheet (`WalletKeyHealthSheet` → `PlatformWalletManager.repairIdentityKey`); the next sign succeeds. The CI emulator cannot re-enroll biometrics, so the invalidation recovery is pinned only through the fake Keystore at the unit tier. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -168,13 +169,19 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailScreen` cast-vote → `dash_sdk_contested_resource_cast_vote`. **Requires masternode voting credentials** — environment-limited otherwise. |
+| VOTE-01 | Vote on contested DPNS username (masternode vote) | Platform | Thorough | ✅ | contested, masternode | `ContestDetailScreen` cast-vote → `dash_sdk_contested_resource_cast_vote`. The voting key (`contestDetail.votingKey`) shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials** — environment-limited otherwise. |
 | VOTE-02 | Query contested resources | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResources). |
 | VOTE-03 | Query contested-resource vote state | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceVoteState). |
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | contested, read-only | `QueriesListScreen` (getVotePollsByEndDate). |
 | VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | | Retired — covered by `VOTE-01`. |
+| VOTE-08 | List decision proposals (open / mine / newest, paged) | Platform | Thorough | ✅ | proposal, read-only | `QueriesListScreen` → Decision Proposals (`votingQueries.decisionProposalsLink`) → `DecisionProposalsScreen`: listing picker (`decisionProposals.listing`), identity picker for Mine (`decisionProposals.ownerPicker`), Load More (`decisionProposals.loadMore`). Needs protocol version 15; an earlier network shows a load error. |
+| VOTE-09 | Create a decision proposal | Platform | Thorough | ✅ | proposal | `DecisionProposalsScreen` + (`decisionProposals.create`) → `CreateDecisionProposalScreen` (`createDecisionProposal.*`) → `PlatformWalletManager.decisionProposals.create` (one `platform_wallet_decision_proposal_create` call; the success section shows the returned id). Pays the decision proposal fund (0.5 Dash) plus fees. While it broadcasts, system Back does nothing, and a rotation or a bottom-tab switch does not cancel it: the screen shows the outcome when it composes again. Platform refuses a pass percent outside 50 to 80, a turnout above 50 and an end date outside one to four weeks. Protocol version 15. |
+| VOTE-10 | View a decision proposal and its poll state | Platform | Thorough | ✅ | proposal, read-only | `DecisionProposalDetailScreen` (row `decisionProposals.row.<id>`): rule, poll status (`decisionProposal.pollStatus`: open with tallies, or finished with its result), poll id. |
+| VOTE-11 | Edit a decision proposal's text | Platform | Thorough | ✅ | proposal | Detail → Edit Text (`decisionProposal.edit`, shown only when a local wallet identity filed it) → `editDecisionProposal.*` → `PlatformWalletManager.decisionProposals.edit` (one `platform_wallet_decision_proposal_edit` call; no signing key is chosen in the app). Accepted for a day after creation; an edit that changes nothing is refused before anything is broadcast, and an edit that raced another one is refused by Platform (consensus code 40106) rather than overwriting it. The dialog cannot be dismissed while it broadcasts. |
+| VOTE-12 | Masternode vote on a decision proposal (yes / no / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`decisionProposal.vote`) → `decisionProposalVote.choice` / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_decision_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
+| VOTE-13 | Read a masternode's answer on a decision proposal | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`decisionProposalVote.lookUp`) → `dash_sdk_decision_proposal_get_masternode_vote`. No answer once the poll finished. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -306,7 +313,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 35 | yes |
+| Thorough | 41 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -315,7 +322,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~74 |
+| Platform | ~80 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -329,12 +336,12 @@ Membership of each feature category across **all** sections (primary section mem
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
-- **Voting** — `VOTE-01..07`, `DPNS-05`, `DPNS-08`
+- **Voting** — `VOTE-01..13`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
-- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded evidence 2026-07-23 in `docs/dashpay/KOTLIN_INVITATIONS_SPEC.md` §7)
+- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
 - **System / Diagnostics** — `SYS-01..08`
 
 ### Tag index
@@ -346,5 +353,6 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `TOK-18`, `TOK-19`
-- **masternode** — `VOTE-01`
+- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `TOK-18`, `TOK-19`
+- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`
+- **proposal** (decision proposals, protocol version 15): `VOTE-08..13`

@@ -1,7 +1,8 @@
 use crate::drive::{Drive, RootTree};
+use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use grovedb::Element;
+use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
 /// constant key for transaction counter
@@ -22,6 +23,11 @@ pub const WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY: [u8; 1] = [4];
 /// that entered Platform within the window may leave again without consuming the budget of
 /// other users. Exists from protocol version 14.
 pub const WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY: [u8; 1] = [5];
+/// constant id for the subtree recording Core's credit pool balance after each Core block
+/// Platform read (key: Core block height, big-endian; value: the balance in credits,
+/// big-endian). The Core-anchored withdrawal limit reads the balance at the chain locked height
+/// and at the start of Core's unlock window. Exists from protocol version 14.
+pub const WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY: [u8; 1] = [6];
 
 impl Drive {
     /// Add operations for creating initial withdrawal state structure
@@ -50,17 +56,40 @@ impl Drive {
                 WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
             );
         }
+    }
 
-        if platform_version.protocol_version >= 14 {
-            batch.add_insert_empty_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY.to_vec(),
-            );
-            batch.add_insert_empty_sum_tree(
-                vec![vec![RootTree::WithdrawalTransactions as u8]],
-                WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY.to_vec(),
-            );
+    /// Inserts the withdrawal limit trees of protocol version 14 under the withdrawals tree,
+    /// one after the other: the total credits history, the credit inflows sum tree and the
+    /// Core credit pool balances. Genesis (`create_initial_state_structure` 4, after its batch)
+    /// and the upgrade (`Platform::transition_to_version_14`) both call it, so the withdrawals
+    /// Merk is built by the same sequence of inserts on both node populations: adding the
+    /// trees to the genesis batch would root it at another key than the upgrade does.
+    pub fn insert_withdrawal_limit_trees(
+        &self,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for (key, tree) in [
+            (WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY, Element::empty_tree()),
+            (
+                WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+                Element::empty_sum_tree(),
+            ),
+            (
+                WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
+                Element::empty_tree(),
+            ),
+        ] {
+            self.grove_insert_if_not_exists(
+                (&get_withdrawal_root_path()).into(),
+                &key,
+                tree,
+                transaction,
+                None,
+                &platform_version.drive,
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -151,5 +180,21 @@ pub fn get_withdrawal_credit_inflows_sum_tree_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
         &WITHDRAWAL_CREDIT_INFLOWS_SUM_TREE_KEY,
+    ]
+}
+
+/// Helper function to get the Core credit pool balances path as Vec
+pub fn get_withdrawal_core_credit_pool_balances_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the Core credit pool balances path as [u8]
+pub fn get_withdrawal_core_credit_pool_balances_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_CORE_CREDIT_POOL_BALANCES_KEY,
     ]
 }

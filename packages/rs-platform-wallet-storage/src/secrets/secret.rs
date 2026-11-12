@@ -305,7 +305,7 @@ impl SecretString {
 /// be a vulnerability rather than a simplification.
 ///
 /// Takes the text rather than a `SecretString` so it never calls
-/// `expose_secret` itself, keeping `tests/secrets_guard.rs`'s
+/// `expose_secret` itself, keeping `tests/integration/secrets_guard.rs`'s
 /// sink-near-plaintext scan honest instead of merely quiet.
 fn check_edit_range(text: &str, start: usize, end: usize) {
     assert!(
@@ -1096,7 +1096,7 @@ mod tests {
         let long = "x".repeat(DEFAULT_CAPACITY + 500);
         let mut one_shot = SecretString::new("seed:");
         one_shot.replace_range(5.., &long);
-        // Built in its own statement: `tests/secrets_guard.rs` rejects a
+        // Built in its own statement: `tests/integration/secrets_guard.rs` rejects a
         // formatting sink sharing a statement with `expose_secret`.
         let expected = format!("seed:{long}");
         assert_eq!(one_shot.expose_secret(), expected);
@@ -1186,7 +1186,7 @@ mod tests {
     fn replace_range_panic_message_carries_no_plaintext() {
         // Bound as a literal, never read back out of the secret: pairing
         // `expose_secret` with an assertion here would trip
-        // `tests/secrets_guard.rs`.
+        // `tests/integration/secrets_guard.rs`.
         let plaintext = "correct-horse-battery-staple";
         let mut s = SecretString::new(plaintext);
 

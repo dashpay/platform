@@ -15,10 +15,23 @@ impl Drive {
         &self,
         nullifiers: &[[u8; 32]],
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
+        Ok(Self::insert_nullifiers_in_pool_v0(
+            shielded_credit_pool_nullifiers_path_vec(),
+            nullifiers,
+        ))
+    }
 
+    /// Builds the nullifier insertion operations for the nullifiers tree at `nullifiers_path`,
+    /// whichever shielded pool (credit or token) it belongs to.
+    pub(in crate::drive) fn insert_nullifiers_in_pool_v0(
+        nullifiers_path: Vec<Vec<u8>>,
+        nullifiers: &[[u8; 32]],
+    ) -> Vec<LowLevelDriveOperation> {
         // Build permanent nullifier tree ops
-        let ops = nullifiers
+        nullifiers
             .iter()
             .map(|nullifier| {
                 GroveOperation(
@@ -29,9 +42,7 @@ impl Drive {
                     ),
                 )
             })
-            .collect();
-
-        Ok(ops)
+            .collect()
     }
 }
 

@@ -115,7 +115,7 @@ Replay protection on Dash Platform uses **nonces** rather than sequential transa
 1. **Identity nonce**: A per-identity counter used for identity-level operations (like key updates).
 2. **Identity-contract nonce**: A per-identity-per-contract counter used for document operations. This allows operations on different contracts to be submitted in parallel without conflicting.
 
-The nonce system is defined in `packages/rs-dpp/src/identity/identity_nonce.rs` and is more sophisticated than a simple incrementing counter. The nonce value is actually a packed `u64` that contains both the counter value and a bitfield tracking recently-used nonces:
+The nonce system is defined in `packages/rs-dpp/src/identity/identity_nonce.rs` and is more sophisticated than a simple incrementing counter. The nonce value is actually a packed `u64` that contains both the counter value and a bitfield tracking recently skipped, still-unused nonces:
 
 ```rust
 pub const IDENTITY_NONCE_VALUE_FILTER: u64 = 0xFFFFFFFFFF;
@@ -123,7 +123,7 @@ pub const MISSING_IDENTITY_REVISIONS_FILTER: u64 = 0xFFFFFF0000000000;
 pub const MAX_MISSING_IDENTITY_REVISIONS: u64 = 24;
 ```
 
-The lower 40 bits hold the current nonce tip. The upper 24 bits form a bitfield that tracks which of the last 24 nonce values have been seen. This allows out-of-order submission within a window: if a user submits nonces 5, 7, and 6 in that order, all three are accepted. But nonce 5 cannot be submitted again because it is already marked in the bitfield.
+The lower 40 bits hold the current nonce tip. The upper 24 bits form a bitfield whose set bits mark skipped, still-unused nonces below the tip. A previously skipped nonce can be accepted within the window while its bit is set; accepting it clears that bit. This allows out-of-order submission within a window: if a user submits nonces 5, 7, and 6 in that order, all three are accepted. But nonce 5 cannot be submitted again because it was already used and is not marked as missing.
 
 The validation function checks several conditions:
 
@@ -146,7 +146,7 @@ pub fn validate_identity_nonce_update(
         std::cmp::Ordering::Greater => {
             // Nonce is in the past -- check bitfield
             // -> NonceTooFarInPast if gap > 24
-            // -> NonceAlreadyPresentInPast if bit is already set
+            // -> NonceAlreadyPresentInPast if its missing bit is not set (already used)
         }
     }
 }

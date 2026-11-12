@@ -69,6 +69,7 @@ impl DocumentEraseTransitionActionV0 {
                 // Erase carries no token cost: the deletion it follows was
                 // charged when the document was deleted.
                 |_document_type| None,
+                |_action_fees| None,
                 "erase",
             )?;
 

@@ -21,6 +21,8 @@ use dpp::bincode;
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
+#[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
@@ -63,13 +65,11 @@ impl ContestedResourceVotesGivenByIdentityQuery {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -115,13 +115,11 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         let result =
             self.execute_no_proof(drive, transaction, &mut drive_operations, platform_version)?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -166,9 +164,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
                         .into_iter()
                         .map(|(path, key, element)| {
                             let serialized_reference = element.into_item_bytes()?;
-                            let bincode_config = bincode::config::standard()
-                                .with_big_endian()
-                                .with_no_limit();
+                            let bincode_config = PLATFORM_BINCODE_CONFIG;
                             let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                                 bincode::decode_from_slice(&serialized_reference, bincode_config)
                                     .map_err(|e| {

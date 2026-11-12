@@ -33,7 +33,7 @@ use rayon::prelude::*;
 use platform_wallet::wallet::shielded::keys::OrchardKeySet;
 
 const ENCRYPTED_NOTE_WIRE_LEN: usize = 216;
-const SEED_BENCH: [u8; 32] = [0x73; 32]; // matches SEED_A in drive-abci's seeder
+const SEED_BENCH: [u8; 32] = [0x73; 32]; // same seed as SEED_A in examples/shielded_sync.rs
 
 /// Generate `count` filler `ShieldedEncryptedNote`s with random bytes
 /// matching the on-chain wire layout. Deterministic given `rng_seed`.

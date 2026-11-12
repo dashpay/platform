@@ -19,7 +19,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-use std::convert::TryFrom;
 use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -184,14 +183,12 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
             }
         };
 
-        Ok(if highest_security_level == SecurityLevel::MASTER {
-            vec![SecurityLevel::MASTER]
-        } else {
-            // this might seem wrong until you realize that master is 0, critical 1, etc
-            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
-                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
-                .collect()
-        })
+        // Edited in place in a shipped generation: `document_signing_levels` returns what the
+        // code it replaced did for every requirement (MASTER alone for MASTER, otherwise
+        // CRITICAL through the requirement, strongest first), without its `unwrap`. Its tests
+        // and the batch tests pin each output, so no protocol version that signs or checks a
+        // batch through this method can see another result.
+        Ok(highest_security_level.document_signing_levels())
     }
 
     fn set_transitions(&mut self, transitions: Vec<BatchedTransition>);

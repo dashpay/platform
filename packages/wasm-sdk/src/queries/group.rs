@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::queries::utils::{convert_optional_limit, deserialize_required_query};
+use crate::queries::utils::{convert_optional_limit, deserialize_required_query_with_identifiers};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
@@ -196,8 +196,13 @@ fn parse_group_action_status(status: &str) -> Result<GroupActionStatus, WasmSdkE
 fn parse_group_actions_query(
     query: GroupActionsQueryJs,
 ) -> Result<GroupActionsQueryParsed, WasmSdkError> {
-    let input: GroupActionsQueryInput =
-        deserialize_required_query(query, "Query object is required", "group actions query")?;
+    let input: GroupActionsQueryInput = deserialize_required_query_with_identifiers(
+        query,
+        "Query object is required",
+        "group actions query",
+        &[&["dataContractId"], &["startAt", "actionId"]],
+        &[],
+    )?;
 
     let GroupActionsQueryInput {
         data_contract_id,
@@ -258,10 +263,12 @@ struct GroupActionSignersQueryParsed {
 fn parse_group_action_signers_query(
     query: GroupActionSignersQueryJs,
 ) -> Result<GroupActionSignersQueryParsed, WasmSdkError> {
-    let input: GroupActionSignersQueryInput = deserialize_required_query(
+    let input: GroupActionSignersQueryInput = deserialize_required_query_with_identifiers(
         query,
         "Query object is required",
         "group action signers query",
+        &[&["dataContractId"], &["actionId"]],
+        &[],
     )?;
     let GroupActionSignersQueryInput {
         data_contract_id,
@@ -362,8 +369,13 @@ struct GroupInfosQueryParsed {
 fn parse_group_infos_query(
     query: GroupInfosQueryJs,
 ) -> Result<GroupInfosQueryParsed, WasmSdkError> {
-    let input: GroupInfosQueryInput =
-        deserialize_required_query(query, "Query object is required", "group infos query")?;
+    let input: GroupInfosQueryInput = deserialize_required_query_with_identifiers(
+        query,
+        "Query object is required",
+        "group infos query",
+        &[&["dataContractId"]],
+        &[],
+    )?;
 
     let GroupInfosQueryInput {
         data_contract_id,
@@ -495,8 +507,13 @@ struct GroupMembersQueryParsed {
 fn parse_group_members_query(
     query: GroupMembersQueryJs,
 ) -> Result<GroupMembersQueryParsed, WasmSdkError> {
-    let input: GroupMembersQueryInput =
-        deserialize_required_query(query, "Query object is required", "group members query")?;
+    let input: GroupMembersQueryInput = deserialize_required_query_with_identifiers(
+        query,
+        "Query object is required",
+        "group members query",
+        &[&["dataContractId"], &["startAtMemberId"]],
+        &["memberIds"],
+    )?;
 
     let GroupMembersQueryInput {
         data_contract_id,
@@ -545,8 +562,17 @@ struct IdentityGroupsQueryParsed {
 fn parse_identity_groups_query(
     query: IdentityGroupsQueryJs,
 ) -> Result<IdentityGroupsQueryParsed, WasmSdkError> {
-    let input: IdentityGroupsQueryInput =
-        deserialize_required_query(query, "Query object is required", "identity groups query")?;
+    let input: IdentityGroupsQueryInput = deserialize_required_query_with_identifiers(
+        query,
+        "Query object is required",
+        "identity groups query",
+        &[&["identityId"]],
+        &[
+            "memberDataContracts",
+            "ownerDataContracts",
+            "moderatorDataContracts",
+        ],
+    )?;
 
     let IdentityGroupsQueryInput {
         identity_id: identity_js,
@@ -1173,4 +1199,302 @@ fn collect_group_members_map(
     }
 
     Ok(members_map)
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod identifier_like_tests {
+    use super::*;
+    use js_sys::{Object, Reflect, Uint8Array};
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[derive(Clone, Copy)]
+    enum InputForm {
+        Bytes,
+        Base58,
+        Hex,
+        Numbers,
+        Instance,
+    }
+
+    const FORMS: [InputForm; 5] = [
+        InputForm::Bytes,
+        InputForm::Base58,
+        InputForm::Hex,
+        InputForm::Numbers,
+        InputForm::Instance,
+    ];
+
+    fn identifier(byte: u8, form: InputForm) -> JsValue {
+        let bytes = [byte; 32];
+        match form {
+            InputForm::Bytes => Uint8Array::from(bytes.as_slice()).into(),
+            InputForm::Base58 => IdentifierWasm::from(Identifier::new(bytes))
+                .to_base58()
+                .into(),
+            InputForm::Hex => hex::encode(bytes).into(),
+            InputForm::Numbers => bytes
+                .into_iter()
+                .map(JsValue::from)
+                .collect::<Array>()
+                .into(),
+            InputForm::Instance => IdentifierWasm::from(Identifier::new(bytes)).into(),
+        }
+    }
+
+    fn identifiers(bytes: &[u8], form: InputForm) -> JsValue {
+        bytes
+            .iter()
+            .map(|byte| identifier(*byte, form))
+            .collect::<Array>()
+            .into()
+    }
+
+    fn object(fields: &[(&str, JsValue)]) -> JsValue {
+        let object = Object::new();
+        for (key, value) in fields {
+            Reflect::set(&object, &JsValue::from_str(key), value).expect("fixture property");
+        }
+        object.into()
+    }
+
+    #[wasm_bindgen_test]
+    fn should_parse_distinct_group_action_identifiers_without_changing_the_request_fields() {
+        for form in FORMS {
+            for (status, expected_status) in [
+                ("ACTIVE", GroupActionStatus::ActionActive),
+                ("CLOSED", GroupActionStatus::ActionClosed),
+            ] {
+                for included in [false, true] {
+                    let query = object(&[
+                        ("dataContractId", identifier(0x11, form)),
+                        ("groupContractPosition", 7u32.into()),
+                        ("status", status.into()),
+                        (
+                            "startAt",
+                            object(&[
+                                ("actionId", identifier(0x22, form)),
+                                ("included", included.into()),
+                            ]),
+                        ),
+                        ("limit", 2u32.into()),
+                    ]);
+                    let parsed =
+                        parse_group_actions_query(query.unchecked_into()).expect("group actions");
+                    assert_eq!(parsed.contract_id, Identifier::new([0x11; 32]));
+                    assert_eq!(parsed.group_contract_position, 7);
+                    assert_eq!(parsed.status, expected_status);
+                    assert_eq!(
+                        parsed.start_at,
+                        Some((Identifier::new([0x22; 32]), included))
+                    );
+                    assert_eq!(parsed.limit, Some(2));
+                }
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_parse_distinct_group_action_signer_identifiers_for_both_statuses() {
+        for form in FORMS {
+            for (status, expected_status) in [
+                ("ACTIVE", GroupActionStatus::ActionActive),
+                ("CLOSED", GroupActionStatus::ActionClosed),
+            ] {
+                let query = object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    ("groupContractPosition", 7u32.into()),
+                    ("status", status.into()),
+                    ("actionId", identifier(0x22, form)),
+                ]);
+                let parsed = parse_group_action_signers_query(query.unchecked_into())
+                    .expect("group signers");
+                assert_eq!(parsed.contract_id, Identifier::new([0x11; 32]));
+                assert_eq!(parsed.group_contract_position, 7);
+                assert_eq!(parsed.status, expected_status);
+                assert_eq!(parsed.action_id, Identifier::new([0x22; 32]));
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_keep_group_info_positions_numeric_when_the_contract_is_an_identifier_instance() {
+        for form in FORMS {
+            for included in [false, true] {
+                let query = object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    (
+                        "startAt",
+                        object(&[("position", 17u32.into()), ("included", included.into())]),
+                    ),
+                    ("limit", 2u32.into()),
+                ]);
+                let parsed = parse_group_infos_query(query.unchecked_into()).expect("group infos");
+                assert_eq!(parsed.contract_id, Identifier::new([0x11; 32]));
+                assert_eq!(parsed.start_at, Some((17, included)));
+                assert_eq!(parsed.limit, Some(2));
+            }
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_preserve_order_and_cursor_in_nonempty_group_member_identifier_arrays() {
+        for form in FORMS {
+            let query = object(&[
+                ("dataContractId", identifier(0x11, form)),
+                ("groupContractPosition", 7u32.into()),
+                ("memberIds", identifiers(&[0x22, 0x33], form)),
+                ("startAtMemberId", identifier(0x44, form)),
+                ("limit", 2u32.into()),
+            ]);
+            let parsed = parse_group_members_query(query.unchecked_into()).expect("group members");
+            assert_eq!(parsed.contract_id, Identifier::new([0x11; 32]));
+            assert_eq!(parsed.group_contract_position, 7);
+            assert_eq!(
+                parsed.member_ids,
+                Some(vec![
+                    Identifier::new([0x22; 32]),
+                    Identifier::new([0x33; 32])
+                ])
+            );
+            assert_eq!(parsed.start_at_member_id, Some(Identifier::new([0x44; 32])));
+            assert_eq!(parsed.limit, Some(2));
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_preserve_distinct_nonempty_contract_lists_for_all_identity_group_roles() {
+        for form in FORMS {
+            let query = object(&[
+                ("identityId", identifier(0x11, form)),
+                ("memberDataContracts", identifiers(&[0x22, 0x33], form)),
+                ("ownerDataContracts", identifiers(&[0x33, 0x44], form)),
+                ("moderatorDataContracts", identifiers(&[0x44, 0x22], form)),
+            ]);
+            let parsed =
+                parse_identity_groups_query(query.unchecked_into()).expect("identity groups");
+            assert_eq!(parsed.identity_id, Identifier::new([0x11; 32]));
+            assert_eq!(
+                parsed.member_data_contracts,
+                Some(vec![
+                    Identifier::new([0x22; 32]),
+                    Identifier::new([0x33; 32])
+                ])
+            );
+            assert_eq!(
+                parsed.owner_data_contracts,
+                Some(vec![
+                    Identifier::new([0x33; 32]),
+                    Identifier::new([0x44; 32])
+                ])
+            );
+            assert_eq!(
+                parsed.moderator_data_contracts,
+                Some(vec![
+                    Identifier::new([0x44; 32]),
+                    Identifier::new([0x22; 32])
+                ])
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_keep_optional_query_defaults_and_zero_limits_for_supported_identifier_forms() {
+        for form in FORMS {
+            for absent in [JsValue::NULL, JsValue::UNDEFINED] {
+                let actions = parse_group_actions_query(
+                    object(&[
+                        ("dataContractId", identifier(0x11, form)),
+                        ("groupContractPosition", 0u32.into()),
+                        ("status", "ACTIVE".into()),
+                        ("startAt", absent.clone()),
+                        ("limit", 0u32.into()),
+                    ])
+                    .unchecked_into(),
+                )
+                .expect("default actions");
+                assert_eq!(actions.group_contract_position, 0);
+                assert_eq!(actions.start_at, None);
+                assert_eq!(actions.limit, None);
+                let members = parse_group_members_query(
+                    object(&[
+                        ("dataContractId", identifier(0x11, form)),
+                        ("groupContractPosition", 0u32.into()),
+                        ("memberIds", absent.clone()),
+                        ("startAtMemberId", absent.clone()),
+                        ("limit", absent.clone()),
+                    ])
+                    .unchecked_into(),
+                )
+                .expect("default members");
+                assert_eq!(members.member_ids, None);
+                assert_eq!(members.start_at_member_id, None);
+                assert_eq!(members.limit, None);
+                let groups = parse_identity_groups_query(
+                    object(&[
+                        ("identityId", identifier(0x11, form)),
+                        ("memberDataContracts", absent.clone()),
+                        ("ownerDataContracts", absent.clone()),
+                        ("moderatorDataContracts", absent),
+                    ])
+                    .unchecked_into(),
+                )
+                .expect("default identity groups");
+                assert_eq!(groups.member_data_contracts, None);
+                assert_eq!(groups.owner_data_contracts, None);
+                assert_eq!(groups.moderator_data_contracts, None);
+            }
+            let actions = parse_group_actions_query(
+                object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    ("groupContractPosition", 7u32.into()),
+                    ("status", "ACTIVE".into()),
+                    ("startAt", object(&[("actionId", identifier(0x22, form))])),
+                ])
+                .unchecked_into(),
+            )
+            .expect("default cursor inclusion");
+            assert_eq!(actions.start_at, Some((Identifier::new([0x22; 32]), false)));
+            assert_eq!(actions.limit, None);
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_keep_existing_numeric_position_casts_and_checked_action_positions() {
+        for form in FORMS {
+            let infos = parse_group_infos_query(
+                object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    ("startAt", object(&[("position", 70000u32.into())])),
+                ])
+                .unchecked_into(),
+            )
+            .expect("existing info position cast");
+            assert_eq!(infos.start_at, Some((4464, false)));
+            let members = parse_group_members_query(
+                object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    ("groupContractPosition", 70000u32.into()),
+                ])
+                .unchecked_into(),
+            )
+            .expect("existing member position cast");
+            assert_eq!(members.group_contract_position, 4464);
+            let error = parse_group_actions_query(
+                object(&[
+                    ("dataContractId", identifier(0x11, form)),
+                    ("groupContractPosition", 70000u32.into()),
+                    ("status", "INVALID".into()),
+                    ("limit", 70000u32.into()),
+                ])
+                .unchecked_into(),
+            )
+            .err()
+            .expect("action position remains checked");
+            assert_eq!(
+                error.to_string(),
+                "groupContractPosition 70000 exceeds maximum of 65535"
+            );
+        }
+    }
 }

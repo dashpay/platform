@@ -3,6 +3,7 @@ mod identity_create_transition;
 mod identity_credit_transfer_to_addresses_transition;
 mod identity_credit_transfer_transition;
 mod identity_credit_withdrawal_transition;
+mod identity_key_limits_update_transition;
 mod identity_top_up_from_addresses_transition;
 mod identity_top_up_transition;
 mod identity_update_transition;

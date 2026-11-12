@@ -1,6 +1,8 @@
 /// Handles operations related to adding transaction history.
 #[cfg(feature = "server")]
 mod add_transaction_history_operations;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 /// Defines logic for applying status updates within the system.
 #[cfg(feature = "server")]
@@ -32,6 +34,11 @@ pub mod mint;
 #[cfg(feature = "server")]
 pub mod mint_many;
 
+/// Per-token shielded pools: creation, cost estimation and the shield / unshield /
+/// shielded-transfer operations.
+#[cfg(feature = "server")]
+pub mod shielded_pool;
+
 /// Manages system-level operations and utilities.
 #[cfg(feature = "server")]
 pub mod system;
@@ -47,6 +54,11 @@ pub mod unfreeze;
 /// Calculates the total token balance across all accounts.
 #[cfg(feature = "server")]
 pub mod calculate_total_tokens_balance;
+
+/// The escrow of the token marketplace (protocol version 15): the tokens open listings hold and
+/// the credits open offers hold.
+#[cfg(feature = "server")]
+pub mod order_escrow;
 
 mod contract_info;
 mod direct_purchase;

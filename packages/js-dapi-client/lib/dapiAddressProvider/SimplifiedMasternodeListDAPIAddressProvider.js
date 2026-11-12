@@ -1,3 +1,5 @@
+const networks = require('@dashevo/dashcore-lib/lib/networks');
+
 const DAPIAddress = require('./DAPIAddress');
 
 class SimplifiedMasternodeListDAPIAddressProvider {
@@ -5,9 +7,11 @@ class SimplifiedMasternodeListDAPIAddressProvider {
    * @param {SimplifiedMasternodeListProvider} smlProvider
    * @param {ListDAPIAddressProvider} listDAPIAddressProvider
    * @param {DAPIAddress[]} addressWhiteList
+   * @param {DAPIClientOptions} [options]
    */
-  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList) {
+  constructor(smlProvider, listDAPIAddressProvider, addressWhiteList, options = {}) {
     this.smlProvider = smlProvider;
+    this.options = options;
     this.listDAPIAddressProvider = listDAPIAddressProvider;
     this.addressWhiteStrings = addressWhiteList.map((dapiAddress) => dapiAddress.toString());
   }
@@ -56,6 +60,18 @@ class SimplifiedMasternodeListDAPIAddressProvider {
       filteredAddresses = updatedAddresses.filter((dapiAddress) => (
         this.addressWhiteStrings.includes(dapiAddress.toString())
       ));
+    }
+
+    // Local (regtest) masternodes register a docker-internal IP that is not
+    // reachable from the host, while their gateways are published on the host's
+    // loopback at the registered port with a self-signed certificate.
+    const network = networks.get(this.options.network);
+    if (network && network.regtestEnabled) {
+      filteredAddresses.forEach((address) => {
+        address.setHost('127.0.0.1');
+        // eslint-disable-next-line no-param-reassign
+        address.allowSelfSignedCertificate = true;
+      });
     }
 
     this.listDAPIAddressProvider.setAddresses(filteredAddresses);

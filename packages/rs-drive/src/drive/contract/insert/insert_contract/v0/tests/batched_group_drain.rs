@@ -222,7 +222,6 @@ fn apply_batch(drive: &Drive, operations: Vec<DriveOperation>) {
             &BlockInfo::default(),
             None,
             platform_version(),
-            None,
         )
         .expect("the batch must apply");
 }
@@ -837,7 +836,6 @@ fn update_document_singly(drive: &Drive, contract: &DataContract, axis: Axis, do
             StorageFlags::optional_default_as_cow(),
             None,
             platform_version(),
-            None,
         )
         .expect("the single-document update must succeed");
 }
@@ -990,7 +988,6 @@ fn apply_and_observe(
             &BlockInfo::default(),
             None,
             platform_version(),
-            None,
         )
         .map(|_| ());
     let observation = observe(drive, contract, axis, arrival, departure);

@@ -10,8 +10,13 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::v0::ValidateStateTransitionIdentitySignatureV0;
 
 pub mod v0;
+mod v1;
+use v1::ValidateStateTransitionIdentitySignatureV1;
+mod v2;
+use v2::ValidateStateTransitionIdentitySignatureV2;
 
 pub trait ValidateStateTransitionIdentitySignature {
+    #[allow(clippy::too_many_arguments)] // Keep explicit versioned validation inputs.
     fn validate_state_transition_identity_signed(
         &self,
         drive: &Drive,
@@ -48,9 +53,25 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.validate_state_transition_identity_signed_v1(
+                drive,
+                request_balance,
+                request_revision,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
+            2 => self.validate_state_transition_identity_signed_v2(
+                drive,
+                request_balance,
+                request_revision,
+                transaction,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_state_transition_identity_signature".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

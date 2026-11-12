@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -14,7 +14,9 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::AllProvableCountTrees;
 use grovedb::TreeType;
 
-use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, contract_documents_primary_key_path, DOCUMENT_HISTORY_TREE_KEY,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::storage_flags::StorageFlags;
@@ -33,7 +35,7 @@ impl Drive {
         document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
-        layers: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        layers: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
@@ -43,6 +45,15 @@ impl Drive {
         )?;
         Self::add_estimation_costs_for_lifecycle_record(
             contract,
+            document_type,
+            layers,
+            platform_version,
+        )?;
+        Self::add_estimation_costs_for_remove_document_to_primary_storage(
+            contract_documents_primary_key_path(
+                contract.id_ref().as_bytes(),
+                document_type.name().as_str(),
+            ),
             document_type,
             layers,
             platform_version,

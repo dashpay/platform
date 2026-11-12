@@ -13,7 +13,9 @@ impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
         let prove = settings.prove;
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Config(
+                "unproved queries are not supported for this query; enable proofs".to_string(),
+            ));
         }
         Ok(GetFinalizedEpochInfosRequest {
             version: Some(get_finalized_epoch_infos_request::Version::V0(

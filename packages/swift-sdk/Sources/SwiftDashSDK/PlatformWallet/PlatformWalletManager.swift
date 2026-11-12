@@ -107,6 +107,25 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
     public static let dashpayPayments: UInt64 = 1 << 12
+    /// Durable operation UUIDs, including consumed asset-lock tombstones.
+    public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// The Orchard recipient of a shielded asset-lock funding survives store
+    /// and load with its row, so a resume after restart pays the confirmed
+    /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
+    /// Rust only honours the declaration when both recipient slots are wired.
+    public static let assetLockShieldedRecipients: UInt64 = 1 << 14
+    /// The private contact request sync's scan state (each identity's read
+    /// position in DashPay's private contact request store, and its private
+    /// contacts' shielded addresses) is stored on its round and restored at
+    /// load, so a relaunch resumes the sync where it stopped. A store
+    /// declaring it keeps a position record marked unresolved through its
+    /// wallet's removal, until a record stored cleared for the same wallet
+    /// and identity replaces it, and lists that wallet so Rust holds the
+    /// identity again if the wallet comes back. Mirrors
+    /// `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`; Rust
+    /// only honours the declaration when the extension carries the five
+    /// scan-state callbacks.
+    public static let privateContactRequestScanState: UInt64 = 1 << 15
 
     public let version: UInt32
     public let bits: UInt64
@@ -160,15 +179,18 @@ public struct PlatformWalletShutdownMetrics: Sendable {
     }
 }
 
-/// Native entry points used by the production teardown orchestration.
+/// Native entry points used by the production teardown orchestration, plus
+/// the SPV start that shares the SPV lifecycle queue with the SPV stop.
 ///
 /// Keeping the functions injectable as a group lets tests exercise the real
 /// ordering, timing, result mapping, and logging in
-/// [`PlatformWalletManager.performNativeTeardown`] without calling Rust. The
-/// unchecked conformance is intentional: these closures are immutable C-entry
-/// wrappers, and the whole value is copied onto the dedicated destroy queue.
+/// [`PlatformWalletManager.performNativeTeardown`] and the async SPV
+/// lifecycle overloads without calling Rust. The unchecked conformance is
+/// intentional: these closures are immutable C-entry wrappers, and the whole
+/// value is copied onto the dedicated destroy queue.
 struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
     typealias Call = @Sendable (Handle) -> PlatformWalletFFIResult
+    typealias StartCall = @Sendable (Handle, PlatformSpvStartConfig) -> PlatformWalletFFIResult
 
     let spvStop: Call
     let platformAddressSyncStop: Call
@@ -176,6 +198,28 @@ struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
     let dashPaySyncStop: Call
     let dpnsSyncStop: Call
     let destroy: Call
+    /// The blocking native SPV start behind the async
+    /// [`PlatformWalletManager.startSpv(config:)`]. Defaults to the real
+    /// marshalling wrapper so the teardown-only test tables need no change.
+    let spvStart: StartCall
+
+    init(
+        spvStop: @escaping Call,
+        platformAddressSyncStop: @escaping Call,
+        shieldedSyncStop: @escaping Call,
+        dashPaySyncStop: @escaping Call,
+        dpnsSyncStop: @escaping Call,
+        destroy: @escaping Call,
+        spvStart: @escaping StartCall = PlatformWalletManager.startSpvNative
+    ) {
+        self.spvStop = spvStop
+        self.platformAddressSyncStop = platformAddressSyncStop
+        self.shieldedSyncStop = shieldedSyncStop
+        self.dashPaySyncStop = dashPaySyncStop
+        self.dpnsSyncStop = dpnsSyncStop
+        self.destroy = destroy
+        self.spvStart = spvStart
+    }
 
     static let live = PlatformWalletNativeTeardownCalls(
         spvStop: platform_wallet_manager_spv_stop,
@@ -183,7 +227,8 @@ struct PlatformWalletNativeTeardownCalls: @unchecked Sendable {
         shieldedSyncStop: platform_wallet_manager_shielded_sync_stop,
         dashPaySyncStop: platform_wallet_manager_dashpay_sync_stop,
         dpnsSyncStop: platform_wallet_manager_dpns_sync_stop,
-        destroy: platform_wallet_manager_destroy
+        destroy: platform_wallet_manager_destroy,
+        spvStart: PlatformWalletManager.startSpvNative
     )
 }
 
@@ -301,6 +346,8 @@ struct PlatformWalletPollSnapshot: Sendable {
     var shieldedSyncIsSyncing: Bool?
     var dashPaySyncIsSyncing: Bool?
     var spvTipBlockTime: Date??
+    /// The wallets the TXO-store reconcile schedule reports due this tick.
+    var txoReconcileDueWallets: [Data]?
 }
 
 /// One wallet's needs-unlock count, tagged with the handle it was read
@@ -367,6 +414,9 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
     /// Takes the WALLET handle (`ManagedPlatformWallet.handle`), not the
     /// manager's.
     let pendingAccountBuildCount: Read<UInt32>
+    /// The TXO-store reconcile schedule's clock: read every tick, SPV
+    /// running or not.
+    let txoReconcileDueWallets: Read<[Data]>
 
     static let live = PlatformWalletNativePollCalls(
         syncProgress: PlatformWalletManager.readSyncProgress,
@@ -376,7 +426,8 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
         isPlatformAddressSyncing: PlatformWalletManager.readIsPlatformAddressSyncing,
         isShieldedSyncing: PlatformWalletManager.readIsShieldedSyncing,
         isDashPaySyncing: PlatformWalletManager.readIsDashPaySyncing,
-        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount
+        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount,
+        txoReconcileDueWallets: CoreTxoReconcileFFI.dueWallets
     )
 }
 
@@ -694,14 +745,21 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: Core TXO store reconcile state (see PlatformWalletManagerTxoReconcile.swift)
 
-    /// Wallets with a reconcile run in flight; a second run for the same
-    /// wallet is refused rather than overlapped.
+    /// Wallets whose automatically launched reconcile has not returned yet,
+    /// so the poll does not queue a second launch behind it. Bookkeeping of
+    /// this manager's own tasks only: whether and when a run may start is
+    /// the engine's schedule and start gate.
+    var coreTxoReconcileLaunched: Set<Data> = []
+    /// Wallets with a `reconcileCoreTxoStore(for:)` call between its checks
+    /// and its return, whoever called it. Runs execute one at a time on the
+    /// serial `coreTxoReconcileQueue`, so a second request for the same
+    /// wallet would queue behind the first and run in full after it — the
+    /// engine's own one-run-per-wallet check never sees the two overlap.
+    /// This set answers that request `alreadyRunning` instead.
     var coreTxoReconcileInFlight: Set<Data> = []
-    /// When each wallet's last automatic run was scheduled, for the cadence.
-    var coreTxoReconcileLastRunAt: [Data: ContinuousClock.Instant] = [:]
-    /// Whether the last progress tick was in steady state, for the
-    /// rising-edge trigger.
-    var coreTxoReconcileWasSteady = false
+    /// Test seam for the native calls that bracket a reconcile run; same
+    /// contract as [`nativeTeardownCalls`].
+    internal var nativeTxoReconcileCalls = PlatformWalletNativeTxoReconcileCalls.live
     /// Bumped by [`shutdown()`] and [`deleteWallet`]; an in-flight run
     /// re-checks it between pages and stops.
     nonisolated let coreTxoReconcileEpoch = SyncGenerationCounter()
@@ -777,10 +835,60 @@ public class PlatformWalletManager: ObservableObject {
     /// store lock. Stop must run on an independent thread to release that
     /// scan before shutdown drains admitted snapshots. Per-manager so a
     /// slow stop cannot prevent another manager from stopping its scan.
-    private let shieldedStopQueue = DispatchQueue(
+    /// Serial and shared by shutdown's early stop and the async
+    /// [`stopShieldedSync()`], so the two never quiesce the loop at once.
+    /// Internal so the shielded-sync extension can dispatch to it.
+    let shieldedStopQueue = DispatchQueue(
         label: "org.dash.platform-wallet.shielded-stop",
         qos: .userInitiated
     )
+
+    /// Runs the blocking native SPV start and stop behind the async
+    /// [`startSpv(config:)`] and [`stopSpv()`]. Both park for a long time:
+    /// the Rust start opens the SPV disk store, which can run a one-time
+    /// storage migration taking many seconds; the Rust stop waits for the SPV
+    /// run loop to finish its current sync tick and drain its tasks — up to
+    /// 15 s for the client stop and 15 s for the run-loop join plus a 2 s
+    /// abort grace, about 32 s in all, after any SPV broadcast still waiting
+    /// for acceptance. So both must park a plain GCD thread: never the main
+    /// thread, and never a Swift Concurrency cooperative-pool thread. One
+    /// serial queue for both so this manager's async start and stop never
+    /// overlap: an async stop issued during a slow start simply runs after
+    /// it, and stops the client that start brought up.
+    /// Per-manager, not [`destroyQueue`]: a slow SPV start or stop must not
+    /// hold up other managers' creates, loads and teardowns on that
+    /// process-wide queue. Internal so the SPV extension can dispatch to it.
+    let spvLifecycleQueue = DispatchQueue(
+        label: "org.dash.platform-wallet.spv-lifecycle",
+        qos: .userInitiated
+    )
+
+    /// Async SPV stops between admission and completion.
+    /// [`startSpv(config:)`] refuses to start while one is in flight.
+    /// Internal so the SPV extension can maintain it.
+    var spvStopsInFlight = 0
+
+    /// Async SPV starts between admission and completion. A second
+    /// [`startSpv(config:)`], the blocking [`stopSpv()`] and
+    /// [`clearSpvStorage()`] are refused while one is in flight; the async
+    /// [`stopSpv()`] queues behind it on [`spvLifecycleQueue`]. Internal so
+    /// the SPV extension can maintain it.
+    var spvStartsInFlight = 0
+
+    /// Async shielded-sync stops between admission and completion. While one
+    /// is in flight the shielded progress events are dropped, a completion is
+    /// held in [`shieldedCompletionHeldByStop`], and the shielded calls that
+    /// would race the drain throw. Internal so the shielded-sync extension
+    /// can maintain it.
+    var shieldedStopsInFlight = 0
+
+    /// The latest shielded sync completion that reached the main actor while
+    /// an async stop was in flight, with its generation. The last stop to
+    /// return settles it: a stop that drained the pass has bumped the
+    /// generation, so the completion is stale and dropped; after a timed-out
+    /// stop the pass keeps running, so its completion is published. Internal
+    /// so the shielded-sync extension can maintain it.
+    var shieldedCompletionHeldByStop: (event: ShieldedSyncEvent, generation: UInt64)?
 
     // MARK: - Init
 
@@ -897,6 +1005,7 @@ public class PlatformWalletManager: ObservableObject {
         let stopQueue = shieldedStopQueue
         let queue = pollQueue
         let walletQueue = walletPollQueue
+        let reconcileQueue = coreTxoReconcileQueue
         let drainTimeout = pollDrainTimeout
         let task = Task {
             let shieldedStop = await withCheckedContinuation { continuation in
@@ -924,6 +1033,11 @@ public class PlatformWalletManager: ObservableObject {
             // waits are bounded rather than unconditional.
             await Self.drainQueue(queue, within: drainTimeout)
             await Self.drainQueue(walletQueue, within: drainTimeout)
+            // A TXO-store reconcile staled by the epoch above stops at its
+            // next page boundary and releases its native claim; the same
+            // bounded window usually lets that release land before destroy,
+            // which would otherwise drop the claim with the manager.
+            await Self.drainQueue(reconcileQueue, within: drainTimeout)
             return await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
                 Self.destroyQueue.async {
                     continuation.resume(returning: Self.performNativeTeardown(
@@ -967,7 +1081,7 @@ public class PlatformWalletManager: ObservableObject {
                     "ffi_code": .integer(Int64(result.code.rawValue)),
                     "step": .publicText(name),
                 ],
-                error: PlatformWalletError(code: result.code, message: result.message)
+                error: PlatformWalletError(result: result)
             )
         }
         return .init(name: name, ffiCode: result.code.rawValue, milliseconds: ms)
@@ -1038,10 +1152,11 @@ public class PlatformWalletManager: ObservableObject {
     /// is the only production path that assigns a handle).
     static func makeForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) -> PlatformWalletManager {
         let manager = PlatformWalletManager()
-        try! manager.configureForTesting(handle: handle, calls: calls)
+        try! manager.configureForTesting(handle: handle, calls: calls, persistenceHandler: persistenceHandler)
         return manager
     }
 
@@ -1056,13 +1171,17 @@ public class PlatformWalletManager: ObservableObject {
     /// separate from the factory lets tests cover shutdown-before-configure.
     func configureForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) throws {
         try ensureConfigurationAllowed()
         precondition(handle != NULL_HANDLE)
         self.handle = handle
         isConfigured = true
         nativeTeardownCalls = calls
+        // Not registered with Rust: only the paths that read the handler
+        // directly (the TXO-store reconcile) see it.
+        self.persistenceHandler = persistenceHandler
     }
 
     // MARK: - Configuration
@@ -1462,10 +1581,10 @@ public class PlatformWalletManager: ObservableObject {
                     "off_main_thread": .boolean(offMain),
                     "source": .publicText("mnemonic"),
                 ],
-                error: PlatformWalletError(code: result.code, message: result.message),
+                error: PlatformWalletError(result: result),
                 redacting: [params.mnemonic]
             )
-            return .failure(PlatformWalletError(code: result.code, message: result.message))
+            return .failure(PlatformWalletError(result: result))
         }
         SDKLogger.event(
             "wallet_create_completed",
@@ -1745,10 +1864,10 @@ public class PlatformWalletManager: ObservableObject {
                     "off_main_thread": .boolean(offMain),
                     "phase": .publicText("bulk_load"),
                 ],
-                error: PlatformWalletError(code: bulk.code, message: bulk.message)
+                error: PlatformWalletError(result: bulk)
             )
             return OffMainLoadOutcome(
-                bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
+                bulkResult: .failure(PlatformWalletError(result: bulk)),
                 lookups: [])
         }
 
@@ -2339,13 +2458,20 @@ public class PlatformWalletManager: ObservableObject {
     /// session. Rust's `resume_asset_lock` gives the SPV transport a
     /// bounded chance to come up before it broadcasts. Gating here
     /// would delay the locks that need no broadcast at all, and a gate
-    /// that waited on the same thread pool the host needs to *reach*
-    /// `startSpv` would delay the transport it is waiting for.
+    /// that waited on the same thread pool the host needs to *reach* the
+    /// async `startSpv(config:)` would delay the transport it is waiting
+    /// for.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
             let walletId = wallet.walletId
-            let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            let locks: [PlatformWalletPersistenceHandler.AssetLockEntrySnapshot]
+            do {
+                locks = try persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            } catch {
+                self.lastError = error
+                continue
+            }
             let pending = locks.filter { $0.statusRaw < 2 }
             if pending.isEmpty { continue }
 
@@ -2403,6 +2529,11 @@ public class PlatformWalletManager: ObservableObject {
                     let maxConcurrent = 4
                     var nextIndex = 0
                     var published = false
+                    // The input-cap refusal is held back, not published
+                    // on arrival: it returns at once, with no proof wait,
+                    // and would otherwise take the one slot ahead of a
+                    // sibling's double-spend verdict on every launch.
+                    var capRefusal: PlatformWalletError?
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -2435,10 +2566,23 @@ public class PlatformWalletManager: ObservableObject {
                     // would strand a lock that is free to confirm. The
                     // wait it runs under is capped below this call's 300s
                     // ceiling for exactly that case.
+                    //
+                    // An input-cap refusal (60) is the fallback: it is
+                    // published once the batch has drained, and only if
+                    // no double-spend verdict was. A row over the cap is
+                    // refused again on every pass, so nothing is lost by
+                    // the wait, while a contested lock's verdict is what
+                    // stops its UI from spinning.
                     while let outcome = await group.next() {
-                        if !published, let verdict = outcome {
-                            published = true
-                            await publishConflict(verdict)
+                        if let verdict = outcome {
+                            if case .assetLockTooManyInputs = verdict {
+                                if capRefusal == nil {
+                                    capRefusal = verdict
+                                }
+                            } else if !published {
+                                published = true
+                                await publishConflict(verdict)
+                            }
                         }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
@@ -2447,6 +2591,9 @@ public class PlatformWalletManager: ObservableObject {
                             }
                             nextIndex += 1
                         }
+                    }
+                    if !published, let refusal = capRefusal {
+                        await publishConflict(refusal)
                     }
                 }
             }
@@ -2467,12 +2614,17 @@ public class PlatformWalletManager: ObservableObject {
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
     /// Returns the typed double-spend verdict when the catch-up hits one —
-    /// the one outcome a host must see so its UI can explain why the lock
-    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// the outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — or the input-cap refusal, and `nil`
+    /// for every expected failure.
     /// In practice that verdict is always the provisional
     /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
     /// reserved with no emitter and is matched so it would surface intact
-    /// if that ever changes.
+    /// if that ever changes. The input-cap refusal
+    /// (`assetLockTooManyInputs`) is returned the same way: such a lock is
+    /// never re-sent and stays tracked, so this error is how the host
+    /// learns that the row will not complete. Consolidating coins does not
+    /// change that row; it lets a new lock fit.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
@@ -2510,7 +2662,8 @@ public class PlatformWalletManager: ObservableObject {
                 vout
             )
             return nil
-        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested,
+             .errorAssetLockTooManyInputs:
             return PlatformWalletError(result: result)
         default:
             return nil
@@ -2574,6 +2727,9 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
+        // Snapshot cleanup must succeed before deleting keys or live rows.
+        try persistenceHandler.deleteCompletedMigrationSnapshots()
+
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 
         // Wipe Keychain BEFORE the SwiftData identity deletion runs.
@@ -2608,9 +2764,9 @@ public class PlatformWalletManager: ObservableObject {
         dashPayUnlockStatus.removeValue(forKey: walletId)
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
-        // remove. Coarse on purpose — the cadence re-runs the others.
+        // remove. Coarse on purpose — the cadence re-runs the others. The
+        // engine forgot this wallet's cadence when it removed the wallet.
         coreTxoReconcileEpoch.bump()
-        coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -3040,6 +3196,11 @@ public class PlatformWalletManager: ObservableObject {
         } catch {
             snapshot.spvTipBlockTime = nil
         }
+        guard !isStale() else { return snapshot }
+        // Every tick, SPV running or not: the poll is the reconcile
+        // schedule's clock, and a stopped client arms its next steady-state
+        // edge.
+        snapshot.txoReconcileDueWallets = try? calls.txoReconcileDueWallets(handle)
         logSlowStage("manager", since: start, walletCount: 0)
         return snapshot
     }
@@ -3107,10 +3268,6 @@ public class PlatformWalletManager: ObservableObject {
             if value != spvProgress {
                 spvProgress = value
             }
-            // Every accepted read, not only a changed one: the note is the
-            // reconcile's only clock, and a quiet steady-state wallet's
-            // progress does not change for the whole cadence.
-            noteSpvProgressForCoreTxoReconcile(value)
         }
         if let value = snapshot.spvIsRunning,
            spvIsRunning == baseline.spvIsRunning, value != spvIsRunning {
@@ -3138,6 +3295,9 @@ public class PlatformWalletManager: ObservableObject {
         if let value = snapshot.spvTipBlockTime,
            spvTipBlockTime == baseline.spvTipBlockTime, value != spvTipBlockTime {
             spvTipBlockTime = value
+        }
+        if let due = snapshot.txoReconcileDueWallets, !due.isEmpty {
+            launchDueCoreTxoReconciles(due)
         }
     }
 

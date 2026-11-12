@@ -247,8 +247,7 @@ async fn main() {
         hex::encode(platform_wallet.wallet_id())
     );
 
-    // --- 4. Bind shielded account 0 with the raw seed (mirrors the
-    //        iOS `bindShieldedRawSeed` path; same FFI shape). ---
+    // --- 4. Bind shielded account 0 with the raw seed. ---
     let coordinator = manager
         .shielded_coordinator()
         .await
@@ -259,7 +258,9 @@ async fn main() {
         .expect("bind_shielded");
 
     // --- 5. Run one sync pass with cooldown bypassed. ---
-    let summary = coordinator.sync(true).await;
+    let summary = coordinator
+        .sync(true, &tokio_util::sync::CancellationToken::new())
+        .await;
     eprintln!("sync summary: {:?}", summary);
 
     // --- 6. Assert the pass ran cleanly and actually walked the

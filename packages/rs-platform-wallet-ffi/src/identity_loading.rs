@@ -42,7 +42,7 @@
 //!   `wallet_id`), build the master `ExtendedPrivKey`, and drive
 //!   `load_identity_by_index_from_master`. The mnemonic / seed / master
 //!   scalar all live in `Zeroizing` buffers (the master's `private_key`
-//!   is explicitly `non_secure_erase`d — `ExtendedPrivKey` has no
+//!   is explicitly `zeroize`d — `ExtendedPrivKey` also wipes on
 //!   `Drop`) and are scrubbed before this function returns. This is the
 //!   path the iOS app takes. If the resolver is null for such a wallet,
 //!   the call returns an error hinting that a mnemonic resolver handle
@@ -64,6 +64,7 @@ use crate::runtime::block_on_worker;
 use crate::types::Network;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverHandle;
+use zeroize::Zeroize;
 
 /// Load the identity registered for this wallet at a single BIP-9 HD
 /// identity index by deriving the DIP-9 MASTER authentication key at
@@ -187,7 +188,7 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
         // helper the discovery and preview paths use so they can't drift;
         // the helper holds the mnemonic / seed in `Zeroizing` buffers and
         // scrubs them before returning. The master's inner scalar is
-        // wiped by us below (`ExtendedPrivKey` has no `Drop`).
+        // wiped by us below (`ExtendedPrivKey` also wipes on `Drop`).
         let master = match unsafe {
             resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)
         } {
@@ -202,9 +203,9 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
         // future once `load_identity_by_index_from_master` is done
         // deriving.
         //
-        // `ExtendedPrivKey` has no `Drop` / `Zeroize`, so the inner
+        // `ExtendedPrivKey` also wipes on `Drop` / `Zeroize`, so the inner
         // secp256k1 scalar is scrubbed explicitly with
-        // `non_secure_erase` — same hygiene as
+        // `zeroize` — same hygiene as
         // `platform_wallet_discover_identities`. (`seed` / `mnemonic_buf`
         // are `Zeroizing` and already scrubbed inside
         // `resolve_master_from_resolver`.)
@@ -213,7 +214,7 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
             let load_result = identity
                 .load_identity_by_index_from_master(identity_index, &master)
                 .await;
-            master.private_key.non_secure_erase();
+            master.private_key.zeroize();
             load_result
         })
         .map_err(PlatformWalletFFIResult::from)

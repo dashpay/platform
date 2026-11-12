@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 mod v0;
 
 use crate::drive::Drive;
@@ -11,9 +12,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prepares the operations for removing a bounded chunk of the retained
@@ -38,9 +37,7 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

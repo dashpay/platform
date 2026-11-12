@@ -18,6 +18,8 @@ mod fetch_validator_version_votes;
 mod fetch_versions_with_counter;
 #[cfg(feature = "server")]
 mod remove_validators_proposed_app_versions;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(feature = "server")]
 mod update_validator_proposed_app_version;
 #[cfg(any(feature = "server", feature = "verify"))]

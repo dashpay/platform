@@ -34,6 +34,21 @@ public enum SDKLogValue: Sendable {
     case referenceString(String)
 }
 
+extension SDKLogValue {
+    /// A reference keyed with a random per-process key: lines of one
+    /// process can still be linked, but the value cannot be recovered by
+    /// hashing candidates. Use it for identifiers anyone can enumerate,
+    /// such as outpoints, which are public chain data.
+    ///
+    /// A factory rather than a case, so a downstream exhaustive `switch`
+    /// over `SDKLogValue` keeps compiling. The keyed value then goes through
+    /// the ordinary reference digest, so the line reads like any other
+    /// reference.
+    public static func keyedReference(_ data: Data) -> SDKLogValue {
+        .referenceString(SDKLogFormatter.keyedReference(data))
+    }
+}
+
 /// Serial file sink used by the structured logger. All writes, including
 /// callbacks entering Swift concurrently from FFI threads, are protected by a
 /// single lock so a diagnostic line is appended atomically.
@@ -125,6 +140,16 @@ enum SDKLogFormatter {
 
     static func reference(_ string: String) -> String {
         reference(Data(string.utf8))
+    }
+
+    /// Generated once per process and never written anywhere.
+    private static let referenceKey = SymmetricKey(size: .bits256)
+
+    static func keyedReference(_ data: Data) -> String {
+        HMAC<SHA256>.authenticationCode(for: data, using: referenceKey)
+            .prefix(6)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private static func render(_ value: SDKLogValue) -> String {
@@ -235,6 +260,14 @@ private final class SDKLoggerState: @unchecked Sendable {
         lock.withLock {
             self.includeDebug = includeDebug
         }
+    }
+
+    func removeSink() {
+        let removed: SDKLogFileSink? = lock.withLock {
+            defer { sink = nil }
+            return sink
+        }
+        removed?.flush()
     }
 
     func destination(for severity: SDKLogSeverity) -> SDKLogFileSink? {
@@ -501,6 +534,13 @@ public enum SDKLogger {
 
     static func updateDebugSetting(_ includeDebug: Bool) {
         state.updateDebugSetting(includeDebug)
+    }
+
+    /// Detach the process-wide file sink after flushing it. Tests that install
+    /// a sink in a disposable directory call this before removing the
+    /// directory, so later events are not written through a stale handle.
+    static func removeFileSink() {
+        state.removeSink()
     }
 
     public static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {

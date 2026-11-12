@@ -123,6 +123,8 @@ impl DocumentEraseTransitionBuilder {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let identity_contract_nonce = sdk
@@ -209,10 +211,10 @@ impl DocumentEraseTransitionBuilder {
                     .document_base_state_transition
                     .default_current_version,
             );
-        if !matches!(base_feature_version, 0 | 1) {
+        if !matches!(base_feature_version, 0..=2) {
             return Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentEraseTransitionBuilder::sign".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: base_feature_version,
             }));
         }
@@ -484,5 +486,43 @@ mod tests {
         };
         DocumentEraseTransitionBuilder::check_erase_is_constructible(Some(&unknown_base), current)
             .expect_err("an unknown erase base version is refused before any nonce is reserved");
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_sign_an_erase_with_the_latest_default_base() {
+        use crate::sdk::put_test_support::PutFixture;
+        use dpp::document::DocumentV0Getters;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use std::sync::atomic::Ordering;
+
+        let fixture = PutFixture::new().await;
+        let transition = DocumentEraseTransitionBuilder::new(
+            Arc::new(fixture.contract.clone()),
+            "preorder".to_string(),
+            fixture.document.id(),
+            fixture.document.owner_id(),
+        )
+        .sign(
+            &fixture.sdk,
+            &fixture.key,
+            &fixture.signer,
+            PlatformVersion::latest(),
+        )
+        .await
+        .expect("default options must construct and sign an erase");
+        assert_eq!(fixture.signer.0.load(Ordering::SeqCst), 1);
+        assert!(!transition.signature().unwrap().is_empty());
+        let StateTransition::Batch(BatchTransition::V1(batch)) = transition else {
+            panic!("expected current batch");
+        };
+        let BatchedTransition::Document(DocumentTransition::Erase(erase)) = &batch.transitions[0]
+        else {
+            panic!("expected erase");
+        };
+        assert!(matches!(erase.base(), DocumentBaseTransition::V2(_)));
     }
 }

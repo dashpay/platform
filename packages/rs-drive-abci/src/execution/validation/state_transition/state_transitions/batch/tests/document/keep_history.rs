@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
@@ -53,7 +54,8 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(14)
         .build_with_mock_rpc()
-        .set_initial_state_structure();
+        .with_no_core_masternodes()
+        .set_genesis_state();
     let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
     let mut contract = json_document_to_contract(
         "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
@@ -78,7 +80,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     let mut rng = StdRng::seed_from_u64(437);
     let entropy = Bytes32::random_with_rng(&mut rng);
     let document_type = contract.document_type_for_name("note").unwrap();
-    let document = document_type
+    let mut document = document_type
         .random_document_with_identifier_and_entropy(
             &mut rng,
             identity.id(),
@@ -88,6 +90,9 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
             old_version,
         )
         .unwrap();
+    document
+        .set_id_for_creation(document_type, &entropy.0, 1, old_version)
+        .expect("expected to set the document id");
     let create = BatchTransition::new_document_creation_transition_from_document(
         document,
         document_type,
@@ -132,6 +137,7 @@ async fn should_repair_legacy_keep_history_contract_after_upgrade() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &upgraded_state,
+            &mut PlatformState::clone(&upgraded_state),
             &BlockInfo::default(),
             &migration,
             14,
@@ -283,6 +289,7 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
     let platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(13)
         .build_with_mock_rpc()
+        .with_no_core_masternodes()
         .set_genesis_state();
     let contract = DataContractFactory::new(registered_version.protocol_version)
         .unwrap()
@@ -342,7 +349,6 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
             true,
             None,
             registered_version,
-            None,
         )
         .unwrap();
     document.set_revision(Some(2));
@@ -359,7 +365,6 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
             None,
             None,
             registered_version,
-            None,
         )
         .unwrap();
     let dpns_id = SystemDataContract::DPNS.id().to_buffer();
@@ -379,6 +384,7 @@ fn should_migrate_history_when_skipping_from_protocol_13_to_15() {
     platform
         .perform_events_on_first_block_of_protocol_change(
             &upgraded_state,
+            &mut PlatformState::clone(&upgraded_state),
             &BlockInfo::default_with_time(3000),
             &transaction,
             13,
@@ -501,7 +507,8 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
     let mut platform = TestPlatformBuilder::new()
         .with_initial_protocol_version(initial_version.protocol_version)
         .build_with_mock_rpc()
-        .set_initial_state_structure();
+        .with_no_core_masternodes()
+        .set_genesis_state();
     let (owner, owner_signer, owner_key) = setup_identity(&mut platform, 958, dash_to_credits!(1));
     let (buyer, buyer_signer, buyer_key) = setup_identity(&mut platform, 450, dash_to_credits!(1));
     let contract = DataContractFactory::new(initial_version.protocol_version).unwrap().create_with_value_config(owner.id(), 0, platform_value!({
@@ -536,6 +543,9 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             DocumentFieldFillSize::AnyDocumentFillSize,
             initial_version,
         )
+        .unwrap();
+    document
+        .set_id_for_creation(document_type, &entropy.0, 1, initial_version)
         .unwrap();
     document.set("amount", 100u64.into());
     let query = DocumentHistoryDriveQuery {
@@ -648,29 +658,50 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
         if migrated && revision == 2 {
             let legacy_history = platform
                 .drive
-                .fetch_document_history(&query, document_type, None, initial_version)
+                .fetch_document_history_after_time(
+                    query.contract_id,
+                    document_type,
+                    query.document_id,
+                    None,
+                    0,
+                    query.limit,
+                    None,
+                    initial_version,
+                )
                 .unwrap();
             let legacy_proof = platform
                 .drive
-                .prove_document_history(&query, document_type, None, initial_version)
+                .prove_document_history_after_time(
+                    query.contract_id,
+                    document_type,
+                    query.document_id,
+                    None,
+                    0,
+                    query.limit,
+                    None,
+                    initial_version,
+                )
                 .unwrap();
-            assert!(legacy_history.lifecycle.is_none());
             assert_eq!(
                 legacy_history
-                    .entries
-                    .iter()
-                    .map(|entry| entry.revision)
+                    .values()
+                    .map(|document| document.revision().unwrap())
                     .collect::<Vec<_>>(),
                 vec![1, 2]
             );
-            let (_, verified_legacy) = drive::drive::Drive::verify_document_history(
-                &query,
+            let (_, verified_legacy) = drive::drive::Drive::verify_document_history_after_time(
                 &legacy_proof,
+                query.contract_id,
+                &query.document_type_name,
                 document_type,
+                query.document_id,
+                0,
+                query.limit,
+                None,
                 initial_version,
             )
             .unwrap();
-            assert_eq!(verified_legacy, legacy_history);
+            assert_eq!(verified_legacy, Some(legacy_history));
 
             let mut upgraded = platform.state.load().as_ref().clone();
             upgraded.set_current_protocol_version_in_consensus(15);
@@ -679,6 +710,7 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
             platform
                 .perform_events_on_first_block_of_protocol_change(
                     &upgraded,
+                    &mut PlatformState::clone(&upgraded),
                     &BlockInfo::default(),
                     &transaction,
                     14,
@@ -787,6 +819,9 @@ async fn run_history_write_sequence(migrated: bool, countable: bool) {
                 DocumentFieldFillSize::AnyDocumentFillSize,
                 version,
             )
+            .unwrap();
+        fresh_document
+            .set_id_for_creation(document_type, &fresh_entropy.0, 5, version)
             .unwrap();
         fresh_document.set("amount", 30u64.into());
         let fresh_query = DocumentHistoryDriveQuery {

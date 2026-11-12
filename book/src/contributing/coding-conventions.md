@@ -43,6 +43,7 @@ crate that has what the change needs, and no lower.
 | A validation step that reads platform state, block execution, an ABCI handler | `packages/rs-drive-abci/src/execution/` | Handlers under `abci/` stay thin and delegate. |
 | A gRPC query handler | `packages/rs-drive-abci/src/query/<name>/` plus the proto in `packages/dapi-grpc` | Request version dispatch mirrors method version dispatch. |
 | A version number, a limit, a fee rate | `packages/rs-platform-version` | Never a literal in a method body. |
+| Core transaction construction | `dashpay/rust-dashcore/key-wallet` | `packages/rs-dpp` validates Platform rules; `packages/rs-platform-wallet` orchestrates. |
 | Client-side proof composition (`FromProof`, Tenderdash signature check) | `packages/rs-drive-proof-verifier` | Calls into `drive::verify`, never into GroveDB directly. |
 | A client API | `packages/rs-sdk` | Follow the query checklist in `packages/rs-sdk/README.md`. |
 | A JavaScript binding | `packages/wasm-dpp2`, `packages/wasm-sdk` | Mirror the Rust shape; never validate. See `packages/wasm-dpp2/CONVENTIONS.md`. |
@@ -72,25 +73,46 @@ The mechanics of `PlatformVersion`, feature version tables, and the dispatcher
 shape are covered in the [Versioning](../versioning/platform-version.md)
 chapters. The rules here are about what to do with those mechanics.
 
-### Shipped generations are frozen
+### Shipped generations are frozen unless the change cannot modify consensus
 
 A behaviour change to a versioned method means a new `vN` module selected only
-by the tables of the unreleased protocol version. It never means editing a
-shipped `vN`, and that includes "harmless" edits: threading a new parameter
-through it, adding a version-table check inside it, or computing a gate that is
-always false for old versions. Inside the new generation the capability is a
-constant fact (`Index::try_from_value_map(map, true)`), not a runtime check.
+by the tables of the unreleased protocol version. A shipped `vN` may be edited
+in place only when we are sure the edit cannot modify consensus at any protocol
+version that selects it: the new code is unreachable there by construction
+(the data it acts on cannot exist under those versions, such as a keyword every
+one of their meta-schemas refuses and their parser ignores, judged through a
+dpp method whose own gate is `None` there), or the edit is a pure refactor with
+identical output. "Probably inert" is not enough. If the argument takes more
+than a sentence, or rests on a runtime check inside the shipped module, add a
+generation instead. Inside a new generation the capability is a constant fact
+(`Index::try_from_value_map(map, true)`), not a runtime check. For new
+changes, the patterns that compare `protocol_version` on purpose are the
+protocol upgrade ladder, the `is_allowed` gate for new transition kinds, and
+chain-creation content (`create_genesis_state` v1 and the Drive helpers that
+build the initial state structure); the [Versioned
+Dispatch](../versioning/versioned-dispatch.md) chapter describes them. Older
+comparisons elsewhere (for example the pre-version-9 arithmetic in
+`DocumentPropertyType`) stay because history replays through them; they are not
+a pattern to copy.
 
-Why: replay safety becomes structural instead of something a reviewer has to
-prove about a diff. A dead version check inside `v1` misleads the next reader
-into thinking `v1` can take that path. Shipped files should stay byte-identical
-to what shipped.
+Why: replay safety is structural when a shipped file stays byte-identical, and
+becomes a proof the reviewer has to check the moment it does not. An in-place
+edit is acceptable when that proof is short and written down; a dead version
+check inside `v1` that misleads the next reader into thinking `v1` can take
+that path is not.
 
-How: copy the previous generation into the new module, make the change there,
-move the tests that exercise the new behaviour into the new module, and bump
-the method's number in the new protocol version's tables only. Duplication
-between generations is the accepted cost; it is cheaper than a drift-prone
-flag.
+How, new generation: copy the previous generation into the new module, make
+the change there, move the tests that exercise the new behaviour into the new
+module, and bump the method's number in the new protocol version's tables
+only. Duplication between generations is the accepted cost; it is cheaper than
+a drift-prone flag.
+
+How, in place: make the edit, leave a comment at the edited lines naming why
+they are inert for every protocol version that selects the module, and give
+the pull request description an "In-place changes to shipped generations"
+section that lists each edited generation, the protocol versions that select
+it, and the reason consensus cannot change there. Reviewers read that section
+first.
 
 ### A new input changes the signature, not the method count
 
@@ -114,9 +136,7 @@ pub fn delete_document_for_contract_operations(
     block_info: &BlockInfo,          // was `block_time_ms: u64`
     deleter_id: Option<Identifier>,  // new: whom the lifecycle record credits
     previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-    estimated_costs_only_with_layer_info: &mut Option<
-        HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    >,
+    estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -204,8 +224,8 @@ behaviour-preserving. Add the next `SYSTEM_LIMITS_V{n+1}` for the unreleased
 protocol version with the new value. Keep a real method version only where the
 logic differs: in `packages/rs-dpp/src/withdrawal/daily_withdrawal_limit/`,
 `v0` computes a tiered percentage of total credits and `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`; that is a logic change and earns its own version. Raising the
+`daily_withdrawal_limit_percent` from `SystemLimits`; that is a logic change
+and earns its own version. Raising the
 percentage later would be a table edit, not a `v3`.
 
 Why: reviewers look for limits in the tables. A constant hidden in a method
@@ -223,11 +243,14 @@ already owns a new schedule, amend that schedule instead of creating another
 generation nobody references.
 
 `fee_version_number` is a separate concept from the schedule generation: it
-keys persisted fee history and storage-refund behaviour, and it is stored in
-platform state. Inspect its consumers before changing it. `FEE_VERSION1` and
-`FEE_VERSION2` both carry `fee_version_number: 1` because storage rates did not
-change between them, only a fee group did. See the
-[Fee System Overview](../fees/overview.md).
+keys the fee history saved in platform state. Inspect its consumers before
+changing it. `FEE_VERSION1` and `FEE_VERSION2` both carry
+`fee_version_number: 1` because storage rates did not change between them, only
+a fee group did.
+
+A schedule can change the storage rate without breaking refunds: from protocol
+version 15 a refund is priced at the rate of the protocol version that ran the
+epoch that stored the bytes. See the [Fee System Overview](../fees/overview.md).
 
 ### Consensus code reads the version from state
 
@@ -241,6 +264,17 @@ Serde-based conversions of `DataContract` read a process-wide current version
 set through `PlatformVersionCurrentVersion::set_current`. Tests that build
 platforms at different protocol versions race on it. Prefer the explicit
 `to_value(platform_version)` style API wherever a version is in hand.
+
+### Consensus code reads Core at the chain-locked height
+
+Every validator asks its own Dash Core, so a read is deterministic only when it
+asks about the block's chain-locked core height (`block_info.core_height`),
+never Core's tip, and a Core error is never read as a default such as "not
+active". [Syncing with Dash
+Core](../architecture/component-pipeline.md#syncing-with-dash-core) explains why
+and lists the rules for a new read, and [Core Fork
+Activations](../architecture/core-fork-activations.md) describes the record that
+code depending on a Core fork reads.
 
 ### Dispatcher shape
 
@@ -263,8 +297,7 @@ The observed order in `drive` and `drive-abci` is: `&self`, domain inputs,
 `block_info`, mode flags (`apply`, `stateful`), the estimation map,
 `transaction`, the operations accumulator, `platform_version`. A new parameter
 goes up with the context items, never after `platform_version`. The same holds
-for fields on context structs such as parse contexts. The known exception is
-`previous_fee_versions`, which trails it on fee-returning methods.
+for fields on context structs such as parse contexts.
 
 Why: readers of a few hundred versioned signatures expect the closing
 parameter to be the version. Appending after it breaks that scan.
@@ -293,7 +326,7 @@ chapter walks the stages in order; this table is the placement guide.
 | Pure-data invariants | `rs-dpp` (`validate_basic_structure`, document type and contract self-validation) | The value itself and `PlatformVersion` | `BasicError` |
 | Basic structure | `drive-abci` `<transition>/basic_structure/vN/` | `Network` and `PlatformVersion` only | `BasicError` |
 | Signature and nonces | `drive-abci` processor traits | The signing identity, nonces | `SignatureError`, unpaid rejection |
-| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid |
+| Advanced structure without state | `drive-abci` `<transition>/advanced_structure/vN/` (`validate_advanced_structure`) | The transition, the fetched `PartialIdentity`, and `PlatformVersion`; no Drive reads | `ConsensusError`, paid, except a failed proof of possession the signer did not sign, refused unpaid (`IdentityUpdate` from protocol version 15) |
 | Advanced structure with state | `drive-abci` `batch/advanced_structure/vN/` and the per-action validators under `batch/action_validation/*/advanced_structure_vN/` (`validate_advanced_structure_from_state`) | The action produced by `transform_into_action`, including the contracts it fetched, plus block, network, and identity context; no further Drive reads in the validator | `ConsensusError`, paid |
 | State | `drive-abci` `<transition>/state/vN/` | Drive through `PlatformRef` and the transaction | `StateError`, paid |
 | Execution | `drive` operations | GroveDB | Internal `Error` only |
@@ -315,7 +348,8 @@ Rules that fall out of the table:
 - Preserve mempool coverage. `Batch` runs advanced structure with state during
   `check_tx`, while full state validation is skipped there
   (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
-  are the one transition that opts in, because they are unpaid). Moving a
+  are the one transition that opts in, because a block refuses them unpaid,
+  and they run advanced structure with state there too). Moving a
   contract-dependent structural check into state validation would remove that
   rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A
@@ -428,8 +462,9 @@ error for a user mistake; the block loop treats the two classes differently.
   the crate root; do not extend it for convenience.
 - **State access is snapshot-based.** `Platform.state` is an `ArcSwap`;
   read with `load()` and pass `PlatformRef` or `PlatformStateRef` down. The
-  only locks are the ABCI application's `transaction` and
-  `block_execution_context`. In async code, a guard's scope, not a `drop()`
+  only locks are the ABCI application's `transaction`,
+  `block_execution_context` and `unsigned_withdrawal_txs_by_round`, taken in
+  that order. In async code, a guard's scope, not a `drop()`
   call, is what clears `clippy::await_holding_lock`; wrap the guard in a block
   that ends before the first `.await`.
 
@@ -489,7 +524,7 @@ and the [WASM](../wasm/binding-patterns.md) chapters.
 
 ### FFI and mobile SDKs hold no business logic
 
-The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`, `key-wallet-ffi`) and
+The FFI crates (`rs-sdk-ffi`, `rs-platform-wallet-ffi`) and
 the Swift and Kotlin SDKs do three things: persist Rust-emitted state, load it
 for views, and call a function that already exists in a Rust library. If the
 wrapper is deciding anything (an index, a derivation path, which key, how
@@ -543,6 +578,17 @@ now does.
    `PlatformVersion::latest()`; pin `vN/`'s tests to `PlatformVersion::get(n)`.
 5. Add a test that runs both versions through the dispatcher.
 
+**Editing a shipped generation in place**
+
+1. Only when the edit cannot modify consensus at any protocol version that
+   selects the module: unreachable by construction there, or output-identical.
+2. Comment the edited lines with why they are inert for those versions.
+3. Add a test that runs the module at the last shipped protocol version and
+   shows the outcome unchanged.
+4. Add an "In-place changes to shipped generations" section to the pull
+   request description: each edited generation, the versions that select it,
+   and the reason consensus cannot change there.
+
 **Changing a limit or a fee**
 
 1. A number: add or update the `SystemLimits` (or `*_constants`) field, backfill
@@ -572,6 +618,25 @@ now does.
 3. Return it through `ConsensusValidationResult`; never `Err`.
 4. Test the rejection through `process_raw_state_transitions`, and test that
    the previous protocol version still accepts the input.
+
+**Adding GroveDB structure**
+
+1. Put the key constant and the `*_path()` / `*_path_vec()` pair in the area's
+   `paths.rs`. A new root key goes where writes below it are rare; see
+   [The GroveDB Structure](../drive/grovedb-structure.md#the-shape-of-a-layer).
+2. Build it in one function that both `create_initial_state_structure` and the
+   protocol upgrade (`transition_to_version_N`) call, in the same order, so a
+   fresh chain and an upgraded one hold the same state.
+3. Describe it in the `structure.rs` beside that `paths.rs`, from the same
+   constant, with `since` set to the protocol version that introduces it and
+   the element flags it is written with.
+4. Regenerate the exported file and commit it:
+   `UPDATE_GROVEDB_STRUCTURE=1 cargo test -p drive --lib structure::tests`.
+5. Make sure something writes to the new nodes under test: a fixture in
+   `structure/tests.rs`, or a strategy test (every chain they run is checked
+   against the description). `UNVERIFIED` is empty; keep it that way.
+6. The pull request gets a comment with a link to the structure viewer
+   showing the new nodes. Check that it shows what you meant to add.
 
 **Adding a query end-to-end**
 

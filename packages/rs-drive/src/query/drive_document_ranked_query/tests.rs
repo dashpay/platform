@@ -699,12 +699,19 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         range_summable: summable.is_some(),
         ranked_countable: false,
         ranked_countable_at: vec![],
+        ranked_summable_at: Vec::new(),
+        ranked_averageable_at: Vec::new(),
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
+        summable_off_count_index: None,
+        indexed_array: None,
     }
 }
 
@@ -876,7 +883,6 @@ fn insert_docs(
                 true,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| panic!("expected to insert a {document_type_name} document: {e}"));
     }
@@ -1934,7 +1940,6 @@ fn insert_dishes(drive: &Drive, contract: &DataContract, rows: &[(&str, &str, i6
                 true,
                 None,
                 pv,
-                None,
             )
             .unwrap_or_else(|e| panic!("expected to insert a dish document: {e}"));
     }
@@ -2236,7 +2241,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a grade document");
         }
@@ -2471,7 +2475,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a tagged grade document");
         }
@@ -3169,7 +3172,6 @@ mod pinned_prefix {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a dualGrade document");
         }
@@ -3380,7 +3382,6 @@ mod pinned_prefix {
                 true,
                 Some(&transaction),
                 pv,
-                None,
             )
             .expect("expected to insert Y's grade inside the transaction");
 
@@ -3651,7 +3652,6 @@ mod pinned_prefix {
                         true,
                         None,
                         pv,
-                        None,
                     )
                     .expect("expected to commit the mid-window grade");
             }
@@ -3818,7 +3818,6 @@ mod prefix_level {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a trending document");
         }

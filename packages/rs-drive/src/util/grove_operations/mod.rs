@@ -153,6 +153,9 @@ pub mod batch_remove_raw;
 /// Batch delete operation up the tree while it's empty
 pub mod batch_delete_up_tree_while_empty;
 
+/// The pending grove operations GroveDB reads while it builds a delete
+pub(crate) mod pending_grove_operations;
+
 /// Batch refresh reference operation
 pub mod batch_refresh_reference;
 

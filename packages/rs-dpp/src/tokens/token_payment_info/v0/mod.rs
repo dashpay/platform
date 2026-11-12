@@ -49,7 +49,8 @@ pub struct TokenPaymentInfoV0 {
     ///   Then:
     /// - The user could see the cost changed on them
     pub maximum_token_cost: Option<TokenAmount>,
-    /// Who pays the gas fees, this needs to match what the contract allows
+    /// Who the document owner asks to pay the gas fees; it must be one the document type's token
+    /// cost offers, see `GasFeesPaidBy::resolve` (acted on from protocol version 14)
     pub gas_fees_paid_by: GasFeesPaidBy,
 }
 

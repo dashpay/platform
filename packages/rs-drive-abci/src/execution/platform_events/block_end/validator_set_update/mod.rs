@@ -157,7 +157,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
         use dpp::block::extended_block_info::ExtendedBlockInfo;
-        use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+        use dpp::bls::SecretKey;
         use dpp::core_types::validator::v0::ValidatorV0;
         use dpp::core_types::validator_set::v0::ValidatorSetV0;
         use dpp::core_types::validator_set::ValidatorSet;
@@ -185,13 +185,13 @@ mod tests {
             member_seeds: &[u8],
             rng: &mut StdRng,
         ) -> ValidatorSet {
-            let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut *rng).public_key();
+            let threshold_public_key = SecretKey::random(&mut *rng).public_key();
             let mut members = BTreeMap::new();
             for &seed in member_seeds {
                 let mut hash_bytes = [0u8; 32];
                 hash_bytes[31] = seed;
                 let pro_tx_hash = ProTxHash::from_byte_array(hash_bytes);
-                let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut *rng).public_key());
+                let public_key = Some(SecretKey::random(&mut *rng).public_key());
                 let node_id = PubkeyHash::from_byte_array([seed; 20]);
                 let validator = ValidatorV0 {
                     pro_tx_hash,
@@ -407,7 +407,7 @@ mod tests {
 
             let mut rng = StdRng::seed_from_u64(45);
             let qh = quorum_hash_from_seed(1);
-            let threshold_pk = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+            let threshold_pk = SecretKey::random(&mut rng).public_key();
             let empty_vs = ValidatorSet::V0(ValidatorSetV0 {
                 quorum_hash: qh,
                 quorum_index: None,

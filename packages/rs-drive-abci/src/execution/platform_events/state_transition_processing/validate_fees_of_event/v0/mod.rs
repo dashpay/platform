@@ -10,7 +10,6 @@ use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -45,7 +44,6 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidFromAssetLock {
@@ -67,7 +65,6 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -123,7 +120,6 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -179,7 +175,6 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -245,7 +240,6 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -264,6 +258,7 @@ where
                     processing_fee: *fees_to_add_to_pool - storage_fee,
                     fee_refunds: Default::default(),
                     removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 };
                 if *fees_to_add_to_pool >= required_fee {
                     Ok(ConsensusValidationResult::new_with_data(
@@ -302,7 +297,6 @@ where
                         block_info,
                         transaction,
                         platform_version,
-                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -389,18 +383,14 @@ mod tests {
             execution_operations: vec![],
             additional_fixed_fee_cost: None,
             user_fee_increase: 0,
+            signing_key_limits: None,
+            gas_sponsor: None,
+            action_fees: vec![],
         };
 
-        let previous_fee_versions = Default::default();
         let err = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect_err("missing balance should yield a CorruptedCodeExecution error");
 
         let msg = err.to_string();
@@ -432,16 +422,9 @@ mod tests {
             user_fee_increase: 0,
         };
 
-        let previous_fee_versions = Default::default();
         let err = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect_err("missing balance should yield a CorruptedCodeExecution error");
 
         let msg = err.to_string();
@@ -465,7 +448,6 @@ mod tests {
             .set_initial_state_structure();
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         let events = vec![
             ExecutionEvent::PaidFixedCost {
@@ -488,13 +470,7 @@ mod tests {
         for event in events {
             let result = platform
                 .platform
-                .validate_fees_of_event_v0(
-                    &event,
-                    &block_info,
-                    None,
-                    platform_version,
-                    &previous_fee_versions,
-                )
+                .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
                 .expect("no-fee events should always succeed");
 
             assert!(
@@ -527,7 +503,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         let fees_to_add_to_pool = 1_000_000u64;
         let event = ExecutionEvent::PaidFromAssetLockToPool {
@@ -539,13 +514,7 @@ mod tests {
 
         let result = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect("sufficient pool fee must be Ok");
 
         assert!(
@@ -583,7 +552,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         let fixed_cost = 100_000_000u64;
         let address = PlatformAddress::P2pkh([0x11; 20]);
@@ -603,13 +571,7 @@ mod tests {
 
         let result = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect("validation must be Ok");
 
         assert!(
@@ -644,7 +606,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         let event = ExecutionEvent::Paid {
             identity: build_partial_identity_with_balance(Some(0)),
@@ -654,17 +615,14 @@ mod tests {
             execution_operations: vec![],
             additional_fixed_fee_cost: Some(1_000),
             user_fee_increase: 0,
+            signing_key_limits: None,
+            gas_sponsor: None,
+            action_fees: vec![],
         };
 
         let result = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect("insufficient balance must be a consensus error, not a plain Error");
 
         assert!(
@@ -693,7 +651,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         let event = ExecutionEvent::PaidFromAssetLock {
             identity: build_partial_identity_with_balance(Some(10_000)),
@@ -705,13 +662,7 @@ mod tests {
 
         let result = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect("Ok with sufficient top-up balance");
 
         assert!(
@@ -733,7 +684,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         let block_info = dpp::block::block_info::BlockInfo::default();
-        let previous_fee_versions = Default::default();
 
         // previous_balance + added_balance would overflow without saturation.
         let event = ExecutionEvent::PaidFromAssetLock {
@@ -746,13 +696,7 @@ mod tests {
 
         let result = platform
             .platform
-            .validate_fees_of_event_v0(
-                &event,
-                &block_info,
-                None,
-                platform_version,
-                &previous_fee_versions,
-            )
+            .validate_fees_of_event_v0(&event, &block_info, None, platform_version)
             .expect("saturating add must prevent panics on overflow");
 
         // The saturated balance (u64::MAX) trivially covers the zero fee,

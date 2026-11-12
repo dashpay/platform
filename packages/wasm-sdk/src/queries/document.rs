@@ -2,6 +2,7 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
+use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v1::Result as HistoryResponseResult;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
@@ -13,7 +14,10 @@ use dash_sdk::platform::documents::document_history_query::{
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
-use drive::query::{OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause, WhereOperator};
+use drive::query::{
+    IntegerRangeGridSpec, OrderClause, TimeRangeGridSpec, TimeRangeSelector, WhereClause,
+    WhereOperator,
+};
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryProofInfo};
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
@@ -24,6 +28,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::serialization;
+use wasm_dpp2::utils::IntoWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -45,7 +50,11 @@ export type DocumentWhereOperator =
   | 'in'
   | 'In'
   | 'startsWith'
-  | 'StartsWith';
+  | 'StartsWith'
+  | 'contains'
+  | 'Contains'
+  | 'containsAny'
+  | 'ContainsAny';
 
 /**
  * Document query filtering clause represented as [field, operator, value].
@@ -102,11 +111,15 @@ export interface DocumentsQuery {
   startAt?: IdentifierLike
 
   /**
-   * Count-query knob: SQL-shaped `GROUP BY` field list. Mirrors
-   * the v1 wire's `group_by: repeated string` directly. Ignored
-   * by the regular document-fetch path.
+   * Aggregate-query option: SQL-shaped `GROUP BY` field list. Mirrors
+   * the v1 wire's `group_by: repeated string` directly. The regular
+   * document fetch (`getDocuments`) refuses it: it returns the documents
+   * themselves, which cannot be grouped.
    *
-   * - `[]` or omitted → aggregate count (a single row).
+   * - `[]` or omitted → one ungrouped result entry, keyed by the
+   *   empty string. Its value is the total count for
+   *   `getDocumentsCount`, total sum for `getDocumentsSum`, or
+   *   `{count, sum}` for `getDocumentsAverage`.
    * - `["<in_field>"]` where `<in_field>` matches an `In`
    *   constraint → per-`In`-value entries (PerInValue).
    * - `["<range_field>"]` where `<range_field>` matches a range
@@ -131,7 +144,9 @@ export interface DocumentsQuery {
    * signed response metadata; `"byStart"` names the bucket absolutely, so
    * both sides read it straight from the query. Provable either way.
    * Requires protocol version 14+ (the first version whose contract
-   * grammar hosts `timeRange` indexes).
+   * grammar hosts `timeRange` indexes): on a network not yet proven to run
+   * it, the SDK refuses the query without sending it
+   * (`ProtocolVersionNotActive`).
    *
    * - `selector: "oldest"` → the oldest still-active range (a near-full
    *   trailing window of ~`range`; best for "trending over the last window").
@@ -153,6 +168,28 @@ export interface DocumentsQuery {
     field: string;
     selector: "newest" | "oldest" | "byStart";
     startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Integer-range window selections. Each entry picks one window of an
+   * integer field covered by an `integerRange` index, named by its start:
+   * `start` must be a window start on the grid (`phase + k * step`, within
+   * the field's integer type, or the type's minimum for a clamped bottom
+   * window). An off-grid start is rejected rather than snapped, and an
+   * empty window is a provable empty answer. The server and the proof
+   * verifier resolve the same window from the query alone. Requires
+   * protocol version 14+, as `timeRange` does.
+   *
+   * `start` is a number, or a decimal string for values beyond
+   * `Number.MAX_SAFE_INTEGER`. `grid` names one of the field's grids
+   * verbatim (`{ range, step, phase? }`) and is required when the contract
+   * buckets the field with more than one `integerRange` grid.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
     grid?: { range: number; step: number; phase?: number };
   }[];
 }
@@ -185,7 +222,7 @@ export interface DocumentHistoryQuery {
    */
   startAtMs?: bigint | number;
   /** Complete exclusive cursor returned by a previous page. */
-  startAfter?: { timeMs: bigint | number; revision: bigint | number };
+  startAfter?: { timeMs: bigint | number; revision: bigint | number } | DocumentHistoryEntry;
   startAtRevision?: bigint | number;
   revision?: bigint | number;
   /** Maximum ten entries. A single revision requires limit one. */
@@ -200,6 +237,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DocumentHistoryQuery")]
     pub type DocumentHistoryQueryJs;
+
+    #[wasm_bindgen(method, getter = startAfter)]
+    fn start_after(this: &DocumentHistoryQueryJs) -> JsValue;
 }
 
 #[derive(Deserialize)]
@@ -217,21 +257,25 @@ pub(super) struct DocumentsQueryInput {
     pub(super) start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     pub(super) start_at: Option<IdentifierWasm>,
-    /// Count-query knob: SQL-shaped `GROUP BY` field list,
+    /// Aggregate-query option: SQL-shaped `GROUP BY` field list,
     /// mirroring the v1 wire `group_by: repeated string` field
-    /// one-to-one. Ignored by the regular document-fetch path.
+    /// one-to-one. The regular document fetch refuses it.
     /// See the TypeScript declaration for the supported shapes.
-    /// Default empty (aggregate count).
+    /// Default empty (one ungrouped aggregate result entry).
     #[serde(rename = "groupBy", default)]
     pub(super) group_by: Option<Vec<String>>,
-    // Order direction for count results flows through the existing
-    // `orderBy` field — the first clause's direction controls
-    // split-mode entry ordering and `(In + prove)` walk order. No
-    // separate `orderByAscending` knob.
+    // Order direction for aggregate results (count, sum, average)
+    // flows through the existing `orderBy` field — the first clause's
+    // direction controls split-mode entry ordering and `(In + prove)`
+    // walk order. No separate `orderByAscending` knob.
     /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
     /// selector }`. v1-only; resolved server-side from block time.
     #[serde(rename = "timeRange", default)]
     pub(super) time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections (`IN_INTEGER_RANGE`), each
+    /// `{ field, start, grid? }`. v1-only; resolved from the query alone.
+    #[serde(rename = "integerRange", default)]
+    pub(super) integer_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -241,7 +285,7 @@ struct DocumentHistoryQueryInput {
     document_type_name: String,
     document_id: IdentifierWasm,
     start_at_ms: Option<u64>,
-    start_after: Option<DocumentHistoryCursorInput>,
+    start_after: Option<serde::de::IgnoredAny>,
     start_at_revision: Option<u64>,
     revision: Option<u64>,
     limit: Option<u32>,
@@ -257,11 +301,18 @@ struct DocumentHistoryCursorInput {
 fn parse_document_history_query(
     query: DocumentHistoryQueryJs,
 ) -> Result<DocumentHistoryQuery, WasmSdkError> {
-    let input: DocumentHistoryQueryInput =
-        deserialize_required_query(query, "Query object is required", "document history query")?;
+    let input: DocumentHistoryQueryInput = deserialize_required_query(
+        query.clone(),
+        "Query object is required",
+        "document history query",
+    )?;
+    let start_after = input
+        .start_after
+        .map(|_| parse_document_history_cursor(query.start_after()))
+        .transpose()?;
     let filters = [
         input.start_at_ms.is_some(),
-        input.start_after.is_some(),
+        start_after.is_some(),
         input.start_at_revision.is_some(),
         input.revision.is_some(),
     ];
@@ -272,7 +323,7 @@ fn parse_document_history_query(
     }
     let filter = if let Some(time) = input.start_at_ms {
         DocumentHistoryFilter::StartAtTime(time)
-    } else if let Some(cursor) = input.start_after {
+    } else if let Some(cursor) = start_after {
         DocumentHistoryFilter::StartAfter {
             time_ms: cursor.time_ms,
             revision: cursor.revision,
@@ -291,6 +342,19 @@ fn parse_document_history_query(
     })
 }
 
+fn parse_document_history_cursor(
+    value: JsValue,
+) -> Result<DocumentHistoryCursorInput, WasmSdkError> {
+    if let Ok(entry) = value.to_wasm::<DocumentHistoryEntryWasm>("DocumentHistoryEntry") {
+        return Ok(DocumentHistoryCursorInput {
+            time_ms: entry.time_ms,
+            revision: entry.revision,
+        });
+    }
+    serialization::from_object(value)
+        .map_err(|error| WasmSdkError::invalid_argument(format!("Invalid history cursor: {error}")))
+}
+
 #[wasm_bindgen(js_name = "DocumentHistoryEntry")]
 #[derive(Clone)]
 pub struct DocumentHistoryEntryWasm {
@@ -298,6 +362,8 @@ pub struct DocumentHistoryEntryWasm {
     revision: u64,
     document: DocumentWasm,
 }
+
+wasm_dpp2::impl_wasm_type_info!(DocumentHistoryEntryWasm, DocumentHistoryEntry);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -313,6 +379,7 @@ impl DocumentHistoryEntryWasm {
     pub fn time_ms(&self) -> BigInt {
         BigInt::from(self.time_ms)
     }
+
     #[wasm_bindgen(getter)]
     pub fn revision(&self) -> BigInt {
         BigInt::from(self.revision)
@@ -520,9 +587,8 @@ pub(super) async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `group_by` on the shared input struct is a count-query-only
-    // knob; the regular document-fetch path destructured here just
-    // drops it.
+    // `group_by` on the shared input struct is applied by the callers
+    // that read it, after the shared clauses.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -533,6 +599,7 @@ pub(super) async fn build_documents_query(
         start_at,
         group_by: _,
         time_range,
+        integer_range,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -577,6 +644,8 @@ pub(super) async fn build_documents_query(
         }
     }
 
+    query = apply_integer_range_selections(query, integer_range.as_deref())?;
+
     if let Some(order_values) = order_by {
         for clause_json in order_values.iter() {
             let order_clause = parse_order_clause(clause_json)?;
@@ -594,7 +663,12 @@ async fn parse_documents_query(
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents query")?;
 
-    build_documents_query(sdk, input).await
+    // A documents select cannot be grouped. The grouping is kept so that the SDK refuses
+    // it before sending, instead of the fetch quietly answering an ungrouped page.
+    let group_by = input.group_by.clone().unwrap_or_default();
+    Ok(build_documents_query(sdk, input)
+        .await?
+        .with_group_by_fields(group_by))
 }
 
 /// Parse a JS query object into a [`DocumentQuery`] configured
@@ -743,6 +817,9 @@ pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause,
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "in" | "In" => WhereOperator::In,
         "startsWith" | "StartsWith" => WhereOperator::StartsWith,
+        // The elements of a typed array an index keys (protocol version 14).
+        "contains" | "Contains" => WhereOperator::Contains,
+        "containsAny" | "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Unknown operator: {}",
@@ -867,6 +944,94 @@ pub(super) fn parse_time_range_clause(
     Ok((field, selector, grid))
 }
 
+/// Attach integer-range window selections (`{ field, start, grid? }`) to a
+/// query, for [`DocumentQuery::with_integer_range`] /
+/// `with_integer_range_grid`.
+pub(super) fn apply_integer_range_selections(
+    mut query: DocumentQuery,
+    entries: Option<&[JsonValue]>,
+) -> Result<DocumentQuery, WasmSdkError> {
+    for entry in entries.unwrap_or(&[]) {
+        let (field, start, grid) = parse_integer_range_clause(entry)?;
+        query = match grid {
+            Some(grid) => query.with_integer_range_grid(field, start, grid),
+            None => query.with_integer_range(field, start),
+        };
+    }
+    Ok(query)
+}
+
+/// Parse a JSON integer-range clause `{ field, start, grid? }`.
+///
+/// `start` is the selected window's start: a JSON integer, or a decimal
+/// string for values a JS number cannot hold exactly. Whether it is a window
+/// start of the grid is the server's check (and the verifier's), since only
+/// they see the contract. `grid` is `{ range, step, phase? }`, verbatim from
+/// the contract's `integerRange`; a zero phase is spelled by omission.
+pub(super) fn parse_integer_range_clause(
+    json_clause: &JsonValue,
+) -> Result<(String, Value, Option<IntegerRangeGridSpec>), WasmSdkError> {
+    let object = json_clause.as_object().ok_or_else(|| {
+        WasmSdkError::invalid_argument(
+            "integerRange clause must be an object { field, start, grid? }",
+        )
+    })?;
+    let field = object
+        .get("field")
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument("integerRange clause requires a string `field`")
+        })?
+        .to_string();
+    let start_error = || {
+        WasmSdkError::invalid_argument(
+            "integerRange clause `start` must be an integer, or a decimal string of one",
+        )
+    };
+    let start = match object.get("start") {
+        Some(JsonValue::Number(number)) => match (number.as_i64(), number.as_u64()) {
+            (Some(signed), _) => Value::I64(signed),
+            (None, Some(unsigned)) => Value::U64(unsigned),
+            _ => return Err(start_error()),
+        },
+        Some(JsonValue::String(text)) => match text.parse::<i64>() {
+            Ok(signed) => Value::I64(signed),
+            Err(_) => Value::U64(text.parse::<u64>().map_err(|_| start_error())?),
+        },
+        _ => return Err(start_error()),
+    };
+    let grid = match object.get("grid") {
+        None | Some(JsonValue::Null) => None,
+        Some(grid_json) => {
+            let grid_object = grid_json.as_object().ok_or_else(|| {
+                WasmSdkError::invalid_argument(
+                    "integerRange clause `grid` must be an object { range, step, phase? }",
+                )
+            })?;
+            let grid_number = |key: &str| -> Result<u64, WasmSdkError> {
+                grid_object
+                    .get(key)
+                    .and_then(JsonValue::as_u64)
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument(format!(
+                            "integerRange clause `grid.{}` must be an unsigned integer, exactly \
+                             as the contract declares it",
+                            key
+                        ))
+                    })
+            };
+            let range = grid_number("range")?;
+            let step = grid_number("step")?;
+            let phase = match grid_object.get("phase") {
+                None | Some(JsonValue::Null) => 0,
+                Some(_) => grid_number("phase")?,
+            };
+            Some(IntegerRangeGridSpec { range, step, phase })
+        }
+    };
+    Ok((field, start, grid))
+}
+
 /// Parse JSON order by clause into OrderClause
 pub(super) fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkError> {
     let clause_array = json_clause
@@ -936,6 +1101,25 @@ pub(super) fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, Wasm
     }
 }
 
+fn document_history_proof_response(
+    result: DocumentHistoryProofInfo,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+    let Some(HistoryResponseResult::Proof(proof)) = result.response.result else {
+        return Err(WasmSdkError::generic(
+            "verified document history response carries no proof",
+        ));
+    };
+    Ok(ProofMetadataResponseWasm::from_sdk_parts(
+        DocumentHistoryResultWasm::from_history(result.history, contract_id, document_type_name)?,
+        result.response.metadata.ok_or_else(|| {
+            WasmSdkError::generic("verified document history response carries no metadata")
+        })?,
+        proof,
+    ))
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocumentHistory")]
@@ -978,21 +1162,7 @@ impl WasmSdk {
         let result = DocumentHistoryProofInfo::fetch(self.as_ref(), query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("document history response is missing"))?;
-        use dapi_grpc::platform::v0::get_document_history_response::get_document_history_response_v0::Result as ResponseResult;
-        let Some(ResponseResult::Proof(proof)) = result.response.result else {
-            return Err(WasmSdkError::generic(
-                "verified document history response carries no proof",
-            ));
-        };
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            DocumentHistoryResultWasm::from_history(
-                result.history,
-                contract_id,
-                &document_type_name,
-            )?,
-            result.response.metadata.expect("verified metadata"),
-            proof,
-        ))
+        document_history_proof_response(result, contract_id, &document_type_name)
     }
 
     #[wasm_bindgen(
@@ -1605,11 +1775,64 @@ mod tests {
         }))
         .expect_err("a fractional phase is not a contract-declared value");
     }
+
+    #[test]
+    fn integer_range_clause_parses_a_numeric_start_and_an_optional_grid() {
+        let (field, start, grid) =
+            parse_integer_range_clause(&json!({ "field": "price", "start": 600 }))
+                .expect("a numeric start parses");
+        assert_eq!(field, "price");
+        assert_eq!(start, Value::I64(600));
+        assert_eq!(grid, None);
+
+        let (_, start, grid) = parse_integer_range_clause(&json!({
+            "field": "price",
+            "start": -128,
+            "grid": { "range": 300, "step": 100 },
+        }))
+        .expect("a negative start and a phaseless grid parse");
+        assert_eq!(start, Value::I64(-128));
+        assert_eq!(
+            grid,
+            Some(IntegerRangeGridSpec {
+                range: 300,
+                step: 100,
+                phase: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn integer_range_clause_reads_a_decimal_string_beyond_js_number_precision() {
+        let (_, start, _) = parse_integer_range_clause(&json!({
+            "field": "balance",
+            "start": "18446744073709551600",
+        }))
+        .expect("a u64 start parses from a decimal string");
+        assert_eq!(start, Value::U64(18_446_744_073_709_551_600));
+    }
+
+    #[test]
+    fn integer_range_clause_refuses_malformed_shapes() {
+        for clause in [
+            json!(["price", 600]),
+            json!({ "start": 600 }),
+            json!({ "field": "price" }),
+            json!({ "field": "price", "start": 1.5 }),
+            json!({ "field": "price", "start": "six hundred" }),
+            json!({ "field": "price", "start": 600, "grid": { "range": 300 } }),
+            json!({ "field": "price", "start": 600, "grid": { "range": 300, "step": -1 } }),
+        ] {
+            parse_integer_range_clause(&clause).expect_err(&format!("{clause} should be refused"));
+        }
+    }
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod history_wasm_tests {
     use super::*;
+    use crate::error::WasmSdkErrorKind;
+    use dash_sdk::platform::proto::get_document_history_response::GetDocumentHistoryResponseV1;
     use drive_proof_verifier::types::{
         DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
         DocumentHistoryState,
@@ -1617,6 +1840,154 @@ mod history_wasm_tests {
     use js_sys::{Array, Reflect};
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn should_return_an_error_when_history_proof_metadata_is_missing() {
+        let result = DocumentHistoryProofInfo {
+            history: DocumentHistory {
+                entries: vec![],
+                lifecycle: None,
+            },
+            response: GetDocumentHistoryResponseV1 {
+                metadata: None,
+                result: Some(HistoryResponseResult::Proof(Default::default())),
+            },
+        };
+        let error = document_history_proof_response(result, [1; 32].into(), "note")
+            .expect_err("missing metadata must return an error");
+        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+        assert_eq!(
+            error.to_string(),
+            "verified document history response carries no metadata"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn should_return_an_error_when_history_response_has_no_proof() {
+        let result = DocumentHistoryProofInfo {
+            history: DocumentHistory {
+                entries: vec![],
+                lifecycle: None,
+            },
+            response: Default::default(),
+        };
+        let error = document_history_proof_response(result, [1; 32].into(), "note")
+            .expect_err("missing proof must return an error");
+        assert_eq!(error.kind(), WasmSdkErrorKind::Generic);
+        assert_eq!(
+            error.to_string(),
+            "verified document history response carries no proof"
+        );
+    }
+
+    fn returned_history_entry(time_ms: u64, revision: u64) -> JsValue {
+        let history = DocumentHistory {
+            entries: vec![DocumentHistoryEntry {
+                time_ms,
+                revision,
+                document: Document::V0(Default::default()),
+            }],
+            lifecycle: None,
+        };
+        let result = JsValue::from(
+            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
+        );
+        Array::from(&Reflect::get(&result, &"entries".into()).unwrap()).get(0)
+    }
+
+    fn history_query_with_cursor(cursor: &JsValue) -> DocumentHistoryQueryJs {
+        let query = js_sys::JSON::parse(
+            r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
+        )
+        .unwrap();
+        Reflect::set(&query, &"startAfter".into(), cursor).unwrap();
+        query.unchecked_into()
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_a_returned_history_entry_as_the_next_page_cursor() {
+        let time_ms = (1u64 << 53) + 1;
+        let revision = 22;
+        let entry = returned_history_entry(time_ms, revision);
+        for _ in 0..2 {
+            let query = parse_document_history_query(history_query_with_cursor(&entry))
+                .expect("the last returned entry is a valid cursor for the next page");
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter { time_ms, revision }
+            );
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_accept_plain_history_cursors_with_numbers_and_exact_bigints() {
+        for (cursor, time_ms) in [
+            (
+                js_sys::JSON::parse(r#"{"timeMs":2000,"revision":22}"#).unwrap(),
+                2000,
+            ),
+            (
+                serialization::to_object(&DocumentHistoryCursorInputForTest {
+                    time_ms: (1u64 << 53) + 1,
+                    revision: 22,
+                })
+                .unwrap(),
+                (1u64 << 53) + 1,
+            ),
+        ] {
+            let query = parse_document_history_query(history_query_with_cursor(&cursor)).unwrap();
+            assert_eq!(
+                query.filter,
+                DocumentHistoryFilter::StartAfter {
+                    time_ms,
+                    revision: 22
+                }
+            );
+        }
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct DocumentHistoryCursorInputForTest {
+        time_ms: u64,
+        revision: u64,
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_history_cursor_pointer_and_constructor_impostors() {
+        let entry = returned_history_entry(2000, 22);
+        let pointer = Reflect::get(&entry, &"__wbg_ptr".into()).unwrap();
+        let constructor = Reflect::get(&entry, &"constructor".into()).unwrap();
+        for copy_constructor in [false, true] {
+            let impostor = js_sys::Object::new();
+            Reflect::set(&impostor, &"__wbg_ptr".into(), &pointer).unwrap();
+            if copy_constructor {
+                Reflect::set(&impostor, &"constructor".into(), &constructor).unwrap();
+            }
+            assert!(parse_document_history_query(history_query_with_cursor(&impostor)).is_err());
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn should_reject_a_freed_history_cursor_and_accept_a_later_live_entry() {
+        let entry = returned_history_entry(2000, 22);
+        let free = Reflect::get(&entry, &"free".into())
+            .unwrap()
+            .dyn_into::<js_sys::Function>()
+            .unwrap();
+        free.call0(&entry).unwrap();
+        assert!(parse_document_history_query(history_query_with_cursor(&entry)).is_err());
+
+        let live_entry = returned_history_entry(2000, 23);
+        let query = parse_document_history_query(history_query_with_cursor(&live_entry)).unwrap();
+        assert_eq!(
+            query.filter,
+            DocumentHistoryFilter::StartAfter {
+                time_ms: 2000,
+                revision: 23
+            }
+        );
+    }
 
     #[wasm_bindgen_test]
     fn should_export_the_history_proof_as_one_proof_object() {
@@ -1763,11 +2134,18 @@ mod history_wasm_tests {
                 times: Default::default(),
             }),
         };
-        let response = ProofMetadataResponseWasm::from_sdk_parts(
-            DocumentHistoryResultWasm::from_history(history, [1; 32].into(), "note").unwrap(),
-            Default::default(),
-            Default::default(),
-        );
+        let response = document_history_proof_response(
+            DocumentHistoryProofInfo {
+                history,
+                response: GetDocumentHistoryResponseV1 {
+                    metadata: Some(Default::default()),
+                    result: Some(HistoryResponseResult::Proof(Default::default())),
+                },
+            },
+            [1; 32].into(),
+            "note",
+        )
+        .unwrap();
 
         let json = response.to_json().unwrap();
         let data = Reflect::get(&json, &"data".into()).unwrap();

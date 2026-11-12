@@ -13,7 +13,8 @@ use crate::DapiError;
 use crate::clients::{CoreClient, TenderdashClient};
 use crate::config::Config;
 use crate::sync::Workers;
-use dash_spv::Hash;
+use dashcore::Block as CoreBlock;
+use dashcore::consensus::encode::deserialize;
 use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Semaphore, broadcast};
@@ -374,20 +375,8 @@ pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
         .map(|tx| tx.txid().to_string())
 }
 
-/// Decode transaction bytes and return the txid in raw byte form.
-pub(crate) fn txid_bytes_from_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
-    use dashcore_rpc::dashcore::Transaction as CoreTx;
-    use dashcore_rpc::dashcore::consensus::encode::deserialize;
-    use dashcore_rpc::dashcore::hashes::Hash as DashHash;
-
-    deserialize::<CoreTx>(bytes)
-        .ok()
-        .map(|tx| tx.txid().to_byte_array().to_vec())
-}
 /// Decode block bytes and return the block hash in hex and as printable string.
 pub(crate) fn block_hash_from_block_bytes(bytes: &[u8]) -> Option<([u8; 32], String)> {
-    use dashcore_rpc::dashcore::Block as CoreBlock;
-    use dashcore_rpc::dashcore::consensus::encode::deserialize;
     deserialize::<CoreBlock>(bytes)
         .inspect_err(
             |error| tracing::debug!(%error, block=hex::encode(bytes), "cannot parse block data"),
@@ -514,6 +503,7 @@ pub(crate) fn summarize_zmq_event(event: &ZmqEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dashcore::hashes::hash_x11;
 
     #[test]
     fn core_block_hash_must_be_exact_width() {
@@ -524,5 +514,21 @@ mod tests {
                 .expect_err("expected invalid block hash length");
             assert_eq!(status.code(), tonic::Code::InvalidArgument);
         }
+    }
+
+    /// A block Core v24 mined (its coinbase is a version 4 CbTx) yields its
+    /// X11 hash, so the live header stream delivers it.
+    #[test]
+    fn block_hash_from_block_bytes_reads_a_core_v24_block() {
+        let bytes = hex::decode(
+            include_str!("../../../tests/vectors/core_v24_devnet/block_15146.hex").trim(),
+        )
+        .expect("vector is hex");
+        let x11 = hash_x11::Hash::hash(&bytes[..80]);
+
+        let (hash, hash_string) =
+            block_hash_from_block_bytes(&bytes).expect("a Core v24 block decodes");
+        assert_eq!(hash, x11.to_byte_array());
+        assert_eq!(hash_string, x11.to_string());
     }
 }

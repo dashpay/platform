@@ -36,20 +36,24 @@ impl<C> Platform<C> {
                 )
             }));
 
-        let limit = limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
+        // A refused limit is a request error: returned through `?` it would reach the client as
+        // an internal error, which clients retry on every other node.
+        let limit = check_validation_result_with_data!(limit.map_or(
+            Ok(config.default_query_limit),
+            |limit_value| {
                 if limit_value == 0
                     || limit_value > u16::MAX as u32
                     || limit_value as u16 > config.default_query_limit
                 {
-                    None
+                    Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit_value, config.default_query_limit
+                    ))))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit_value as u16)
                 }
-            })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            }
+        ));
 
         let start_at = match start_at_info {
             None => None,
@@ -145,10 +149,32 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
     use crate::query::tests::setup_platform_with_token_state;
+    use crate::query::tests::{
+        assert_drive_part_of_proof_verified, assert_invalid_argument_status, setup_platform,
+        setup_platform_with_default_query_limit, NoQuorumKeysContextProvider, NO_LIMIT_PROOF_CASES,
+    };
     use dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0;
+    use dapi_grpc::platform::v0::{
+        get_token_pre_programmed_distributions_request,
+        get_token_pre_programmed_distributions_response, GetTokenPreProgrammedDistributionsRequest,
+        GetTokenPreProgrammedDistributionsResponse,
+    };
+    use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::prelude::TimestampMillis;
+    use drive::drive::Drive;
+    use drive_proof_verifier::types::TokenPreProgrammedDistributions;
+    use drive_proof_verifier::FromProof;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_invalid_token_id() {
@@ -413,52 +439,39 @@ mod tests {
     }
 
     #[test]
-    fn test_query_limit_zero_is_rejected_as_error() {
-        // limit == 0 routes through the `.ok_or(...)?` path, which propagates
-        // a Drive(Query(InvalidLimit(...))) error via `Err(...)`, not as a
-        // validation error inside the response.
+    fn should_refuse_a_zero_limit_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetTokenPreProgrammedDistributionsRequestV0 {
-            token_id: vec![0; 32],
-            start_at_info: None,
-            limit: Some(0),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetTokenPreProgrammedDistributionsRequestV0 {
+                token_id: vec![0; 32],
+                start_at_info: None,
+                limit: Some(0),
+                prove,
+            };
 
-        let err = platform
-            .query_token_pre_programmed_distributions_v0(request, &state, version)
-            .expect_err("limit=0 should propagate an Err");
-
-        // Accept any Drive/Query related error; we just want to verify the
-        // `.ok_or(...)?` path is exercised.
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_token_pre_programmed_distributions_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
-    fn test_query_limit_above_max_is_rejected_as_error() {
+    fn should_refuse_a_limit_over_u16_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetTokenPreProgrammedDistributionsRequestV0 {
-            token_id: vec![0; 32],
-            start_at_info: None,
-            limit: Some((u16::MAX as u32) + 1),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetTokenPreProgrammedDistributionsRequestV0 {
+                token_id: vec![0; 32],
+                start_at_info: None,
+                limit: Some((u16::MAX as u32) + 1),
+                prove,
+            };
 
-        let err = platform
-            .query_token_pre_programmed_distributions_v0(request, &state, version)
-            .expect_err("oversized limit should propagate an Err");
-
-        let msg = format!("{:?}", err);
-        assert!(
-            msg.contains("InvalidLimit") || msg.contains("limit"),
-            "unexpected error: {msg}"
-        );
+            assert_invalid_argument_status(
+                platform.query_token_pre_programmed_distributions_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
@@ -674,5 +687,136 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("start_recipient")
         ));
+    }
+
+    /// Drive answers a proved request naming no limit with its default page and proves that
+    /// page, so the client verifies the proof against the page Drive proved, from a node left at
+    /// the default as from one whose operator set a larger default
+    #[test]
+    fn should_verify_the_default_page_of_distributions_requested_with_no_limit() {
+        for (default_query_limit, stored) in NO_LIMIT_PROOF_CASES {
+            let (platform, state, version) =
+                setup_platform_with_default_query_limit(None, default_query_limit);
+
+            let contract = DataContract::V1(DataContractV1 {
+                id: Identifier::from([1u8; 32]),
+                version: 0,
+                owner_id: Identifier::from([2u8; 32]),
+                document_types: Default::default(),
+                config: DataContractConfig::default_for_version(version)
+                    .expect("expected a contract config"),
+                schema_defs: None,
+                created_at: None,
+                updated_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                created_at_epoch: None,
+                updated_at_epoch: None,
+                groups: Default::default(),
+                tokens: BTreeMap::from([(
+                    0,
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+                )]),
+                keywords: Vec::new(),
+                description: None,
+            });
+            platform
+                .drive
+                .insert_contract(&contract, BlockInfo::genesis(), true, None, version)
+                .expect("expected to insert contract");
+            let token_id = contract.token_id(0).expect("expected token at position 0");
+
+            // Released 25 recipients at a time
+            let mut distributions = BTreeMap::<TimestampMillis, BTreeMap<Identifier, u64>>::new();
+            for n in 0..stored as u64 {
+                let mut recipient = [0u8; 32];
+                recipient[..8].copy_from_slice(&n.to_be_bytes());
+                distributions
+                    .entry(1_000 * (n / 25 + 1))
+                    .or_default()
+                    .insert(Identifier::from(recipient), 1 + n);
+            }
+            let distribution =
+                TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {
+                    distributions,
+                });
+            let mut batch_operations = vec![];
+            platform
+                .drive
+                .add_pre_programmed_distributions(
+                    token_id.to_buffer(),
+                    contract.owner_id().to_buffer(),
+                    &distribution,
+                    &BlockInfo::genesis(),
+                    &mut None,
+                    &mut batch_operations,
+                    None,
+                    version,
+                )
+                .expect("expected to add pre-programmed distributions");
+            platform
+                .drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch_operations,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .expect("expected to apply batch operations");
+
+            let request_v0 = GetTokenPreProgrammedDistributionsRequestV0 {
+                token_id: token_id.to_vec(),
+                start_at_info: None,
+                limit: None,
+                prove: true,
+            };
+            let response_v0 = platform
+                .query_token_pre_programmed_distributions_v0(request_v0.clone(), &state, version)
+                .expect("expected query to succeed")
+                .into_data()
+                .expect("expected query to be valid");
+            let Some(get_token_pre_programmed_distributions_response_v0::Result::Proof(proof)) =
+                &response_v0.result
+            else {
+                panic!("expected a proof")
+            };
+
+            // Drive proved its default page
+            let (_, proved): (_, BTreeMap<TimestampMillis, BTreeMap<Identifier, u64>>) =
+                Drive::verify_token_pre_programmed_distributions(
+                    &proof.grovedb_proof,
+                    token_id.to_buffer(),
+                    None,
+                    Some(default_query_limit),
+                    false,
+                    version,
+                )
+                .expect("expected the proof to verify as the node's default page");
+            assert_eq!(
+                proved.values().map(BTreeMap::len).sum::<usize>(),
+                stored.min(default_query_limit) as usize
+            );
+
+            let error = <TokenPreProgrammedDistributions as FromProof<
+                GetTokenPreProgrammedDistributionsRequest,
+            >>::maybe_from_proof_with_metadata(
+                GetTokenPreProgrammedDistributionsRequest {
+                    version: Some(get_token_pre_programmed_distributions_request::Version::V0(
+                        request_v0,
+                    )),
+                },
+                GetTokenPreProgrammedDistributionsResponse {
+                    version: Some(
+                        get_token_pre_programmed_distributions_response::Version::V0(response_v0),
+                    ),
+                },
+                Network::Testnet,
+                version,
+                &NoQuorumKeysContextProvider,
+            )
+            .expect_err("expected no quorum key");
+            assert_drive_part_of_proof_verified(error);
+        }
     }
 }

@@ -3,13 +3,13 @@
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
 //! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::prelude::CoreBlockHeight;
-use dashcore::{Address as DashAddress, ScriptBuf, Transaction, Txid};
+use dashcore::{Address as DashAddress, OutPoint, ScriptBuf, Transaction, Txid};
 
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
@@ -19,7 +19,7 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
-    ApplyChainLockOutcome, WalletInfoInterface,
+    ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
@@ -41,7 +41,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -55,7 +58,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -136,12 +142,36 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.accounts()
     }
 
+    fn unrecorded_spend_heights(&self, tx: &Transaction) -> BTreeSet<u32> {
+        self.core_wallet.unrecorded_spend_heights(tx)
+    }
+
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.core_wallet.immature_transactions()
     }
 
     fn last_processed_height(&self) -> CoreBlockHeight {
         self.core_wallet.last_processed_height()
+    }
+
+    /// Forwarded, plus the receival accounts platform inserts itself: the
+    /// filter pipeline snapshots this per batch and refuses to certify a
+    /// batch whose snapshot predates an account add, because the scan never
+    /// tested that account's scripts (dashpay/rust-dashcore#649). The trait
+    /// default is a constant `0`, which turned the guard off for every
+    /// platform wallet — so a batch in flight across a contact-account
+    /// registration could certify coverage the DashPay backfill record then
+    /// vouched for (dashpay/platform#4302 review).
+    ///
+    /// Also offset past a removed same-id predecessor's final generation
+    /// (see `RewindBarrier::inherit`): both counters restart with the wallet,
+    /// so without the offset a batch reconciled against the predecessor's
+    /// account set could match this wallet's generation and be certified.
+    fn account_generation(&self) -> u64 {
+        self.core_wallet
+            .account_generation()
+            .wrapping_add(self.rewind_barrier.account_registrations())
+            .wrapping_add(self.rewind_barrier.generation_base())
     }
 
     fn synced_height(&self) -> CoreBlockHeight {
@@ -153,8 +183,26 @@ impl WalletInfoInterface for PlatformWalletInfo {
             .update_last_processed_height(current_height);
     }
 
+    /// The engine's only caller is `update_wallet_synced_height`, which emits
+    /// a `SyncHeightAdvanced` straight after this returns, under the same
+    /// manager write lock — so this is where emissions are counted for the
+    /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier).
+    /// Platform code that moves the cursor calls `core_wallet` directly and
+    /// emits nothing.
     fn update_synced_height(&mut self, current_height: u32) {
+        self.rewind_barrier.note_emitted();
         self.core_wallet.update_synced_height(current_height);
+    }
+
+    /// Forwarded, then noted like any other in-memory rewind (see
+    /// `note_in_memory_rewind`) when it lowered the scan cursor: the persister
+    /// does not mirror `ChainTruncated`, so the host still holds the replaced
+    /// branch's cursor. A refused truncation changes nothing and notes nothing.
+    fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        let before = self.core_wallet.metadata.synced_height;
+        let truncation = self.core_wallet.truncate_above(height)?;
+        self.note_in_memory_rewind(before);
+        Ok(truncation)
     }
 
     fn matured_coinbase_records(
@@ -167,7 +215,43 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        self.core_wallet.mark_instant_send_utxos(txid, lock)
+        // Older key-wallet rewrote the record's context to `InstantSend` even
+        // when the transaction was already in a block. That context carries no
+        // block, so a chain lock no longer promoted the record and the
+        // persister would store a mined send as unconfirmed. A lock can reach
+        // a mined transaction: dash-spv applies one for as long as its mempool
+        // manager tracks the transaction, which ends only when that manager
+        // handles the block's event. Keep each confirmed slice's own context
+        // across the call: the slices of one transaction share the block but
+        // not always the finality, so one slice's context must not stand in
+        // for another's. As upstream, the mined record then does not carry the
+        // lock: an asset lock mined before its lock is proven by the chain
+        // lock, not by the InstantSend lock. Fixed upstream in
+        // dashpay/rust-dashcore#1037, which the pinned key-wallet carries: it
+        // leaves a confirmed record's context alone, so this restore is now a
+        // no-op and can be dropped (tracked in #5430).
+        let confirmed: BTreeMap<_, _> = self
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .filter(|record| record.is_confirmed())
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect();
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if confirmed.is_empty() {
+            return changed;
+        }
+        for mut account in self.core_wallet.accounts.all_accounts_mut() {
+            let Some(record) = account.transactions_mut().get_mut(txid) else {
+                continue;
+            };
+            if let Some(context) = confirmed.get(&record.account_type) {
+                record.update_context(context.clone());
+            }
+        }
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {
@@ -189,8 +273,26 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.last_applied_chain_lock()
     }
 
+    /// Before forwarding, keeps what the records the ChainLock is about to
+    /// drop spent — see [`PlatformWalletInfo::finalized_spends`].
     fn apply_chain_lock(&mut self, chain_lock: ChainLock) -> ApplyChainLockOutcome {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
         let cl_height = chain_lock.block_height;
+        if DROPS_FINALIZED_RECORDS {
+            let promoted = self
+                .core_wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .filter_map(|account| account.as_funds())
+                .flat_map(|funds| funds.transactions().values())
+                .filter(|record| match &record.context {
+                    TransactionContext::InBlock(info) => info.height() <= cl_height,
+                    _ => false,
+                });
+            self.finalized_spends.extend(owned_spends(promoted));
+        }
         let outcome = self.core_wallet.apply_chain_lock(chain_lock);
         let total_promoted: usize = outcome.locked_transactions.values().map(|v| v.len()).sum();
         tracing::debug!(
@@ -202,6 +304,44 @@ impl WalletInfoInterface for PlatformWalletInfo {
         );
         outcome
     }
+
+    /// During the initial sync dash-spv holds chainlocks back and passes on
+    /// only their heights. The trait default ignores them, which would leave
+    /// the inner wallet's observed spends unpruned until the sync completes;
+    /// forwarded, they are pruned as the sync goes.
+    fn note_chain_lock_height(&mut self, height: CoreBlockHeight) {
+        self.core_wallet.note_chain_lock_height(height);
+    }
+}
+
+/// Whether key-wallet drops a record once a ChainLock covers it, keeping
+/// only its txid (the `keep-finalized-transactions` feature off).
+const DROPS_FINALIZED_RECORDS: bool = cfg!(not(feature = "keep-finalized-transactions"));
+
+/// The outpoints of this wallet's coins that `records` spend. A record's
+/// `input_details` name the inputs whose coin its account held (key-wallet
+/// adds one when a funding arrives after its spender), so the foreign
+/// inputs of a payment the wallet received, and the other outputs of a
+/// transaction that paid it, are left out. A contact's watch-only chain
+/// holds the contact's coins, not ours. Each record names only its own
+/// account's inputs, so every outpoint comes once.
+fn owned_spends<'a, I>(records: I) -> impl Iterator<Item = OutPoint> + 'a
+where
+    I: IntoIterator<Item = &'a TransactionRecord>,
+    I::IntoIter: 'a,
+{
+    records
+        .into_iter()
+        .filter(|record| !record.account_type.is_contact_owned())
+        .flat_map(|record| {
+            record.input_details.iter().filter_map(|detail| {
+                record
+                    .transaction
+                    .input
+                    .get(detail.index as usize)
+                    .map(|input| input.previous_output)
+            })
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -219,9 +359,27 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_balance: bool,
     ) -> TransactionCheckResult {
         // TODO: some logic must here - restore
-        self.core_wallet
+        let result = self
+            .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
-            .await
+            .await;
+        // A transaction first seen, or confirmed, in a ChainLocked block is
+        // dropped on the spot: keep what it spent, as `apply_chain_lock`
+        // does for the records it promotes. Gate on each record's own
+        // context, not this call's: a funding that arrives after its
+        // spender hands the spender back in `updated_records` with its own
+        // context unchanged, possibly mempool, and such a spender is not
+        // final.
+        if DROPS_FINALIZED_RECORDS && update_state && result.is_relevant {
+            self.finalized_spends.extend(owned_spends(
+                result
+                    .new_records
+                    .iter()
+                    .chain(&result.updated_records)
+                    .filter(|record| record.context.is_chain_locked()),
+            ));
+        }
+        result
     }
 }
 
@@ -235,7 +393,10 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet.add_managed_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self.core_wallet.add_managed_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     fn add_managed_account_from_xpub(
@@ -243,8 +404,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         account_xpub: ExtendedPubKey,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_account_from_xpub(account_type, account_xpub)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_account_from_xpub(account_type, account_xpub);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "bls")]
@@ -253,8 +418,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_bls_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_bls_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "bls")]
@@ -263,8 +432,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         bls_public_key: [u8; 48],
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_bls_account_from_public_key(account_type, bls_public_key)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_bls_account_from_public_key(account_type, bls_public_key);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "eddsa")]
@@ -273,8 +446,12 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_eddsa_account(wallet, account_type)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_eddsa_account(wallet, account_type);
+        self.note_in_memory_rewind(before);
+        added
     }
 
     #[cfg(feature = "eddsa")]
@@ -283,8 +460,32 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         ed25519_public_key: [u8; 32],
     ) -> key_wallet::Result<()> {
-        self.core_wallet
-            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
+        let before = self.core_wallet.metadata.synced_height;
+        let added = self
+            .core_wallet
+            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key);
+        self.note_in_memory_rewind(before);
+        added
+    }
+}
+
+impl PlatformWalletInfo {
+    /// key-wallet lowers the scan cursor on its own: an account add rewinds
+    /// it to just below wallet birth (the new account has no filter
+    /// coverage), a chain truncation to the fork height. Neither lowering
+    /// reaches the persister (an account add emits nothing, and
+    /// `ChainTruncated` projects to an empty changeset), so treat it like any
+    /// other in-memory rewind: advances emitted before it must not be stored
+    /// after it, and the next DashPay backfill record round owes the host the
+    /// lowered cursor — otherwise a round could store coverage beside a host
+    /// cursor that never came down.
+    fn note_in_memory_rewind(&mut self, before: u32) {
+        let after = self.core_wallet.metadata.synced_height;
+        if after < before {
+            self.rewind_barrier.arm();
+            let epoch = self.rewind_barrier.epoch();
+            self.dashpay_backfill.owe_cursor(after, epoch);
+        }
     }
 }
 
@@ -298,5 +499,400 @@ impl std::fmt::Debug for PlatformWalletInfo {
             .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
             .field("identity_count", &self.identity_manager.identity_count())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::{Block, BlockHash, OutPoint, TxIn, TxOut, Witness};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet_manager::{WalletId, WalletInterface, WalletManager};
+
+    fn spending(outpoint: OutPoint) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: outpoint,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// A transaction paying this wallet one output and a stranger another,
+    /// and a ChainLocked transaction spending both. Only the wallet's coin is
+    /// kept, by either path that drops the spender's record.
+    #[tokio::test]
+    async fn should_keep_only_the_wallets_own_coins_a_finalized_spender_spent() {
+        use crate::manager::accessors::txo_inventory_tests::{in_block, manager_with};
+
+        for first_seen_chain_locked in [false, true] {
+            let mut ctx = TestWalletContext::new_random();
+            let mut paid = spending(OutPoint {
+                txid: Txid::from_slice(&[0x51; 32]).expect("valid txid"),
+                vout: 0,
+            });
+            paid.output = vec![
+                TxOut {
+                    value: 6_000,
+                    script_pubkey: ctx.receive_address.script_pubkey(),
+                },
+                TxOut {
+                    value: 5_000,
+                    script_pubkey: ScriptBuf::new_op_return(&[1]),
+                },
+            ];
+            assert!(
+                ctx.check_transaction(&paid, in_block(100))
+                    .await
+                    .is_relevant
+            );
+            let ours = OutPoint::new(paid.txid(), 0);
+            let theirs = OutPoint::new(paid.txid(), 1);
+            let mut spend = spending(ours);
+            spend.input.push(TxIn {
+                previous_output: theirs,
+                ..Default::default()
+            });
+            let (mut wm, wallet_id) = manager_with(ctx);
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+
+            if first_seen_chain_locked {
+                let block = in_block(101).block_info().copied().expect("mined");
+                let context = TransactionContext::InChainLockedBlock(block);
+                assert!(
+                    info.check_core_transaction(&spend, context, wallet, true, true)
+                        .await
+                        .is_relevant
+                );
+            } else {
+                assert!(
+                    info.check_core_transaction(&spend, in_block(101), wallet, true, true)
+                        .await
+                        .is_relevant
+                );
+                info.apply_chain_lock(ChainLock::dummy(101));
+            }
+
+            if DROPS_FINALIZED_RECORDS {
+                assert_eq!(
+                    info.finalized_spends,
+                    std::collections::HashSet::from([ours]),
+                    "first seen ChainLocked: {first_seen_chain_locked}"
+                );
+            } else {
+                assert!(info.finalized_spends.is_empty());
+            }
+        }
+    }
+
+    /// A mempool spender seen before its funding is handed back in
+    /// `updated_records` when the funding arrives ChainLocked, with its own
+    /// context still Mempool. That spender is not final, so its input must
+    /// not be kept as a finalized spend: the coin is no verdict yet.
+    #[tokio::test]
+    async fn should_not_finalize_a_mempool_spender_attributed_by_a_chain_locked_funding() {
+        use crate::manager::accessors::classify_outpoints;
+        use crate::manager::accessors::txo_inventory_tests::{
+            bip44_account_0, funding, in_block, manager_with, query,
+        };
+
+        let ctx = TestWalletContext::new_random();
+        let script = ctx.receive_address.script_pubkey();
+        let funded = funding(script.clone(), 0x54, 6_000);
+        let coin = OutPoint::new(funded.txid(), 0);
+        let mut spender = spending(coin);
+        spender.output = vec![TxOut {
+            value: 5_000,
+            script_pubkey: script.clone(),
+        }];
+        let (mut wm, wallet_id) = manager_with(ctx);
+        {
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+            assert!(
+                info.check_core_transaction(
+                    &spender,
+                    TransactionContext::Mempool,
+                    wallet,
+                    true,
+                    true
+                )
+                .await
+                .is_relevant
+            );
+            let block = in_block(100).block_info().copied().expect("mined");
+            let result = info
+                .check_core_transaction(
+                    &funded,
+                    TransactionContext::InChainLockedBlock(block),
+                    wallet,
+                    true,
+                    true,
+                )
+                .await;
+            assert!(result.is_relevant);
+            assert!(
+                result.updated_records.iter().any(
+                    |record| record.txid == spender.txid() && !record.context.is_chain_locked()
+                ),
+                "the funding attributes its input to the mempool spender"
+            );
+            assert!(
+                !info.finalized_spends.contains(&coin),
+                "a mempool spender's input is not a finalized spend"
+            );
+        }
+        assert_eq!(
+            classify_outpoints(&wm, &wallet_id, &[query(bip44_account_0(), coin, &script)]),
+            vec![crate::manager::accessors::OutpointClass::Unknown]
+        );
+    }
+
+    /// A spend drawing on two funds accounts names each coin once: each
+    /// account's record lists only its own inputs, and nothing walks the
+    /// transaction again per account.
+    #[tokio::test]
+    async fn should_name_each_coin_of_a_multi_account_spend_once() {
+        use crate::manager::accessors::txo_inventory_tests::{funding, in_block, manager_with};
+
+        let mut ctx = TestWalletContext::new_random();
+        let bip32_xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("BIP32 account")
+            .account_xpub;
+        let bip32_address = ctx
+            .managed_wallet
+            .first_bip32_managed_account_mut()
+            .expect("BIP32 account")
+            .next_receive_address(Some(&bip32_xpub), true)
+            .expect("address");
+        let to_bip44 = funding(ctx.receive_address.script_pubkey(), 0x52, 6_000);
+        let to_bip32 = funding(bip32_address.script_pubkey(), 0x53, 7_000);
+        assert!(
+            ctx.check_transaction(&to_bip44, in_block(100))
+                .await
+                .is_relevant
+        );
+        assert!(
+            ctx.check_transaction(&to_bip32, in_block(100))
+                .await
+                .is_relevant
+        );
+        let mut coins = vec![
+            OutPoint::new(to_bip44.txid(), 0),
+            OutPoint::new(to_bip32.txid(), 0),
+        ];
+        let mut spend = spending(coins[0]);
+        spend.input.push(TxIn {
+            previous_output: coins[1],
+            ..Default::default()
+        });
+        let (mut wm, wallet_id) = manager_with(ctx);
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+
+        let result = info
+            .check_core_transaction(&spend, in_block(101), wallet, true, true)
+            .await;
+        assert_eq!(result.new_records.len(), 2, "one record per account");
+        let mut named: Vec<OutPoint> =
+            owned_spends(result.new_records.iter().chain(&result.updated_records)).collect();
+        named.sort();
+        coins.sort();
+        assert_eq!(named, coins);
+    }
+
+    /// dash-spv notes a chain-lock height during the initial sync, before a
+    /// chain lock is applied. Spends observed at or below the synced height
+    /// are final from then on and are forgotten.
+    #[tokio::test]
+    async fn should_prune_final_observed_spends_when_a_chain_lock_height_is_noted() {
+        let mut wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let final_spend = OutPoint::new(Txid::from([0x01; 32]), 0);
+        let open_spend = OutPoint::new(Txid::from([0x03; 32]), 0);
+        for (outpoint, height) in [(final_spend, 50), (open_spend, 150)] {
+            let block = BlockInfo::new(height, BlockHash::from([0x07; 32]), 1_735_689_600);
+            info.check_core_transaction(
+                &spending(outpoint),
+                TransactionContext::InBlock(block),
+                &mut wallet,
+                true,
+                false,
+            )
+            .await;
+        }
+        info.update_synced_height(100);
+        assert_eq!(info.core_wallet.observed_spent_outpoints().len(), 2);
+
+        info.note_chain_lock_height(200);
+
+        let observed = info.core_wallet.observed_spent_outpoints();
+        assert!(
+            !observed.contains_key(&final_spend),
+            "a spend at height 50 is final below synced height 100"
+        );
+        assert!(
+            observed.contains_key(&open_spend),
+            "a spend at height 150 is above synced height 100"
+        );
+    }
+
+    /// Following a fork can lower the scan cursor in memory, and only a
+    /// truncation that lowered it is a rewind to account for: it arms the
+    /// barrier and owes the host the fork height. A truncation refused below
+    /// the chain lock, or one above the cursor, leaves both untouched.
+    #[test]
+    fn should_note_a_truncation_only_when_it_lowers_the_scan_cursor() {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        info.core_wallet.metadata.last_processed_height = 1_000;
+        info.core_wallet.update_synced_height(1_000);
+        info.apply_chain_lock(ChainLock::dummy(950));
+
+        assert!(info.truncate_above(949).is_err(), "below the chain lock");
+        info.truncate_above(1_000).expect("a fork at the cursor");
+        assert_eq!(info.synced_height(), 1_000);
+        assert_eq!(info.rewind_barrier.epoch(), 0);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, None);
+
+        info.truncate_above(960).expect("a fork below the cursor");
+        assert_eq!(info.synced_height(), 960);
+        assert_eq!(info.rewind_barrier.epoch(), 1);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(960));
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor_epoch, Some(1));
+    }
+
+    fn in_block(height: u32) -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::dummy(height),
+            1_700_000_000,
+        ))
+    }
+
+    /// A transaction spending `previous_output` to an address that is not
+    /// the wallet's.
+    fn spend_of(previous_output: OutPoint) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 90_000,
+                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    // The delegations dash-spv reaches only through `WalletManager`, driven
+    // through that manager so a missing or wrong forward shows up as the
+    // behaviour it breaks.
+
+    /// A manager holding `ctx`'s wallet as a `PlatformWalletInfo`.
+    fn manager_holding(ctx: TestWalletContext) -> (WalletManager<PlatformWalletInfo>, WalletId) {
+        let mut info = PlatformWalletInfo::from_wallet(&ctx.wallet, 0);
+        info.core_wallet = ctx.managed_wallet;
+        let mut manager = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let wallet_id = manager
+            .insert_wallet(ctx.wallet, info)
+            .expect("insert wallet");
+        (manager, wallet_id)
+    }
+
+    /// During the initial sync dash-spv holds chainlocks back and only
+    /// passes their height on. That exact height must reach the inner
+    /// wallet, which then forgets the spends it observed at or below both
+    /// the noted height and its synced height; otherwise a restore keeps
+    /// every spend it saw in memory until the sync completes. The synced
+    /// height is set above the noted one so the noted height is the cap.
+    #[tokio::test]
+    async fn should_prune_observed_spends_up_to_a_noted_chain_lock_height() {
+        let mut ctx = TestWalletContext::new_random();
+        let below = OutPoint::new(Txid::from_byte_array([0x01; 32]), 0);
+        let at = OutPoint::new(Txid::from_byte_array([0x02; 32]), 0);
+        let above = OutPoint::new(Txid::from_byte_array([0x03; 32]), 0);
+        ctx.check_transaction(&spend_of(below), in_block(50)).await;
+        ctx.check_transaction(&spend_of(at), in_block(100)).await;
+        ctx.check_transaction(&spend_of(above), in_block(150)).await;
+        ctx.managed_wallet.update_synced_height(200);
+        let (mut manager, wallet_id) = manager_holding(ctx);
+
+        manager.note_chain_lock_height(100);
+
+        let core = &manager
+            .get_wallet_info(&wallet_id)
+            .expect("wallet info")
+            .core_wallet;
+        let observed = core.observed_spent_outpoints();
+        assert!(
+            !observed.contains_key(&below),
+            "a spend below the noted chainlock height is final"
+        );
+        assert!(
+            !observed.contains_key(&at),
+            "a spend at the noted chainlock height is final"
+        );
+        assert!(
+            observed.contains_key(&above),
+            "a spend above the noted chainlock height is not final yet"
+        );
+        assert!(
+            core.last_applied_chain_lock().is_none(),
+            "a noted height is not an applied chainlock"
+        );
+    }
+
+    /// A block that spends a coin can be processed before the block that
+    /// funds it; the spend then matched nothing and was not recorded. When
+    /// the funding block lands, the manager must name the spend's block for
+    /// dash-spv to apply again, and applying it records the spend.
+    #[tokio::test]
+    async fn should_ask_to_reapply_the_block_of_a_spend_seen_before_its_funding() {
+        let ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(&ctx.receive_address, 0..1, &[100_000]);
+        let spend = spend_of(OutPoint::new(funding.txid(), 0));
+        let (mut manager, wallet_id) = manager_holding(ctx);
+        let wallets = BTreeSet::from([wallet_id]);
+        let spend_block = Block::dummy(200, vec![spend.clone()]);
+        let funding_block = Block::dummy(100, vec![funding.clone()]);
+
+        manager
+            .process_block_for_wallets(&spend_block, spend_block.block_hash(), 200, &wallets)
+            .await;
+        let funded = manager
+            .process_block_for_wallets(&funding_block, funding_block.block_hash(), 100, &wallets)
+            .await;
+        assert_eq!(
+            funded.reapply_heights,
+            BTreeMap::from([(wallet_id, BTreeSet::from([200]))])
+        );
+
+        manager
+            .process_block_for_wallets(&spend_block, spend_block.block_hash(), 200, &wallets)
+            .await;
+        let info = manager.get_wallet_info(&wallet_id).expect("wallet info");
+        assert!(
+            info.transaction_history()
+                .iter()
+                .any(|record| record.txid == spend.txid()),
+            "applying the block again records the spend"
+        );
+        assert!(info.unrecorded_spend_heights(&funding).is_empty());
     }
 }

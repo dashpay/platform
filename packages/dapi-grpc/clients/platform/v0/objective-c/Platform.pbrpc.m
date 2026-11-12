@@ -203,6 +203,26 @@
              responseClass:[GetIdentityContractNonceResponse class]];
 }
 
+#pragma mark getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest) returns (GetIdentityKeysRemainingBudgetsResponse)
+
+- (void)getIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityKeysRemainingBudgetsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityKeysRemainingBudgetsWithRequest:(GetIdentityKeysRemainingBudgetsRequest *)request handler:(void(^)(GetIdentityKeysRemainingBudgetsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityKeysRemainingBudgets"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityKeysRemainingBudgetsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityKeysRemainingBudgetsWithMessage:(GetIdentityKeysRemainingBudgetsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityKeysRemainingBudgets"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityKeysRemainingBudgetsResponse class]];
+}
+
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
 - (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -403,6 +423,206 @@
              responseClass:[GetDataContractsResponse class]];
 }
 
+#pragma mark getContractGroupInfo(GetContractGroupInfoRequest) returns (GetContractGroupInfoResponse)
+
+- (void)getContractGroupInfoWithRequest:(GetContractGroupInfoRequest *)request handler:(void(^)(GetContractGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractGroupInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractGroupInfoWithRequest:(GetContractGroupInfoRequest *)request handler:(void(^)(GetContractGroupInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractGroupInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractGroupInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractGroupInfoWithMessage:(GetContractGroupInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractGroupInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractGroupInfoResponse class]];
+}
+
+#pragma mark getContractGroupMembers(GetContractGroupMembersRequest) returns (GetContractGroupMembersResponse)
+
+- (void)getContractGroupMembersWithRequest:(GetContractGroupMembersRequest *)request handler:(void(^)(GetContractGroupMembersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractGroupMembersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractGroupMembersWithRequest:(GetContractGroupMembersRequest *)request handler:(void(^)(GetContractGroupMembersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractGroupMembers"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractGroupMembersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractGroupMembersWithMessage:(GetContractGroupMembersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractGroupMembers"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractGroupMembersResponse class]];
+}
+
+#pragma mark getContractGroupsForContract(GetContractGroupsForContractRequest) returns (GetContractGroupsForContractResponse)
+
+- (void)getContractGroupsForContractWithRequest:(GetContractGroupsForContractRequest *)request handler:(void(^)(GetContractGroupsForContractResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractGroupsForContractWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractGroupsForContractWithRequest:(GetContractGroupsForContractRequest *)request handler:(void(^)(GetContractGroupsForContractResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractGroupsForContract"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractGroupsForContractResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractGroupsForContractWithMessage:(GetContractGroupsForContractRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractGroupsForContract"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractGroupsForContractResponse class]];
+}
+
+#pragma mark getContractModerationStatus(GetContractModerationStatusRequest) returns (GetContractModerationStatusResponse)
+
+- (void)getContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationStatusWithRequest:(GetContractModerationStatusRequest *)request handler:(void(^)(GetContractModerationStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationStatusWithMessage:(GetContractModerationStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationStatusResponse class]];
+}
+
+#pragma mark getContractModerationEntries(GetContractModerationEntriesRequest) returns (GetContractModerationEntriesResponse)
+
+- (void)getContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationEntriesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationEntriesWithRequest:(GetContractModerationEntriesRequest *)request handler:(void(^)(GetContractModerationEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationEntries"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationEntriesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationEntriesWithMessage:(GetContractModerationEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationEntries"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationEntriesResponse class]];
+}
+
+#pragma mark getContractDocumentRemovals(GetContractDocumentRemovalsRequest) returns (GetContractDocumentRemovalsResponse)
+
+- (void)getContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractDocumentRemovalsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractDocumentRemovalsWithRequest:(GetContractDocumentRemovalsRequest *)request handler:(void(^)(GetContractDocumentRemovalsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractDocumentRemovals"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractDocumentRemovalsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractDocumentRemovalsWithMessage:(GetContractDocumentRemovalsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractDocumentRemovals"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractDocumentRemovalsResponse class]];
+}
+
+#pragma mark getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse)
+
+- (void)getContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractTeamActionsWithRequest:(GetContractTeamActionsRequest *)request handler:(void(^)(GetContractTeamActionsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractTeamActionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractTeamActionsWithMessage:(GetContractTeamActionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractTeamActionsResponse class]];
+}
+
+#pragma mark getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse)
+
+- (void)getContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractTeamActionSignersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractTeamActionSignersWithRequest:(GetContractTeamActionSignersRequest *)request handler:(void(^)(GetContractTeamActionSignersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractTeamActionSignersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractTeamActionSignersWithMessage:(GetContractTeamActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractTeamActionSigners"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractTeamActionSignersResponse class]];
+}
+
+#pragma mark getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse)
+
+- (void)getContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractModerationActionCountsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractModerationActionCountsWithRequest:(GetContractModerationActionCountsRequest *)request handler:(void(^)(GetContractModerationActionCountsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractModerationActionCounts"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractModerationActionCountsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractModerationActionCountsWithMessage:(GetContractModerationActionCountsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractModerationActionCounts"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractModerationActionCountsResponse class]];
+}
+
+#pragma mark getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse)
+
+- (void)getContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContractFeePotsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetContractFeePotsWithRequest:(GetContractFeePotsRequest *)request handler:(void(^)(GetContractFeePotsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContractFeePots"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContractFeePotsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getContractFeePotsWithMessage:(GetContractFeePotsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContractFeePots"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContractFeePotsResponse class]];
+}
+
 #pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
 
 - (void)getDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -501,6 +721,45 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[WaitForStateTransitionResultResponse class]];
+}
+
+#pragma mark getRecentStateTransitionStatus(GetRecentStateTransitionStatusRequest) returns (GetRecentStateTransitionStatusResponse)
+
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentStateTransitionStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetRecentStateTransitionStatusWithRequest:(GetRecentStateTransitionStatusRequest *)request handler:(void(^)(GetRecentStateTransitionStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentStateTransitionStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentStateTransitionStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What the node answering knows of a state transition, by hash, without
+ * waiting: committed, in its mempool, or unknown to it. Unproved and per node
+ * (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getRecentStateTransitionStatusWithMessage:(GetRecentStateTransitionStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentStateTransitionStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentStateTransitionStatusResponse class]];
 }
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
@@ -779,6 +1038,78 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetVotePollsByEndDateResponse class]];
+}
+
+#pragma mark getYesNoVotePollState(GetYesNoVotePollStateRequest) returns (GetYesNoVotePollStateResponse)
+
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetYesNoVotePollStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetYesNoVotePollStateWithRequest:(GetYesNoVotePollStateRequest *)request handler:(void(^)(GetYesNoVotePollStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getYesNoVotePollState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetYesNoVotePollStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * Where is a yes/no vote poll: open, or finished with what result, and its
+ * tallies (protocol version 15 and later)
+ */
+- (GRPCUnaryProtoCall *)getYesNoVotePollStateWithMessage:(GetYesNoVotePollStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getYesNoVotePollState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetYesNoVotePollStateResponse class]];
+}
+
+#pragma mark getMasternodeYesNoVote(GetMasternodeYesNoVoteRequest) returns (GetMasternodeYesNoVoteResponse)
+
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetMasternodeYesNoVoteWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetMasternodeYesNoVoteWithRequest:(GetMasternodeYesNoVoteRequest *)request handler:(void(^)(GetMasternodeYesNoVoteResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getMasternodeYesNoVote"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetMasternodeYesNoVoteResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * How did a masternode answer a yes/no vote poll? (protocol version 15 and
+ * later)
+ */
+- (GRPCUnaryProtoCall *)getMasternodeYesNoVoteWithMessage:(GetMasternodeYesNoVoteRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getMasternodeYesNoVote"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetMasternodeYesNoVoteResponse class]];
 }
 
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
@@ -1399,6 +1730,101 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetShieldedNullifiersResponse class]];
+}
+
+#pragma mark getPrivateDocumentEntries(GetPrivateDocumentEntriesRequest) returns (GetPrivateDocumentEntriesResponse)
+
+- (void)getPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetPrivateDocumentEntriesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetPrivateDocumentEntriesWithRequest:(GetPrivateDocumentEntriesRequest *)request handler:(void(^)(GetPrivateDocumentEntriesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getPrivateDocumentEntries"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetPrivateDocumentEntriesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getPrivateDocumentEntriesWithMessage:(GetPrivateDocumentEntriesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getPrivateDocumentEntries"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetPrivateDocumentEntriesResponse class]];
+}
+
+#pragma mark getOwnerTransactionsInBlock(GetOwnerTransactionsInBlockRequest) returns (GetOwnerTransactionsInBlockResponse)
+
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetOwnerTransactionsInBlockWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetOwnerTransactionsInBlockWithRequest:(GetOwnerTransactionsInBlockRequest *)request handler:(void(^)(GetOwnerTransactionsInBlockResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getOwnerTransactionsInBlock"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetOwnerTransactionsInBlockResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * The state transitions one owner has in the Tenderdash block at a height.
+ * DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+ */
+- (GRPCUnaryProtoCall *)getOwnerTransactionsInBlockWithMessage:(GetOwnerTransactionsInBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getOwnerTransactionsInBlock"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetOwnerTransactionsInBlockResponse class]];
+}
+
+#pragma mark getBlocks(GetBlocksRequest) returns (GetBlocksResponse)
+
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetBlocksWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetBlocksWithRequest:(GetBlocksRequest *)request handler:(void(^)(GetBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getBlocks"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+ * `prove` the client trusts the node. This is for looking blocks up, not for
+ * syncing a chain: the gateway allows each IP very few of these requests.
+ */
+- (GRPCUnaryProtoCall *)getBlocksWithMessage:(GetBlocksRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getBlocks"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetBlocksResponse class]];
 }
 
 @end

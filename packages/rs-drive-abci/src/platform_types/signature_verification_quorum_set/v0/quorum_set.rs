@@ -3,6 +3,7 @@ use crate::platform_types::signature_verification_quorum_set::v0::quorums::Quoru
 use crate::platform_types::signature_verification_quorum_set::VerificationQuorum;
 use dpp::dashcore::QuorumHash;
 use dpp::dashcore_rpc::json::QuorumType;
+use std::num::{NonZeroU16, NonZeroU32};
 use std::vec::IntoIter;
 
 /// Offset for signature verification
@@ -144,11 +145,11 @@ pub struct QuorumConfig {
     /// Type
     pub quorum_type: QuorumType,
     /// Active quorum signers count
-    pub active_signers: u16,
+    pub active_signers: NonZeroU16,
     /// Is it a DIP24 rotating quorum or classic
     pub rotation: bool,
     /// DKG interval
-    pub window: u32,
+    pub window: NonZeroU32,
 }
 
 impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV0 {
@@ -303,16 +304,15 @@ impl From<ChainLockConfig> for SignatureVerificationQuorumSetV0 {
 mod tests {
     use super::*;
     use crate::config::ChainLockConfig;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore_rpc::json::QuorumType;
 
-    fn make_public_key(seed: u8) -> dpp::bls_signatures::PublicKey<Bls12381G2Impl> {
+    fn make_public_key(seed: u8) -> dpp::bls::PublicKey {
         let mut key_bytes = [0u8; 32];
         key_bytes[0] = seed;
         key_bytes[31] = 1;
-        let sk =
-            BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(&key_bytes).expect("valid secret key");
+        let sk = BlsPrivateKey::from_be_bytes(&key_bytes).expect("valid secret key");
         sk.public_key()
     }
 
@@ -339,8 +339,8 @@ mod tests {
         ChainLockConfig {
             quorum_type: QuorumType::Llmq400_60,
             quorum_size: 400,
-            quorum_window: 288,
-            quorum_active_signers: 4,
+            quorum_window: NonZeroU32::new(288).unwrap(),
+            quorum_active_signers: NonZeroU16::new(4).unwrap(),
             quorum_rotation: false,
         }
     }
@@ -353,9 +353,9 @@ mod tests {
         let qs = SignatureVerificationQuorumSetV0::new(&config);
 
         assert_eq!(qs.config().quorum_type, QuorumType::Llmq400_60);
-        assert_eq!(qs.config().active_signers, 4);
+        assert_eq!(qs.config().active_signers.get(), 4);
         assert!(!qs.config().rotation);
-        assert_eq!(qs.config().window, 288);
+        assert_eq!(qs.config().window.get(), 288);
         assert!(qs.current_quorums().is_empty());
         assert!(!qs.has_previous_past_quorums());
     }
@@ -365,16 +365,16 @@ mod tests {
         let config = ChainLockConfig {
             quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
-            quorum_window: 24,
-            quorum_active_signers: 24,
+            quorum_window: NonZeroU32::new(24).unwrap(),
+            quorum_active_signers: NonZeroU16::new(24).unwrap(),
             quorum_rotation: true,
         };
         let qs: SignatureVerificationQuorumSetV0 = config.into();
 
         assert_eq!(qs.config().quorum_type, QuorumType::Llmq100_67);
-        assert_eq!(qs.config().active_signers, 24);
+        assert_eq!(qs.config().active_signers.get(), 24);
         assert!(qs.config().rotation);
-        assert_eq!(qs.config().window, 24);
+        assert_eq!(qs.config().window.get(), 24);
     }
 
     // ---- set_current_quorums / current_quorums ----

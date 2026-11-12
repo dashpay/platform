@@ -285,6 +285,8 @@ mod tests {
             created_at: None,
             updated_at: None,
             transferred_at: None,
+            moderated_at: None,
+            moderated_by: None,
             created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,

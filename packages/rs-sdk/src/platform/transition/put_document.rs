@@ -1,17 +1,23 @@
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{wait_after_broadcast, BroadcastStateTransition};
 use super::validation::ensure_valid_state_transition_structure;
-use super::waitable::Waitable;
+use super::waitable::{
+    wait_for_document_and_owner_balance, wait_for_document_and_owner_balance_with_metadata,
+    Waitable,
+};
+use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dapi_grpc::platform::v0::ResponseMetadata;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -34,7 +40,10 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Puts a document on platform and waits for the confirmation proof
+    /// Puts a document on platform and waits for the confirmation proof. For an
+    /// indexOnly document type the proof shows the document's entry at the proof's
+    /// block, not that this put wrote it: no stronger proof exists for such a
+    /// document.
     #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response(
         &self,
@@ -46,6 +55,83 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
+
+    /// Puts a document on platform, waits for the confirmation proof and
+    /// returns the confirmed document together with the credit balance of the
+    /// document's owner after the write, which the proof carries next to the
+    /// document from protocol version 14 (a snapshot at the proof's block;
+    /// `None` for a proof made at an earlier version).
+    #[allow(clippy::too_many_arguments)]
+    async fn put_to_platform_and_wait_for_response_with_owner_balance(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>), Error> {
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance(sdk, state_transition, settings).await
+    }
+
+    /// Puts a document on platform, waits for the confirmation proof and
+    /// returns the confirmed document, the credit balance of its owner after
+    /// the write (`None` for a proof made before protocol version 14) and the
+    /// verified metadata of the response, whose height is the block the
+    /// balance is a snapshot at.
+    ///
+    /// The proof is checked as strictly as
+    /// [`put_to_platform_and_wait_for_response`](Self::put_to_platform_and_wait_for_response)
+    /// checks it: it must prove this write executed, unless the document type
+    /// is indexOnly. [`put_to_platform_and_wait_for_response_with_owner_balance`](Self::put_to_platform_and_wait_for_response_with_owner_balance)
+    /// accepts an affected-state snapshot for any document type.
+    #[allow(clippy::too_many_arguments)]
+    async fn put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        // An indexOnly document keeps no row: its proof shows the entry the
+        // create leaves, not that this create executed.
+        let execution_proof_required = !document_type.index_only();
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance_with_metadata(
+            sdk,
+            state_transition,
+            settings,
+            execution_proof_required,
+        )
+        .await
+    }
 }
 
 #[async_trait::async_trait]
@@ -60,80 +146,19 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let new_identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.owner_id(),
-                document_type.data_contract_id(),
-                true,
-                settings,
-            )
-            .await?;
-
-        let settings = settings.unwrap_or_default();
-        let document = prepare_document_for_transition(self, &document_type);
-        let transition =
-            if self.revision().is_some() && self.revision().unwrap() != INITIAL_REVISION {
-                BatchTransition::new_document_replacement_transition_from_document(
-                    document,
-                    document_type.as_ref(),
-                    &identity_public_key,
-                    new_identity_contract_nonce,
-                    settings.user_fee_increase.unwrap_or_default(),
-                    token_payment_info,
-                    signer,
-                    sdk.version(),
-                    settings.state_transition_creation_options,
-                )
-                .await?
-            } else {
-                let (document, document_state_transition_entropy) =
-                    match document_state_transition_entropy {
-                        Some(entropy) => {
-                            // A caller-supplied entropy must derive the document's own id.
-                            // Platform consensus recomputes generate_document_id_v0 from the
-                            // transition entropy and rejects the create with
-                            // InvalidDocumentTransitionIdError on mismatch, so guard here
-                            // before broadcasting to fail locally (no wasted nonce/fee).
-                            ensure_entropy_matches_document_id(
-                                &document_type.data_contract_id(),
-                                &document.owner_id(),
-                                document_type.name(),
-                                &entropy,
-                                document.id(),
-                            )?;
-                            (document, entropy)
-                        }
-                        None => {
-                            let mut rng = StdRng::from_entropy();
-                            let mut document = document;
-                            let entropy = rng.gen::<[u8; 32]>();
-                            document.set_id(Document::generate_document_id_v0(
-                                &document_type.data_contract_id(),
-                                &document.owner_id(),
-                                document_type.name(),
-                                entropy.as_slice(),
-                            ));
-                            (document, entropy)
-                        }
-                    };
-                BatchTransition::new_document_creation_transition_from_document(
-                    document,
-                    document_type.as_ref(),
-                    document_state_transition_entropy,
-                    &identity_public_key,
-                    new_identity_contract_nonce,
-                    settings.user_fee_increase.unwrap_or_default(),
-                    token_payment_info,
-                    signer,
-                    sdk.version(),
-                    settings.state_transition_creation_options,
-                )
-                .await?
-            };
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
-
+        let transition = prepare_document_state_transition(
+            self,
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            token_payment_info,
+            signer,
+            settings,
+        )
+        .await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        transition.broadcast(sdk, Some(settings)).await?;
+        transition.broadcast(sdk, settings).await?;
         Ok(transition)
     }
 
@@ -147,19 +172,98 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
-        let state_transition = self
-            .put_to_platform(
-                sdk,
-                document_type,
-                document_state_transition_entropy,
-                identity_public_key,
-                token_payment_info,
-                signer,
-                settings,
-            )
-            .await?;
+        let index_only = document_type.index_only();
+        let state_transition = prepare_document_state_transition(
+            self,
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            token_payment_info,
+            signer,
+            settings,
+        )
+        .await?;
 
-        Self::wait_for_response(sdk, state_transition, settings).await
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        wait_after_broadcast(broadcast, async move {
+            // An indexOnly document keeps no row: its proof shows the entry the create leaves, not
+            // that this create executed, and no stronger proof exists for it.
+            if index_only {
+                return wait_for_document_and_owner_balance(sdk, state_transition, settings)
+                    .await
+                    .map(|(document, _owner_balance)| document);
+            }
+            Self::wait_for_response(sdk, state_transition, settings).await
+        })
+        .await
+    }
+
+    async fn put_to_platform_and_wait_for_response_with_owner_balance(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>), Error> {
+        let state_transition = prepare_document_state_transition(
+            self,
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            token_payment_info,
+            signer,
+            settings,
+        )
+        .await?;
+
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        wait_after_broadcast(broadcast, async move {
+            wait_for_document_and_owner_balance(sdk, state_transition, settings).await
+        })
+        .await
+    }
+
+    async fn put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        // An indexOnly document keeps no row: its proof shows the entry the
+        // create leaves, not that this create executed.
+        let execution_proof_required = !document_type.index_only();
+        let state_transition = prepare_document_state_transition(
+            self,
+            sdk,
+            document_type,
+            document_state_transition_entropy,
+            identity_public_key,
+            token_payment_info,
+            signer,
+            settings,
+        )
+        .await?;
+
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        wait_after_broadcast(broadcast, async move {
+            wait_for_document_and_owner_balance_with_metadata(
+                sdk,
+                state_transition,
+                settings,
+                execution_proof_required,
+            )
+            .await
+        })
+        .await
     }
 }
 
@@ -202,6 +306,115 @@ fn ensure_entropy_matches_document_id(
         )));
     }
     Ok(())
+}
+
+/// Construct and sign once; dispatch is chosen by the calling API.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn prepare_document_state_transition<S: Signer<IdentityPublicKey>>(
+    document: &Document,
+    sdk: &Sdk,
+    document_type: DocumentType,
+    document_state_transition_entropy: Option<[u8; 32]>,
+    identity_public_key: IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<StateTransition, Error> {
+    // A local failure after the nonce is reserved would leave the cached nonce ahead of
+    // Platform's, so what can be refused without it is refused first.
+    let creation_options = settings.and_then(|settings| settings.state_transition_creation_options);
+    if let Some(creation_options) = creation_options {
+        creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
+    }
+
+    let document = prepare_document_for_transition(document, &document_type);
+    let is_replacement =
+        document.revision().is_some() && document.revision().unwrap() != INITIAL_REVISION;
+    // A contested create states the most it pays to join its contest, read before the
+    // nonce is reserved
+    let creation_options = if is_replacement {
+        creation_options
+    } else {
+        with_contest_fund_to_join(sdk, document_type.as_ref(), &document, creation_options).await?
+    };
+
+    let new_identity_contract_nonce = sdk
+        .get_identity_contract_nonce(
+            document.owner_id(),
+            document_type.data_contract_id(),
+            true,
+            settings,
+        )
+        .await?;
+
+    let settings = settings.unwrap_or_default();
+    let transition = if is_replacement {
+        BatchTransition::new_document_replacement_transition_from_document(
+            document,
+            document_type.as_ref(),
+            &identity_public_key,
+            new_identity_contract_nonce,
+            settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
+            signer,
+            sdk.version(),
+            creation_options,
+        )
+        .await?
+    } else {
+        let (document, document_state_transition_entropy) = match document_state_transition_entropy
+        {
+            Some(entropy) => {
+                // While the id derives from the entropy alone, a caller-supplied
+                // entropy must derive the document's own id: consensus recomputes
+                // it and rejects the create with InvalidDocumentTransitionIdError
+                // on mismatch, so guard here before broadcasting to fail locally
+                // (no wasted nonce/fee). Once the id also commits to the identity
+                // contract nonce, the id the caller set is only a placeholder and
+                // the transition is built with the id derived below.
+                if !Document::document_id_depends_on_nonce(sdk.version())? {
+                    ensure_entropy_matches_document_id(
+                        &document_type.data_contract_id(),
+                        &document.owner_id(),
+                        document_type.name(),
+                        &entropy,
+                        document.id(),
+                    )?;
+                }
+                (document, entropy)
+            }
+            None => {
+                let mut rng = StdRng::from_os_rng();
+                let mut document = document;
+                let entropy = rng.random::<[u8; 32]>();
+                document.set_id(Document::generate_document_id(
+                    &document_type.data_contract_id(),
+                    &document.owner_id(),
+                    document_type.name(),
+                    entropy.as_slice(),
+                    new_identity_contract_nonce,
+                    sdk.version(),
+                )?);
+                (document, entropy)
+            }
+        };
+        BatchTransition::new_document_creation_transition_from_document(
+            document,
+            document_type.as_ref(),
+            document_state_transition_entropy,
+            &identity_public_key,
+            new_identity_contract_nonce,
+            settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
+            signer,
+            sdk.version(),
+            creation_options,
+        )
+        .await?
+    };
+    ensure_valid_state_transition_structure(&transition, sdk.version())?;
+
+    Ok(transition)
 }
 
 #[cfg(test)]
@@ -319,5 +532,100 @@ mod tests {
             document.properties().get("saltedDomainHash"),
             Some(&integer_array)
         );
+    }
+}
+
+#[cfg(all(test, feature = "mocks"))]
+mod submission_tests {
+    use super::*;
+    use crate::sdk::put_test_support::PutFixture;
+    use dapi_grpc::tonic::Status;
+
+    #[tokio::test]
+    async fn should_observe_each_combined_document_api_without_changing_plain_broadcast() {
+        for api in 0..4 {
+            for (status, ambiguous) in [
+                (Status::unavailable("acknowledgement lost"), true),
+                (Status::already_exists("tx already exists in cache"), true),
+                (
+                    Status::resource_exhausted("broadcasting state transition is timed out"),
+                    true,
+                ),
+                (Status::resource_exhausted("mempool is full"), false),
+            ] {
+                let mut fixture = PutFixture::new().await;
+                let prepared = prepare_document_state_transition(
+                    &fixture.document,
+                    &fixture.sdk,
+                    fixture.document_type.clone(),
+                    None,
+                    fixture.key.clone(),
+                    None,
+                    &fixture.signer,
+                    PutFixture::settings(),
+                )
+                .await
+                .unwrap();
+                let requests = fixture.expect_submission(&prepared, status).await;
+                let result = match api {
+                    0 => fixture
+                        .document
+                        .put_to_platform(
+                            &fixture.sdk,
+                            fixture.document_type.clone(),
+                            None,
+                            fixture.key.clone(),
+                            None,
+                            &fixture.signer,
+                            PutFixture::settings(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    1 => fixture
+                        .document
+                        .put_to_platform_and_wait_for_response(
+                            &fixture.sdk,
+                            fixture.document_type.clone(),
+                            None,
+                            fixture.key.clone(),
+                            None,
+                            &fixture.signer,
+                            PutFixture::settings(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    2 => fixture
+                        .document
+                        .put_to_platform_and_wait_for_response_with_owner_balance(
+                            &fixture.sdk,
+                            fixture.document_type.clone(),
+                            None,
+                            fixture.key.clone(),
+                            None,
+                            &fixture.signer,
+                            PutFixture::settings(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    3 => fixture
+                        .document
+                        .put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+                            &fixture.sdk,
+                            fixture.document_type.clone(),
+                            None,
+                            fixture.key.clone(),
+                            None,
+                            &fixture.signer,
+                            PutFixture::settings(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    _ => unreachable!(),
+                };
+                fixture
+                    .assert_calls(&requests, usize::from(api != 0 && ambiguous), result)
+                    .await;
+            }
+        }
     }
 }

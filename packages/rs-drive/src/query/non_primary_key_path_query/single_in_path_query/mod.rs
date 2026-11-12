@@ -17,6 +17,20 @@ use grovedb::PathQuery;
 impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Lowers a query with at most one `In` clause into a path query.
+    ///
+    /// # Parameters
+    ///
+    /// * `document_type_path`: The path of the document type's tree the query starts from.
+    /// * `starts_at_document`: The cursor document and whether it is included (`startAt`) or
+    ///   excluded (`startAfter`), if any.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(PathQuery)` walking the index the query picks, paginated from the cursor if any.
+    /// * `Err(Error)` when the method version is unknown, the query has more than one `In`
+    ///   clause, no index fits the clauses or they do not cover its prefix contiguously, or a
+    ///   value does not serialize.
     pub(in crate::query) fn get_non_primary_key_single_in_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,

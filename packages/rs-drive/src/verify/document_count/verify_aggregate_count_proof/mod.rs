@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -36,9 +37,10 @@ impl DriveDocumentCountQuery<'_> {
             .verify_aggregate_count_proof
         {
             0 => self.verify_aggregate_count_proof_v0(proof, platform_version),
+            1 => self.verify_aggregate_count_proof_v1(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentCountQuery::verify_aggregate_count_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

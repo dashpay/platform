@@ -1,5 +1,5 @@
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
@@ -46,14 +46,14 @@ where
 
         let (root_hash, documents) = request
             .verify_proof(
-                supported_grovedb_proof_bytes(proof, platform_version)?,
+                document_query_proof_bytes(proof, mtd, platform_version)?,
                 platform_version,
             )
             .map_drive_error(proof, mtd)?;
 
         let count = documents.len() as u64;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()))
     }
@@ -77,6 +77,10 @@ where
 /// documents and counts them client-side, this verifies the
 /// merk-level aggregate primitive that yields a single `u64`
 /// directly (capped only by the merk tree size, not `u16::MAX`).
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_aggregate_count_proof(
     query: &DriveDocumentCountQuery,
     proof: &Proof,
@@ -86,12 +90,12 @@ pub fn verify_aggregate_count_proof(
 ) -> Result<u64, Error> {
     let (root_hash, count) = query
         .verify_aggregate_count_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(count)
 }
@@ -119,6 +123,10 @@ pub fn verify_aggregate_count_proof(
 /// rather than O(log n), because each distinct in-range pair emits
 /// its own `KVCount` op instead of being collapsed into a boundary
 /// subtree. Still strictly smaller than materialize-and-count.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_distinct_count_proof(
     query: &DriveDocumentCountQuery,
     proof: &Proof,
@@ -130,14 +138,14 @@ pub fn verify_distinct_count_proof(
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_count_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(entries)
 }
@@ -186,6 +194,10 @@ pub fn verify_distinct_count_proof(
 /// CountTree element proof is O(k × log n) where k is the number of
 /// covered branches — bandwidth and CPU drop by orders of magnitude
 /// on counted indexes and the cap disappears.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_point_lookup_count_proof(
     query: &DriveDocumentCountQuery,
     proof: &Proof,
@@ -195,12 +207,12 @@ pub fn verify_point_lookup_count_proof(
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, entries) = query
         .verify_point_lookup_count_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(entries)
 }
@@ -215,6 +227,10 @@ pub fn verify_point_lookup_count_proof(
 /// `documents_countable: true`, the server proves the type-level
 /// CountTree element directly and the SDK extracts the count from
 /// the verified element.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_primary_key_count_tree_proof(
     contract_id: [u8; 32],
     document_type_name: &str,
@@ -224,14 +240,14 @@ pub fn verify_primary_key_count_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<u64, Error> {
     let (root_hash, count) = DriveDocumentCountQuery::verify_primary_key_count_tree_proof(
-        supported_grovedb_proof_bytes(proof, platform_version)?,
+        document_query_proof_bytes(proof, mtd, platform_version)?,
         contract_id,
         document_type_name,
         platform_version,
     )
     .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(count)
 }
@@ -276,6 +292,10 @@ pub fn verify_primary_key_count_tree_proof(
 /// so the value passed here must match what the server used to
 /// generate the proof (validate-don't-clamp on the prove path,
 /// same contract as `verify_distinct_count_proof`).
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_carrier_aggregate_count_proof(
     query: &DriveDocumentCountQuery,
     proof: &Proof,
@@ -287,14 +307,14 @@ pub fn verify_carrier_aggregate_count_proof(
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, per_key_counts) = query
         .verify_carrier_aggregate_count_proof(
-            supported_grovedb_proof_bytes(proof, platform_version)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
 
-    verify_tenderdash_proof(proof, mtd, &root_hash, provider, platform_version)?;
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     // Map drive's `Vec<(Vec<u8>, u64)>` carrier shape onto the
     // SDK's `Vec<SplitCountEntry>` so the call sites can stay

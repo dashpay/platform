@@ -182,6 +182,10 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(isSpvRunning ? .orange : .blue)
                         .controlSize(.mini)
+                        // `spvIsRunning` turns false before the async Pause
+                        // has finished tearing the client down; a Start in
+                        // that window would be refused by the SDK.
+                        .disabled(walletManagerStore.isStoppingSpv)
 
                         Button(action: { showRescanDialog = true }) {
                             Text("Rescan")
@@ -582,8 +586,7 @@ var body: some View {
                     // completion, shows the most recent non-cooldown
                     // pass duration. Mono digits keep the number
                     // readable as it ticks during long initial
-                    // syncs (e.g. 10 min at N=1M). See
-                    // `docs/shielded-sync-timing-spec.md`.
+                    // syncs (about 20 min for 1M notes on paloma).
                     if shieldedService.isSyncing,
                        let elapsed = shieldedService.currentSyncElapsed {
                         VStack(alignment: .leading, spacing: 4) {
@@ -820,6 +823,10 @@ var body: some View {
         store.invalidatePendingSpvStarts()
         let generation = store.spvStartGeneration
         Task {
+            // A Pause still tearing down would make the SDK refuse this
+            // start; run after it instead. A Pause landing meanwhile bumps
+            // the generation, and `stillCurrent` then bails below.
+            await store.awaitPendingSpvStop()
             do {
                 try await CoreSpvLauncher.start(
                     network: network,

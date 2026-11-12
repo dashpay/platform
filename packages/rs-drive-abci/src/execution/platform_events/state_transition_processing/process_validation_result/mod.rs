@@ -9,7 +9,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::Credits;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -28,6 +27,26 @@ where
     /// across the bump — only this helper's behavior is — so only this helper is versioned; the loop
     /// calls this dispatcher exactly like `execute_event_v0` calls the dispatching
     /// `record_added_balance_outputs`.
+    ///
+    /// # Parameters
+    ///
+    /// * `raw_state_transition`: The raw transition bytes, used to hash it for logs and to tag
+    ///   errors.
+    /// * `state_transition_name`: The transition's name, used in logs and errors.
+    /// * `validation_result`: The validation outcome: the execution event (if any) and the
+    ///   consensus errors.
+    /// * `block_info`: The block being executed.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `block_credit_mints`: Accumulates the credits the applied operations mint into Platform.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(StateTransitionExecutionResult)`: `SuccessfulExecution`, `PaidConsensusError`,
+    ///   `UnpaidConsensusError` (no event to charge, a free invalid event, or an unpaid event), or
+    ///   `InternalError` when an invalid transition could not pay for its processing.
+    /// * `Err(StateTransitionAwareError)` when the method version is unknown or executing the event
+    ///   fails, tagged with the raw transition and its name.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn process_validation_result<'a>(
         &self,
@@ -38,7 +57,6 @@ where
         transaction: &Transaction,
         block_credit_mints: &mut Credits,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         match platform_version
             .drive_abci
@@ -54,7 +72,6 @@ where
                 transaction,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             1 => self.process_validation_result_v1(
                 raw_state_transition,
@@ -64,7 +81,6 @@ where
                 transaction,
                 block_credit_mints,
                 platform_version,
-                previous_fee_versions,
             ),
             version => Err(StateTransitionAwareError {
                 error: Error::Execution(ExecutionError::UnknownVersionMismatch {
@@ -115,7 +131,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
         let transaction = platform.drive.grove.start_transaction();
-        let fee_versions = CachedEpochIndexFeeVersions::new();
 
         let validation_result = ConsensusValidationResult::new_with_data_and_errors(
             event,
@@ -131,7 +146,6 @@ mod tests {
                 &transaction,
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
         } else {
             platform.platform.process_validation_result_v0(
@@ -142,7 +156,6 @@ mod tests {
                 &transaction,
                 &mut 0,
                 platform_version,
-                &fee_versions,
             )
         }
         .expect("process_validation_result should not error");

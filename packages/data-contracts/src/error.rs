@@ -165,3 +165,77 @@ impl From<keyword_search_contract::Error> for Error {
         }
     }
 }
+
+#[cfg(feature = "app-connect")]
+impl From<app_connect_contract::Error> for Error {
+    fn from(e: app_connect_contract::Error) -> Self {
+        match e {
+            app_connect_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            app_connect_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}
+
+#[cfg(feature = "moderation-charters")]
+impl From<moderation_charters_contract::Error> for Error {
+    fn from(e: moderation_charters_contract::Error) -> Self {
+        match e {
+            moderation_charters_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            moderation_charters_contract::Error::InvalidSchemaJson(e) => {
+                Error::InvalidSchemaJson(e)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "decision-proposals")]
+impl From<decision_proposals_contract::Error> for Error {
+    fn from(e: decision_proposals_contract::Error) -> Self {
+        match e {
+            decision_proposals_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            decision_proposals_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}
+
+#[cfg(feature = "token-market")]
+impl From<token_market_contract::Error> for Error {
+    fn from(e: token_market_contract::Error) -> Self {
+        match e {
+            token_market_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            token_market_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}

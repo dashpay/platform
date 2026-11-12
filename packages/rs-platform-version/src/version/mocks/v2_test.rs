@@ -18,7 +18,8 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::D
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciDataContractQueryHelperVersions, DriveAbciDocumentQueryHelperVersions,
-    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryContractGroupVersions,
+    DriveAbciQueryContractModerationVersions, DriveAbciQueryDataContractVersions,
     DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
     DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
     DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
@@ -29,6 +30,7 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRI
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::drive_address_funds_method_versions::v1::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
@@ -111,6 +113,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 estimation_costs: DriveSystemEstimationCostsMethodVersions {
                     for_total_system_credits_update: 0,
                 },
+                fetch_core_fork_activation_height: None,
+                store_core_fork_activation_height: None,
             },
             operations: DriveOperationsMethodVersion {
                 rollback_transaction: 0,
@@ -129,6 +133,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             platform_state: DrivePlatformStateMethodVersions {
                 fetch_platform_state_bytes: 0,
                 store_platform_state_bytes: 0,
+                fetch_platform_state_recent_bytes: 0,
+                store_platform_state_recent_bytes: 0,
+                fetch_platform_state_entries_bytes: 0,
+                store_platform_state_entry_bytes: 0,
+                delete_platform_state_entry: 0,
             },
             fetch: DriveFetchMethodVersions { fetch_elements: 0 },
             prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -142,6 +151,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 empty_prefunded_specialized_balance: 0,
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+            contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
             shielded: DriveShieldedMethodVersions {
                 insert_note: 0,
@@ -173,7 +183,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            document_sub_queries: None,
+            chained_document_query: None,
             document_history: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            private_document_entries: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
@@ -208,6 +225,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 identity_contract_nonce: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                keys_remaining_budgets: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -360,6 +382,16 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                yes_no_vote_poll_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                masternode_yes_no_vote: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
             system: DriveAbciQuerySystemVersions {
                 version_upgrade_state: FeatureVersionBounds {
@@ -420,6 +452,60 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 group_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            contract_group_queries: DriveAbciQueryContractGroupVersions {
+                contract_group_info: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_group_members: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_groups_for_contract: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            contract_moderation_queries: DriveAbciQueryContractModerationVersions {
+                contract_moderation_status: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_moderation_entries: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_document_removals: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_team_actions: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_team_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_moderation_action_counts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                contract_fee_pots: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
@@ -512,9 +598,29 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,
     system_limits: SystemLimits {
+        max_document_revisions_erased_per_transition: None,
+    credit_pool_nullifier_backfill_page_size: 0,
+    credit_pool_nullifier_backfill_batch_size: 0,
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
         max_document_value_depth: None,
+        max_typed_array_items: 1024,
+        max_index_property_name_bytes: 255,
+        max_compiled_contract_size: None,
+        max_private_document_entry_size: None,
+        private_document_store_target_chunk_bytes: None,
+        private_document_store_min_chunk_power: None,
+        private_document_store_max_chunk_power: None,
+        max_private_document_entries_per_transition: None,
+        max_references_per_document: 256,
+        max_reference_operands: 4,
+        max_reference_expression_depth: 4,
+        max_document_type_requirement_slots: 4,
+        max_document_type_requirement_condition_nodes: 16,
+        max_document_type_requirement_condition_text_length: 256,
+        max_property_constraints: 16,
+        max_property_constraint_nodes: 32,
+        max_property_constraint_aggregates: 4,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         // Load-bearing for state correctness, not just for throughput — see
         // SystemLimits::max_transitions_in_documents_batch. Raising it here
@@ -524,19 +630,59 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
         daily_withdrawal_limit_percent: None,
-        max_daily_withdrawal_amount: None,
+        core_credit_pool_unlock_limit_percent: None,
+        core_credit_pool_unlock_limit_floor: None,
+        core_credit_pool_window_blocks: None,
+        regtest_core_credit_pool_window_blocks: None,
         min_withdrawal_amount: 190_000,
         core_dust_relay_fee_per_kb: None,
-        max_contract_group_size: 256,
+        max_core_fee_per_byte: None,
+        max_group_member_count: 256,
+        max_contract_group_memberships_per_contract: 16,
+        max_contract_group_admins: 16,
+        max_contract_group_name_length: 64,
+        max_contract_group_description_length: 256,
+        max_contract_moderators: 16,
+        max_contract_suspension_until: 9_007_199_254_740_991,
+        max_contract_moderation_reason_length: 1024,
+        max_yes_no_vote_poll_minimum_voting_power: 2000,
+        max_yes_no_vote_poll_minimum_voting_power_percent_of_total: 50,
+        max_yes_no_vote_poll_duration_ms: 2_419_200_000, // four weeks
+        min_yes_no_vote_poll_duration_ms: 604_800_000, // one week
+        min_yes_no_vote_poll_supermajority_percent: 50, // a simple majority
+        yes_no_vote_poll_masternode_vote_strength: 1,
+        yes_no_vote_poll_evonode_vote_strength: 4,
+        max_contract_warnings_per_identity: 16,
+        max_contract_moderation_reason_documents: 16,
+        min_mainnet_contract_moderation_election_window_seconds: 86_400,
+        max_contract_moderation_election_window_seconds: 2_419_200,
+        min_contract_moderation_challenge_cool_down_seconds: 1_209_600,
+        max_contract_moderation_challenge_cool_down_seconds: 94_608_000,
+        contract_document_restore_window_ms: 604_800_000,
+        max_contract_moderation_added_moderators: 15,
+        max_moderation_charter_elected_members: 15,
+        max_contenders_per_contest: 1_000,
         max_token_redemption_cycles: 128,
+        max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
+        max_token_pool_notes_for_outgoing: 250,
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
-        minimum_grovedb_proof_envelope_version: 0,
-        max_document_revisions_erased_per_transition: None,
+        min_document_ttl_seconds: None,
+        max_document_ttl_seconds: None,
+        max_document_expirations_per_block: 0,
+        max_document_expiration_weight_per_block: 0,
+        max_contested_summed_value_magnitude: None,
+        max_expiring_signed_summed_value_magnitude: None,
+        max_indexed_array_items: None,
+        max_windowed_indexed_array_items: None,
+        max_index_entries_per_document: None,
+        max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
+        max_rekey_batch_moves: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        evidence: None,
     },
 };

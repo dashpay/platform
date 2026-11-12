@@ -7,14 +7,13 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
@@ -58,6 +57,19 @@ impl Drive {
         let mut drive_operations = vec![];
 
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
+            // The payer's own refund covers its fee exactly, so its balance stays as it is. The
+            // fee result returned here still takes the refunds owed to other identities out of
+            // the storage pools, so they are credited as in every other branch.
+            //
+            // Edited in place in this shipped generation: this branch used to return before
+            // crediting them, and a block in which it skipped one never balanced its credits, so
+            // no chain recorded that outcome.
+            self.add_other_refunds_to_identity_balances_operations_v0(
+                &balance_change,
+                &mut drive_operations,
+                transaction,
+                platform_version,
+            )?;
             return Ok((drive_operations, balance_change.into_fee_result()));
         }
 
@@ -104,6 +116,7 @@ impl Drive {
                         negative_credit_balance_modified: Some(
                             *desired_removed_balance - previous_balance,
                         ),
+                        repaid_debt: 0,
                     }
                     .into()
                 } else {
@@ -111,6 +124,7 @@ impl Drive {
                     AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(previous_balance - desired_removed_balance),
                         negative_credit_balance_modified: None,
+                        repaid_debt: 0,
                     }
                     .into()
                 }
@@ -134,10 +148,31 @@ impl Drive {
             ));
         }
 
-        // Update other refunded identity balances
+        self.add_other_refunds_to_identity_balances_operations_v0(
+            &balance_change,
+            &mut drive_operations,
+            transaction,
+            platform_version,
+        )?;
+
+        Ok((
+            drive_operations,
+            balance_change
+                .fee_result_outcome::<ConsensusError>(previous_balance)
+                .map_err(|e| ProtocolError::ConsensusError(Box::new(e)))?,
+        ))
+    }
+
+    /// Credits the storage refunds a fee result owes identities other than its payer
+    fn add_other_refunds_to_identity_balances_operations_v0(
+        &self,
+        balance_change: &BalanceChangeForIdentity,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         for (identity_id, credits) in balance_change.other_refunds() {
-            let mut estimated_costs_only_with_layer_info =
-                None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
+            let mut estimated_costs_only_with_layer_info = None::<EstimatedLayers>;
 
             drive_operations.extend(self.add_to_identity_balance_operations(
                 identity_id.to_buffer(),
@@ -148,11 +183,6 @@ impl Drive {
             )?);
         }
 
-        Ok((
-            drive_operations,
-            balance_change
-                .fee_result_outcome::<ConsensusError>(previous_balance)
-                .map_err(|e| ProtocolError::ConsensusError(Box::new(e)))?,
-        ))
+        Ok(())
     }
 }

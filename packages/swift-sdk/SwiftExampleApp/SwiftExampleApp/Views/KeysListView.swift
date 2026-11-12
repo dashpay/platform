@@ -20,6 +20,9 @@ struct KeysListView: View {
   @State private var pendingDisableKey: IdentityPublicKey?
   @State private var isDisabling = false
   @State private var disableError: String?
+  /// What Platform says is left of each budgeted key, fetched once for the
+  /// whole list. Absent while loading or when the query failed.
+  @State private var remainingBudgets: [UInt32: UInt64?] = [:]
 
   private var publicKeys: [IdentityPublicKey] {
     identity.identityPublicKeys
@@ -44,7 +47,8 @@ struct KeysListView: View {
             }) {
               KeyRowView(
                 publicKey: publicKey,
-                privateKeyAvailable: true
+                privateKeyAvailable: true,
+                remainingBudget: remainingBudgets[publicKey.id] ?? nil
               )
             }
             .foregroundColor(.primary)
@@ -56,7 +60,8 @@ struct KeysListView: View {
             NavigationLink(destination: KeyDetailView(identity: identity, publicKey: publicKey)) {
               KeyRowView(
                 publicKey: publicKey,
-                privateKeyAvailable: false
+                privateKeyAvailable: false,
+                remainingBudget: remainingBudgets[publicKey.id] ?? nil
               )
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -102,6 +107,9 @@ struct KeysListView: View {
       }
     }
     .navigationTitle("Identity Keys")
+    .task(id: publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }) {
+      await loadRemainingBudgets()
+    }
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .navigationBarTrailing) {
@@ -235,6 +243,24 @@ struct KeysListView: View {
     }
   }
 
+  /// One remaining-budgets query for every key that carries a budget.
+  @MainActor
+  private func loadRemainingBudgets() async {
+    let budgetedKeyIds = publicKeys.compactMap { $0.totalBudget != nil ? $0.id : nil }
+    guard !budgetedKeyIds.isEmpty, let sdk = appState.sdk else {
+      remainingBudgets = [:]
+      return
+    }
+    do {
+      remainingBudgets = try await sdk.fetchKeysRemainingBudgets(
+        identityId: identity.identityIdBase58,
+        keyIds: budgetedKeyIds
+      )
+    } catch {
+      print("🔑 KeysListView: remaining budgets unavailable: \(error.localizedDescription)")
+    }
+  }
+
   private func hasPrivateKey(for publicKey: IdentityPublicKey) -> Bool {
     // Two private-key storage schemes coexist on the device. The
     // legacy scheme is keyed by `(identityId, keyIndex)`; the new
@@ -256,6 +282,8 @@ struct KeysListView: View {
 struct KeyRowView: View {
   let publicKey: IdentityPublicKey
   let privateKeyAvailable: Bool
+  /// What Platform says is left of the key's budget, when known.
+  var remainingBudget: UInt64? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -296,6 +324,34 @@ struct KeyRowView: View {
           Label("Disabled", systemImage: "xmark.circle.fill")
             .font(.caption2)
             .foregroundColor(.red)
+        }
+      }
+
+      // Limits and bounds (protocol 14)
+      if publicKey.hasLimits || publicKey.contractBounds != nil {
+        VStack(alignment: .leading, spacing: 2) {
+          if let totalBudget = publicKey.totalBudget {
+            Label(
+              KeyLimitsFormatting.budget(total: totalBudget, remaining: remainingBudget),
+              systemImage: "creditcard"
+            )
+            .font(.caption2)
+            .foregroundColor(remainingBudget == 0 ? .red : .secondary)
+          }
+          if let expiresAt = publicKey.expiresAt {
+            let expired = KeyLimitsFormatting.isExpired(expiresAt: expiresAt, now: Date())
+            Label(
+              KeyLimitsFormatting.expiryRelative(expiresAt, now: Date()),
+              systemImage: expired ? "clock.badge.xmark" : "clock"
+            )
+            .font(.caption2)
+            .foregroundColor(expired ? .red : .secondary)
+          }
+          if let bounds = publicKey.contractBounds {
+            Label(KeyLimitsFormatting.bounds(bounds), systemImage: "doc.text")
+              .font(.caption2)
+              .foregroundColor(.secondary)
+          }
         }
       }
 

@@ -1,22 +1,52 @@
+use crate::types::contract_groups::{
+    contract_group_info_from_proto, members_page_from_response, members_query_from_request,
+    memberships_from_response, ContractGroupInfo, ContractGroupMembersPage,
+    ContractGroupMembershipsForContract,
+};
+use crate::types::contract_moderation::{
+    entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
+    moderation_action_counts_from_response, reason_from_response, removals_from_response,
+    removals_query_from_request, team_action_signers_from_response,
+    team_action_status_from_request, team_actions_from_response, team_actions_query_from_request,
+    warnings_from_response, ContractBan, ContractDocumentRemovals, ContractFeePots,
+    ContractModerationActionCounts, ContractModerationEntries, ContractModerationList,
+    ContractModerationListStatuses, ContractModerationStatus, ContractSuspension,
+    ContractTeamActionSigners, ContractTeamActions,
+};
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::types::evonode_status::EvoNodeStatus;
+use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
+use crate::types::private_document_entries::{
+    private_document_entries_from_response, PrivateDocumentEntries,
+};
+use crate::types::yes_no_vote_polls::{MasternodeYesNoVote, YesNoVotePollState};
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
+use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::get_contract_moderation_action_counts_response_v0::Result as ModerationActionCountsResult;
 use dapi_grpc::tonic::async_trait;
-use dpp::bls_signatures::PublicKey as BlsPublicKey;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
+use dpp::bls::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::v0::YesNoVotePollStoredInfoV0;
+use dpp::voting::vote_polls::yes_no_vote_poll::{
+    VotingPowerRounding, YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
+};
+use dpp::voting::vote_info_storage::yes_no_vote_poll_stored_info::{
+    YesNoVotePollResult, YesNoVotePollStatus,
+};
 use std::collections::BTreeMap;
 
 fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
@@ -298,7 +328,7 @@ mod tests {
     use dapi_grpc::platform::v0::{
         get_current_quorums_info_response, get_status_response, ResponseMetadata,
     };
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::version::PlatformVersion;
 
     /// Generate a valid BLS public key as compressed bytes (48 bytes) from a
@@ -306,11 +336,8 @@ mod tests {
     fn generate_valid_bls_public_key_bytes(seed: u8) -> Vec<u8> {
         let mut secret_bytes = [0u8; 32];
         secret_bytes[31] = seed.max(1); // ensure nonzero
-        let sk: SecretKey<Bls12381G2Impl> =
-            SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_bytes)
-                .into_option()
-                .expect("valid secret key");
-        sk.public_key().0.to_compressed().to_vec()
+        let sk: SecretKey = SecretKey::from_be_bytes(&secret_bytes).expect("valid secret key");
+        sk.public_key().to_bytes().to_vec()
     }
 
     /// Helper: build a valid GetCurrentQuorumsInfoResponse with one quorum hash,
@@ -831,5 +858,1802 @@ mod data_contracts_latest_versions_tests {
         };
         let err = parse(response).unwrap_err();
         assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupInfoRequest> for ContractGroupInfo {
+    type Request = platform::GetContractGroupInfoRequest;
+    type Response = platform::GetContractGroupInfoResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_group_info_response::get_contract_group_info_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_info_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let info = match v0.result {
+            Some(V0Result::ContractGroupInfo(info)) => Some(contract_group_info_from_proto(info)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group info, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((info, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractModerationListStatuses {
+    type Request = platform::GetContractModerationStatusRequest;
+    type Response = platform::GetContractModerationStatusResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_status_response::get_contract_moderation_status_response_v0::Result as V0Result;
+
+        // The response holds a flat status. Only the lists the request named are reported, and
+        // only when the response says it read them.
+        let request: Self::Request = request.into();
+        let platform::get_contract_moderation_status_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let lists = lists_from_request(&request_v0.lists)?;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_status_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let status = match v0.result {
+            Some(V0Result::Status(status)) => {
+                // The response says which lists it read. A list asked for and not among them
+                // was not read, so nothing may be reported about it, least of all "not banned".
+                let covered: Vec<ContractModerationList> = status
+                    .lists
+                    .iter()
+                    .filter_map(|list| list_from_request(*list, "lists").ok())
+                    .collect();
+                if let Some(missing) = lists.iter().find(|list| !covered.contains(list)) {
+                    return Err(Error::ResponseDecodeError {
+                        error: format!(
+                            "contract moderation status does not cover the {missing} asked for"
+                        ),
+                    });
+                }
+                let banned = match status.banned {
+                    Some(banned) => banned,
+                    None if lists.contains(&ContractModerationList::Banlist) => {
+                        return Err(Error::ResponseDecodeError {
+                            error: "contract moderation status covers the banlist but does not \
+                                    say whether the identity is banned"
+                                .to_string(),
+                        })
+                    }
+                    None => false,
+                };
+                // An entry comes with its reason. Only the lists asked for are decoded, since
+                // only they are reported.
+                let ban = (banned && lists.contains(&ContractModerationList::Banlist))
+                    .then(|| reason_from_response(status.ban_reason))
+                    .transpose()?
+                    .map(|reason| ContractBan { reason });
+                let suspension = status
+                    .suspended_until
+                    .filter(|_| lists.contains(&ContractModerationList::Suspensions))
+                    .map(|until| {
+                        reason_from_response(status.suspension_reason)
+                            .map(|reason| ContractSuspension { until, reason })
+                    })
+                    .transpose()?;
+                // The warnings are read only when the warning list was asked for: an empty
+                // list on the wire says "none" for a list read and nothing for one not read.
+                let warnings = if lists.contains(&ContractModerationList::Warnings) {
+                    warnings_from_response(status.warnings)?
+                } else {
+                    vec![]
+                };
+                Some(ContractModerationListStatuses::from_status(
+                    &lists,
+                    &ContractModerationStatus {
+                        ban,
+                        suspension,
+                        warnings,
+                    },
+                ))
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation status, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((status, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractModerationEntries {
+    type Request = platform::GetContractModerationEntriesRequest;
+    type Response = platform::GetContractModerationEntriesResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_entries_response::get_contract_moderation_entries_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_entries_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let entries = match v0.result {
+            Some(V0Result::Entries(entries)) => Some(entries_from_response(entries.entries)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation entries, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((entries, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractDocumentRemovalsRequest> for ContractDocumentRemovals {
+    type Request = platform::GetContractDocumentRemovalsRequest;
+    type Response = platform::GetContractDocumentRemovalsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_document_removals_response::get_contract_document_removals_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds what the response may hold, so it is read back here too, under
+        // the same rules the node applied.
+        let platform::get_contract_document_removals_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = removals_query_from_request(
+            request_v0.document_type_name,
+            request_v0.selection,
+            platform_version,
+        )?;
+
+        let platform::get_contract_document_removals_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let removals = match v0.result {
+            Some(V0Result::Removals(removals)) => {
+                Some(removals_from_response(removals.removals, &query)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract document removals, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((removals, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractTeamActionsRequest> for ContractTeamActions {
+    type Request = platform::GetContractTeamActionsRequest;
+    type Response = platform::GetContractTeamActionsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_team_actions_response::get_contract_team_actions_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds what the response may hold, so it is read back here too, under
+        // the same rules the node applied.
+        let platform::get_contract_team_actions_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = team_actions_query_from_request(
+            request_v0.status,
+            request_v0.start_at_action_id,
+            request_v0.count,
+            platform_version,
+        )?;
+
+        let platform::get_contract_team_actions_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let actions = match v0.result {
+            Some(V0Result::Actions(actions)) => {
+                Some(team_actions_from_response(actions.actions, &query)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract team actions, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((actions, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractTeamActionSignersRequest> for ContractTeamActionSigners {
+    type Request = platform::GetContractTeamActionSignersRequest;
+    type Response = platform::GetContractTeamActionSignersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_team_action_signers_response::get_contract_team_action_signers_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_team_action_signers_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        team_action_status_from_request(request_v0.status)?;
+
+        let platform::get_contract_team_action_signers_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let signers = match v0.result {
+            Some(V0Result::Signers(signers)) => {
+                Some(team_action_signers_from_response(signers.signer_ids)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract team action signers, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((signers, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationActionCountsRequest>
+    for ContractModerationActionCounts
+{
+    type Request = platform::GetContractModerationActionCountsRequest;
+    type Response = platform::GetContractModerationActionCountsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let response: Self::Response = response.into();
+        let platform::get_contract_moderation_action_counts_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let counts = match v0.result {
+            Some(ModerationActionCountsResult::Counts(counts)) => {
+                Some(moderation_action_counts_from_response(counts.counts)?)
+            }
+            Some(ModerationActionCountsResult::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation action counts, got a proof"
+                        .to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((counts, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
+    type Request = platform::GetContractFeePotsRequest;
+    type Response = platform::GetContractFeePotsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_fee_pots_response::get_contract_fee_pots_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_fee_pots_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let pots = match v0.result {
+            Some(V0Result::Pots(pots)) => Some(fee_pots_from_response(pots)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract fee pots, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((pots, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetPrivateDocumentEntriesRequest> for PrivateDocumentEntries {
+    type Request = platform::GetPrivateDocumentEntriesRequest;
+    type Response = platform::GetPrivateDocumentEntriesResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_private_document_entries_response::get_private_document_entries_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds the page the response may hold
+        let platform::get_private_document_entries_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+
+        let platform::get_private_document_entries_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let page = match v0.result {
+            Some(V0Result::Entries(page)) => {
+                private_document_entries_from_response(page, request_v0.start_position)?
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved private document entries, got a proof".to_string(),
+                })
+            }
+            None => {
+                return Err(Error::ResponseDecodeError {
+                    error: "the private document entries response carries no result".to_string(),
+                })
+            }
+        };
+
+        Ok((Some(page), metadata))
+    }
+}
+
+impl FromUnproved<platform::GetYesNoVotePollStateRequest> for YesNoVotePollState {
+    type Request = platform::GetYesNoVotePollStateRequest;
+    type Response = platform::GetYesNoVotePollStateResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_yes_no_vote_poll_state_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let state = match v0.result {
+            Some(V0Result::State(state)) => yes_no_vote_poll_state_from_response(state)?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved yes/no vote poll state, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((state, metadata))
+    }
+}
+
+/// The poll's state from the response's fields, `None` for a poll never opened (no status).
+fn yes_no_vote_poll_state_from_response(
+    state: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollState,
+) -> Result<Option<YesNoVotePollState>, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll_state::Status;
+
+    let Some(status) = state.status else {
+        return Ok(None);
+    };
+    let status = match status {
+        Status::Started(start_block) => {
+            YesNoVotePollStatus::Started(yes_no_vote_poll_block_from_response(start_block)?)
+        }
+        Status::Finished(finished) => {
+            let block = |block: Option<_>, what: &str| {
+                block
+                    .ok_or_else(|| Error::ResponseDecodeError {
+                        error: format!("a finished yes/no vote poll needs its {what}"),
+                    })
+                    .and_then(yes_no_vote_poll_block_from_response)
+            };
+            YesNoVotePollStatus::Finished(YesNoVotePollResult {
+                passed: finished.passed,
+                yes_voting_power: finished.yes_voting_power,
+                no_voting_power: finished.no_voting_power,
+                abstain_voting_power: finished.abstain_voting_power,
+                required_voting_power: finished.required_voting_power,
+                start_block: block(finished.start_block, "start block")?,
+                finalization_block: block(finished.finalization_block, "finalization block")?,
+            })
+        }
+    };
+    let vote_poll = yes_no_vote_poll_from_response(state.vote_poll.ok_or_else(|| {
+        Error::ResponseDecodeError {
+            error: "an opened yes/no vote poll's state needs the poll".to_string(),
+        }
+    })?)?;
+    Ok(Some(YesNoVotePollState {
+        stored_info: Some(YesNoVotePollStoredInfoV0 { vote_poll, status }.into()),
+        yes_voting_power: state.yes_voting_power,
+        no_voting_power: state.no_voting_power,
+        abstain_voting_power: state.abstain_voting_power,
+    }))
+}
+
+/// The poll, rule included, from the response's fields. Only the shape is checked, not the rule:
+/// the platform checked it when the poll opened, against the limits of that protocol version,
+/// which a later version may change, so checking against the reader's limits could refuse a
+/// poll that is stored. The rule's arithmetic stays safe on any values (a zero denominator needs
+/// more than any poll can gather).
+fn yes_no_vote_poll_from_response(
+    vote_poll: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePoll,
+) -> Result<YesNoVotePoll, Error> {
+    use platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::yes_no_vote_poll::{
+        MinimumVotingPower, Purpose, VotingPowerRounding as RoundingProto,
+    };
+
+    let decode_error = |error: String| Error::ResponseDecodeError { error };
+    let narrow = |value: u32, what: &str| {
+        u8::try_from(value).map_err(|_| decode_error(format!("{value} is not a {what}")))
+    };
+    let purpose = match vote_poll
+        .purpose
+        .ok_or_else(|| decode_error("a yes/no vote poll needs a purpose".to_string()))?
+    {
+        Purpose::DecisionProposal(decision_proposal) => YesNoVotePollPurpose::DecisionProposal {
+            document_id: Identifier::from_bytes(&decision_proposal.document_id).map_err(|_| {
+                decode_error("a decision proposal's document id is 32 bytes".to_string())
+            })?,
+        },
+    };
+    let minimum_voting_power = match vote_poll.minimum_voting_power.ok_or_else(|| {
+        decode_error("a yes/no vote poll needs a minimum voting power".to_string())
+    })? {
+        MinimumVotingPower::Absolute(voting_power) => {
+            YesNoMinimumVotingPower::Absolute { voting_power }
+        }
+        MinimumVotingPower::FractionOfTotal(fraction) => YesNoMinimumVotingPower::FractionOfTotal {
+            numerator: narrow(fraction.numerator, "share numerator")?,
+            denominator: narrow(fraction.denominator, "share denominator")?,
+            rounding: match RoundingProto::try_from(fraction.rounding)
+                .map_err(|_| decode_error(format!("{} is not a rounding", fraction.rounding)))?
+            {
+                RoundingProto::Down => VotingPowerRounding::Down,
+                RoundingProto::Up => VotingPowerRounding::Up,
+                RoundingProto::DownPlusOne => VotingPowerRounding::DownPlusOne,
+                RoundingProto::UpMinusOne => VotingPowerRounding::UpMinusOne,
+            },
+        },
+    };
+    Ok(YesNoVotePoll {
+        purpose,
+        supermajority_numerator: narrow(
+            vote_poll.supermajority_numerator,
+            "supermajority numerator",
+        )?,
+        supermajority_denominator: narrow(
+            vote_poll.supermajority_denominator,
+            "supermajority denominator",
+        )?,
+        minimum_voting_power,
+    })
+}
+
+fn yes_no_vote_poll_block_from_response(
+    block: platform::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::YesNoVotePollBlock,
+) -> Result<BlockInfo, Error> {
+    let epoch = u16::try_from(block.epoch)
+        .ok()
+        .and_then(|index| Epoch::new(index).ok())
+        .ok_or_else(|| Error::ResponseDecodeError {
+            error: format!("{} is not an epoch index", block.epoch),
+        })?;
+    Ok(BlockInfo {
+        time_ms: block.time_ms,
+        height: block.height,
+        core_height: block.core_height,
+        epoch,
+    })
+}
+
+impl FromUnproved<platform::GetMasternodeYesNoVoteRequest> for MasternodeYesNoVote {
+    type Request = platform::GetMasternodeYesNoVoteRequest;
+    type Response = platform::GetMasternodeYesNoVoteResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::masternode_yes_no_vote::Choice;
+        use platform::get_masternode_yes_no_vote_response::get_masternode_yes_no_vote_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_masternode_yes_no_vote_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let vote = match v0.result {
+            Some(V0Result::Entry(entry)) => entry
+                .vote
+                .map(|vote| {
+                    let vote_choice = match Choice::try_from(vote.choice) {
+                        Ok(Choice::Yes) => YesNoAbstainVoteChoice::Yes,
+                        Ok(Choice::No) => YesNoAbstainVoteChoice::No,
+                        Ok(Choice::Abstain) => YesNoAbstainVoteChoice::Abstain,
+                        Err(_) => {
+                            return Err(Error::ResponseDecodeError {
+                                error: format!("{} is not a yes/no vote choice", vote.choice),
+                            })
+                        }
+                    };
+                    let times_voted = u16::try_from(vote.times_voted).map_err(|_| {
+                        Error::ResponseDecodeError {
+                            error: format!(
+                                "a masternode votes at most {} times on a poll, got {}",
+                                u16::MAX,
+                                vote.times_voted
+                            ),
+                        }
+                    })?;
+                    Ok(MasternodeYesNoVote {
+                        vote_choice,
+                        times_voted,
+                    })
+                })
+                .transpose()?,
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected an unproved masternode yes/no vote, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((vote, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetIdentityKeysRemainingBudgetsRequest>
+    for IdentityKeysRemainingBudgets
+{
+    type Request = platform::GetIdentityKeysRemainingBudgetsRequest;
+    type Response = platform::GetIdentityKeysRemainingBudgetsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_identity_keys_remaining_budgets_response::get_identity_keys_remaining_budgets_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_identity_keys_remaining_budgets_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let budgets = match v0.result {
+            Some(V0Result::KeysRemainingBudgets(budgets)) => Some(
+                budgets
+                    .entries
+                    .into_iter()
+                    .map(|entry| (entry.key_id, entry.remaining_budget))
+                    .collect(),
+            ),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved remaining budgets, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((budgets, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupMembersRequest> for ContractGroupMembersPage {
+    type Request = platform::GetContractGroupMembersRequest;
+    type Response = platform::GetContractGroupMembersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_members_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = members_query_from_request(request_v0.members)?;
+
+        let platform::get_contract_group_members_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let page = v0
+            .result
+            .map(|result| members_page_from_response(&query, result))
+            .transpose()?;
+
+        Ok((page, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupsForContractRequest>
+    for ContractGroupMembershipsForContract
+{
+    type Request = platform::GetContractGroupsForContractRequest;
+    type Response = platform::GetContractGroupsForContractResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_groups_for_contract_response::get_contract_groups_for_contract_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_groups_for_contract_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let memberships = match v0.result {
+            Some(V0Result::ContractGroupMemberships(memberships)) => {
+                Some(memberships_from_response(memberships)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group memberships, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((memberships, metadata))
+    }
+}
+
+#[cfg(test)]
+mod contract_groups_tests {
+    use super::*;
+    use crate::types::contract_groups::{ContractGroupMembersQuery, ContractGroupOwner};
+    use dapi_grpc::platform::v0::get_contract_group_info_response::{
+        get_contract_group_info_response_v0::Result as InfoResult,
+        ContractGroupInfo as ContractGroupInfoProto, GetContractGroupInfoResponseV0,
+        Version as InfoVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_request::get_contract_group_members_request_v0::Members;
+    use dapi_grpc::platform::v0::get_contract_group_members_request::{
+        ContractMembersQuery, GetContractGroupMembersRequestV0, TokenMembersQuery,
+        Version as MembersRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_response::{
+        get_contract_group_members_response_v0::Result as MembersResult, ContractMembers,
+        GetContractGroupMembersResponseV0, TokenMembers, Version as MembersVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_groups_for_contract_response::{
+        get_contract_groups_for_contract_response_v0::Result as MembershipsResult,
+        ContractGroupMemberships, DocumentTypeMemberships, GetContractGroupsForContractResponseV0,
+        TokenMemberships, Version as MembershipsVersion,
+    };
+    use dapi_grpc::platform::v0::ContractGroupTokenMember;
+    use std::collections::BTreeSet;
+
+    fn info_response(result: Option<InfoResult>) -> platform::GetContractGroupInfoResponse {
+        platform::GetContractGroupInfoResponse {
+            version: Some(InfoVersion::V0(GetContractGroupInfoResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_info(
+        response: platform::GetContractGroupInfoResponse,
+    ) -> Result<Option<ContractGroupInfo>, Error> {
+        <ContractGroupInfo as FromUnproved<platform::GetContractGroupInfoRequest>>::maybe_from_unproved(
+            platform::GetContractGroupInfoRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn info_with_no_admins_is_a_single_owner() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![],
+                name: Some("alpha".to_string()),
+                description: None,
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::SingleOwner(Identifier::new([1; 32]))
+        );
+        assert_eq!(info.name(), Some("alpha"));
+        assert_eq!(info.description(), None);
+    }
+
+    #[test]
+    fn info_with_admins_is_an_owner_and_admins() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![vec![3; 32], vec![2; 32]],
+                name: None,
+                description: Some("shared".to_string()),
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::OwnerAndAdmins {
+                owner: Identifier::new([1; 32]),
+                admins: BTreeSet::from([Identifier::new([2; 32]), Identifier::new([3; 32])]),
+            }
+        );
+        assert_eq!(info.description(), Some("shared"));
+    }
+
+    #[test]
+    fn info_absent_group_and_bad_owner_and_proof() {
+        assert_eq!(parse_info(info_response(None)).expect("parse"), None);
+
+        let err = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 4],
+                admin_ids: vec![],
+                name: None,
+                description: None,
+            },
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "a malformed response field is the node's error: {err:?}"
+        );
+
+        let err = parse_info(info_response(Some(InfoResult::Proof(
+            platform::Proof::default(),
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    fn members_request(members: Members) -> platform::GetContractGroupMembersRequest {
+        platform::GetContractGroupMembersRequest {
+            version: Some(MembersRequestVersion::V0(
+                GetContractGroupMembersRequestV0 {
+                    contract_group_id: vec![1; 32],
+                    members: Some(members),
+                    limit: None,
+                    prove: false,
+                },
+            )),
+        }
+    }
+
+    fn members_response(
+        result: Option<MembersResult>,
+    ) -> platform::GetContractGroupMembersResponse {
+        platform::GetContractGroupMembersResponse {
+            version: Some(MembersVersion::V0(GetContractGroupMembersResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_members(
+        request: platform::GetContractGroupMembersRequest,
+        response: platform::GetContractGroupMembersResponse,
+    ) -> Result<Option<ContractGroupMembersPage>, Error> {
+        <ContractGroupMembersPage as FromUnproved<platform::GetContractGroupMembersRequest>>::maybe_from_unproved(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn members_page_of_the_requested_kind_is_read() {
+        let page = parse_members(
+            members_request(Members::Tokens(TokenMembersQuery { start_after: None })),
+            members_response(Some(MembersResult::Tokens(TokenMembers {
+                tokens: vec![ContractGroupTokenMember {
+                    contract_id: vec![5; 32],
+                    token_position: 2,
+                }],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Tokens(vec![(Identifier::new([5; 32]), 2)])
+        );
+        assert_eq!(
+            page.next_query(),
+            Some(ContractGroupMembersQuery::Tokens {
+                start_after: Some((Identifier::new([5; 32]), 2)),
+            })
+        );
+    }
+
+    #[test]
+    fn members_page_of_another_kind_is_rejected() {
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Tokens(TokenMembers::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Proof(platform::Proof::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn members_page_contracts_are_read_in_order() {
+        let page = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Contracts(ContractMembers {
+                contract_ids: vec![vec![1; 32], vec![2; 32]],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Contracts(vec![
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32])
+            ])
+        );
+    }
+
+    #[test]
+    fn memberships_are_read_into_sets() {
+        let response = platform::GetContractGroupsForContractResponse {
+            version: Some(MembershipsVersion::V0(
+                GetContractGroupsForContractResponseV0 {
+                    result: Some(MembershipsResult::ContractGroupMemberships(
+                        ContractGroupMemberships {
+                            contract_group_ids: vec![vec![1; 32]],
+                            document_types: vec![DocumentTypeMemberships {
+                                document_type_name: "note".to_string(),
+                                contract_group_ids: vec![vec![2; 32], vec![1; 32]],
+                            }],
+                            tokens: vec![TokenMemberships {
+                                token_position: 7,
+                                contract_group_ids: vec![vec![3; 32]],
+                            }],
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+
+        let memberships = <ContractGroupMembershipsForContract as FromUnproved<
+            platform::GetContractGroupsForContractRequest,
+        >>::maybe_from_unproved(
+            platform::GetContractGroupsForContractRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            memberships.contract,
+            BTreeSet::from([Identifier::new([1; 32])])
+        );
+        assert_eq!(
+            memberships.document_types["note"],
+            BTreeSet::from([Identifier::new([1; 32]), Identifier::new([2; 32])])
+        );
+        assert_eq!(
+            memberships.tokens[&7],
+            BTreeSet::from([Identifier::new([3; 32])])
+        );
+        assert_eq!(
+            memberships.all_contract_group_ids(),
+            BTreeSet::from([
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32]),
+                Identifier::new([3; 32])
+            ])
+        );
+    }
+}
+
+#[cfg(test)]
+mod contract_moderation_tests {
+    use super::*;
+    use crate::types::contract_moderation::ContractModerationReason;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection as RemovalsSelection;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::{
+        DocumentIds as RemovalsDocumentIds, GetContractDocumentRemovalsRequestV0,
+        Page as RemovalsPage, Version as RemovalsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        get_contract_document_removals_response_v0::Result as RemovalsResult,
+        ContractDocumentRemoval as ContractDocumentRemovalProto,
+        ContractDocumentRemovals as ContractDocumentRemovalsProto,
+        GetContractDocumentRemovalsResponseV0, Version as RemovalsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request::{
+        GetContractModerationStatusRequestV0, Version as StatusRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_status_response::{
+        get_contract_moderation_status_response_v0::Result as StatusResult,
+        ContractModerationStatus as ContractModerationStatusProto,
+        GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_request::{
+        GetContractTeamActionSignersRequestV0, Version as SignersRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_action_signers_response::{
+        get_contract_team_action_signers_response_v0::Result as SignersResult,
+        ContractTeamActionSigners as ContractTeamActionSignersProto,
+        GetContractTeamActionSignersResponseV0, Version as SignersResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_request::{
+        ActionStatus, GetContractTeamActionsRequestV0, Version as TeamActionsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_team_actions_response::{
+        contract_team_action, get_contract_team_actions_response_v0::Result as TeamActionsResult,
+        ContractTeamAction as ContractTeamActionProto,
+        ContractTeamActions as ContractTeamActionsProto, DeleteSettledDocument,
+        GetContractTeamActionsResponseV0, Version as TeamActionsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_request::{
+        GetContractModerationActionCountsRequestV0, Version as CountsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_action_counts_response::{
+        ContractModerationActionCount, ContractModerationActionCounts as CountsProto,
+        GetContractModerationActionCountsResponseV0, Version as CountsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
+    use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
+    use dapi_grpc::platform::v0::ResponseMetadata;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+
+    const BANLIST: i32 = 1;
+    const SUSPENSIONS: i32 = 2;
+    const WARNINGS: i32 = 3;
+
+    fn status(
+        requested: Vec<i32>,
+        response: ContractModerationStatusProto,
+    ) -> Result<Option<ContractModerationListStatuses>, Error> {
+        let request = platform::GetContractModerationStatusRequest {
+            version: Some(StatusRequestVersion::V0(
+                GetContractModerationStatusRequestV0 {
+                    contract_id: vec![1; 32],
+                    identity_id: vec![2; 32],
+                    lists: requested,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractModerationStatusResponse {
+            version: Some(StatusResponseVersion::V0(
+                GetContractModerationStatusResponseV0 {
+                    result: Some(StatusResult::Status(response)),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractModerationListStatuses::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(status, _)| status)
+    }
+
+    #[test]
+    fn should_report_the_lists_the_response_covers() {
+        let statuses = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                suspended_until: Some(7),
+                lists: vec![BANLIST, SUSPENSIONS],
+                ban_reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "spam".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(9),
+                    text: "flooding".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                warnings: vec![],
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+
+        assert_eq!(statuses.banned(), Some(true));
+        assert_eq!(statuses.suspended_until(), Some(Some(7)));
+        // The warning list was not asked for, so nothing is said about it.
+        assert_eq!(statuses.warnings(), None);
+        assert_eq!(
+            statuses.ban().flatten().map(|ban| &ban.reason),
+            Some(&ContractModerationReason::from_text("spam"))
+        );
+        assert_eq!(
+            statuses.suspension().flatten().map(|entry| &entry.reason),
+            Some(&ContractModerationReason {
+                code: Some(9),
+                text: "flooding".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            })
+        );
+    }
+
+    #[test]
+    fn should_refuse_an_entry_without_a_reason_or_with_a_code_past_u16() {
+        let no_reason = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                lists: vec![BANLIST],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
+
+        let wide_code = status(
+            vec![SUSPENSIONS],
+            ContractModerationStatusProto {
+                suspended_until: Some(7),
+                lists: vec![SUSPENSIONS],
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(u16::MAX as u32 + 1),
+                    text: String::new(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(wide_code, Err(Error::ResponseDecodeError { .. })));
+
+        // A clean identity has no reason to give.
+        let clean = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(false),
+                lists: vec![BANLIST, SUSPENSIONS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.ban(), Some(None));
+        assert_eq!(clean.suspension(), Some(None));
+    }
+
+    #[test]
+    fn should_read_the_warnings_when_the_warning_list_was_asked_for() {
+        let warning = |warned_at: u64, text: &str| ContractWarningProto {
+            warned_at,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: text.to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+        };
+        let warned = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![warning(5, "first strike"), warning(6, "second strike")],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        let warnings = warned.warnings().expect("expected the warning list");
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[1].warned_at, 6);
+        assert_eq!(warnings[1].reason.text, "second strike");
+        assert_eq!(warned.banned(), None);
+
+        // No warnings on a list that was read: none, not unknown.
+        let clean = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.warnings(), Some(&[][..]));
+
+        // A warning without a reason is refused like an entry without one.
+        let no_reason = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![ContractWarningProto {
+                    warned_at: 5,
+                    reason: None,
+                }],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
+    }
+
+    #[test]
+    fn should_refuse_a_status_that_does_not_cover_a_list_asked_for() {
+        // The banlist was asked for and the response does not say it was read: reporting "not
+        // banned" would be a guess.
+        let uncovered = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                lists: vec![SUSPENSIONS],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(uncovered, Err(Error::ResponseDecodeError { .. })));
+
+        let covered_but_unset = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                lists: vec![BANLIST],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(
+            covered_but_unset,
+            Err(Error::ResponseDecodeError { .. })
+        ));
+    }
+
+    fn removals(
+        selection: Option<RemovalsSelection>,
+        result: Option<RemovalsResult>,
+    ) -> Result<Option<ContractDocumentRemovals>, Error> {
+        let request = platform::GetContractDocumentRemovalsRequest {
+            version: Some(RemovalsRequestVersion::V0(
+                GetContractDocumentRemovalsRequestV0 {
+                    contract_id: vec![1; 32],
+                    document_type_name: "post".to_string(),
+                    selection,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractDocumentRemovalsResponse {
+            version: Some(RemovalsResponseVersion::V0(
+                GetContractDocumentRemovalsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractDocumentRemovals::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(removals, _)| removals)
+    }
+
+    fn removal_proto(seed: u8) -> ContractDocumentRemovalProto {
+        ContractDocumentRemovalProto {
+            document_id: vec![seed; 32],
+            document_owner_id: vec![seed + 0x10; 32],
+            moderator_id: vec![0x77; 32],
+            removed_at: 1_000 + u64::from(seed),
+            document_hash: vec![seed + 0x20; 32],
+            restoration: None,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: "spam".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+            kept_fields: Default::default(),
+        }
+    }
+
+    #[test]
+    fn should_read_the_removals_the_request_asked_for() {
+        let page = Some(RemovalsSelection::Page(RemovalsPage {
+            start_after: None,
+            limit: Some(2),
+        }));
+        let read = removals(
+            page.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(read.removals().len(), 2);
+        assert_eq!(read.removals()[0].document_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.removals()[1].removal.moderator_id,
+            Identifier::from([0x77; 32])
+        );
+
+        // A page of more records than the request allowed, and a request that selects nothing.
+        let over_limit = removals(
+            Some(RemovalsSelection::Page(RemovalsPage {
+                start_after: None,
+                limit: Some(1),
+            })),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        );
+        assert!(matches!(over_limit, Err(Error::ResponseDecodeError { .. })));
+        assert!(matches!(
+            removals(None, None),
+            Err(Error::RequestError { .. })
+        ));
+
+        // The unproved path never reads a proof.
+        let proved = removals(page, Some(RemovalsResult::Proof(Default::default())));
+        assert!(matches!(proved, Err(Error::ResponseDecodeError { .. })));
+    }
+
+    #[test]
+    fn should_refuse_a_removal_of_a_document_the_request_did_not_name() {
+        let by_ids = Some(RemovalsSelection::DocumentIds(RemovalsDocumentIds {
+            document_ids: vec![vec![1; 32], vec![3; 32]],
+        }));
+        let unasked = removals(
+            by_ids.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(2)],
+            })),
+        );
+        assert!(matches!(unasked, Err(Error::ResponseDecodeError { .. })));
+
+        // An id with no record is simply left out, which is an answer.
+        let partial = removals(
+            by_ids,
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(partial.removals().len(), 1);
+    }
+
+    fn team_actions(
+        count: Option<u32>,
+        result: Option<TeamActionsResult>,
+    ) -> Result<Option<ContractTeamActions>, Error> {
+        let request = platform::GetContractTeamActionsRequest {
+            version: Some(TeamActionsRequestVersion::V0(
+                GetContractTeamActionsRequestV0 {
+                    contract_id: vec![1; 32],
+                    status: ActionStatus::Active as i32,
+                    start_at_action_id: None,
+                    count,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractTeamActionsResponse {
+            version: Some(TeamActionsResponseVersion::V0(
+                GetContractTeamActionsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractTeamActions::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(actions, _)| actions)
+    }
+
+    fn team_action_proto(seed: u8) -> ContractTeamActionProto {
+        ContractTeamActionProto {
+            action_id: vec![seed; 32],
+            proposer_id: vec![0x77; 32],
+            proposed_at: 1_000,
+            event: Some(contract_team_action::Event::DeleteSettledDocument(
+                DeleteSettledDocument {
+                    document_type_name: "post".to_string(),
+                    document_id: vec![seed + 0x10; 32],
+                    document_last_modified_at: 10,
+                    document_revision: Some(2),
+                    reason: Some(ContractModerationReasonProto {
+                        code: None,
+                        text: "doxxing".to_string(),
+                        documents: vec![],
+                        reason_document_id: None,
+                    }),
+                },
+            )),
+            approval_count: u32::from(seed),
+        }
+    }
+
+    #[test]
+    fn should_read_the_team_actions_the_request_asked_for() {
+        let read = team_actions(
+            Some(2),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
+            })),
+        )
+        .expect("expected the team actions to convert")
+        .expect("expected team actions");
+        assert_eq!(read.actions().len(), 2);
+        assert_eq!(read.actions()[0].action_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.actions()[0].action.proposer_id,
+            Identifier::from([0x77; 32])
+        );
+
+        // More actions than the page holds, a missing result and a proof are refused or empty
+        team_actions(
+            Some(1),
+            Some(TeamActionsResult::Actions(ContractTeamActionsProto {
+                actions: vec![team_action_proto(1), team_action_proto(2)],
+            })),
+        )
+        .expect_err("expected a page too long to be refused");
+        assert_eq!(team_actions(None, None).expect("expected no error"), None);
+        team_actions(None, Some(TeamActionsResult::Proof(Default::default())))
+            .expect_err("expected a proof to be refused");
+    }
+
+    #[test]
+    fn should_read_the_signers_of_a_team_action() {
+        let request = platform::GetContractTeamActionSignersRequest {
+            version: Some(SignersRequestVersion::V0(
+                GetContractTeamActionSignersRequestV0 {
+                    contract_id: vec![1; 32],
+                    status: ActionStatus::Closed as i32,
+                    action_id: vec![2; 32],
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractTeamActionSignersResponse {
+            version: Some(SignersResponseVersion::V0(
+                GetContractTeamActionSignersResponseV0 {
+                    result: Some(SignersResult::Signers(ContractTeamActionSignersProto {
+                        signer_ids: vec![vec![3; 32], vec![4; 32]],
+                    })),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        let (signers, _) = ContractTeamActionSigners::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .expect("expected the signers to convert");
+        assert_eq!(
+            signers.expect("expected signers").signers(),
+            &[Identifier::from([3; 32]), Identifier::from([4; 32])]
+        );
+    }
+
+    #[test]
+    fn should_read_the_moderation_action_counts_of_a_contract() {
+        let counts = |result: Option<ModerationActionCountsResult>| {
+            ContractModerationActionCounts::maybe_from_unproved_with_metadata(
+                platform::GetContractModerationActionCountsRequest {
+                    version: Some(CountsRequestVersion::V0(
+                        GetContractModerationActionCountsRequestV0 {
+                            contract_id: vec![1; 32],
+                            prove: false,
+                        },
+                    )),
+                },
+                platform::GetContractModerationActionCountsResponse {
+                    version: Some(CountsResponseVersion::V0(
+                        GetContractModerationActionCountsResponseV0 {
+                            result,
+                            metadata: Some(ResponseMetadata::default()),
+                        },
+                    )),
+                },
+                Network::Testnet,
+                PlatformVersion::latest(),
+            )
+            .map(|(counts, _)| counts)
+        };
+        assert_eq!(
+            counts(Some(ModerationActionCountsResult::Counts(CountsProto {
+                counts: vec![ContractModerationActionCount {
+                    identity_id: vec![3; 32],
+                    count: 7,
+                }],
+            })))
+            .expect("expected the counts to convert")
+            .expect("expected counts")
+            .counts(),
+            &BTreeMap::from([(Identifier::from([3; 32]), 7)])
+        );
+        assert_eq!(counts(None).expect("expected no error"), None);
+        counts(Some(
+            ModerationActionCountsResult::Proof(Default::default()),
+        ))
+        .expect_err("expected a proof to be refused");
+    }
+}
+
+#[cfg(test)]
+mod yes_no_vote_poll_state_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_yes_no_vote_poll_state_response::get_yes_no_vote_poll_state_response_v0::{
+        yes_no_vote_poll, yes_no_vote_poll_state, YesNoVotePoll as YesNoVotePollProto,
+        YesNoVotePollBlock, YesNoVotePollState as YesNoVotePollStateProto,
+    };
+
+    fn vote_poll_proto() -> YesNoVotePollProto {
+        YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 32],
+                },
+            )),
+            supermajority_numerator: 2,
+            supermajority_denominator: 3,
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: yes_no_vote_poll::VotingPowerRounding::DownPlusOne.into(),
+                },
+            )),
+        }
+    }
+
+    fn started_state(vote_poll: Option<YesNoVotePollProto>) -> YesNoVotePollStateProto {
+        YesNoVotePollStateProto {
+            status: Some(yes_no_vote_poll_state::Status::Started(
+                YesNoVotePollBlock {
+                    height: 7,
+                    core_height: 42,
+                    time_ms: 1_000,
+                    epoch: 0,
+                },
+            )),
+            yes_voting_power: 5,
+            no_voting_power: 1,
+            abstain_voting_power: 4,
+            vote_poll,
+        }
+    }
+
+    #[test]
+    fn should_read_the_poll_and_its_rule_from_an_unproved_state() {
+        let state = yes_no_vote_poll_state_from_response(started_state(Some(vote_poll_proto())))
+            .expect("expected the state to decode")
+            .expect("expected an opened poll");
+        let stored_info = state.stored_info.expect("expected the stored info");
+        assert_eq!(
+            stored_info.vote_poll(),
+            &YesNoVotePoll {
+                purpose: YesNoVotePollPurpose::DecisionProposal {
+                    document_id: Identifier::new([0xc1; 32]),
+                },
+                supermajority_numerator: 2,
+                supermajority_denominator: 3,
+                minimum_voting_power: YesNoMinimumVotingPower::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: VotingPowerRounding::DownPlusOne,
+                },
+            }
+        );
+        assert_eq!(state.yes_voting_power, 5);
+    }
+
+    #[test]
+    fn should_refuse_an_opened_poll_without_its_poll_or_with_a_bad_rule() {
+        yes_no_vote_poll_state_from_response(started_state(None))
+            .expect_err("expected an opened poll without its poll to be refused");
+        let short_document_id = YesNoVotePollProto {
+            purpose: Some(yes_no_vote_poll::Purpose::DecisionProposal(
+                yes_no_vote_poll::DecisionProposal {
+                    document_id: vec![0xc1; 31],
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        let wide_numerator = YesNoVotePollProto {
+            supermajority_numerator: 256,
+            ..vote_poll_proto()
+        };
+        let unknown_rounding = YesNoVotePollProto {
+            minimum_voting_power: Some(yes_no_vote_poll::MinimumVotingPower::FractionOfTotal(
+                yes_no_vote_poll::FractionOfTotal {
+                    numerator: 1,
+                    denominator: 10,
+                    rounding: 9,
+                },
+            )),
+            ..vote_poll_proto()
+        };
+        for vote_poll in [short_document_id, wide_numerator, unknown_rounding] {
+            yes_no_vote_poll_state_from_response(started_state(Some(vote_poll)))
+                .expect_err("expected a malformed poll to be refused");
+        }
+    }
+
+    #[test]
+    fn should_read_a_poll_never_opened_as_none() {
+        let never_opened = YesNoVotePollStateProto {
+            status: None,
+            vote_poll: None,
+            ..started_state(None)
+        };
+        assert!(yes_no_vote_poll_state_from_response(never_opened)
+            .expect("expected the state to decode")
+            .is_none());
+    }
+}
+
+#[cfg(test)]
+mod private_document_entries_tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_private_document_entries_request::{
+        GetPrivateDocumentEntriesRequestV0, Version as RequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_private_document_entries_response::get_private_document_entries_response_v0::{
+        PrivateDocumentEntries as EntriesProto, PrivateDocumentEntry as EntryProto,
+        Result as EntriesResult,
+    };
+    use dapi_grpc::platform::v0::get_private_document_entries_response::{
+        GetPrivateDocumentEntriesResponseV0, Version as ResponseVersion,
+    };
+
+    /// Reads an unproved page answering a request from `start_position`, whose entries are at
+    /// `positions` in a store of `total_count`.
+    fn parse(
+        start_position: u64,
+        positions: &[u64],
+        total_count: u64,
+    ) -> Result<Option<PrivateDocumentEntries>, Error> {
+        let request = platform::GetPrivateDocumentEntriesRequest {
+            version: Some(RequestVersion::V0(GetPrivateDocumentEntriesRequestV0 {
+                data_contract_id: vec![1; 32],
+                document_type_name: "secret".to_string(),
+                start_position,
+                prove: false,
+            })),
+        };
+        let response = platform::GetPrivateDocumentEntriesResponse {
+            version: Some(ResponseVersion::V0(GetPrivateDocumentEntriesResponseV0 {
+                result: Some(EntriesResult::Entries(EntriesProto {
+                    entries: positions
+                        .iter()
+                        .map(|&position| EntryProto {
+                            position,
+                            block_height: 10 + position,
+                            block_time_ms: 500 * position,
+                            data: vec![7; 4],
+                        })
+                        .collect(),
+                    total_count,
+                })),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        };
+        <PrivateDocumentEntries as FromUnproved<platform::GetPrivateDocumentEntriesRequest>>::maybe_from_unproved(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    fn assert_refused(result: Result<Option<PrivateDocumentEntries>, Error>) {
+        assert!(
+            matches!(result, Err(Error::ResponseDecodeError { .. })),
+            "expected the page to be refused, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn should_read_the_page_the_request_asked_for() {
+        let page = parse(64, &[64, 65, 66], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert_eq!(page.total_count, 70);
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| (entry.position, entry.block_height, entry.block_time_ms))
+                .collect::<Vec<_>>(),
+            vec![(64, 74, 32_000), (65, 75, 32_500), (66, 76, 33_000)]
+        );
+
+        // A page ending at the store's last entry
+        let page = parse(64, &[64, 65, 66, 67, 68, 69], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert_eq!(page.entries.len(), 6);
+
+        // Past the store's end, a page is empty
+        let page = parse(128, &[], 70)
+            .expect("expected the page to be read")
+            .expect("expected a page");
+        assert!(page.entries.is_empty());
+        assert_eq!(page.total_count, 70);
+    }
+
+    #[test]
+    fn should_refuse_a_page_that_is_not_the_one_asked_for() {
+        // Not starting at the requested position, and with a gap
+        assert_refused(parse(64, &[0, 2], 70));
+        assert_refused(parse(64, &[65, 66], 70));
+        assert_refused(parse(64, &[64, 66], 70));
+        // A position at or past the store's count
+        assert_refused(parse(64, &[64, 65, 66, 67, 68, 69, 70], 70));
+        // Empty, though the store holds entries from the requested position
+        assert_refused(parse(64, &[], 70));
     }
 }

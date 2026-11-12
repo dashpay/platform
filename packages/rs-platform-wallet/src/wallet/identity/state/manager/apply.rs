@@ -49,10 +49,12 @@ impl IdentityManager {
         // Updating an existing identity — find it across both buckets.
         if let Some(existing) = self.locate_mut(&id) {
             if entry.revision >= existing.identity.revision() {
-                existing.identity.set_balance(entry.balance);
+                existing.restore_persisted_balance(
+                    entry.balance,
+                    entry.last_updated_balance_block_time,
+                );
                 existing.identity.set_revision(entry.revision);
             }
-            existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
             *existing.dashpay_profile_mut() = entry.dashpay_profile;

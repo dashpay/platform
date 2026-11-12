@@ -120,14 +120,16 @@ async fn refused_create(
     .expect("expected a contract create transition");
 
     // Rewrite the schema the wire carries; the parser refuses to build one.
-    let StateTransition::DataContractCreate(DataContractCreateTransition::V0(create)) =
-        &mut transition
-    else {
-        panic!("expected a v0 contract create");
+    let StateTransition::DataContractCreate(create) = &mut transition else {
+        panic!("expected a contract create");
     };
-    create
-        .data_contract
+    let contract = match create {
+        DataContractCreateTransition::V0(create) => &mut create.data_contract,
+        DataContractCreateTransition::V1(create) => &mut create.data_contract,
+    };
+    contract
         .document_schemas_mut()
+        .expect("expected contract schemas")
         .insert("note".to_string(), schema);
     transition
         .sign_external(
@@ -249,6 +251,7 @@ async fn should_charge_for_a_signed_contract_update_asking_for_erasure_without_h
     update
         .data_contract
         .document_schemas_mut()
+        .expect("expected contract schemas")
         .insert("note".to_string(), erasure_without_history());
     transition
         .sign_external(

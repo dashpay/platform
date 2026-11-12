@@ -22,6 +22,30 @@ keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
 
+app-connect-contract: &app-connect-contract
+  - .github/workflows/tests*
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
+moderation-charters-contract: &moderation-charters-contract
+  - .github/workflows/tests*
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
+decision-proposals-contract: &decision-proposals-contract
+  - .github/workflows/tests*
+  - packages/decision-proposals-contract/src/**
+  - packages/decision-proposals-contract/schema/**
+  - packages/decision-proposals-contract/Cargo.toml
+
+token-market-contract: &token-market-contract
+  - .github/workflows/tests*
+  - packages/token-market-contract/src/**
+  - packages/token-market-contract/schema/**
+  - packages/token-market-contract/Cargo.toml
+
 dashpay-contract: &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/src/**
@@ -61,6 +85,10 @@ data-contracts: &data-contracts
   - *token-history-contract
   - *keyword-search-contract
   - *document-history-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
+  - *decision-proposals-contract
+  - *token-market-contract
 
 dpp: &dpp
   - .github/workflows/tests*
@@ -113,6 +141,10 @@ dash-async: &dash_async
   - .github/workflows/tests*
   - packages/rs-dash-async/**
 
+dash-core-proof: &core_proof
+  - .github/workflows/tests*
+  - packages/rs-core-proof/**
+
 dash-context-provider: &context_provider
   - .github/workflows/tests*
   - packages/rs-context-provider/**
@@ -122,8 +154,13 @@ dash-context-provider: &context_provider
 rs-sdk-trusted-context-provider: &sdk_trusted_context_provider
   - .github/workflows/tests*
   - packages/rs-sdk-trusted-context-provider/**
+  # The refresh_checkpoints example's dev-dependencies, anchored further down.
+  - packages/rs-dapi-client/**
+  - packages/dapi-grpc/**
+  - packages/rs-drive-proof-verifier/**
   - *dash_async
   - *context_provider
+  - *core_proof
   - *dpp
 
 dapi-grpc: &dapi_grpc
@@ -146,6 +183,9 @@ rs-dapi:
   - *dapi_grpc
   - *dpp
   - packages/rs-dash-event-bus/**
+  # The block proof hashing rs-dapi shares with the clients that verify it
+  - packages/rs-drive-proof-verifier/**
+  - *context_provider
 
 platform-encryption: &platform_encryption
   - .github/workflows/tests*
@@ -166,6 +206,11 @@ dash-sdk: &sdk
   - *platform_encryption
   - *dapi_client
   - *drive
+
+dash-sdk-cxx:
+  - .github/workflows/tests*
+  - packages/rs-sdk-cxx/**
+  - *sdk
 
 rs-sdk-ffi: &sdk_ffi
   - .github/workflows/tests*

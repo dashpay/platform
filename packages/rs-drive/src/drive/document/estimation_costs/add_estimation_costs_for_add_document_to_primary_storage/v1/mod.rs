@@ -15,6 +15,7 @@ use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -26,13 +27,12 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::AllProvableCountTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v1(
         info: &DocumentAndContractInfo,
         primary_path: [&[u8]; 5],
-        layers: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        layers: &mut EstimatedLayers,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if !info.document_type.documents_keep_history() {

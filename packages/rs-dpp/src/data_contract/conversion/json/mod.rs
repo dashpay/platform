@@ -175,14 +175,6 @@ mod tests {
                         "changingAdminActionTakersToNoOneAllowed": false,
                         "selfChangingAdminActionTakersAllowed": false
                     },
-                    "directPurchaseRules": {
-                        "$formatVersion": "0",
-                        "authorizedToMakeChange": {"$type": "noOne"},
-                        "adminActionTakers": {"$type": "noOne"},
-                        "changingAuthorizedActionTakersToNoOneAllowed": false,
-                        "changingAdminActionTakersToNoOneAllowed": false,
-                        "selfChangingAdminActionTakersAllowed": false
-                    },
                     "mainControlGroup": null,
                     "mainControlGroupCanBeModified": {"$type": "noOne"}
                 }
@@ -323,14 +315,6 @@ mod tests {
                         "$formatVersion": "0",
                         "authorizedToMakeChange": {"$type": "contractOwner"},
                         "adminActionTakers": {"$type": "contractOwner"},
-                        "changingAuthorizedActionTakersToNoOneAllowed": false,
-                        "changingAdminActionTakersToNoOneAllowed": false,
-                        "selfChangingAdminActionTakersAllowed": false
-                    },
-                    "directPurchaseRules": {
-                        "$formatVersion": "0",
-                        "authorizedToMakeChange": {"$type": "noOne"},
-                        "adminActionTakers": {"$type": "noOne"},
                         "changingAuthorizedActionTakersToNoOneAllowed": false,
                         "changingAdminActionTakersToNoOneAllowed": false,
                         "selfChangingAdminActionTakersAllowed": false

@@ -15,11 +15,10 @@ impl Drive {
     pub(super) fn fetch_document_history_v0(
         &self,
         contract_id: [u8; 32],
-        document_type_name: &str,
         document_type: DocumentTypeRef,
         document_id: [u8; 32],
         transaction: TransactionArg,
-        start_at_ms: u64,
+        start_after_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
         platform_version: &PlatformVersion,
@@ -27,9 +26,9 @@ impl Drive {
         let mut ops = Vec::new();
         let path_query = Self::fetch_document_history_query(
             contract_id,
-            document_type_name,
+            document_type,
             document_id,
-            start_at_ms,
+            start_after_ms,
             limit,
             offset,
             platform_version,

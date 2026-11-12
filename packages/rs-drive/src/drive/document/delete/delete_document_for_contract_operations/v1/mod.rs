@@ -1,9 +1,8 @@
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use crate::util::estimated_layers::EstimatedLayers;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{Element, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use std::collections::HashMap;
 
 use crate::drive::constants::{DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE, STORAGE_FLAGS_SIZE};
 use crate::drive::document::paths::{
@@ -25,7 +24,6 @@ use dpp::document::{Document, DocumentV0Getters};
 use crate::drive::Drive;
 use crate::util::grove_operations::QueryTarget::{QueryTargetTree, QueryTargetValue};
 use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType, QueryType};
-use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::util::object_size_info::PathKeyInfo::PathKey;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -54,9 +52,7 @@ impl Drive {
         block_info: &BlockInfo,
         deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -98,9 +94,7 @@ impl Drive {
         block_info: &BlockInfo,
         deleter_id: Option<Identifier>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -109,7 +103,7 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
-                previous_batch_operations,
+                None,
                 estimated_costs_only_with_layer_info,
                 block_info.time_ms,
                 transaction,
@@ -221,6 +215,16 @@ impl Drive {
             }
         };
 
+        let document_info = self.document_info_with_derived_index_values(
+            document_info,
+            contract,
+            document_type,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         // The pointer goes; the revisions it named stay in the history tree.
         self.remove_document_from_primary_storage(
             document_id,
@@ -257,18 +261,20 @@ impl Drive {
         // of a non-deletable contract do.
         let record_flags = deleter_id
             .map(|id| StorageFlags::new_single_epoch(block_info.epoch.index, Some(id.to_buffer())));
+        let record = if estimated_costs_only_with_layer_info.is_some() {
+            DocumentLifecycleRecord::deleted_at(block_info.time_ms, u64::MAX, u64::MAX)
+        } else {
+            DocumentLifecycleRecord::deleted_at(block_info.time_ms, latest_revision, revision_count)
+        };
         self.add_lifecycle_record_operations(
             document_id,
             contract,
             document_type,
-            DocumentLifecycleRecord::deleted_at(
-                block_info.time_ms,
-                latest_revision,
-                revision_count,
-            ),
+            record,
             record_flags.as_ref(),
             estimated_costs_only_with_layer_info,
             transaction,
+            previous_batch_operations,
             &mut batch_operations,
             platform_version,
         )?;
@@ -290,13 +296,17 @@ impl Drive {
         document_type: DocumentTypeRef,
         record: DocumentLifecycleRecord,
         storage_flags: Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        if !record.is_coherent() {
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "a lifecycle record is incoherent".to_string(),
+            )));
+        }
         let lifecycle_path =
             document_lifecycle_path(contract.id_ref().as_bytes(), document_type.name().as_str());
         let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
@@ -331,7 +341,7 @@ impl Drive {
         // trees, never this. Flagging it to whoever happened to delete first
         // would charge them for structure nobody refunds, and would make the
         // committed encoding depend on which document went first. The record
-        // inside it keeps the deleter's flags, which is what an erase refunds.
+        // inside it keeps the deletion storage payer's flags, which is what an erase refunds.
         //
         // The running batch is consulted so that two deletes of different
         // documents of the same type, prepared before either is applied, insert
@@ -343,23 +353,22 @@ impl Drive {
             None,
             tree_apply_type,
             transaction,
-            &mut Some(batch_operations),
+            &mut Some(previous_batch_operations.unwrap_or(batch_operations)),
             &mut container_operations,
             &platform_version.drive,
         )?;
         batch_operations.append(&mut container_operations);
 
-        // The record's content is fully known whether or not this is a dry
-        // run: the deletion time and the revision counts come from the delete
-        // itself, and the deleter it is flagged to is an input to the delete.
-        self.batch_insert::<0>(
-            PathKeyElement((
+        // The record uses the deletion's retained counts, or their maximum
+        // encoded size during estimation. Refuse an existing record even if a
+        // caller reaches deletion from inconsistent state.
+        batch_operations.push(LowLevelDriveOperation::GroveOperation(
+            QualifiedGroveDbOp::insert_if_not_exists_op(
                 lifecycle_path,
                 document_id.to_vec(),
                 Element::Item(record.serialize_to_bytes()?, element_flags),
-            )),
-            batch_operations,
-            &platform_version.drive,
-        )
+            ),
+        ));
+        Ok(())
     }
 }

@@ -20,6 +20,10 @@ jobs:
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 90
+    defaults:
+      run:
+        # The runner's work/temp directory can be on a volume with spaces.
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
 
     steps:
       - name: Checkout repository
@@ -36,7 +40,28 @@ jobs:
 
       # Rust + Cargo cache to speed up FFI build
       - name: Set up Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        # Composite actions choose their own shell and do not inherit the
+        # quoted script path above. Keep setup here for space-safe execution.
+        env:
+          RUSTUP_PERMIT_COPY_RENAME: "1"
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --no-modify-path -y
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+          {
+            echo "CARGO_HOME=$CARGO_HOME"
+            echo "RUSTUP_TOOLCHAIN=stable"
+            echo "CARGO_INCREMENTAL=${CARGO_INCREMENTAL-0}"
+            echo "CARGO_TERM_COLOR=${CARGO_TERM_COLOR-always}"
+          } >> "$GITHUB_ENV"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          rustc +stable --version --verbose
 
       - name: Restore cargo registry cache
         uses: actions/cache/restore@v5
@@ -47,10 +72,6 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-
-
-      - name: Add iOS Rust targets
-        run: |
-          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 
       - name: Restore cached Protobuf (protoc)
         id: cache-protoc
@@ -88,7 +109,7 @@ jobs:
       - name: Verify protoc and export env
         run: |
           set -euxo pipefail
-          echo "$HOME/.local/protoc-32.0/bin" >> $GITHUB_PATH
+          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
           echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
           "$HOME/.local/protoc-32.0/bin/protoc" --version
 

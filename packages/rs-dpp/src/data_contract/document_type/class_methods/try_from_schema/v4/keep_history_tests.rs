@@ -3,7 +3,7 @@
 //! may not carry a contested index.
 use super::*;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV3Getters,
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
@@ -496,5 +496,35 @@ fn should_still_validate_a_property_named_can_be_deleted_during_a_withdrawal() {
     assert!(
         !result.is_valid(),
         "only the top-level config flag may be stripped"
+    );
+}
+
+#[test]
+fn should_round_trip_an_erasable_compiled_type_and_check_its_flag() {
+    use crate::data_contract::document_type::serialized_version::DocumentTypeInSerializationFormat;
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
+    let version = PlatformVersion::latest();
+    let mut schema = keep_history_deletable_schema();
+    schema.set_value("canBeErased", true.into()).unwrap();
+    let parsed = parse(schema.clone()).unwrap();
+    let stored =
+        DocumentTypeInSerializationFormat::try_from_document_type(parsed.as_ref(), None, version)
+            .unwrap();
+    assert!(stored
+        .is_compiled_from(parsed.as_ref(), None, version)
+        .unwrap());
+    let bytes = stored.serialize_to_bytes().unwrap();
+    let recovered = DocumentTypeInSerializationFormat::deserialize_from_bytes_untrusted(&bytes)
+        .unwrap()
+        .into_document_type("test_doc", Identifier::new([1; 32]), schema.clone())
+        .unwrap();
+    assert_eq!(parsed, recovered);
+    schema.set_value("canBeErased", false.into()).unwrap();
+    let changed = parse(schema).unwrap();
+    assert!(
+        !stored
+            .is_compiled_from(changed.as_ref(), None, version)
+            .unwrap(),
+        "a stored erasable flag must agree with the parsed schema"
     );
 }

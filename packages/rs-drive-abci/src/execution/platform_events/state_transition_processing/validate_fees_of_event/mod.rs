@@ -1,4 +1,5 @@
 mod v0;
+pub(in crate::execution::platform_events::state_transition_processing) mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -7,7 +8,6 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -42,7 +42,6 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         // Fee validation with `transaction: None` is the CheckTx estimation mode: it runs
         // OUTSIDE any block transaction, so it must NEVER mutate committed GroveDB state —
@@ -65,16 +64,11 @@ where
             .state_transition_processing
             .validate_fees_of_event
         {
-            0 => self.validate_fees_of_event_v0(
-                event,
-                block_info,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            ),
+            0 => self.validate_fees_of_event_v0(event, block_info, transaction, platform_version),
+            1 => self.validate_fees_of_event_v1(event, block_info, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "validate_fees_of_event".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         };

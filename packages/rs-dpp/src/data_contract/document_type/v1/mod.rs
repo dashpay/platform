@@ -198,8 +198,7 @@ mod tests {
         match dt {
             crate::data_contract::document_type::DocumentType::V0(v0) => v0,
             crate::data_contract::document_type::DocumentType::V1(_)
-            | crate::data_contract::document_type::DocumentType::V2(_)
-            | crate::data_contract::document_type::DocumentType::V3(_) => {
+            | crate::data_contract::document_type::DocumentType::V2(_) => {
                 panic!("expected V0 from first() version routing")
             }
         }
@@ -287,6 +286,7 @@ mod tests {
             token_amount: 7,
             effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+            optional: false,
         };
 
         v1.set_document_creation_token_cost(Some(cost));

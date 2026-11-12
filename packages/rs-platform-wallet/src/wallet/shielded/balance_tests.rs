@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -14,13 +15,20 @@ use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
+use tokio_util::sync::CancellationToken;
 
 fn tree_path() -> PathBuf {
+    // Clock resolution alone does not distinguish parallel test invocations.
+    static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("shielded_local_balance_{nonce}.sqlite"))
+    std::env::temp_dir().join(format!(
+        "shielded_local_balance_{}_{nonce}_{sequence}.sqlite",
+        std::process::id()
+    ))
 }
 
 fn coordinator(path: &std::path::Path) -> NetworkShieldedCoordinator {
@@ -215,7 +223,7 @@ async fn local_balance_successful_empty_scan_marks_known_zero() {
         ready(&coordinator, wallet).await.accounts[&0].source,
         ShieldedBalanceSource::NoHistory
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(
         outcome.success_count(),
         1,
@@ -242,7 +250,7 @@ async fn local_balance_successful_scan_covers_unhydrated_registration() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 0);
@@ -293,7 +301,7 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         coordinator.local_balance_snapshot(wallet).await.unwrap(),
         ShieldedLocalBalanceState::RestoreIncomplete
     );
-    let outcome = coordinator.sync(true).await;
+    let outcome = coordinator.sync(true, &CancellationToken::new()).await;
     assert_eq!(outcome.success_count(), 1, "{outcome:?}");
     let account = ready(&coordinator, wallet).await.accounts[&0];
     assert_eq!(account.spendable_credits, 900);
@@ -357,6 +365,7 @@ async fn local_balance_restores_funds_and_durable_pending_reservations_offline()
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    anchor_height: None,
                 },
             )
             .unwrap();

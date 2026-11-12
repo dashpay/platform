@@ -6,25 +6,81 @@
 
 #[cfg(feature = "server")]
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::drive::DriveError;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::storage_flags::StorageFlags;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::DocumentPropertyType;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{typed_array_property, where_list_elements};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{DocumentType, Index, PreallocationBinding};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::DataContract;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::document::document_methods::DocumentMethodsV0;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::Document;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::DocumentV0Getters;
-#[cfg(feature = "server")]
-use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
-#[cfg(feature = "server")]
-use grovedb::{Element, EstimatedLayerSizes};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::version::PlatformVersion;
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::element::reference_path::ReferencePathType::UpstreamRootHeightReference;
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::Element;
+#[cfg(any(feature = "server", feature = "verify"))]
+use std::collections::BTreeSet;
+
+/// Whether current documents use pointers into the separate retained-history tree.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) fn uses_current_document_history_layout(
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout
+    {
+        0 => Ok(false),
+        1 => Ok(true),
+        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "document_history_storage_layout".to_string(),
+            known_versions: vec![0, 1],
+            received,
+        })),
+    }
+}
 
 #[cfg(feature = "server")]
 mod delete;
+/// The values of derived index properties, read from the documents the references point at
+#[cfg(feature = "server")]
+pub(crate) mod derived_index_values;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// Document expiry: the expirations tree of documents whose type declares a `ttl`, their
+/// pricing, and the cleanup that deletes them once expired
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod expiration;
+#[cfg(feature = "server")]
+mod fetch_property_constraint_aggregate;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
 /// Composite-key history queries and proof results.
@@ -41,7 +97,11 @@ pub mod lifecycle;
 #[cfg(feature = "server")]
 pub mod migration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+pub use insert_contested::ContestWindows;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
 #[cfg(all(
@@ -56,17 +116,44 @@ mod verify_fetch_document_history_query;
 pub mod paths;
 
 /// Primary key tree type resolution
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
+/// The store of a private document type (protocol version 15)
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod private_document_store;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod ranked_index_tree_type;
 
 /// Shared index-walker tree-type derivation for the v2 walkers
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod index_level_tree_types;
+
+/// The GroveDB layout of one document type, computed from the type with the
+/// index walkers' own tree-type rules
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod layout;
+
+/// Whether a document's unique index entry sits under the key of its values
+#[cfg(feature = "server")]
+pub mod shared_unique_entry;
+
+/// What creating one document costs, element by element, from the elements
+/// the index walkers write
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod cost;
+
+/// The plain values the layout and the cost estimate hand to the SDKs
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sdk_value;
+
+/// The test contracts the layout and the cost estimate are held to Drive with
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod fixture_contracts;
 
 /// Shared TTL semantics for time-range indexes — see
 /// `book/src/drive/time-range-ttl.md`.
@@ -78,24 +165,240 @@ pub(crate) mod time_range_ttl;
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// The counter a summableOffCountIndex index keeps per group
+#[cfg(feature = "server")]
+pub(crate) mod summable_off_count_counter;
+
+/// Unbilled reads of how an index entry is stored, for the walkers that
+/// remove or refresh entries earlier protocol versions laid out otherwise
+#[cfg(feature = "server")]
+pub(crate) mod stored_index_entry;
+
 /// The indexOnly row commitment: the payload every indexOnly terminal item
 /// stores, binding one document's index projections into one logical row
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_row_commitment;
 
+/// The entry payload of an indexOnly document type: the value slot after
+/// the row commitment, its encoding and its fee-estimation bounds.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_entry_payload;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_entry_payload::{
+    decode_index_only_entry_payload, encode_index_only_entry_payload,
+    encode_index_only_entry_payload_value, index_only_entry_payload_max_size,
+    index_only_item_estimated_value_size,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
-#[cfg(feature = "server")]
-pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
+#[cfg(feature = "server")]
+pub use index_only_row_commitment::{
+    index_only_row_commitment_max_preimage_size, index_only_row_commitment_with_preimage_size,
+};
 
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The member key `document` produces under a terminal: the components'
+/// values in their tree-key encoding, concatenated in the terminal's
+/// order — one component for a plain terminal, several for a composite
+/// one. The write path's twin of the query side's
+/// `serialize_value_for_key` concatenation.
+pub(crate) fn index_only_member_key(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    terminal: &[String],
+    owner_id: Option<[u8; 32]>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let mut member_key = Vec::new();
+    for component in terminal {
+        let encoded = document
+            .get_raw_for_document_type(component, document_type, owner_id, platform_version)?
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "indexOnly terminal value must be present: the parser requires every \
+                 indexOnly property (and $ownerId) to be set",
+            )))?;
+        member_key.extend(encoded);
+    }
+    Ok(member_key)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Every preallocated index whose binding targets `target_document_type`,
+/// with the indexOnly referring type holding it and the binding: what an
+/// insert of a `target_document_type` document preallocates, in the order it
+/// does. Shared by the preallocation path, the batch methods' counter refusal
+/// and `drive::document::cost`.
+pub(crate) fn preallocation_bindings_targeting<'a>(
+    contract: &'a DataContract,
+    target_document_type: DocumentTypeRef<'a>,
+) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
+    contract
+        .document_types()
+        .values()
+        // `preallocated` is only valid on indexOnly document types, so this
+        // filter also keeps the per-insert scan trivially cheap for contracts
+        // without the feature.
+        .filter(|referring_type| referring_type.index_only())
+        .flat_map(move |referring_type: &'a DocumentType| {
+            referring_type
+                .indexes()
+                .values()
+                .filter(|index| index.preallocated)
+                .flat_map(move |index| {
+                    // Target-filtered derivation: candidates naming other
+                    // target types are rejected before any binding plan is
+                    // allocated — this runs on every document insert. Through
+                    // a moderatedDocument reference, only a binding every key
+                    // of which the inserted document's removal record would
+                    // keep (registration makes sure each preallocated index
+                    // has one).
+                    index
+                        .preallocation_bindings_for_target(
+                            referring_type.flattened_properties(),
+                            contract.id(),
+                            target_document_type,
+                        )
+                        .into_iter()
+                        .map(move |binding| (referring_type.as_ref(), index, binding))
+                })
+        })
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Whether `document`'s value of `referenced_property`, which a
+/// `where` binds to a referring index property of
+/// `referring_property_type`, is no wider as a tree key than a value of that
+/// property can be. A wider value equals no referring document's value, so no
+/// entry would ever sit under trees keyed by it, and past 255 bytes it is no
+/// tree key at all. An absent value fits (the caller skips it on its own), as
+/// do the referenced document's `$ownerId` and `$creatorId`, 32-byte
+/// identifiers that registration pairs with an identifier.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn bound_value_fits_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring_property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    if referenced_property.starts_with('$') {
+        return Ok(true);
+    }
+    let Some(value) = document
+        .properties()
+        .get_optional_at_path(referenced_property)?
+    else {
+        return Ok(true);
+    };
+    let Some(max_width) = referring_property_type.saturating_max_byte_size(platform_version)?
+    else {
+        return Ok(true);
+    };
+    let width = referring_property_type
+        .encode_value_for_tree_keys(value)?
+        .len();
+    Ok(width <= usize::from(max_width))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// `key`, which `target` wrote for its `referenced_property`, as `referring`
+/// writes the same value for its `referring_property`. Registration pairs the
+/// two with one property type, but an unsigned integer can still be keyed in
+/// a different generation on each side (a property ending an index that
+/// is `rangeSummable` keeps generation 0), so the key is
+/// carried through generation 0 from one codec to the other.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_tree_key_for_referring_property(
+    key: Vec<u8>,
+    target: DocumentTypeRef,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let key_in_generation_0 =
+        target.tree_key_into_generation_0(referenced_property, key, platform_version)?;
+    Ok(referring.tree_key_from_generation_0(
+        referring_property,
+        &key_in_generation_0,
+        platform_version,
+    )?)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The keys a level keyed by the elements of the typed array
+/// `referring_property` of `referring` takes when a preallocated index binds
+/// it to `document`'s typed array `referenced_property` (an equality between
+/// two lists): each distinct element of `document`'s list, keyed as
+/// `referring` keys an element of its property, sorted. A referring document
+/// agreeing with `document` holds that list exactly, so its entries sit under
+/// exactly these keys. Empty for an empty, null or absent list, which every
+/// index naming the array skips. `None` when no referring document can agree:
+/// the value is no list (it then equals none, `where_list_elements`); it holds
+/// fewer elements than the referring array's `minItems` or more than its
+/// `maxItems`, or repeats an element where the referring array declares
+/// `uniqueItems` (a list equality compares the lists element by element, so a
+/// referring list would have to be exactly as long and repeat the same
+/// elements); or an element keys as empty, the null layout's key, or wider than
+/// an element of the referring array can be, as
+/// [`bound_value_fits_referring_property`] judges a single value. The bound on
+/// the length keeps the paths a referenced document preallocates within the
+/// elements one referring document can hold.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_list_tree_keys_for_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Vec<Vec<u8>>>, Error> {
+    let Some(elements) = where_list_elements(
+        document
+            .properties()
+            .get_optional_at_path(referenced_property)?,
+    ) else {
+        return Ok(None);
+    };
+    let referring_list = typed_array_property(referring.flattened_properties(), referring_property)
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a property a preallocated index keys by list elements must be a typed array",
+        )))?;
+    if elements.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if elements.len() > usize::from(referring_list.max_items)
+        || referring_list
+            .min_items
+            .is_some_and(|min_items| elements.len() < usize::from(min_items))
+    {
+        return Ok(None);
+    }
+    let max_width = referring_list
+        .item_type
+        .saturating_max_byte_size(platform_version)?;
+    let mut keys = BTreeSet::new();
+    for element in elements {
+        let key =
+            referring.serialize_value_for_key(referring_property, element, platform_version)?;
+        if key.is_empty() || max_width.is_some_and(|max_width| key.len() > usize::from(max_width)) {
+            return Ok(None);
+        }
+        keys.insert(key);
+    }
+    if referring_list.unique_items && keys.len() < elements.len() {
+        return Ok(None);
+    }
+    Ok(Some(keys.into_iter().collect()))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
@@ -130,7 +433,7 @@ fn make_document_reference(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates an `Element::ReferenceWithSumItem` that pins a document to
 /// a summable index path AND carries that document's `sum_property`
 /// contribution to the parent sum tree.
@@ -303,7 +606,7 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     6 + reference_path_size
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Creates a reference to a document stored with the per-type history tree by
 /// primary-storage writer version 1.
 ///
@@ -328,7 +631,7 @@ fn make_document_reference_v1(
     )
 }
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// [`make_document_reference_v1`] carrying the document's sum contribution for
 /// a summable index.
 pub(crate) fn make_document_reference_with_sum_item_v1(
@@ -366,30 +669,6 @@ fn document_reference_size_v1() -> u32 {
 }
 
 #[cfg(feature = "server")]
-fn document_reference_estimated_layer_sizes_v1(
-    key_size: u8,
-    flags_size: Option<u32>,
-    summable: bool,
-) -> EstimatedLayerSizes {
-    if summable {
-        EstimatedLayerSizes::AllReferencesWithSumItem(
-            key_size,
-            document_reference_size_v1(),
-            flags_size,
-        )
-    } else {
-        EstimatedLayerSizes::AllReference(key_size, document_reference_size_v1(), flags_size)
-    }
-}
-
-#[cfg(feature = "server")]
-fn document_reference_estimated_value_size_v1(flags_size: u32, summable: bool) -> u32 {
-    const SUM_ITEM_SIZE: u32 = 10;
-
-    document_reference_size_v1() + flags_size + if summable { SUM_ITEM_SIZE } else { 0 }
-}
-
-#[cfg(feature = "server")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
 }
@@ -400,11 +679,10 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use super::{
-        document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
-        document_reference_size_v1,
-    };
+    use super::uses_current_document_history_layout;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
@@ -412,30 +690,61 @@ pub(crate) mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
-    use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem};
 
     #[test]
-    fn summable_document_reference_estimates_include_the_sum_item() {
-        assert_eq!(
-            document_reference_estimated_layer_sizes_v1(32, Some(17), true),
-            AllReferencesWithSumItem(32, document_reference_size_v1(), Some(17))
-        );
-        assert_eq!(
-            document_reference_estimated_value_size_v1(17, true),
-            document_reference_size_v1() + 17 + 10
-        );
+    fn should_keep_legacy_history_layout_when_primary_writer_changes() {
+        let mut platform_version = PlatformVersion::get(14).expect("protocol 14").clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage = 1;
+
+        assert!(!uses_current_document_history_layout(&platform_version)
+            .expect("legacy history layout remains supported"));
     }
 
     #[test]
-    fn plain_document_reference_estimates_remain_unchanged() {
-        assert_eq!(
-            document_reference_estimated_layer_sizes_v1(32, Some(17), false),
-            AllReference(32, document_reference_size_v1(), Some(17))
-        );
-        assert_eq!(
-            document_reference_estimated_value_size_v1(17, false),
-            document_reference_size_v1() + 17
-        );
+    fn should_keep_current_history_layout_when_primary_writer_changes() {
+        for writer_version in [0, 2] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage = writer_version;
+
+            assert!(
+                uses_current_document_history_layout(&platform_version)
+                    .expect("current history layout remains supported"),
+                "writer version {writer_version} must not change the history layout"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_unknown_document_history_storage_layout_versions() {
+        for received in [2, u16::MAX] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = received;
+
+            assert!(matches!(
+                uses_current_document_history_layout(&platform_version),
+                Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                    method,
+                    known_versions,
+                    received: actual,
+                })) if method == "document_history_storage_layout"
+                    && known_versions == vec![0, 1]
+                    && actual == received
+            ));
+        }
     }
 
     /// Setup Dashpay

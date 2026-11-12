@@ -34,6 +34,7 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     "updateprice" => Ok(BatchTypeWasm::UpdatePrice),
                     "ignorewhilebumpingrevision" => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     "indexonlydelete" => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    // Naming the appended kind does not admit it; released protocol bounds reject it.
                     "erase" => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
@@ -43,6 +44,13 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
             }
         } else {
             match value.as_f64() {
+                // `as u8` would read NaN, -1 or 0.5 as Create
+                Some(enum_val) if enum_val.fract() != 0.0 || !(0.0..=255.0).contains(&enum_val) => {
+                    Err(WasmDppError::invalid_argument(format!(
+                        "unknown batch type value: {}",
+                        enum_val
+                    )))
+                }
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -55,6 +63,7 @@ impl TryFrom<&JsValue> for BatchTypeWasm {
                     5 => Ok(BatchTypeWasm::UpdatePrice),
                     6 => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     7 => Ok(BatchTypeWasm::IndexOnlyDelete),
+                    // The appended value preserves old discriminants; released protocol bounds reject it.
                     8 => Ok(BatchTypeWasm::Erase),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
@@ -85,7 +94,27 @@ impl From<BatchTypeWasm> for String {
             BatchTypeWasm::UpdatePrice => String::from("updatePrice"),
             BatchTypeWasm::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
             BatchTypeWasm::IndexOnlyDelete => String::from("indexOnlyDelete"),
+            // This labels the appended kind; released protocol bounds still reject it.
             BatchTypeWasm::Erase => String::from("erase"),
+        }
+    }
+}
+
+impl From<BatchTypeWasm> for DocumentTransitionActionType {
+    fn from(batch_type: BatchTypeWasm) -> Self {
+        match batch_type {
+            BatchTypeWasm::Create => DocumentTransitionActionType::Create,
+            BatchTypeWasm::Replace => DocumentTransitionActionType::Replace,
+            BatchTypeWasm::Delete => DocumentTransitionActionType::Delete,
+            BatchTypeWasm::Transfer => DocumentTransitionActionType::Transfer,
+            BatchTypeWasm::Purchase => DocumentTransitionActionType::Purchase,
+            BatchTypeWasm::UpdatePrice => DocumentTransitionActionType::UpdatePrice,
+            BatchTypeWasm::IgnoreWhileBumpingRevision => {
+                DocumentTransitionActionType::IgnoreWhileBumpingRevision
+            }
+            BatchTypeWasm::IndexOnlyDelete => DocumentTransitionActionType::IndexOnlyDelete,
+            // Conversion preserves the kind; released protocol bounds still reject it.
+            BatchTypeWasm::Erase => DocumentTransitionActionType::Erase,
         }
     }
 }
@@ -103,6 +132,7 @@ impl From<DocumentTransitionActionType> for BatchTypeWasm {
                 BatchTypeWasm::IgnoreWhileBumpingRevision
             }
             DocumentTransitionActionType::IndexOnlyDelete => BatchTypeWasm::IndexOnlyDelete,
+            // Conversion preserves the kind; released protocol bounds still reject it.
             DocumentTransitionActionType::Erase => BatchTypeWasm::Erase,
         }
     }

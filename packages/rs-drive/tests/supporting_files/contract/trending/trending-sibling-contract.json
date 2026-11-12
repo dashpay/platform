@@ -373,7 +373,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "post",
-            "propertyAgreement": {
+            "where": {
               "hashtag": "hashtag"
             }
           },

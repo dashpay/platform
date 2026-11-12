@@ -48,10 +48,7 @@ pub fn verify_vote_polls_end_date_query_vec(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, polls_vec): (RootHash, Vec<(TimestampMillis, Vec<VotePoll>)>) = query
-        .verify_vote_polls_by_end_date_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
-            platform_version,
-        )
+        .verify_vote_polls_by_end_date_proof(supported_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS array of tuples
@@ -102,10 +99,7 @@ pub fn verify_vote_polls_end_date_query_map(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, polls_map): (RootHash, BTreeMap<TimestampMillis, Vec<VotePoll>>) = query
-        .verify_vote_polls_by_end_date_proof(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
-            platform_version,
-        )
+        .verify_vote_polls_by_end_date_proof(supported_grovedb_proof(&proof_vec)?, platform_version)
         .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
     // Convert to JS object with timestamp as string key

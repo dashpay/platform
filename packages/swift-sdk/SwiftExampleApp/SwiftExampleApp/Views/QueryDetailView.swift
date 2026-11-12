@@ -201,6 +201,10 @@ struct QueryDetailView: View {
                         self.error = "Not Implemented: \(message)"
                     case .internalError(let message):
                         self.error = "Internal Error: \(message)"
+                    case .stateTransitionResultUnconfirmed:
+                        self.error = sdkError.localizedDescription
+                    case .consensusRejection(let consensus, let message):
+                        self.error = "Rejected by Platform (code \(consensus.code)): \(message)"
                     case .unknown(let message):
                         self.error = "Unknown Error: \(message)"
                     }
@@ -549,13 +553,23 @@ struct QueryDetailView: View {
                 orderAscending: true
             )
 
-            // Filter to only DPNS-related polls
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-            let dpnsPolls = polls.filter { poll in
-                if let contractId = poll["contractId"] as? String {
-                    return contractId == dpnsContractId
+            // The listing is grouped by end date:
+            // `[{"timestamp": <end date ms>, "vote_polls": [<vote poll>, ...]}]`,
+            // each poll its canonical JSON tagged with `$type`. Flatten the
+            // groups, keep the contested polls of the DPNS contract (yes/no
+            // polls carry no `contractId`), and carry each group's end date
+            // onto its polls so it is not lost with the grouping.
+            let dpnsPolls = polls.flatMap { group -> [[String: Any]] in
+                let votePolls = group["vote_polls"] as? [[String: Any]] ?? []
+                return votePolls.compactMap { poll in
+                    guard poll["$type"] as? String == "contestedDocumentResourceVotePoll",
+                          poll["contractId"] as? String == DPNSVotePoll.contractId else {
+                        return nil
+                    }
+                    var dpnsPoll = poll
+                    dpnsPoll["timestamp"] = group["timestamp"]
+                    return dpnsPoll
                 }
-                return false
             }
             return dpnsPolls
 
@@ -808,6 +822,10 @@ struct QueryDetailView: View {
                 status: status,
                 actionId: actionId
             )
+
+        case "getContractGroupInfo":
+            let contractGroupId = queryInputs["contractGroupId"] ?? ""
+            return try await sdk.getContractGroupInfo(contractGroupId: contractGroupId)
 
         // System Queries
         case "getStatus":
@@ -1193,6 +1211,11 @@ struct QueryDetailView: View {
                 QueryInput(name: "groupContractPosition", label: "Group Contract Position", required: true),
                 QueryInput(name: "status", label: "Status", required: true, placeholder: "ACTIVE or CLOSED"),
                 QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractGroupInfo":
+            return [
+                QueryInput(name: "contractGroupId", label: "Contract Group ID", required: true, placeholder: "Base58 encoded ID")
             ]
 
         // System Queries

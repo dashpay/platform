@@ -56,6 +56,22 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     }
 }
 
+impl DocumentV0 {
+    /// This document in serialization format 3, whatever the version of its contract or of the
+    /// contract's config. A private document payload holds a type's properties as format 3
+    /// writes them (`encode_private_document_payload`), including for a type whose contract keeps
+    /// a version 0 config, whose documents [`DocumentPlatformConversionMethodsV0::serialize`]
+    /// writes in format 0. Format 3 writes each property at its type's width, and a version 0
+    /// config parses every integer as an `I64`, so the properties come out as format 0 writes
+    /// them too.
+    pub(crate) fn serialize_in_format_3(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        DocumentV0::serialize_v3(self, document_type)
+    }
+}
+
 impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
     /// Format 0 — implementation in [`v0`].
     fn from_bytes_v0(
@@ -164,6 +180,16 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
             // will encode all integers as i64.
             return Err(ProtocolError::NotSupported("Serializing with data contract version 0 or data contract config version 0 is not supported outside of feature version 0".to_string()));
         };
+        // Only format 3 has a place for the moderation stamp: an earlier format would drop it
+        // and give back other bytes than the stored document's. (`serialize` never meets one:
+        // only a type keeping fields for its moderators is stamped, which needs config version
+        // 2, whose documents are written in format 3.)
+        if feature_version < 3 && (self.moderated_at.is_some() || self.moderated_by.is_some()) {
+            return Err(ProtocolError::NotSupported(format!(
+                "document serialization format {feature_version} has no place for \
+                 $moderatedAt or $moderatedBy; serialize a moderated document in format 3"
+            )));
+        }
         match feature_version {
             0 => self.serialize_v0(document_type),
             1 => self.serialize_v1(document_type),

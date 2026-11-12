@@ -1,12 +1,14 @@
 mod accessors;
+pub mod entry_changes;
 mod masternode_list_changes;
-mod platform_state_for_saving;
+/// The saved forms of the platform state, one structure per version.
+pub mod platform_state_for_saving;
+pub mod recent;
 
 use crate::error::Error;
 
 use crate::platform_types::validator_set::ValidatorSet;
 use derive_more::From;
-use dpp::bincode::config;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{
@@ -21,13 +23,15 @@ use indexmap::IndexMap;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 pub use crate::platform_types::platform_state::accessors::PlatformStateV0Methods;
+use crate::platform_types::platform_state::entry_changes::EntryChanges;
 use crate::platform_types::platform_state::platform_state_for_saving::v1::PlatformStateForSavingV1;
+use crate::platform_types::platform_state::platform_state_for_saving::v2::PlatformStateForSavingV2;
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -64,8 +68,30 @@ pub struct PlatformState {
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
-    /// previous FeeVersions
+    /// The fee versions earlier epochs ran on. Saved with the state and not read by block
+    /// execution: from protocol version 15 a refund uses the schedule of the epoch that stored
+    /// the bytes, read from that epoch's tree, and before it the removing block's schedule.
     pub previous_fee_versions: CachedEpochIndexFeeVersions,
+
+    /// True when a field carried only by the full saved record has changed since
+    /// the state was last written in full. The masternode lists, validator sets
+    /// and quorum sets are over a megabyte on mainnet and change on a minority of
+    /// blocks, so the full record is rewritten only when this is set; every block
+    /// still writes the small record holding the block info and quorum hashes.
+    /// Not part of the saved record: a state read back from disk starts dirty.
+    ///
+    /// Drives the structure 0 store only. Under structure 1 the record is small
+    /// and written every block, and the large collections track their own
+    /// changes below.
+    pub heavy_fields_dirty: bool,
+
+    /// Which masternode entries the next store writes or deletes. Not part of
+    /// the saved record.
+    pub masternode_changes: EntryChanges<ProTxHash>,
+
+    /// Which validator set entries the next store writes or deletes. Not part
+    /// of the saved record.
+    pub validator_set_changes: EntryChanges<QuorumHash>,
 }
 
 fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
@@ -115,14 +141,49 @@ impl Debug for PlatformState {
                 "instant_lock_validating_quorums",
                 &self.instant_lock_validating_quorums,
             )
+            .field("heavy_fields_dirty", &self.heavy_fields_dirty)
+            .field("masternode_changes", &self.masternode_changes)
+            .field("validator_set_changes", &self.validator_set_changes)
             .finish()
     }
 }
 
 impl PlatformState {
-    /// Get the state fingerprint
+    /// Get the state fingerprint: a hash over the whole state, the per-entry
+    /// collections included.
     pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
-        Ok(hash_double(self.serialize_to_bytes()?))
+        Ok(hash_double(self.serialize_standalone_to_bytes()?))
+    }
+
+    /// The whole state in one record, for a standalone snapshot such as the
+    /// file written beside a checkpoint. Structure 1 keeps the masternode list
+    /// and the validator sets as entries in the database, so a structure 1
+    /// record cannot be read on its own; this always writes structure 0.
+    pub fn serialize_standalone_to_bytes(&self) -> Result<Vec<u8>, Error> {
+        let config = PLATFORM_BINCODE_CONFIG;
+        let saving_v1: PlatformStateForSavingV1 = self.try_into()?;
+        bincode::encode_to_vec(PlatformStateForSaving::V1(saving_v1), config).map_err(|e| {
+            ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize PlatformState: {}",
+                e
+            ))
+            .into()
+        })
+    }
+
+    /// Nothing on disk can be trusted to match this state: the next store
+    /// rewrites the full record and every entry of the per-entry collections.
+    pub fn mark_all_unsaved(&mut self) {
+        self.heavy_fields_dirty = true;
+        self.masternode_changes.mark_rewrite_all();
+        self.validator_set_changes.mark_rewrite_all();
+    }
+
+    /// What the store just wrote is now what is on disk for this state.
+    pub fn mark_saved(&mut self) {
+        self.heavy_fields_dirty = false;
+        self.masternode_changes.clear();
+        self.validator_set_changes.clear();
     }
     /// The default state at init chain
     pub fn default_with_protocol_versions(
@@ -151,6 +212,9 @@ impl PlatformState {
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
             previous_fee_versions: Default::default(),
+            heavy_fields_dirty: true,
+            masternode_changes: EntryChanges::all(),
+            validator_set_changes: EntryChanges::all(),
         };
 
         Ok(state)
@@ -162,9 +226,9 @@ impl PlatformSerializable for PlatformState {
 
     fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let platform_version = self.current_platform_version()?;
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let platform_state_for_saving: PlatformStateForSaving =
-            self.clone().try_into_platform_versioned(platform_version)?;
+            self.try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
             ProtocolError::PlatformSerializationError(format!(
                 "unable to serialize PlatformState: {}",
@@ -183,7 +247,7 @@ impl PlatformDeserializableFromVersionedStructureTrusted for PlatformState {
     where
         Self: Sized,
     {
-        let config = config::standard().with_big_endian().with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         let platform_state_in_save_format: PlatformStateForSaving =
             bincode::decode_from_slice(data, config)
                 .map_err(|e| {
@@ -197,6 +261,32 @@ impl PlatformDeserializableFromVersionedStructureTrusted for PlatformState {
         platform_state_in_save_format
             .try_into_platform_versioned(platform_version)
             .map_err(|e: Error| ProtocolError::Generic(e.to_string()))
+    }
+}
+
+impl TryFromPlatformVersioned<&PlatformState> for PlatformStateForSaving {
+    type Error = Error;
+    fn try_from_platform_versioned(
+        value: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match platform_version
+            .drive_abci
+            .structs
+            .platform_state_for_saving_structure_default
+        {
+            0 => {
+                let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
+                Ok(saving_v1.into())
+            }
+            1 => Ok(PlatformStateForSavingV2::from(value).into()),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "PlatformStateForSaving::try_from_platform_versioned(&PlatformState)"
+                    .to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
     }
 }
 
@@ -215,10 +305,11 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                 let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
                 Ok(saving_v1.into())
             }
+            1 => Ok(PlatformStateForSavingV2::from(&value).into()),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -257,6 +348,16 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                     })),
                 }
             }
+            // The record alone is not the state: its masternode list and
+            // validator sets are entries in the database, read together with it
+            // by `fetch_platform_state`.
+            PlatformStateForSaving::V2(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "a structure 1 platform state record is only readable together with its \
+                     entries; load it through fetch_platform_state"
+                        .to_string(),
+                )))
+            }
         }
     }
 }
@@ -281,6 +382,26 @@ mod tests {
 
             PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V3)
                 .expect("failed to deserialize state");
+        }
+
+        /// Serializing through the borrowed conversion must preserve the saved format.
+        #[test]
+        fn should_preserve_pre_change_serialization_hash() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V8_DEVNET.deref()).expect("failed to decode hex");
+
+            let state =
+                PlatformState::versioned_deserialize_trusted(&serialized_state, &PLATFORM_V9)
+                    .expect("failed to deserialize state");
+
+            // Generated with serialize_to_bytes() at pre-change commit
+            // 9dfffa611a9554cb14c9464374c8de1356c1d92f, using the fixture above.
+            assert_eq!(
+                hex::encode(hash_double(
+                    state.serialize_to_bytes().expect("borrowed serialize")
+                )),
+                "079e5cb38c07a9e1818a4a71a40fe8936e7c93bf2fec39c7d346afa215b76679"
+            );
         }
 
         #[test]

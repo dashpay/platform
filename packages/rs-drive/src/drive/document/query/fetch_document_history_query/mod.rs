@@ -5,22 +5,30 @@ use crate::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::refuse_a_private_document_type;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::PathQuery;
 
 impl Drive {
-    /// Creates a path query for historical entries of a specified document
-    /// in the layout selected by the platform version.
+    /// Creates a path query for historical entries of a specified document of
+    /// `document_type`. A private document type keeps no documents and no history: it is
+    /// refused (`QuerySyntaxError::Unsupported`), for a fetch, a proof and its verification.
+    ///
+    /// `start_at_ms` is exclusive for method version 0's per-document timestamp-keyed
+    /// history and inclusive for method version 1's per-type composite-keyed history.
     #[allow(clippy::too_many_arguments)]
     pub fn fetch_document_history_query(
         contract_id: [u8; 32],
-        document_type_name: &str,
+        document_type: DocumentTypeRef,
         document_id: [u8; 32],
         start_at_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        refuse_a_private_document_type(document_type).map_err(Error::Query)?;
         match platform_version
             .drive
             .methods
@@ -30,7 +38,7 @@ impl Drive {
         {
             0 => Self::fetch_document_history_query_v0(
                 contract_id,
-                document_type_name,
+                document_type,
                 document_id,
                 start_at_ms,
                 limit,
@@ -38,7 +46,7 @@ impl Drive {
             ),
             1 => Self::fetch_document_history_query_v1(
                 contract_id,
-                document_type_name,
+                document_type.name(),
                 document_id,
                 start_at_ms,
                 limit,
@@ -68,15 +76,23 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::drive::document::paths::document_history_path;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
     #[test]
     fn should_keep_legacy_query_builder_available_after_layout_change() {
         let contract_id = [1; 32];
         let document_id = [2; 32];
-        let document_type_name = "note";
+        let contract = dpp::tests::json_document::json_document_to_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .unwrap();
+        let document_type_name = "profile";
+        let document_type = contract.document_type_for_name(document_type_name).unwrap();
         let path_query = Drive::fetch_document_history_query(
             contract_id,
-            document_type_name,
+            document_type,
             document_id,
             1_000,
             Some(3),

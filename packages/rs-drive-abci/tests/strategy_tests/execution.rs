@@ -19,11 +19,14 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey, SignatureSchemes};
+use dpp::bls::SecretKey as BlsPrivateKey;
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::hashes::{sha256d, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId, VarInt};
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
+use dpp::dashcore_rpc::Error as CoreRpcError;
+use drive::structure::conformance::check_conformance;
+use drive::structure::drive_structure;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -505,18 +508,64 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 .clone())
         });
 
+    // Core's state of one masternode at a height, as the strategy made it. From protocol version
+    // 15 a block reads it for an operator key change printed without a payout.
+    let masternodes_by_height = with_extra_masternodes_with_updates.clone();
+    let hpmns_by_height = with_extra_hpmns_with_updates.clone();
+    let initial_masternodes = initial_all_masternodes.clone();
+    platform
+        .core_rpc
+        .expect_get_masternode_state()
+        .returning(move |pro_tx_hash, block| {
+            let at_height = masternodes_by_height
+                .get(&block)
+                .into_iter()
+                .chain(hpmns_by_height.get(&block))
+                .flatten()
+                .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                .map(|masternode| masternode.get_state_at_height(block).state.clone());
+            at_height
+                .or_else(|| {
+                    initial_masternodes
+                        .iter()
+                        .find(|masternode| masternode.pro_tx_hash() == *pro_tx_hash)
+                        .map(|masternode| masternode.get_state_at_height(block).state.clone())
+                })
+                .ok_or_else(|| {
+                    CoreRpcError::UnexpectedStructure(format!(
+                        "no masternode {pro_tx_hash} in the strategy at core height {block}"
+                    ))
+                })
+        });
+
+    let genesis_core_height = config.abci.genesis_core_height;
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
             let diff = if base_block.is_none() {
-                MasternodeListDiff {
-                    base_height: 0,
-                    block_height: block,
-                    added_mns: initial_all_masternodes
+                // Core's whole list at `block`: the initial masternodes at the genesis core
+                // height, where init chain starts, and what the strategy made of them at a later
+                // height, which the first block of protocol version 15 reads to reconcile
+                // operator payouts.
+                let added_mns = match (
+                    with_extra_masternodes_with_updates.get(&block),
+                    with_extra_hpmns_with_updates.get(&block),
+                ) {
+                    (Some(masternodes), Some(hpmns)) if block != genesis_core_height => masternodes
+                        .iter()
+                        .chain(hpmns)
+                        .map(|masternode| masternode.get_state_at_height(block).clone())
+                        .collect(),
+                    _ => initial_all_masternodes
                         .iter()
                         .map(|masternode_list_item| masternode_list_item.masternode.clone())
                         .collect(),
+                };
+                MasternodeListDiff {
+                    base_height: 0,
+                    block_height: block,
+                    added_mns,
                     removed_mns: vec![],
                     updated_mns: vec![],
                 }
@@ -695,7 +744,7 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 // From DIP 8: https://github.com/dashpay/dips/blob/master/dip-0008.md#finalization-of-signed-blocks
                 // The request id is SHA256("clsig", blockHeight) and the message hash is the block hash of the previously successful attempt.
 
-                let mut engine = QuorumSigningRequestId::engine();
+                let mut engine = sha256d::Hash::engine();
 
                 // Prefix
                 let prefix_len = VarInt("clsig".len() as u64);
@@ -706,7 +755,8 @@ pub(crate) async fn run_chain_for_strategy<'a>(
                 engine.input("clsig".as_bytes());
                 engine.input(block_height.to_le_bytes().as_slice());
 
-                let request_id = QuorumSigningRequestId::from_engine(engine);
+                let request_id =
+                    QuorumSigningRequestId::from_raw_hash(sha256d::Hash::from_engine(engine));
 
                 // Based on the deterministic masternode list at the given height, a quorum must be selected that was active at the time this block was mined
 
@@ -731,19 +781,15 @@ pub(crate) async fn run_chain_for_strategy<'a>(
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                let quorum_private_key =
-                    BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(quorum_private_key)
-                        .expect("expected to have a valid private key");
+                let quorum_private_key = BlsPrivateKey::from_be_bytes(quorum_private_key)
+                    .expect("expected to have a valid private key");
                 let signature = quorum_private_key
-                    .sign(
-                        SignatureSchemes::Basic,
-                        message_digest.as_byte_array().as_slice(),
-                    )
+                    .sign(message_digest.as_byte_array().as_slice())
                     .expect("expected to sign");
                 let chain_lock = ChainLock {
                     block_height,
                     block_hash: BlockHash::from_byte_array(*block_hash),
-                    signature: signature.as_raw_value().to_compressed().into(),
+                    signature: signature.to_bytes().into(),
                 };
 
                 Ok(chain_lock)
@@ -770,6 +816,11 @@ pub(crate) async fn run_chain_for_strategy<'a>(
         .core_rpc
         .expect_submit_chain_lock()
         .returning(move |chain_lock: &ChainLock| Ok(chain_lock.block_height));
+
+    platform
+        .core_rpc
+        .expect_verify_chain_lock()
+        .returning(|_| Ok(true));
 
     create_chain_for_strategy(
         platform,
@@ -858,9 +909,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .map(
                 |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
                     pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
-                        sum: Some(Bls12381(
-                            validator_in_quorum.public_key.0.to_compressed().to_vec(),
-                        )),
+                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
                     }),
                     power: 100,
                     pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
@@ -870,11 +919,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
             .collect(),
         threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
             sum: Some(Bls12381(
-                current_quorum_with_test_info
-                    .public_key
-                    .0
-                    .to_compressed()
-                    .to_vec(),
+                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
         quorum_hash: current_validator_quorum_hash.to_byte_array().to_vec(),
@@ -882,6 +927,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
 
     let ResponseInitChain {
         initial_core_height,
+        consensus_params,
         ..
     } = abci_application
         .init_chain(init_chain_request)
@@ -894,7 +940,7 @@ pub(crate) async fn start_chain_for_strategy<'a>(
         .load()
         .current_validator_set_quorum_hash();
 
-    continue_chain_for_strategy(
+    let mut outcome = continue_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
@@ -917,7 +963,9 @@ pub(crate) async fn start_chain_for_strategy<'a>(
         config,
         StrategyRandomness::RNGEntropy(rng),
     )
-    .await
+    .await;
+    outcome.init_chain_consensus_params = consensus_params;
+    outcome
 }
 
 pub(crate) async fn continue_chain_for_strategy<'a>(
@@ -975,6 +1023,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
 
     let mut validator_set_updates = BTreeMap::new();
+    let mut consensus_param_updates = BTreeMap::new();
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
@@ -1107,6 +1156,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         }
 
         let MimicExecuteBlockOutcome {
+            consensus_param_updates: block_consensus_params,
             state_transaction_results,
             withdrawal_transactions: withdrawals_this_block,
             validator_set_update,
@@ -1117,6 +1167,10 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             signature,
             app_version,
         } = block_execution_outcome.unwrap();
+
+        if let Some(params) = block_consensus_params {
+            consensus_param_updates.insert(block_height, params);
+        }
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
@@ -1228,7 +1282,11 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             .index
     };
 
+    assert_state_conforms_to_structure(platform);
+
     ChainExecutionOutcome {
+        init_chain_consensus_params: None,
+        consensus_param_updates,
         abci_app,
         masternode_identity_balances,
         identities: current_identities,
@@ -1248,4 +1306,26 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         instant_lock_quorums,
         signer,
     }
+}
+
+/// Every element the chain wrote must be covered by the GroveDB structure
+/// description in `drive::structure`. This is what makes a change that adds
+/// structure describe it: whatever its own strategy tests write gets walked.
+fn assert_state_conforms_to_structure(platform: &Platform<MockCoreRPCLike>) {
+    let state = platform.state.load();
+    // A chain whose genesis block failed has written nothing yet
+    if state.last_committed_block_info().is_none() {
+        return;
+    }
+    let Ok(platform_version) = state.current_platform_version() else {
+        return;
+    };
+    // Mock protocol versions used by upgrade tests say nothing about which
+    // structure should exist
+    if platform_version.protocol_version > PlatformVersion::latest().protocol_version {
+        return;
+    }
+    check_conformance(&platform.drive, &drive_structure(), None, platform_version)
+        .expect("expected to walk the state")
+        .assert_conforms();
 }

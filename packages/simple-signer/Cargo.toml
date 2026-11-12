@@ -23,6 +23,9 @@ async-trait = { version = "0.1.79" }
 bincode = { workspace = true, features = ["serde"] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }
+# rand 0.8 `RngCore`, the RNG type strategy-tests/drive-abci pass in; the
+# secp256k1 re-export is rand 0.9.
+rand = { version = "0.8", default-features = false }
 tracing = "0.1.41"
 zeroize = "1"
 

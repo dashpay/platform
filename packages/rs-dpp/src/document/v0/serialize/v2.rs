@@ -505,6 +505,8 @@ impl DocumentV0 {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             creator_id,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 }

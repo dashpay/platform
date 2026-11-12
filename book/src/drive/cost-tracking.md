@@ -149,7 +149,6 @@ pub fn consume_to_fees_v0(
     epoch: &Epoch,
     epochs_per_era: u16,
     fee_version: &FeeVersion,
-    previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
 ) -> Result<Vec<FeeResult>, Error> {
     drive_operations.into_iter().map(|operation| match operation {
         PreCalculatedFeeResult(f) => Ok(f),
@@ -180,7 +179,7 @@ pub fn consume_to_fees_v0(
                             removal_per_epoch_by_identifier,
                             epoch.index,
                             epochs_per_era,
-                            previous_fee_versions,
+                            |_| Ok(fee_version.storage.storage_disk_usage_credit_per_byte),
                         )?, system_amount)
                     }
                 };
@@ -202,6 +201,14 @@ Each operation produces a `FeeResult` with four components:
 - **`processing_fee`**: The ephemeral cost of computation and I/O.
 - **`fee_refunds`**: Credits returned because previously-stored data was removed.
 - **`removed_bytes_from_system`**: Bytes removed that were stored by the system (not any particular identity), so no refund is issued.
+
+Generation 0 prices every refund at the current block's storage rate. From protocol version 15,
+`consume_to_fees_v1` hands generation 0 each sectioned removal as a basic removal of as many
+bytes, so everything else is priced the same, and then prices the refunds itself at the storage
+rate of the protocol version that ran each storing epoch. `Drive::calculate_fee` reads that
+version from the epoch's tree, so it is a method on `Drive`. The read is charged to the
+processing fee, once per earlier storing epoch in a calculation; bytes stored in the block's own
+epoch need no read. Estimated costs carry no storing epochs, so an estimate has no such read.
 
 ## Ephemeral Cost Calculation
 

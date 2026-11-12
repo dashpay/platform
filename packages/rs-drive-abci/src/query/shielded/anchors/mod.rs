@@ -84,6 +84,7 @@ mod tests {
         let request = GetShieldedAnchorsRequest {
             version: Some(RequestVersion::V0(GetShieldedAnchorsRequestV0 {
                 prove: false,
+                token_id: None,
             })),
         };
 
@@ -116,6 +117,7 @@ mod tests {
         let request = GetShieldedAnchorsRequest {
             version: Some(RequestVersion::V0(GetShieldedAnchorsRequestV0 {
                 prove: true,
+                token_id: None,
             })),
         };
 

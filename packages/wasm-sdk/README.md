@@ -80,6 +80,39 @@ await init();
 const ok = sdk.validate_address('yXXX...', 'testnet');
 ```
 
+### Quorum keys: trusted or verified
+
+Proof verification needs the public key of the Platform quorum that signed each response. A builder takes them from one of two contexts:
+
+- `WasmTrustedContext` (`await WasmTrustedContext.prefetchTestnet()`, then `builder.withTrustedContext(context)`) fetches the quorum lists from the network's quorum service and trusts what it returns. It works on every network, including devnets and local.
+- `WasmVerifiedContext` (mainnet and testnet only) proves each key with a DIP 175 quorum proof from a checkpoint built into the SDK. The quorum service then only relays the proofs; a relay that lies can delay requests but cannot make the SDK accept a forged key. Nothing is fetched up front: a key is proven the first time a response signed by its quorum is verified.
+
+```js
+const context = sdk.WasmVerifiedContext.testnet(); // or .mainnet(), optionally with relay URLs
+const client = sdk.WasmSdkBuilder.testnet().withVerifiedContext(context).build();
+
+// ... after queries ran: proofs grow with the age of the state they start from,
+// so save where they got to (e.g. on page hide)...
+// One key per network: a continuation only resumes a context of the network that saved it.
+localStorage.setItem('dash-continuation.testnet', JSON.stringify(context.continuation()));
+// ...and resume from it next time (a `QuorumProofContinuation`: `{ anchor, states }`).
+const relays = undefined; // or ['https://relay.example']
+const saved = localStorage.getItem('dash-continuation.testnet');
+let next = sdk.WasmVerifiedContext.testnet(relays); // invalid relays throw here
+if (saved) {
+  try {
+    next = sdk.WasmVerifiedContext.testnetFromContinuation(JSON.parse(saved), relays);
+  } catch {
+    // Refused or unreadable, so it would fail every later load too: drop it.
+    localStorage.removeItem('dash-continuation.testnet');
+  }
+}
+```
+
+A continuation's `anchor` is the newest verified state more than one DKG interval (24 blocks) below the lowest Core height of a response the SDK verified with the context's keys (the context's own starting point if none was verified, or if no kept state is that far below it, as with a recent custom checkpoint). A Platform quorum signed that height, so Platform reached it, and Platform's height only rises: the next session can still prove the heights Platform reports. The margin is there because a key verified at a height may rest on evidence up to one DKG interval below it (the grace for the block on which Platform still signs with a quorum Core has just retired), and the next session needs a state below that evidence to prove the key again. A response that fails verification never moves the anchor, and neither do keys proven only through `fetchQuorumPublicKey`. `states` are the newer verified states, so proofs stay short. Saved before any response was verified, a continuation is just the starting point and its states. Save the whole continuation rather than `latestVerifiedState()`: that state is often above Platform's height, and no key at or below a lone starting state can be proven. `mainnetWithCheckpoint` / `testnetWithCheckpoint` start from a single `QuorumProofState` you checked independently, in the form of the `target` Dash Core's `getquorumproofchain` returns. Checkpoints and continuations are trust configuration: only pass back what a context saved. A continuation does not record the checkpoint it started from, so it stays trusted after an SDK release replaces that checkpoint; if a release's notes say to, drop saved continuations.
+
+Relays are 1 to 8 base URLs whose `/proofs` endpoint serves the proofs; each must be `https` (plain `http` only on a loopback host). As with the Rust SDK's builder, the context attached last is the one the SDK uses. `build()` throws when the Rust SDK refuses the configuration: a verified context of another network than the builder's, or one with `withProofs(false)`. Contracts a verified SDK caches are persisted apart from the trusted ones (`dash-sdk.contracts.<network>.verified`). The verified context discovers no masternode addresses, so the builder keeps the addresses it has (its preset or `withAddresses` list, or those a trusted context attached before it discovered). The public mainnet quorum service does not serve proofs yet, so on mainnet pass relays that do.
+
 ### Advanced: raw artifacts (separate .wasm)
 
 If you prefer to manage the `.wasm` file via your bundler, import the raw entry explicitly:
@@ -174,6 +207,15 @@ const status = await client.getStatus();
 const contracts = await client.getDataContractsByRange({ limit: 100 });
 // Check that contracts held locally are still current (versions only; the contracts themselves only with includeContracts)
 const versions = await client.getDataContractsLatestVersions({ contractIds: ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'] });
+// Contract groups: a group's owner/admins/name, its members one kind at a time (page with nextStartAfter), and the groups a contract is in
+const contractGroupId = '8Y4NJ3bDgNvWm6tMMXAdEWQEvkqbCiCSwK9KpQTPMFZ2'; // a contract group id, not a contract id
+const groupInfo = await client.getContractGroupInfo(contractGroupId);
+const members = await client.getContractGroupMembers({ contractGroupId, kind: 'contracts', limit: 50 });
+const memberships = await client.getContractGroupsForContract('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+// What is left of the budgets of an identity's keys: a bigint per budgeted key (0n = spent), null for a key without a budget
+const budgets = await client.getIdentityKeysRemainingBudgets('5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS', [3, 4]);
+// Raise the limits of a key: add credits to its budget, or move its expiry later (signed by a MASTER key or an unlimited CRITICAL key)
+const key = await client.identityUpdateKeyLimits({ identity, keyId: 5, addBudget: 100000000n, signer });
 // Seed a contract the app already holds (a bundled snapshot); pair with the versions check above
 client.addKnownContract(contract);
 client.free();
@@ -200,7 +242,7 @@ Accepted values are simple levels ('off'|'error'|'warn'|'info'|'debug'|'trace') 
 ## Environment & compatibility
 
 - ESM-only package ("type": "module"). Use dynamic import in CJS.
-- Node.js: 16+ recommended (18+ preferred).
+- Node.js: >= 22.
 - Browsers: modern engines with WebAssembly + Web Workers.
 
 ---

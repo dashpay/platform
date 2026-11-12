@@ -1,6 +1,7 @@
 mod verify_full_identities_by_public_key_hashes;
 mod verify_full_identity_by_identity_id;
 mod verify_full_identity_by_non_unique_public_key_hash;
+mod verify_full_identity_by_non_unique_public_key_hash_two_proofs;
 mod verify_full_identity_by_unique_public_key_hash;
 mod verify_identities_contract_keys;
 mod verify_identity_balance_and_revision_for_identity_id;
@@ -12,5 +13,6 @@ mod verify_identity_id_by_non_unique_public_key_hash;
 mod verify_identity_id_by_unique_public_key_hash;
 mod verify_identity_ids_by_unique_public_key_hashes;
 mod verify_identity_keys_by_identity_id;
+mod verify_identity_keys_remaining_budgets;
 mod verify_identity_nonce;
 mod verify_identity_revision_for_identity_id;

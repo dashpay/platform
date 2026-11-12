@@ -74,14 +74,7 @@ mod tests {
             },
         )];
         drive
-            .apply_drive_operations(
-                ops_in,
-                true,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(ops_in, true, &BlockInfo::default(), None, platform_version)
             .expect("apply");
 
         let mut drive_operations = vec![];

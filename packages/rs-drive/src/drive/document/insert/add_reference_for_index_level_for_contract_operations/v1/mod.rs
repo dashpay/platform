@@ -1,18 +1,20 @@
-// Protocol 15 generation: index references point at the primary key tree
-// entry for every document type, including keep-history types whose entry
-// is itself a reference into the history tree; everything else matches v0.
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
-use crate::drive::document::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
+use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
 use crate::drive::document::{
-    document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
-    make_document_reference_v1, make_document_reference_with_sum_item_v1,
-    read_document_sum_contribution,
+    document_reference_size_v1, make_document_reference_v1,
+    make_document_reference_with_sum_item_v1, read_document_sum_contribution,
+};
+use crate::drive::document::{
+    encode_index_only_entry_payload, index_only_item_estimated_value_size,
+    index_only_row_commitment_max_preimage_size, index_only_row_commitment_with_preimage_size,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::util::object_size_info::DocumentInfo::{
@@ -28,19 +30,23 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
-use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllReferencesWithSumItem};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the terminal reference.
+    ///
+    /// v1 (protocol version 15) is v0, describing for an estimate the `[0]` layer of a summable
+    /// non-unique, contested or null-field index (its entries for a value, keyed by document id)
+    /// as the references with sum items it holds, which GroveDB prices 10 bytes dearer per node
+    /// than the plain references v0 describes there, as
+    /// `remove_reference_for_index_level_for_contract_operations` 2 does. References target
+    /// the primary entry, allowing a second hop for a keep-history type's current revision.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_reference_for_index_level_for_contract_operations_v1(
@@ -53,9 +59,7 @@ impl Drive {
         all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -66,6 +70,16 @@ impl Drive {
             return Ok(());
         }
 
+        // A summableOffCountIndex index has no entry to write: the walker moves its
+        // counter at the value position instead of descending here. Inert before protocol
+        // version 14: only parser generation 3 admits the keyword, and only the v2 walkers,
+        // which no earlier version selects, reach such an index.
+        if index_type.is_summable_off_count_index() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a summableOffCountIndex index's counter is moved by the walker, never written as an entry",
+            )));
+        }
+
         // indexOnly terminal: the member key is the terminal property's
         // value and the element is an empty `Item` — there is no
         // primary-storage row to reference. `terminal` can only be `Some`
@@ -73,12 +87,12 @@ impl Drive {
         // below meta-schema v3), so this branch is unreachable for every
         // historical document — the same in-place gating the count and sum
         // flags in this function already rely on.
-        if let Some(terminal_property) = index_type.terminal.as_deref() {
+        if let Some(terminal) = index_type.terminal.as_deref() {
             return self.add_index_only_terminal_item_operations_v1(
                 document_and_contract_info,
                 index_path_info,
                 index_type,
-                terminal_property,
+                terminal,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
@@ -193,17 +207,24 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value, references with sum
+                // items under a summable index
+                let reference_size = document_reference_size_v1();
+                let flags_size = storage_flags.map(|s| s.serialized_size());
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
-                            DEFAULT_HASH_SIZE_U8,
-                            storage_flags.map(|s| s.serialized_size()),
-                            sum_property_name.is_some(),
-                        ),
+                        estimated_layer_sizes: if sum_property_name.is_some() {
+                            AllReferencesWithSumItem(
+                                DEFAULT_HASH_SIZE_U8,
+                                reference_size,
+                                flags_size,
+                            )
+                        } else {
+                            AllReference(DEFAULT_HASH_SIZE_U8, reference_size, flags_size)
+                        },
                     },
                 );
             }
@@ -325,12 +346,12 @@ impl Drive {
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
-                    target: QueryTargetValue(document_reference_estimated_value_size_v1(
-                        storage_flags
-                            .map(|s| s.serialized_size())
-                            .unwrap_or_default(),
-                        sum_property_name.is_some(),
-                    )),
+                    target: QueryTargetValue(
+                        document_reference_size_v1()
+                            + storage_flags
+                                .map(|s| s.serialized_size())
+                                .unwrap_or_default(),
+                    ),
                 }
             };
 
@@ -353,7 +374,8 @@ impl Drive {
 
     /// The indexOnly terminal: writes `[…index path, 0, <terminal value>] →
     /// Item(commitment, flags)` — the member key is the terminal property's
-    /// value (`$ownerId` or a refersTo-typed identifier) sitting exactly
+    /// value in its tree-key encoding (`$ownerId` or any indexable schema
+    /// property, sized for estimation by its declared bound) sitting exactly
     /// where a normal non-unique index keys by document id, and the element
     /// payload is the row commitment because the entry IS the row. Storage
     /// flags ride the element flags for epoch/owner refunds, exactly as on
@@ -364,7 +386,9 @@ impl Drive {
     /// validation probes every index's entry before the batch applies, so
     /// reaching this error at apply time means validation was bypassed —
     /// the same backstop role the unique-index "reference already exists"
-    /// above plays.
+    /// above plays. The exception is an index whose entries outlive a delete
+    /// (`outlivesDelete`): validation does not probe it, and an entry there
+    /// already, left by a deleted document with the same key, is written over.
     ///
     /// Under a summable index the element is
     /// `ItemWithSumItem(commitment, amount, flags)` instead — the same
@@ -382,12 +406,10 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
         index_type: &IndexLevelTypeInfo,
-        terminal_property: &str,
+        terminal: &[String],
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -396,6 +418,19 @@ impl Drive {
 
         let member_tree_type = terminal_member_tree_type(index_type);
         let sum_property_name: Option<&str> = index_type.summable.as_deref();
+        // The member key's estimated width follows the terminal property:
+        // 32 bytes for `$ownerId`, the declared bound otherwise.
+        let member_key_max_size = index_only_terminal_max_key_size(
+            document_and_contract_info.document_type,
+            terminal,
+            platform_version,
+        )?;
+        // The item's estimated value: the padded commitment plus the type's
+        // entry payload bound, when it declares one.
+        let estimated_item_value_size = index_only_item_estimated_value_size(
+            document_and_contract_info.document_type,
+            platform_version,
+        )?;
 
         // The `0` storage-marker tree, byte-identical in position to the
         // non-unique layout above.
@@ -452,20 +487,20 @@ impl Drive {
         // element envelope; 10 bytes is the worst case the sum-aware space
         // helpers reserve.
         let estimated_value_size = if sum_property_name.is_some() {
-            INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE + 10
+            estimated_item_value_size + 10
         } else {
-            INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE
+            estimated_item_value_size
         };
 
         let item_space = if sum_property_name.is_some() {
             Element::required_item_with_sum_item_space(
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
+                estimated_item_value_size,
                 STORAGE_FLAGS_SIZE,
                 &drive_version.grove_version,
             )?
         } else {
             Element::required_item_space(
-                INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE,
+                estimated_item_value_size,
                 STORAGE_FLAGS_SIZE,
                 &drive_version.grove_version,
             )?
@@ -478,7 +513,7 @@ impl Drive {
                     tree_type: member_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
-                        DEFAULT_HASH_SIZE_U8,
+                        member_key_max_size,
                         estimated_value_size,
                         storage_flags.map(|s| s.serialized_size()),
                     ),
@@ -486,27 +521,20 @@ impl Drive {
             );
         }
 
-        // Member key: the terminal property's value — 32 bytes, since the
-        // parser only admits `$ownerId` or identifier-typed refersTo
-        // properties as terminals.
+        // Member key: the terminal property's value in its tree-key
+        // encoding — the same bytes a prefix level would key by.
         let member_key: Option<Vec<u8>> = match document_and_contract_info
             .owned_document_info
             .document_info
             .get_borrowed_document_and_storage_flags()
         {
-            Some((document, _)) => Some(
-                document
-                    .get_raw_for_document_type(
-                        terminal_property,
-                        document_and_contract_info.document_type,
-                        document_and_contract_info.owned_document_info.owner_id,
-                        platform_version,
-                    )?
-                    .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "indexOnly terminal value must be present: the parser requires \
-                         every indexOnly property (and $ownerId) to be set",
-                    )))?,
-            ),
+            Some((document, _)) => Some(index_only_member_key(
+                document,
+                document_and_contract_info.document_type,
+                terminal,
+                document_and_contract_info.owned_document_info.owner_id,
+                platform_version,
+            )?),
             // Estimation-only document info carries no values.
             None => None,
         };
@@ -517,8 +545,20 @@ impl Drive {
         // size, which keeps the estimate above the applied fee across the
         // indexed-tree layers' documented under-count (see
         // `estimated_sum_trees_for_value_tree_type`).
+        //
+        // Each entry's commitment is a double-SHA256 over the document's
+        // values, a typed array's whole list included (protocol version 14),
+        // billed here by its preimage; the dry run bills the widest preimage
+        // the type allows, which upper-bounds it.
         let item_value = if estimated_costs_only_with_layer_info.is_some() {
-            vec![0u8; INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE as usize]
+            batch_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+                HashFunction::Sha256_2,
+                index_only_row_commitment_max_preimage_size(
+                    document_and_contract_info.document_type,
+                    platform_version,
+                ),
+            )));
+            vec![0u8; estimated_item_value_size as usize]
         } else {
             let (document, _) = document_and_contract_info
                 .owned_document_info
@@ -527,12 +567,23 @@ impl Drive {
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                     "indexOnly terminal insert needs a document outside estimation mode",
                 )))?;
-            crate::drive::document::index_only_row_commitment(
+            // The commitment first, then the type's entry payload (empty
+            // without an `entryPayload` declaration).
+            let (commitment, preimage_size) = index_only_row_commitment_with_preimage_size(
                 document,
                 document_and_contract_info.document_type,
                 platform_version,
-            )?
-            .to_vec()
+            )?;
+            batch_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+                HashFunction::Sha256_2,
+                preimage_size,
+            )));
+            let mut item_value = commitment.to_vec();
+            item_value.extend(encode_index_only_entry_payload(
+                document,
+                document_and_contract_info.document_type,
+            )?);
+            item_value
         };
 
         let key_element_info = match &member_key {
@@ -565,7 +616,7 @@ impl Drive {
                         .document_type
                         .unique_id_for_storage()
                         .to_vec(),
-                    max_size: DEFAULT_HASH_SIZE_U8,
+                    max_size: member_key_max_size,
                 },
                 item_space,
             )),
@@ -588,6 +639,14 @@ impl Drive {
             }
         };
 
+        // An index whose entries outlive a delete may hold the entry of a
+        // deleted document with the same key (registration makes sure no
+        // document in state shares it): the create writes over it, so the
+        // entry carries the commitment of the row writing it, and the count
+        // does not move. Nothing is read.
+        if index_type.outlives_delete {
+            return self.batch_insert(path_key_element_info, batch_operations, drive_version);
+        }
         let inserted = self.batch_insert_if_not_exists(
             path_key_element_info,
             apply_type,
@@ -595,6 +654,7 @@ impl Drive {
             batch_operations,
             drive_version,
         )?;
+        // Every other index's collision was refused by state validation.
         if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
                 "index-only entry already exists: state validation must reject a create \

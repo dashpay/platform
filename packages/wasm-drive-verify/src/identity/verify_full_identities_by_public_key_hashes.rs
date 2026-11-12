@@ -63,7 +63,7 @@ pub fn verify_full_identities_by_public_key_hashes_vec(
 
     let (root_hash, identities_vec): (RootHash, Vec<([u8; 20], Option<Identity>)>) =
         Drive::verify_full_identities_by_public_key_hashes(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &public_key_hashes_vec,
             platform_version,
         )
@@ -133,7 +133,7 @@ pub fn verify_full_identities_by_public_key_hashes_map(
 
     let (root_hash, identities_map): (RootHash, BTreeMap<[u8; 20], Option<Identity>>) =
         Drive::verify_full_identities_by_public_key_hashes(
-            supported_grovedb_proof(&proof_vec, platform_version)?,
+            supported_grovedb_proof(&proof_vec)?,
             &public_key_hashes_vec,
             platform_version,
         )
