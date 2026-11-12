@@ -2488,6 +2488,51 @@ async fn should_charge_a_flat_processing_fee_for_a_multiple_choice_proposal() {
         actual_fees.processing_fee
     );
 
+    // Nor does one that state validation refuses: it passes every check on the transition
+    // itself, becomes an action of the batch, and is replaced there by a nonce bump when the
+    // description document it names turns out not to exist. A bump creates nothing
+    let host = description_host(true, platform_version);
+    let (transition, never_created_id) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        question_properties(
+            "Described by a document that is not there",
+            true,
+            host.id(),
+            TEXT,
+            Identifier::new([7; 32]),
+        ),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let StateTransitionExecutionResult::PaidConsensusError {
+        error, actual_fees, ..
+    } = process(&platform, transition, 45_000, platform_version)
+    else {
+        panic!("expected the proposal naming a missing description to be refused");
+    };
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_))
+        ),
+        "{error:?}"
+    );
+    assert!(
+        actual_fees.processing_fee < at_most_gas,
+        "{}",
+        actual_fees.processing_fee
+    );
+    assert!(stored_document(
+        &platform,
+        &contract,
+        multiple_choice_proposal::NAME,
+        never_created_id
+    )
+    .is_none());
+
     // An identity holding less than the fee creates no proposal and keeps its balance
     let mut poor = Writer {
         info: setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1)),
