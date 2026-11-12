@@ -84,7 +84,7 @@ impl<C> Platform<C> {
                 .drive
                 .get_contract_with_fetch_info(
                     contract_id.into_buffer(),
-                    false,
+                    true,
                     None,
                     platform_version
                 )
