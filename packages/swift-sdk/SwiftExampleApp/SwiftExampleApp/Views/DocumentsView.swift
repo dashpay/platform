@@ -866,9 +866,8 @@ struct DeleteDocumentView: View {
 
 /// Erases the retained revisions of a keep-history document that has
 /// already been deleted, one bounded chunk per broadcast. The row is still
-/// local because the deletion happened elsewhere (another device, the
-/// Settings builder), or the document is still active, in which case
-/// consensus refuses the erase as a paid rejection; the footer says so.
+/// local because the deletion happened elsewhere (another device or the
+/// Settings builder). An ACTIVE or ABSENT lifecycle skips the broadcast.
 ///
 /// The erase result only observes that the document is absent from
 /// ordinary reads, which it already was, so the sheet reads the lifecycle
@@ -920,12 +919,14 @@ struct EraseDocumentView: View {
                 } footer: {
                     Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. Erasing a document that is still active is rejected by consensus and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
                 }
-                if submissions > 0 {
+                if submissions > 0 || progress != nil {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Erase submitted, absence observed", systemImage: "checkmark.seal")
-                                .foregroundColor(.green)
-                                .font(.headline)
+                            if submissions > 0 {
+                                Label("Erase submitted; lifecycle read below", systemImage: "info.circle")
+                                    .foregroundColor(.secondary)
+                                    .font(.headline)
+                            }
                             if let progress {
                                 Text(progress)
                                     .font(.caption)
@@ -974,6 +975,15 @@ struct EraseDocumentView: View {
                 }
             }
             .interactiveDismissDisabled(isSubmitting)
+            .task {
+                let observed = try? await appState.sdk?.documentGetLifecycle(
+                    dataContractId: contractIdBase58,
+                    documentType: documentTypeName,
+                    documentId: documentIdText
+                )
+                guard !isSubmitting, submissions == 0 else { return }
+                lifecycle = observed
+            }
             .alert(item: $actionError) { err in
                 Alert(title: Text("Erase failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
@@ -1020,6 +1030,16 @@ struct EraseDocumentView: View {
                 let before = try? await sdk?.documentGetLifecycle(
                     dataContractId: contractIdBase58, documentType: typeName, documentId: docIdBase58
                 )
+                if let before, before.state == .active || before.state == .absent {
+                    await MainActor.run {
+                        lifecycle = before
+                        progress = "Erase not submitted. " + DocumentHistoryLifecycle.describeEraseProgress(
+                            before: before, after: before
+                        )
+                        isSubmitting = false
+                    }
+                    return
+                }
                 _ = try await wallet.eraseDocument(
                     ownerIdentityId: ownerId,
                     contractId: contractId,
