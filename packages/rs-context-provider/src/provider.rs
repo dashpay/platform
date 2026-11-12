@@ -137,8 +137,8 @@ pub trait ContextProvider: Send + Sync {
     /// * `Some(future)`, resolving to:
     ///   * `Ok(Some(key))`: the key, which `get_quorum_public_key` now returns
     ///     as well.
-    ///   * `Ok(None)`: the trusted source, asked after this call was made,
-    ///     answered and does not know this quorum.
+    ///   * `Ok(None)`: the provider's source, asked after this call was
+    ///     made, says it does not know this quorum.
     ///   * `Err(_)`: the provider could not find out, for example because its
     ///     trusted source was unreachable.
     fn fetch_quorum_public_key(
@@ -206,11 +206,13 @@ pub trait ContextProvider: Send + Sync {
     ) {
     }
 
-    /// The source this provider answers quorum lookups from right now, for
+    /// The source this provider asks first for quorum keys right now, for
     /// diagnostics: its only source, or, for a provider that switches between
-    /// sources, the one it would ask now. For one that chooses by whether a
-    /// published SPV client is ready, a client that cannot say counts as not
-    /// ready, so this reports the trusted source then.
+    /// sources, the one it would ask first now. A provider that falls back to
+    /// another source for a key the first cannot serve still reports the
+    /// first. For one that chooses by whether a published SPV client is
+    /// ready, a client that cannot say counts as not ready, so this reports
+    /// the trusted source then.
     ///
     /// The default, `None`, makes no claim. A provider wrapping another
     /// forwards this and the two methods below, or the wrapped provider

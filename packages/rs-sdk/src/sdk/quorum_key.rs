@@ -212,7 +212,7 @@ mod tests {
         GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
         WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
     };
-    use dash_context_provider::{ContextProviderError, QuorumKeyFuture};
+    use dash_context_provider::{AdaptiveContextProvider, ContextProviderError, QuorumKeyFuture};
     use dpp::block::extended_epoch_info::ExtendedEpochInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
@@ -960,6 +960,57 @@ mod tests {
         let mut asked = service.join().expect("quorum service");
         asked.sort();
         assert_eq!(asked, ["/previous", "/quorums"]);
+    }
+
+    /// An SDK in Auto with SPV synced still verifies a proof signed by a
+    /// quorum SPV has not caught up with yet, with the key the trusted
+    /// service lists: the node that sent it is honest, and would otherwise
+    /// be banned for SPV lagging behind.
+    #[tokio::test]
+    async fn should_verify_a_proof_whose_quorum_spv_has_not_seen_with_the_trusted_key() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let trusted = Arc::new(trusted_provider(base_url));
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            trusted.local_resolver(),
+            Network::Regtest,
+        )
+        .expect("a trusted provider of the same network");
+        let spv = adaptive
+            .spv_source_slot()
+            .expect("an SPV slot")
+            .claim()
+            .expect("an empty slot");
+        // A synced SPV client that does not hold the signing quorum.
+        spv.publish(Arc::new(CannotFetch), Arc::new(|| Ok(true)));
+        let provider = Counting::new(adaptive);
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let epoch = verify(&sdk, request, response)
+            .await
+            .expect("the trusted key verifies the proof SPV cannot");
+
+        assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(
+            provider.fetches.load(Ordering::SeqCst),
+            1,
+            "the key SPV lacks is fetched"
+        );
+        let mut asked = service.join().expect("quorum service");
+        asked.sort();
+        assert_eq!(
+            asked,
+            ["/previous", "/quorums"],
+            "the key comes from the trusted service"
+        );
     }
 
     /// A provider set while a verification fetches a missing quorum key does

@@ -385,7 +385,11 @@ pub unsafe extern "C" fn dash_sdk_create_spv(config: *const DashSDKConfig) -> Da
     dash_sdk_create_with_fixed_provider(config, FixedContextProviderKind::Spv)
 }
 
-/// Create an SDK with a fixed adaptive context provider.
+/// Create an SDK with a fixed adaptive context provider, in Auto mode.
+///
+/// Auto asks a wallet manager's SPV client for quorum keys once one serves
+/// this SDK and has synced, and the trusted quorum service before that and
+/// for any key SPV cannot serve. See `dash_sdk_set_context_provider_mode`.
 ///
 /// # Safety
 /// `config` must be valid for the duration of the call.
@@ -699,7 +703,9 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
 }
 
 /// Set the quorum mode of the SDK's current context provider: Auto, SPV or
-/// Trusted, see `ContextProviderMode`. Only a provider that switches between
+/// Trusted, see `ContextProviderMode`. Auto falls back to the trusted quorum
+/// service for any key SPV cannot serve, so it is only as strong as that
+/// service; SPV fails closed instead. Only a provider that switches between
 /// quorum sources has one, such as the adaptive provider
 /// `dash_sdk_create_adaptive` builds; any other refuses the change with
 /// `InvalidParameter`, including the adaptive provider's replacement.
@@ -744,7 +750,7 @@ pub unsafe extern "C" fn dash_sdk_set_context_provider_mode(
 /// does not say where its quorum keys come from.
 const CUSTOM_QUORUM_SOURCE: u8 = 2;
 
-/// The source answering `wrapper`'s quorum lookups now, as the SDK's current
+/// The source `wrapper`'s quorum lookups ask first now, as the SDK's current
 /// context provider reports it. `None` for a provider that does not say.
 pub(crate) fn quorum_source(wrapper: &SDKWrapper) -> Option<QuorumKeySource> {
     let provider = wrapper.sdk.context_provider()?;
@@ -753,9 +759,10 @@ pub(crate) fn quorum_source(wrapper: &SDKWrapper) -> Option<QuorumKeySource> {
     wrapper.runtime.block_on(async { provider.quorum_source() })
 }
 
-/// Return the source the SDK's current context provider answers quorum
-/// lookups from, for UI diagnostics: `0` trusted, `1` SPV, `2` a provider that
-/// does not say, or a null handle.
+/// Return the source the SDK's current context provider asks first for
+/// quorum keys, for UI diagnostics: `0` trusted, `1` SPV, `2` a provider that
+/// does not say, or a null handle. In Auto, a key SPV cannot serve still
+/// comes from the trusted service while this reports SPV.
 ///
 /// # Safety
 /// `sdk_handle` must be a valid SDK handle for the duration of this call.
