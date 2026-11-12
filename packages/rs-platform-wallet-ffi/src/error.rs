@@ -778,10 +778,16 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
     /// notes cover a shielded spend (or its plan) only with more notes than
-    /// one shielded transition can spend (`max_shielded_transition_actions`).
+    /// one shielded transition can spend (`max_shielded_actions_per_transition`).
     /// Nothing was reserved, built or broadcast. A smaller amount fits, or the
     /// notes can be merged first.
     ErrorShieldedSpendTooManyNotes = 78,
+
+    /// Maps `PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`: a
+    /// shielded withdrawal (or its plan) reserves an amount for Core below the
+    /// protocol minimum for its Core fee rate or above the maximum. Nothing was
+    /// reserved, built or broadcast. Another amount fits.
+    ErrorShieldedWithdrawalAmountOutOfRange = 79,
 
     /// The named thing does not exist.
     ///
@@ -1122,6 +1128,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedSpendTooManyNotes { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendTooManyNotes
+            }
+            PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedWithdrawalAmountOutOfRange
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code

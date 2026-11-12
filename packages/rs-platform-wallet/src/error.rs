@@ -1077,10 +1077,16 @@ pub enum PlatformWalletError {
     },
 
     /// The notes cover the spend only with more notes than one shielded transition can spend
-    /// (`max_shielded_transition_actions`). Refused before any note was reserved or anything
+    /// (`max_shielded_actions_per_transition`). Refused before any note was reserved or anything
     /// built; a smaller amount, or merging notes first, fits.
     #[error("Shielded spend needs {needed} notes, more than the {max} one transition can spend")]
     ShieldedSpendTooManyNotes { needed: usize, max: usize },
+
+    /// A shielded withdrawal's amount (the reserve for Core) is below the protocol minimum for
+    /// its Core fee rate or above the maximum. Refused before any note was reserved or anything
+    /// built; consensus would reject it after the proof.
+    #[error("Shielded withdrawal amount {amount} is outside the allowed range {min} to {max}")]
+    ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
 
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.

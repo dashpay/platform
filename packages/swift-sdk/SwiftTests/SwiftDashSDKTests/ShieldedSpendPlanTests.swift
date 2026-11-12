@@ -28,7 +28,7 @@ final class ShieldedSpendPlanTests: XCTestCase {
 
     private func plan(kind: ShieldedSpendKind, digestCount: Int = 32) -> ShieldedSpendPlan {
         ShieldedSpendPlan(
-            kind: kind, amount: 1, fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
+            kind: kind, amount: 1, recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
             digest: Data(repeating: 9, count: digestCount))
     }
 
@@ -72,6 +72,7 @@ final class ShieldedSpendPlanTests: XCTestCase {
         var ffi = ShieldedSpendPlanFFI()
         ffi.kind = 4
         ffi.amount = 100
+        ffi.recipient_amount = 60
         ffi.fee = .max
         ffi.total_input = 300
         ffi.total_debited = 200
@@ -82,8 +83,23 @@ final class ShieldedSpendPlanTests: XCTestCase {
         XCTAssertEqual(
             try ShieldedSpendPlan(ffi: ffi),
             ShieldedSpendPlan(
-                kind: .identityTopUp, amount: 100, fee: .max, totalInput: 300,
+                kind: .identityTopUp, amount: 100, recipientAmount: 60, fee: .max, totalInput: 300,
                 totalDebited: 200, noteCount: .max, digest: Data((0..<32).map(UInt8.init))))
+    }
+
+    /// A withdrawal plan without its Core fee rate is refused before the FFI.
+    func testShouldRequireTheCoreFeeRateOfAWithdrawalPlan() async {
+        let manager = makeManager()
+        await assertThrows("plan", Self.isInvalidParameter) {
+            _ = try await manager.shieldedPlanSpend(
+                walletId: Self.walletId, kind: .withdrawal, amount: .exact(5))
+        }
+        await assertThrows("plan", Self.isInvalidHandle) {
+            _ = try await manager.shieldedPlanSpend(
+                walletId: Self.walletId, kind: .withdrawal, amount: .exact(5),
+                coreFeePerByte: 1)
+        }
+        await manager.shutdown()
     }
 
     func testShouldRejectAPlanKindTheFFINeverWrites() {
@@ -122,7 +138,8 @@ final class ShieldedSpendPlanTests: XCTestCase {
             for amount in amounts {
                 await assertThrows("plan \(kind) \(amount)", Self.isInvalidHandle) {
                     _ = try await manager.shieldedPlanSpend(
-                        walletId: Self.walletId, account: 3, kind: kind, amount: amount)
+                        walletId: Self.walletId, account: 3, kind: kind, amount: amount,
+                        coreFeePerByte: 1)
                 }
             }
         }

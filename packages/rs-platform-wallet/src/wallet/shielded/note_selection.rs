@@ -14,6 +14,9 @@ use dpp::shielded::{
     is_allowed_identity_create_denomination, max_shielded_actions_per_transition,
 };
 use dpp::version::PlatformVersion;
+use dpp::withdrawal::{
+    core_fee_in_credits, min_withdrawal_amount_with_core_fee, validate_core_fee_per_byte_cap,
+};
 use dpp::ProtocolError;
 use sha2::{Digest, Sha256};
 
@@ -301,8 +304,12 @@ pub enum ShieldedSpendKind {
     Transfer,
     /// Unshield to a Platform address.
     Unshield,
-    /// ShieldedWithdrawal to a Core address.
-    Withdrawal,
+    /// ShieldedWithdrawal to a Core address at a Core fee rate: the rate fixes what the Core
+    /// fee takes from the amount reserved for Core, so it is part of the plan.
+    Withdrawal {
+        /// The Core asset-unlock fee rate, in duffs per byte.
+        core_fee_per_byte: u32,
+    },
     /// IdentityTopUpFromShieldedPool.
     IdentityTopUp,
 }
@@ -313,7 +320,7 @@ impl ShieldedSpendKind {
         match self {
             ShieldedSpendKind::Transfer => ShieldedFeeKind::Base,
             ShieldedSpendKind::Unshield => ShieldedFeeKind::Unshield,
-            ShieldedSpendKind::Withdrawal => ShieldedFeeKind::Withdrawal,
+            ShieldedSpendKind::Withdrawal { .. } => ShieldedFeeKind::Withdrawal,
             ShieldedSpendKind::IdentityTopUp => ShieldedFeeKind::IdentityTopUp,
         }
     }
@@ -322,7 +329,7 @@ impl ShieldedSpendKind {
         match self {
             ShieldedSpendKind::Transfer => 0,
             ShieldedSpendKind::Unshield => 1,
-            ShieldedSpendKind::Withdrawal => 2,
+            ShieldedSpendKind::Withdrawal { .. } => 2,
             ShieldedSpendKind::IdentityTopUp => 3,
         }
     }
@@ -346,42 +353,110 @@ pub enum ShieldedSpendAmount {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShieldedSpendPlan {
     pub kind: ShieldedSpendKind,
-    /// What the recipient gets.
+    /// What the spend reserves for the recipient: the amount sent, or for a withdrawal the
+    /// reserve for Core, of which the Core fee is taken.
     pub amount: Credits,
+    /// What the recipient receives. The amount, except for a withdrawal from protocol version
+    /// 14, where it is the reserve minus the Core fee at the kind's rate.
+    pub recipient_amount: Credits,
     /// The exact fee for the selected notes.
     pub fee: Credits,
     /// The sum of the selected notes.
     pub total_input: Credits,
     /// The selected notes' nullifiers, sorted.
     pub nullifiers: Vec<[u8; 32]>,
-    /// Commits to the kind, the amount, the fee and the selected notes.
+    /// Commits to the kind (a withdrawal's Core fee rate too), the amount, the fee and the
+    /// selected notes.
     pub digest: [u8; 32],
+}
+
+/// The digest a plan commits to. `nullifiers` must be sorted.
+fn spend_digest(
+    kind: ShieldedSpendKind,
+    amount: Credits,
+    fee: Credits,
+    nullifiers: &[[u8; 32]],
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"shielded-spend-plan");
+    hasher.update([kind.tag()]);
+    if let ShieldedSpendKind::Withdrawal { core_fee_per_byte } = kind {
+        hasher.update(core_fee_per_byte.to_le_bytes());
+    }
+    hasher.update(amount.to_le_bytes());
+    hasher.update(fee.to_le_bytes());
+    for nullifier in nullifiers {
+        hasher.update(nullifier);
+    }
+    hasher.finalize().into()
+}
+
+/// The bounds of a withdrawal's `reserve` for Core at `core_fee_per_byte`, from the DPP helpers
+/// consensus validates with: `(minimum, maximum, Core fee)`. From protocol version 14 (the
+/// versions that cap the Core fee rate) the Core fee is carved out of the reserve and the minimum
+/// leaves the protocol floor above it; before, the fee is drawn from the Core credit pool on top
+/// of the reserve, so the minimum is the floor and the fee is 0. A rate above the cap is refused,
+/// as consensus refuses it.
+fn withdrawal_bounds(
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Result<(Credits, Credits, Credits), PlatformWalletError> {
+    let limits = &platform_version.system_limits;
+    if limits.max_core_fee_per_byte.is_none() {
+        return Ok((
+            limits.min_withdrawal_amount,
+            limits.max_withdrawal_amount,
+            0,
+        ));
+    }
+    let capped = validate_core_fee_per_byte_cap(core_fee_per_byte, platform_version);
+    if let Some(error) = capped.first_error() {
+        return Err(PlatformWalletError::ShieldedBuildError(error.to_string()));
+    }
+    let core_fee = core_fee_in_credits(core_fee_per_byte).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError("the Core fee overflows credits".to_string())
+    })?;
+    Ok((
+        min_withdrawal_amount_with_core_fee(core_fee_per_byte, platform_version),
+        limits.max_withdrawal_amount,
+        core_fee,
+    ))
+}
+
+/// Refuse a withdrawal `amount` (the reserve for Core) outside what the protocol accepts at
+/// `core_fee_per_byte`, as [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. Returns
+/// what the recipient receives. Store-free, so callers can run it before reserving any note.
+pub(crate) fn ensure_withdrawal_amount_in_range(
+    amount: Credits,
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, PlatformWalletError> {
+    let (min, max, core_fee) = withdrawal_bounds(core_fee_per_byte, platform_version)?;
+    if amount < min || amount > max {
+        return Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { amount, min, max });
+    }
+    // In range, so at least the minimum, which is above the Core fee.
+    Ok(amount - core_fee)
 }
 
 impl ShieldedSpendPlan {
     fn new(
         kind: ShieldedSpendKind,
         amount: Credits,
+        recipient_amount: Credits,
         fee: Credits,
         total_input: Credits,
         mut nullifiers: Vec<[u8; 32]>,
     ) -> Self {
         nullifiers.sort_unstable();
-        let mut hasher = Sha256::new();
-        hasher.update(b"shielded-spend-plan");
-        hasher.update([kind.tag()]);
-        hasher.update(amount.to_le_bytes());
-        hasher.update(fee.to_le_bytes());
-        for nullifier in &nullifiers {
-            hasher.update(nullifier);
-        }
         Self {
             kind,
             amount,
+            recipient_amount,
             fee,
             total_input,
+            digest: spend_digest(kind, amount, fee, &nullifiers),
             nullifiers,
-            digest: hasher.finalize().into(),
         }
     }
 
@@ -401,7 +476,13 @@ impl ShieldedSpendPlan {
 /// ([`select_notes_with_fee`] at [`SPEND_MIN_ACTIONS`]) and their exact fee.
 ///
 /// A [`ShieldedSpendAmount::Sweep`] sends the most the notes one transition can spend send after
-/// their fee ([`sweep_amount`]); the plan selects exactly those notes.
+/// their fee ([`sweep_amount`]); the plan selects exactly those notes. A withdrawal sweep is
+/// capped at the largest withdrawal the protocol accepts.
+///
+/// A withdrawal's amount must lie within the protocol bounds for its Core fee rate
+/// ([`ensure_withdrawal_amount_in_range`]), else
+/// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]; the plan's `recipient_amount` is
+/// what reaches Core after the Core fee.
 pub fn plan_spend(
     unspent: &[ShieldedNote],
     kind: ShieldedSpendKind,
@@ -411,9 +492,25 @@ pub fn plan_spend(
     let fee_kind = kind.fee_kind();
     let amount = match amount {
         ShieldedSpendAmount::Exact(amount) => amount,
-        ShieldedSpendAmount::Sweep => sweep_amount(unspent, fee_kind, platform_version)?,
+        ShieldedSpendAmount::Sweep => {
+            let sweep = sweep_amount(unspent, fee_kind, platform_version)?;
+            match kind {
+                // Capped at the largest withdrawal, so the plan stays executable.
+                ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
+                    let (_, max, _) = withdrawal_bounds(core_fee_per_byte, platform_version)?;
+                    sweep.min(max)
+                }
+                _ => sweep,
+            }
+        }
     };
     ensure_positive_amount(amount)?;
+    let recipient_amount = match kind {
+        ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
+            ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?
+        }
+        _ => amount,
+    };
     let (selected, total_input, fee) = select_notes_with_fee(
         unspent,
         amount,
@@ -424,13 +521,14 @@ pub fn plan_spend(
     Ok(ShieldedSpendPlan::new(
         kind,
         amount,
+        recipient_amount,
         fee,
         total_input,
         selected.iter().map(|n| n.nullifier).collect(),
     ))
 }
 
-/// Refuse a spend whose fresh selection (`selected`, `total_input`, `fee` for `kind` and
+/// Refuse a spend whose fresh selection (`selected`, `fee` for `kind` and
 /// `amount`) does not match the plan whose digest is `expected`. Reads the borrowed selection
 /// only, so nothing is cloned for a selection it refuses.
 pub(crate) fn ensure_plan_holds(
@@ -438,20 +536,14 @@ pub(crate) fn ensure_plan_holds(
     kind: ShieldedSpendKind,
     amount: Credits,
     fee: Credits,
-    total_input: Credits,
     selected: &[&ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
-    let fresh = ShieldedSpendPlan::new(
-        kind,
-        amount,
-        fee,
-        total_input,
-        selected.iter().map(|n| n.nullifier).collect(),
-    );
-    if fresh.digest != *expected {
+    let mut nullifiers: Vec<[u8; 32]> = selected.iter().map(|n| n.nullifier).collect();
+    nullifiers.sort_unstable();
+    if spend_digest(kind, amount, fee, &nullifiers) != *expected {
         return Err(PlatformWalletError::ShieldedPlanChanged {
-            fresh_fee: fresh.fee,
-            fresh_note_count: fresh.note_count(),
+            fresh_fee: fee,
+            fresh_note_count: nullifiers.len(),
         });
     }
     Ok(())
@@ -926,7 +1018,7 @@ mod tests {
                 compute_shielded_unshield_fee(2, platform_version),
             ),
             (
-                ShieldedSpendKind::Withdrawal,
+                withdrawal(1),
                 compute_shielded_withdrawal_fee(2, platform_version),
             ),
             (
@@ -937,7 +1029,7 @@ mod tests {
             let plan = plan_spend(
                 &notes,
                 kind,
-                ShieldedSpendAmount::Exact(1),
+                ShieldedSpendAmount::Exact(NOTE / 2),
                 platform_version,
             )
             .expect("one note covers it");
@@ -1031,15 +1123,15 @@ mod tests {
                 .expect("selects")
         }
 
-        let (same, total, fee) = selected(&notes, kind, platform_version);
-        ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &same)
+        let (same, _, fee) = selected(&notes, kind, platform_version);
+        ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &same)
             .expect("an unchanged selection holds");
 
         // A larger note arrives: one note now covers it, at a different fee.
         let mut grown = notes.clone();
         grown.push(test_note(10 * NOTE, 7));
-        let (moved, total, fee) = selected(&grown, kind, platform_version);
-        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, total, &moved)
+        let (moved, _, fee) = selected(&grown, kind, platform_version);
+        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE, fee, &moved)
             .expect_err("a moved selection must not hold");
         assert!(
             matches!(
@@ -1058,15 +1150,8 @@ mod tests {
             plan.digest
         );
         // The same notes for another kind or amount are another plan.
-        let err = ensure_plan_holds(
-            &plan.digest,
-            kind,
-            2 * NOTE - 1,
-            plan.fee,
-            plan.total_input,
-            &same,
-        )
-        .expect_err("another amount");
+        let err = ensure_plan_holds(&plan.digest, kind, 2 * NOTE - 1, plan.fee, &same)
+            .expect_err("another amount");
         assert!(matches!(
             err,
             PlatformWalletError::ShieldedPlanChanged { .. }
@@ -1172,7 +1257,7 @@ mod tests {
         for kind in [
             ShieldedSpendKind::Transfer,
             ShieldedSpendKind::Unshield,
-            ShieldedSpendKind::Withdrawal,
+            withdrawal(1),
             ShieldedSpendKind::IdentityTopUp,
         ] {
             let plan = plan_spend(&notes, kind, ShieldedSpendAmount::Sweep, platform_version)
@@ -1196,7 +1281,7 @@ mod tests {
         for kind in [
             ShieldedSpendKind::Transfer,
             ShieldedSpendKind::Unshield,
-            ShieldedSpendKind::Withdrawal,
+            withdrawal(1),
             ShieldedSpendKind::IdentityTopUp,
         ] {
             let planned = plan_spend(
@@ -1250,7 +1335,7 @@ mod tests {
         for kind in [
             ShieldedSpendKind::Transfer,
             ShieldedSpendKind::Unshield,
-            ShieldedSpendKind::Withdrawal,
+            withdrawal(1),
             ShieldedSpendKind::IdentityTopUp,
         ] {
             let planned = plan_spend(
@@ -1293,12 +1378,180 @@ mod tests {
         for kind in [
             ShieldedSpendKind::Transfer,
             ShieldedSpendKind::Unshield,
-            ShieldedSpendKind::Withdrawal,
+            withdrawal(1),
             ShieldedSpendKind::IdentityTopUp,
         ] {
             let plan = plan_spend(&notes, kind, ShieldedSpendAmount::Sweep, platform_version)
                 .expect("plans");
             assert_eq!(plan.note_count(), 6, "{kind:?}");
         }
+    }
+
+    fn withdrawal(core_fee_per_byte: u32) -> ShieldedSpendKind {
+        ShieldedSpendKind::Withdrawal { core_fee_per_byte }
+    }
+
+    /// A withdrawal's amount is the Core reserve; the recipient gets it minus the Core fee, and
+    /// every other kind sends the amount itself.
+    #[test]
+    fn should_report_a_withdrawals_recipient_amount_net_of_the_core_fee() {
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![test_note(NOTE, 0)];
+        let plan = plan_spend(
+            &notes,
+            withdrawal(5),
+            ShieldedSpendAmount::Exact(NOTE / 2),
+            platform_version,
+        )
+        .expect("plans");
+        let core_fee = dpp::withdrawal::core_fee_in_credits(5).expect("core fee");
+        assert_eq!(plan.amount, NOTE / 2);
+        assert_eq!(plan.recipient_amount, NOTE / 2 - core_fee);
+
+        let transfer = plan_spend(
+            &notes,
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendAmount::Exact(NOTE / 2),
+            platform_version,
+        )
+        .expect("plans");
+        assert_eq!(transfer.recipient_amount, transfer.amount);
+    }
+
+    /// Below protocol 14 the Core fee is drawn from the pool, not the reserve.
+    #[test]
+    fn should_send_a_withdrawal_reserve_whole_below_the_core_fee_carve_out() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        let notes = vec![test_note(NOTE, 0)];
+        let plan = plan_spend(
+            &notes,
+            withdrawal(5),
+            ShieldedSpendAmount::Exact(NOTE / 2),
+            v13,
+        )
+        .expect("plans");
+        assert_eq!(plan.recipient_amount, plan.amount);
+    }
+
+    /// The Core fee rate is part of the plan: another rate is another plan.
+    #[test]
+    fn should_commit_a_withdrawal_plan_to_its_core_fee_rate() {
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![test_note(NOTE, 0)];
+        let amount = ShieldedSpendAmount::Exact(NOTE / 2);
+        let at_1 = plan_spend(&notes, withdrawal(1), amount, platform_version).expect("plans");
+        let at_5 = plan_spend(&notes, withdrawal(5), amount, platform_version).expect("plans");
+        assert_ne!(at_1.digest, at_5.digest);
+
+        let selected: Vec<&ShieldedNote> = notes.iter().collect();
+        ensure_plan_holds(
+            &at_1.digest,
+            withdrawal(1),
+            at_1.amount,
+            at_1.fee,
+            &selected,
+        )
+        .expect("the planned rate holds");
+        let err = ensure_plan_holds(
+            &at_1.digest,
+            withdrawal(5),
+            at_1.amount,
+            at_1.fee,
+            &selected,
+        )
+        .expect_err("another rate must not hold");
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedPlanChanged { .. }
+        ));
+    }
+
+    /// An exact amount outside what the protocol accepts is refused before a plan is returned.
+    #[test]
+    fn should_refuse_a_withdrawal_amount_outside_the_protocol_bounds() {
+        let platform_version = PlatformVersion::latest();
+        let rate = 5;
+        let min = dpp::withdrawal::min_withdrawal_amount_with_core_fee(rate, platform_version);
+        let max = platform_version.system_limits.max_withdrawal_amount;
+        let notes = vec![test_note(2 * max, 0)];
+        for amount in [1, min - 1, max + 1] {
+            let planned = plan_spend(
+                &notes,
+                withdrawal(rate),
+                ShieldedSpendAmount::Exact(amount),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    planned,
+                    Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange {
+                        amount: a, min: lo, max: hi
+                    }) if (a, lo, hi) == (amount, min, max)
+                ),
+                "{amount}: got {planned:?}"
+            );
+        }
+        for amount in [min, max] {
+            plan_spend(
+                &notes,
+                withdrawal(rate),
+                ShieldedSpendAmount::Exact(amount),
+                platform_version,
+            )
+            .unwrap_or_else(|e| panic!("{amount} is in range: {e:?}"));
+        }
+    }
+
+    /// A sweep above the largest withdrawal is capped at it so the plan stays executable; a
+    /// sweep below the smallest is refused.
+    #[test]
+    fn should_cap_a_withdrawal_sweep_at_the_protocol_maximum_and_refuse_one_below_the_minimum() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version.system_limits.max_withdrawal_amount;
+        let plan = plan_spend(
+            &[test_note(2 * max, 0)],
+            withdrawal(5),
+            ShieldedSpendAmount::Sweep,
+            platform_version,
+        )
+        .expect("plans");
+        assert_eq!(plan.amount, max);
+        assert_eq!(plan.note_count(), 1);
+
+        let fee = compute_shielded_withdrawal_fee(2, platform_version).expect("fee");
+        let planned = plan_spend(
+            &[test_note(fee + 1, 0)],
+            withdrawal(5),
+            ShieldedSpendAmount::Sweep,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                planned,
+                Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { amount: 1, .. })
+            ),
+            "got {planned:?}"
+        );
+    }
+
+    /// A Core fee rate above the protocol cap is refused, as consensus refuses it.
+    #[test]
+    fn should_refuse_a_withdrawal_core_fee_rate_above_the_protocol_cap() {
+        let platform_version = PlatformVersion::latest();
+        let cap = platform_version
+            .system_limits
+            .max_core_fee_per_byte
+            .expect("a cap from protocol 14");
+        let notes = vec![test_note(NOTE, 0)];
+        let planned = plan_spend(
+            &notes,
+            withdrawal(cap + 1),
+            ShieldedSpendAmount::Exact(NOTE / 2),
+            platform_version,
+        );
+        assert!(
+            matches!(planned, Err(PlatformWalletError::ShieldedBuildError(_))),
+            "got {planned:?}"
+        );
     }
 }

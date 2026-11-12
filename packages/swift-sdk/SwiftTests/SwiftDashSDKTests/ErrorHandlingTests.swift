@@ -636,6 +636,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A withdrawal amount outside the protocol bounds keeps its own code and
+    /// typed case, apart from a balance shortfall (41).
+    func testShouldReportAWithdrawalAmountOutOfRangeByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE
+        )
+        XCTAssertEqual(code, .errorShieldedWithdrawalAmountOutOfRange)
+        XCTAssertEqual(code.rawValue, 79)
+        let detail = "Shielded withdrawal amount 1 is outside the allowed range 1000000 to 50000000000000"
+        guard case .shieldedWithdrawalAmountOutOfRange(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed withdrawal-out-of-range error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

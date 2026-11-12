@@ -105,8 +105,12 @@ public enum ShieldedSpendAmount: Sendable, Equatable {
 /// `PlatformWalletError.shieldedPlanChanged` when the notes moved since.
 public struct ShieldedSpendPlan: Sendable, Equatable {
     public let kind: ShieldedSpendKind
-    /// What the recipient gets.
+    /// What the spend reserves for the recipient: the amount sent, or for a
+    /// withdrawal the reserve for Core, of which the Core fee is taken.
     public let amount: UInt64
+    /// What the recipient receives: `amount`, except for a withdrawal from
+    /// protocol version 14, where it is `amount` minus the Core fee.
+    public let recipientAmount: UInt64
     /// The exact fee for the selected notes.
     public let fee: UInt64
     /// The sum of the selected notes.
@@ -128,6 +132,7 @@ extension ShieldedSpendPlan {
         self.init(
             kind: kind,
             amount: ffi.amount,
+            recipientAmount: ffi.recipient_amount,
             fee: ffi.fee,
             totalInput: ffi.total_input,
             totalDebited: ffi.total_debited,
@@ -738,14 +743,24 @@ extension PlatformWalletManager {
     /// the number of notes. Nothing is reserved or broadcast. Pass the plan
     /// as `plan:` to the matching spend to run exactly it.
     ///
-    /// Throws `invalidParameter` for a kind or amount Rust refuses, and
+    /// `coreFeePerByte` is the Core fee rate of a `.withdrawal`, required for
+    /// it and ignored for the other kinds. A withdrawal's amount is the
+    /// reserve for Core: the plan's `recipientAmount` is what reaches the Core
+    /// address after the Core fee, and the withdrawal must run with the same
+    /// rate (another rate throws `shieldedPlanChanged`). A withdrawal sweep is
+    /// capped at the protocol's largest withdrawal.
+    ///
+    /// Throws `invalidParameter` for a kind or amount Rust refuses (or a
+    /// withdrawal without `coreFeePerByte`), `shieldedWithdrawalAmountOutOfRange`
+    /// for a withdrawal amount outside the protocol bounds for its rate, and
     /// `walletOperation` when the notes cannot pay the amount and its fee
     /// (or the amount is zero), as the spends do.
     public func shieldedPlanSpend(
         walletId: Data,
         account: UInt32 = 0,
         kind: ShieldedSpendKind,
-        amount: ShieldedSpendAmount
+        amount: ShieldedSpendAmount,
+        coreFeePerByte: UInt32? = nil
     ) async throws -> ShieldedSpendPlan {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -755,6 +770,11 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
+            )
+        }
+        if kind == .withdrawal && coreFeePerByte == nil {
+            throw PlatformWalletError.invalidParameter(
+                "a withdrawal plan needs coreFeePerByte"
             )
         }
         let (credits, sweepAll): (UInt64, Bool)
@@ -774,7 +794,8 @@ extension PlatformWalletManager {
                 // A plain value struct: nothing in it is allocated by Rust.
                 var out = ShieldedSpendPlanFFI()
                 try platform_wallet_manager_shielded_plan_spend(
-                    handle, widPtr, account, kind.rawValue, credits, sweepAll, &out
+                    handle, widPtr, account, kind.rawValue, credits, sweepAll,
+                    coreFeePerByte ?? 0, &out
                 ).check()
                 return try ShieldedSpendPlan(ffi: out)
             }

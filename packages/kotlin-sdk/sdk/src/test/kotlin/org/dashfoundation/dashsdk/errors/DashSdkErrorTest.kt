@@ -432,6 +432,22 @@ class DashSdkErrorTest {
         assertFalse("a smaller amount fits, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A shielded withdrawal amount outside the protocol bounds has its own
+     * code: nothing was sent, and another amount fits, so it is neither a
+     * retry nor a balance shortfall (41).
+     */
+    @Test
+    fun shouldReportAWithdrawalAmountOutOfRangeByItsOwnCode() {
+        val detail = "Shielded withdrawal amount 1 is outside the allowed range 1000000 to 50000000000000"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 79, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedWithdrawalAmountOutOfRange)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(detail, mapped.message)
+        assertFalse("another amount fits, not a retry", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

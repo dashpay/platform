@@ -262,11 +262,12 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
 
 /// Map a spend `kind` byte, numbered as [`shielded_fee_formula`] numbers the
 /// spends' fee kinds, to the spend it plans; `None` for any other byte.
-fn shielded_spend_kind(kind: u8) -> Option<ShieldedSpendKind> {
+/// `core_fee_per_byte` is the Core fee rate of a withdrawal and read for it only.
+fn shielded_spend_kind(kind: u8, core_fee_per_byte: u32) -> Option<ShieldedSpendKind> {
     match kind {
         0 => Some(ShieldedSpendKind::Transfer),
         1 => Some(ShieldedSpendKind::Unshield),
-        2 => Some(ShieldedSpendKind::Withdrawal),
+        2 => Some(ShieldedSpendKind::Withdrawal { core_fee_per_byte }),
         4 => Some(ShieldedSpendKind::IdentityTopUp),
         _ => None,
     }
@@ -278,10 +279,11 @@ impl From<&ShieldedSpendPlan> for ShieldedSpendPlanFFI {
             kind: match plan.kind {
                 ShieldedSpendKind::Transfer => 0,
                 ShieldedSpendKind::Unshield => 1,
-                ShieldedSpendKind::Withdrawal => 2,
+                ShieldedSpendKind::Withdrawal { .. } => 2,
                 ShieldedSpendKind::IdentityTopUp => 4,
             },
             amount: plan.amount,
+            recipient_amount: plan.recipient_amount,
             fee: plan.fee,
             total_input: plan.total_input,
             total_debited: plan.total_debited(),
@@ -311,6 +313,14 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// shield from an identity, spends no notes). With `sweep_all`, the spend
 /// sends every spendable note minus the fee for all of them, and `amount` must
 /// be `0`; otherwise it sends `amount` credits and the fee comes on top.
+/// `core_fee_per_byte` is the Core fee rate of a withdrawal (kind `2`) and is
+/// ignored for the other kinds. A withdrawal's `amount` is the reserve for
+/// Core, of which the Core fee is taken: the plan's `recipient_amount` is what
+/// reaches the Core address. The amount must lie within the protocol bounds
+/// for that rate (a withdrawal sweep is capped at the maximum), else
+/// `ErrorShieldedWithdrawalAmountOutOfRange`; a rate above the protocol cap
+/// returns `ErrorWalletOperation`. Run the withdraw export with the same
+/// rate: another rate refuses with `ErrorShieldedPlanChanged`.
 ///
 /// Writes the plan to `out_plan`. Run it with the spend's `_with_plan` export
 /// and the plan's `digest`, which refuses with `ErrorShieldedPlanChanged`
@@ -333,12 +343,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_plan_spend(
     kind: u8,
     amount: u64,
     sweep_all: bool,
+    core_fee_per_byte: u32,
     out_plan: *mut ShieldedSpendPlanFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(out_plan);
 
-    let Some(kind) = shielded_spend_kind(kind) else {
+    let Some(kind) = shielded_spend_kind(kind, core_fee_per_byte) else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("unknown shielded spend kind {kind} (expected 0/1/2/4)"),
@@ -960,6 +971,9 @@ pub(crate) fn map_spend_result(
         // More notes than one transition spends: nothing was reserved or
         // built; a smaller amount fits.
         Err(e @ PlatformWalletError::ShieldedSpendTooManyNotes { .. }) => e.into(),
+        // A withdrawal amount outside the protocol bounds for its Core fee
+        // rate: nothing was reserved or built; another amount fits.
+        Err(e @ PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. }) => e.into(),
         // Retryable: the wallet couldn't build the spend against any
         // Platform-recorded anchor yet (its commitment tree is mid-block after
         // an index-chunk sync). Nothing was broadcast and the notes were
@@ -3228,7 +3242,7 @@ mod tests {
             let mut out = ShieldedSpendPlanFFI::default();
             let plan = |wallet_id: *const u8, kind: u8, amount: u64, sweep: bool, out| {
                 platform_wallet_manager_shielded_plan_spend(
-                    0, wallet_id, 0, kind, amount, sweep, out,
+                    0, wallet_id, 0, kind, amount, sweep, 1, out,
                 )
                 .code
             };
@@ -3266,13 +3280,19 @@ mod tests {
         for (kind, byte) in [
             (ShieldedSpendKind::Transfer, 0),
             (ShieldedSpendKind::Unshield, 1),
-            (ShieldedSpendKind::Withdrawal, 2),
+            (
+                ShieldedSpendKind::Withdrawal {
+                    core_fee_per_byte: 5,
+                },
+                2,
+            ),
             (ShieldedSpendKind::IdentityTopUp, 4),
         ] {
-            assert_eq!(shielded_spend_kind(byte), Some(kind));
+            assert_eq!(shielded_spend_kind(byte, 5), Some(kind));
             let plan = ShieldedSpendPlan {
                 kind,
                 amount: 10,
+                recipient_amount: 7,
                 fee: 3,
                 total_input: 20,
                 nullifiers: vec![[1; 32], [2; 32]],
@@ -3283,6 +3303,7 @@ mod tests {
                 ShieldedSpendPlanFFI {
                     kind: byte,
                     amount: 10,
+                    recipient_amount: 7,
                     fee: 3,
                     total_input: 20,
                     total_debited: 13,
@@ -3383,6 +3404,28 @@ mod tests {
         assert_eq!(result.code as i32, 78);
         assert!(message_of(&result).contains("needs 17 notes"));
         assert_eq!(PlatformWalletFFIResult::from(too_many()).code as i32, 78);
+    }
+
+    /// A withdrawal amount outside the protocol bounds keeps its own code through the spend
+    /// contract, the planning export and the blanket conversion alike.
+    #[test]
+    fn should_keep_a_withdrawal_amount_out_of_range_at_its_own_code() {
+        let out_of_range = || PlatformWalletError::ShieldedWithdrawalAmountOutOfRange {
+            amount: 1,
+            min: 1_000_000,
+            max: 50_000_000_000_000,
+        };
+        let result = map_spend_result(Err(out_of_range()), "shielded spend plan");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedWithdrawalAmountOutOfRange
+        );
+        assert_eq!(result.code as i32, 79);
+        assert!(message_of(&result).contains("outside the allowed range"));
+        assert_eq!(
+            PlatformWalletFFIResult::from(out_of_range()).code as i32,
+            79
+        );
     }
 
     /// A panic while planning is caught and reported as a failed read: planning reserves and

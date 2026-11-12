@@ -26,8 +26,8 @@ use super::activity_recorder::{
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_plan_holds, ensure_positive_amount,
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind, ShieldedSpendAmount,
-    ShieldedSpendKind, ShieldedSpendPlan, SPEND_MIN_ACTIONS,
+    ensure_withdrawal_amount_in_range, select_notes_for_denomination, select_notes_with_fee,
+    ShieldedFeeKind, ShieldedSpendAmount, ShieldedSpendKind, ShieldedSpendPlan, SPEND_MIN_ACTIONS,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
@@ -2755,6 +2755,11 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
 
     // One protocol version selects, checks the plan and builds: the SDK's may move meanwhile.
     let platform_version = sdk.version();
+    // The amount is the reserve for Core: outside the protocol bounds for this Core fee rate
+    // consensus rejects the transition after the proof, so refuse it before any note is reserved.
+    ensure_positive_amount(amount)?;
+    ensure_withdrawal_amount_in_range(amount, core_fee_per_byte, platform_version)?;
+    let kind = ShieldedSpendKind::Withdrawal { core_fee_per_byte };
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
@@ -2763,15 +2768,8 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the built-fee check below would refuse
     // it).
-    let (selected_notes, total_input, exact_fee, mut reservation) = reserve_unspent_notes(
-        store,
-        id,
-        amount,
-        ShieldedSpendKind::Withdrawal,
-        expected_plan,
-        platform_version,
-    )
-    .await?;
+    let (selected_notes, total_input, exact_fee, mut reservation) =
+        reserve_unspent_notes(store, id, amount, kind, expected_plan, platform_version).await?;
 
     info!(
         account,
@@ -2794,7 +2792,7 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
         ensure_version_unchanged(
             sdk,
             platform_version,
-            ShieldedSpendKind::Withdrawal.fee_kind(),
+            kind.fee_kind(),
             selected_notes.len(),
             expected_plan,
         )?;
@@ -3815,8 +3813,8 @@ async fn reserve_notes_matching<S: ShieldedStore>(
             other => other?,
         };
     if let Some((kind, expected)) = expected_plan {
-        let (selected, total_input, exact_fee) = &selection;
-        ensure_plan_holds(expected, kind, amount, *exact_fee, *total_input, selected)?;
+        let (selected, _, exact_fee) = &selection;
+        ensure_plan_holds(expected, kind, amount, *exact_fee, selected)?;
     }
     let (selected, total_input, exact_fee) = selection.into_owned();
     let reservation = mark_notes_pending(&mut *guard, store, id, &selected)?;
@@ -8930,7 +8928,7 @@ mod spend_plan_tests {
                     )
                     .await
                 }
-                ShieldedSpendKind::Withdrawal => {
+                ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
                     withdraw_with_plan(
                         sdk,
                         store,
@@ -8940,7 +8938,7 @@ mod spend_plan_tests {
                         0,
                         &dashcore::Address::dummy(Network::Testnet, 1),
                         NOTE,
-                        1,
+                        core_fee_per_byte,
                         &UnreachableProver,
                         expected_plan,
                     )
@@ -8973,7 +8971,9 @@ mod spend_plan_tests {
         for kind in [
             ShieldedSpendKind::Transfer,
             ShieldedSpendKind::Unshield,
-            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::Withdrawal {
+                core_fee_per_byte: 1,
+            },
             ShieldedSpendKind::IdentityTopUp,
         ] {
             for planned in [true, false] {
