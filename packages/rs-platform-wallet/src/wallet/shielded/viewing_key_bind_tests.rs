@@ -2497,8 +2497,7 @@ mod tip_lifecycle_tests {
         sdk.mock().set_response_height_of::<ShieldedAnchors>(10);
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn should_hold_removal_until_tip_proving_returns() {
+    async fn assert_teardown_waits_for_tip_proving(clear: bool) {
         let (_dir, manager, wallet, coordinator) = fixture().await;
         let recipient = mock_tip_recipient(&wallet).await;
         fund(&wallet, &coordinator).await;
@@ -2533,7 +2532,20 @@ mod tip_lifecycle_tests {
         let wallet_id = wallet.wallet_id();
         let mut removing = {
             let manager = Arc::clone(&manager);
-            tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
+            tokio::spawn(async move {
+                if clear {
+                    manager.clear_shielded().await.unwrap();
+                } else {
+                    manager.remove_wallet(&wallet_id).await.unwrap();
+                }
+                manager.persister.stored.lock().unwrap().clear();
+                manager
+                    .persister
+                    .durability_events
+                    .lock()
+                    .unwrap()
+                    .push("host deletion");
+            })
         };
         let early = tokio::time::timeout(Duration::from_millis(500), &mut removing).await;
         resume_tx.send(()).unwrap();
@@ -2541,14 +2553,29 @@ mod tip_lifecycle_tests {
             sending.await.unwrap().is_err(),
             "the prover stops at the test boundary"
         );
-        assert!(early.is_err(), "removal must wait for proving");
-        removing.await.unwrap().unwrap();
-        assert!(!wallet.core().is_current_generation().await);
+        assert!(early.is_err(), "teardown must wait for proving");
+        removing.await.unwrap();
+        assert_eq!(wallet.core().is_current_generation().await, clear);
+        assert_eq!(
+            manager.persister.durability_events.lock().unwrap().last(),
+            Some(&"host deletion")
+        );
+        assert_eq!(manager.persister.stored_count(), 0);
         let store = coordinator.store().read().await;
         let id = SubwalletId::new(wallet_id, 0);
         assert!(store.get_all_notes(id).unwrap().is_empty());
         assert!(store.get_activity_ids(id).unwrap().is_empty());
         assert!(store.pending_redrives(id).unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_hold_removal_until_tip_proving_returns() {
+        assert_teardown_waits_for_tip_proving(false).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_hold_clear_until_tip_proving_returns() {
+        assert_teardown_waits_for_tip_proving(true).await;
     }
 
     #[tokio::test]
