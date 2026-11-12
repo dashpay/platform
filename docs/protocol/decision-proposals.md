@@ -219,13 +219,11 @@ and `<taken with the document>` is
 ```
 
 Checked when the proposal is created, and again when an edit points it
-elsewhere. The contract is checked on its own property; the rows after it are
-in the order the description's type is checked, the first that applies
-refusing the write:
+elsewhere. The description is checked before the contract it names. The rows
+are in the order checked, the first that applies refusing the write:
 
 | What the proposal names | Refused with |
 | --- | --- |
-| A contract that does not declare elected moderation, or whose declaration protects its owner from the team | `ReferencedContractRequirementNotMetError` (40135) |
 | A contract that does not exist, or has no such document type | `ReferencedDocumentTypeNotFoundError` (40121) |
 | A private document type, whose documents are encrypted entries the chain never reads | `ReferencedDocumentTypePrivateError` (40150) |
 | An `indexOnly` document type, whose documents are index entries with none to find by its id | `ReferencedDocumentTypeIndexOnlyError` (40146) |
@@ -233,6 +231,7 @@ refusing the write:
 | A moderated type with no string or byte array a removal takes away: every one is kept in the removal record (`deleteKeepsFields`) or is the moderators' to write (`changeFields`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
 | A document type whose documents their owner can delete, or that never leave state | `ReferencedDocumentTypeNotModeratedError` (40143) |
 | A document that is not there | `ReferencedEntityNotFoundError` (40120) |
+| A contract whose elected declaration protects its owner from the team. A contract that declares no elected moderation never gets this far: it gives no elected team the deletion of the type, and is refused with 40153 above | `ReferencedContractRequirementNotMetError` (40135) |
 
 What this does and does not give:
 
