@@ -53,7 +53,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     },
     document_type_versions: DocumentTypeVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 4, // lifecycle flags extend the schema-v3 grammar (note 40)
+            try_from_schema: 4, // lifecycle flags extend the schema-v3 grammar (note 41)
             ..CONTRACT_VERSIONS_V6
                 .document_type_versions
                 .class_method_versions
