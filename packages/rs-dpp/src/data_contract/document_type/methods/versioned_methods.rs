@@ -418,9 +418,10 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
-                // Identifier values are written one way from protocol version 14, so every
-                // contender of a contest names it with the same poll; before 14 they are taken
-                // as given, as they always were
+                // Every contender of a contest names it with the same poll: from protocol
+                // version 15 every index value is written the one way its property's type keys
+                // it, at protocol version 14 identifier values alone are written one way, and
+                // before 14 the values are taken as given
                 let index_values = index.extract_contested_values(
                     document_properties,
                     self.flattened_properties(),

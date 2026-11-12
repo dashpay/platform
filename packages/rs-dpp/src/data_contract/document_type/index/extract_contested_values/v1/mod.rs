@@ -76,14 +76,16 @@ fn canonical_contested_index_value(property_type: &DocumentPropertyType, value: 
             }
         }),
         // The forms protocol version 14 already wrote as an identifier, then every other
-        // form keyed by the same 32 bytes
+        // form keyed by the same 32 bytes. A text is read only when it is short enough to be
+        // an identifier in base 58: no schema has bounded it yet, and decoding base 58 takes
+        // time quadratic in its length
         DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
             contested_index_identifier(&value)
                 .or_else(|| {
                     value
-                        .to_identifier_bytes()
+                        .to_bounded_identifier()
                         .ok()
-                        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                        .map(|identifier| identifier.to_buffer())
                 })
                 .map(Value::Identifier)
         }

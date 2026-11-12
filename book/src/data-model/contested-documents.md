@@ -65,6 +65,10 @@ it shares a key with. That is the value a query of the contest returns. A master
 its poll by the values it sends, unchanged, and is refused unless a prefunded balance is held
 under that poll, so a voter sends the values as the contest query returns them.
 
+A contest under way keeps the poll it was opened under. A contender that joins a contest opened
+at an earlier protocol version has its index values written as that version wrote them, so it
+funds the same prefunded balance and the contest keeps its end date.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.

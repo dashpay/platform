@@ -237,6 +237,11 @@ mod tests {
             (DocumentPropertyType::F64, Value::Text("5".to_string())),
             (DocumentPropertyType::Boolean, Value::U8(1)),
             (DocumentPropertyType::Identifier, Value::Bytes(vec![1; 31])),
+            // Longer than any identifier in base 58, so it is not decoded
+            (
+                DocumentPropertyType::Identifier,
+                Value::Text("1".repeat(4096)),
+            ),
             (DocumentPropertyType::I64, Value::Null),
         ] {
             assert_eq!(

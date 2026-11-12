@@ -78,7 +78,18 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     // indexes, so the contest would be funded, resolved and cleaned up under a
                     // vote poll that does not describe the contest that was actually created.
                     let provided: ContestedDocumentResourceVotePoll = provided.into();
-                    if provided != expected {
+                    // In place: the polls are compared by what names the index, where they were
+                    // compared whole. The index values of both are read from this document's
+                    // data, so wherever both are written by the block's protocol version, as
+                    // they always are before protocol version 15, polls of one index are
+                    // equal. From 15 a contender joining a contest opened at an earlier
+                    // protocol version writes its values as that version did
+                    // (`Drive::fetch_contest_opening_protocol_version`), and the expected poll
+                    // does not.
+                    if provided.contract_id != expected.contract_id
+                        || provided.document_type_name != expected.document_type_name
+                        || provided.index_name != expected.index_name
+                    {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DocumentContestIndexMismatchError::new(
                                 self.base().id(),

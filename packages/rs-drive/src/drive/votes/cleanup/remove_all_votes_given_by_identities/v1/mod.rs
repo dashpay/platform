@@ -310,18 +310,46 @@ mod tests {
         path
     }
 
-    /// The tree that holds the vote, where the real paths have the trees of a contender.
+    /// The voting power of the vote, as an evonode's
+    const VOTE_STRENGTH: i64 = 4;
+
+    /// The sum tree that holds the vote and tallies it, where the real paths have the trees
+    /// of a contender above it.
     fn insert_vote_tree(drive: &Drive) {
         let path = vote_contested_resource_tree_path_vec();
         let path: Vec<&[u8]> = path.iter().map(|part| part.as_slice()).collect();
-        insert(drive, &path, VOTE_TREE_KEY, Element::empty_tree());
+        insert(drive, &path, VOTE_TREE_KEY, Element::empty_sum_tree());
     }
 
     fn insert_vote(drive: &Drive) {
         let path = vote_tree_path();
         let path: Vec<&[u8]> = path.iter().map(|part| part.as_slice()).collect();
-        // A sum item in the real paths; a delete only needs it not to be a tree
-        insert(drive, &path, &IDENTITY_ID, Element::new_item(vec![1]));
+        insert(
+            drive,
+            &path,
+            &IDENTITY_ID,
+            Element::new_sum_item(VOTE_STRENGTH),
+        );
+    }
+
+    /// What the vote tree tallies
+    fn vote_tally(drive: &Drive) -> i64 {
+        let path = vote_contested_resource_tree_path_vec();
+        let path: Vec<&[u8]> = path.iter().map(|part| part.as_slice()).collect();
+        match drive
+            .grove
+            .get_raw(
+                path.as_slice().into(),
+                VOTE_TREE_KEY,
+                None,
+                &PlatformVersion::latest().drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected the vote tree")
+        {
+            Element::SumTree(_, tally, _) => tally,
+            element => panic!("expected a sum tree, found {element:?}"),
+        }
     }
 
     fn vote_exists(drive: &Drive) -> bool {
@@ -385,11 +413,13 @@ mod tests {
         insert_vote_tree(&drive);
         insert_vote(&drive);
         insert_vote_references(&drive, &[VOTE_ID]);
+        assert_eq!(vote_tally(&drive), VOTE_STRENGTH);
 
         remove_votes(&drive);
 
         assert!(!vote_reference_exists(&drive, &VOTE_ID));
         assert!(!vote_exists(&drive));
+        assert_eq!(vote_tally(&drive), 0);
     }
 
     #[test]
@@ -419,11 +449,13 @@ mod tests {
         insert_vote_tree(&drive);
         insert_vote(&drive);
         insert_vote_references(&drive, &[VOTE_ID, OTHER_VOTE_ID]);
+        assert_eq!(vote_tally(&drive), VOTE_STRENGTH);
 
         remove_votes(&drive);
 
         assert!(!vote_reference_exists(&drive, &VOTE_ID));
         assert!(!vote_reference_exists(&drive, &OTHER_VOTE_ID));
         assert!(!vote_exists(&drive));
+        assert_eq!(vote_tally(&drive), 0);
     }
 }
