@@ -549,9 +549,9 @@ impl NetworkShieldedCoordinator {
             return Ok(());
         };
         let fetch_started = FetchStamp::now();
-        let recorded = fetch_recorded_anchor_set(&self.sdk).await?;
+        let (recorded, height) = fetch_recorded_anchor_set(&self.sdk).await?;
         self.anchor_cache
-            .insert(Arc::new(recorded), fetch_started, tree_size);
+            .insert(Arc::new(recorded), fetch_started, tree_size, height);
         Ok(())
     }
 
@@ -1853,7 +1853,12 @@ impl NetworkShieldedCoordinator {
             Ok((dash_sdk::query_types::ShieldedAnchors(anchors), metadata)) => {
                 let recorded: HashSet<[u8; 32]> = anchors.into_iter().collect();
                 if let Some(tree_size) = tree_size {
-                    self.anchor_cache.insert(Arc::new(recorded.clone()), fetch_started, tree_size);
+                    self.anchor_cache.insert(
+                        Arc::new(recorded.clone()),
+                        fetch_started,
+                        tree_size,
+                        metadata.height,
+                    );
                 }
                 Some(PreScanEvidence {
                     stale,
@@ -4944,7 +4949,7 @@ mod tests {
             .anchor_cache()
             .get(tree_size)
             .expect("prefetched set is usable by the next spend");
-        assert!(cached.contains(&anchor));
+        assert!(cached.0.contains(&anchor));
 
         // Already warm: no second fetch (the mock would serve one, so check
         // the entry is the same allocation rather than a replacement).
@@ -4954,7 +4959,7 @@ mod tests {
             .expect("warm prefetch is a no-op");
         let again = coordinator.anchor_cache().get(tree_size).unwrap();
         assert!(
-            Arc::ptr_eq(&cached, &again),
+            Arc::ptr_eq(&cached.0, &again.0),
             "warm prefetch must not refetch"
         );
 
@@ -5019,7 +5024,7 @@ mod tests {
             let mut store = coordinator.store.write().await;
             store.mark_pending(id, &[0xAA; 32]).expect("mark");
             store
-                .set_pending_spend(id, &[0xAA; 32], [0xAB; 32], [0xAC; 32])
+                .set_pending_spend(id, &[0xAA; 32], [0xAB; 32], [0xAC; 32], Some(0))
                 .expect("arm");
         }
         let tree_size = coordinator.store.read().await.tree_size().unwrap();
@@ -5035,14 +5040,16 @@ mod tests {
             Arc::new([[0xAB; 32]].into_iter().collect()),
             FetchStamp::now(),
             tree_size,
+            100,
         );
 
-        let (snapshot, recorded) = coordinator
+        let evidence = coordinator
             .prefetch_stranded_release(&subwallets)
             .await
             .expect("an armed reservation triggers the anchor fetch");
 
-        assert_eq!(snapshot.len(), 1);
+        let recorded = &evidence.recorded;
+        assert_eq!(evidence.stale.len(), 1);
         assert!(recorded.contains(&anchor));
         assert!(
             !recorded.contains(&[0xAB; 32]),
@@ -5053,12 +5060,20 @@ mod tests {
             .get(tree_size)
             .expect("release-pass fetch populated the spend cache");
         assert!(
-            Arc::ptr_eq(&cached, &recorded),
+            *cached.0 == *recorded && cached.1 == evidence.recorded_height,
             "the fresh fetch replaced the cached set"
         );
 
         coordinator
-            .release_stranded_spends(snapshot, &recorded)
+            .release_stranded_spends(
+                evidence.stale,
+                PrunedAnchorEvidence {
+                    recorded,
+                    height: evidence.recorded_height,
+                    scan_covered_height: Some(evidence.recorded_height),
+                    heightless: evidence.heightless.as_ref(),
+                },
+            )
             .await;
         assert!(
             coordinator
@@ -5083,6 +5098,7 @@ mod tests {
             Arc::new([[0x5C; 32]].into_iter().collect()),
             FetchStamp::now(),
             0,
+            100,
         );
 
         coordinator.clear().await.expect("clear");
