@@ -182,7 +182,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    (`DataContractMaxDepthExceedError` or `InvalidJsonSchemaRefError`), the
 ///    check now seeing the schema the validators walk; a `$ref` pointer holding
 ///    none of those resolves and is measured as before. The parser is generation
-///    3 at both versions, and loading a stored contract runs no schema check.
+///    4 at protocol v15 (note 36) and 3 at v14; loading a stored contract runs no schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0 and
 ///    `validate_max_depth` 1.
 ///
