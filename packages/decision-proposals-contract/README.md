@@ -84,8 +84,9 @@ Indexes: `byOwner` (`$ownerId`, `$createdAt`) lists an identity's proposals;
 
 ## `choice`
 
-An answer to a multiple choice proposal. It never changes and is never
-deleted.
+An answer to a multiple choice proposal. Nobody may change or delete it. A
+choice leaves state only when its vote ends, which removes the choices that
+were not kept.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
@@ -104,8 +105,10 @@ its own, named by its document id.
 - an identity enters as many choices as it wants, each paying the fund;
 - the first choice opens the vote, and later ones join it while its join window
   is open (one week on mainnet);
-- each choice prefunds the masternode votes with the contested document fund
-  (0.1 Dash);
+- each choice prefunds the masternode votes with the contested document fund:
+  0.1 Dash, doubling once the vote holds 250 choices and again for every 50
+  more. A choice paying less than the fund at that moment is refused
+  (`DocumentContestNotPaidForError`, 40114);
 - masternodes vote for a choice by its document id, abstain, or lock, which
   here means none of the choices;
 - when the vote ends (two weeks after the first choice on mainnet), the choice

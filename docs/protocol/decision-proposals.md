@@ -320,8 +320,9 @@ must be the proposal's owner; a choice anyone else enters is refused
   it.
 - **Reading it.** `getContestedResourceVoteState` returns the choices and their
   tallies while the vote runs and its outcome afterwards. Once the vote has
-  ended, the text of the choices that were not kept is no longer in state; the
-  stored result names them by their document ids.
+  ended, the text of the choices that were not kept is no longer in state. The
+  stored result, which the query returns, still lists every choice by its
+  document id with its tally.
 
 Unlike a yes/no proposal, a multiple choice proposal has no pass threshold, no
 minimum turnout and no end date of its own: the contest's windows and its

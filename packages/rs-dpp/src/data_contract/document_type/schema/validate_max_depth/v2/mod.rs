@@ -17,8 +17,10 @@ use crate::validation::ConsensusValidationResult;
 /// pointer through one landed elsewhere than the validator reaches, hiding from the depth
 /// and cycle check a schema the validator walks. Reading the pointer the validator's way
 /// lets the check see that schema, so a `$ref` the two read differently, or one through a
-/// `~` or percent escape, is refused here as it is nowhere followed. For a schema whose
-/// `$ref` pointers hold no `.`, `~` or percent escape the result equals v1's.
+/// `~` or percent escape, is refused here as it is nowhere followed. An array past the maximum
+/// depth is refused as a map there is, where v1 checked only maps, so a schema whose arrays
+/// alone pass the maximum is refused too. For a schema whose `$ref` pointers hold no `.`, `~`
+/// or percent escape and whose arrays stay within the maximum depth the result equals v1's.
 #[inline(always)]
 pub(super) fn validate_max_depth_v2(
     platform_value: &Value,
@@ -42,21 +44,7 @@ pub(super) fn validate_max_depth_v2(
             Value::Map(map) => {
                 let new_depth = depth + 1;
                 if new_depth > max_allowed_depth {
-                    // Carry the size measured so far with the error: the registration helper
-                    // reads it on the rejection path to bill the schema and to return this
-                    // consensus error rather than an internal one. Correcting the pointer can
-                    // follow a reference into depth a scalar landing hid, so this path is
-                    // newly reachable here and must report cleanly.
-                    return ConsensusValidationResult::new_with_data_and_errors(
-                        MaxDepthValidationResult {
-                            depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
-                            size,
-                        },
-                        vec![BasicError::DataContractMaxDepthExceedError(
-                            DataContractMaxDepthExceedError::new(max_allowed_depth),
-                        )
-                        .into()],
-                    );
+                    return max_depth_exceeded(max_allowed_depth, max_reached_depth, size);
                 }
                 if max_reached_depth < new_depth {
                     max_reached_depth = new_depth
@@ -121,6 +109,11 @@ pub(super) fn validate_max_depth_v2(
             }
             Value::Array(array) => {
                 let new_depth = depth + 1;
+                // An array nests as a map does, so a tail of arrays alone, such as a `const`
+                // or `enum` value, is held to the maximum too.
+                if new_depth > max_allowed_depth {
+                    return max_depth_exceeded(max_allowed_depth, max_reached_depth, size);
+                }
                 if max_reached_depth < new_depth {
                     max_reached_depth = new_depth
                 }
@@ -139,6 +132,30 @@ pub(super) fn validate_max_depth_v2(
         depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
         size,
     })
+}
+
+/// The depth error for a map or array one level past `max_allowed_depth`. It carries the size
+/// measured so far: the registration helper reads it on the rejection path to bill the schema
+/// and to return this consensus error rather than an internal one. Correcting the pointer can
+/// follow a reference into depth a scalar landing hid, and arrays are held to the maximum, so
+/// this path is newly reachable here and must report cleanly.
+fn max_depth_exceeded(
+    max_allowed_depth: usize,
+    max_reached_depth: usize,
+    size: u64,
+) -> ConsensusValidationResult<MaxDepthValidationResult> {
+    ConsensusValidationResult::new_with_data_and_errors(
+        MaxDepthValidationResult {
+            depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+            size,
+        },
+        vec![
+            BasicError::DataContractMaxDepthExceedError(DataContractMaxDepthExceedError::new(
+                max_allowed_depth,
+            ))
+            .into(),
+        ],
+    )
 }
 
 /// The schema `uri`, a `$ref`, points at, read as the document validator's `$ref` resolver
@@ -327,6 +344,97 @@ mod tests {
         assert!(
             result.data.is_some(),
             "the rejection must carry the measured size"
+        );
+    }
+
+    fn max_depth() -> usize {
+        PlatformVersion::latest()
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .max_depth as usize
+    }
+
+    /// A document type schema whose `const` is `arrays` arrays nested around a scalar. The
+    /// three maps holding the `const` and the arrays each add one level, so its depth is
+    /// `3 + arrays`, and only arrays reach its deepest levels. Its size is `7 + arrays`: the
+    /// root value, the six map entries, and each array's one element.
+    fn nested_array_const(arrays: usize) -> Value {
+        let mut constant = json!(1);
+        for _ in 0..arrays {
+            constant = json!([constant]);
+        }
+        json!({
+            "type": "object",
+            "properties": { "p": { "type": "array", "const": constant } },
+            "additionalProperties": false
+        })
+        .into()
+    }
+
+    #[test]
+    fn should_accept_an_array_only_tail_reaching_exactly_the_depth_limit() {
+        let max_depth = max_depth();
+        let schema = nested_array_const(max_depth - 3);
+
+        let result = validate_max_depth(&schema, PlatformVersion::latest())
+            .expect("expected a known version");
+
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(
+            result.data,
+            Some(MaxDepthValidationResult {
+                depth: max_depth as u16,
+                size: max_depth as u64 + 4,
+            })
+        );
+    }
+
+    /// Arrays nest a schema as maps do, so an array-only tail one level past the maximum
+    /// depth is refused like a map there, the result carrying the size measured up to the
+    /// level refused for the registration helper to bill.
+    #[test]
+    fn should_refuse_an_array_only_tail_past_the_depth_limit_from_protocol_version_15() {
+        let max_depth = max_depth();
+        let schema = nested_array_const(max_depth - 2);
+
+        // Protocol version 14 checks only maps against the maximum, so it accepts the schema
+        // and reports a depth past the maximum.
+        let pv14 = validate_max_depth(
+            &schema,
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        )
+        .expect("expected a known version");
+        assert!(pv14.is_valid(), "{:?}", pv14.errors);
+        assert_eq!(
+            pv14.data,
+            Some(MaxDepthValidationResult {
+                depth: max_depth as u16 + 1,
+                size: max_depth as u64 + 5,
+            })
+        );
+
+        // Protocol version 15 refuses it on reaching the innermost array, one level past the
+        // maximum, before counting that array's element.
+        let latest = validate_max_depth(&schema, PlatformVersion::latest())
+            .expect("expected a known version");
+        assert!(
+            matches!(
+                latest.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractMaxDepthExceedError(_)
+                )]
+            ),
+            "{:?}",
+            latest.errors
+        );
+        assert_eq!(
+            latest.data,
+            Some(MaxDepthValidationResult {
+                depth: max_depth as u16,
+                size: max_depth as u64 + 4,
+            })
         );
     }
 }
