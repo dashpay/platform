@@ -61,9 +61,14 @@ can see the proposal as it was when a choice was entered. Whether it is `open`
 never changes. Creating it opens no vote and states no fund: the first choice
 does.
 
-The proposal holds no description of its own. It points at a document saying
-what is being decided, in another contract, so that the description can be
-taken down: the document type is a moderated one (its documents leave state
+The proposal holds no description of its own. What is being decided is said
+in one of two places, or both: at its `url`, for a description hosted
+anywhere, which nothing on chain reads or moderates; or in a document the
+proposal points at, in another contract, so that the description can be
+taken down. A proposal gives at least one, and names a description document
+with all three of its properties or none (the `describedByADocumentOrAUrl`
+and `descriptionDocumentNamedWhole` rules). For a document, the document type
+is a moderated one (its documents leave state
 only through a moderator's recorded removal) holding a string or a byte array
 that the removal takes away and that the document's author writes, the
 contract is one whose moderators the masternodes elect and whose owner they
@@ -73,10 +78,10 @@ at any time after they are written.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
-| `descriptionId` | identifier, required | The document saying what is being decided |
-| `descriptionContractId` | identifier, required | The contract that document lives in, one declaring elected moderation that does not protect its owner from the team |
-| `descriptionDocumentType` | string, 1 to 64 characters, required | That document's document type |
-| `url` | string, a URI of 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
+| `descriptionId` | identifier | The document saying what is being decided, when the proposal points at one |
+| `descriptionContractId` | identifier, given with `descriptionId` and only with it | The contract that document lives in, one declaring elected moderation that does not protect its owner from the team |
+| `descriptionDocumentType` | string, 1 to 64 characters, given with `descriptionId` and only with it | That document's document type |
+| `url` | string, a URI of 1 to 512 characters and at most 512 bytes, required when `descriptionId` is left out | Where what is being decided is described, for a proposal that points at no description document; where it is discussed, for one that does |
 | `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is false |
 
 Indexes: `byOwner` (`$ownerId`, `$createdAt`) lists an identity's proposals;
