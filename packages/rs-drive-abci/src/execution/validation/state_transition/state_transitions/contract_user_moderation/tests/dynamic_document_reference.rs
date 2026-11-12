@@ -32,8 +32,8 @@ const REFERENCED_DOCUMENT_TYPE_INDEX_ONLY: u32 = 40146;
 const REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET: u32 = 40153;
 const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
 
-/// Retained revisions never satisfy an existence reference after deletion. A dynamic
-/// permanent reference still refuses the deletable type before looking for its document.
+/// Retained revisions never satisfy an existence reference after deletion. Both dynamic
+/// kind declarations refuse the deletable type before looking for its document.
 #[tokio::test]
 async fn should_resolve_history_reference_targets_by_current_existence_and_kind() {
     let version = PlatformVersion::latest();
@@ -66,6 +66,14 @@ async fn should_resolve_history_reference_targets_by_current_existence_and_kind(
             .unwrap();
         add_document_type(contract, NOTE, schema);
         add_document_type(contract, PERMANENT_NOTE, permanent_note_schema());
+        add_document_type(
+            contract,
+            EITHER_NOTE,
+            note_schema_of(
+                platform_value!(["permanentDocument", "moderatedDocument"]),
+                text_or_bytes(),
+            ),
+        );
     })
     .await;
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -154,17 +162,19 @@ async fn should_resolve_history_reference_targets_by_current_existence_and_kind(
         } else {
             assert_paid_with_code(&result, REFERENCED_ENTITY_NOT_FOUND);
         }
-        let (_, dynamic) = create_with(
-            &setup,
-            &setup.stranger,
-            PERMANENT_NOTE,
-            note_naming(setup.contract.id(), POST, post.id()),
-        )
-        .await;
-        assert_paid_with_code(
-            &setup.process(&dynamic, &transaction),
-            REFERENCED_DOCUMENT_TYPE_DELETABLE,
-        );
+        for dynamic_type in [PERMANENT_NOTE, EITHER_NOTE] {
+            let (_, dynamic) = create_with(
+                &setup,
+                &setup.stranger,
+                dynamic_type,
+                note_naming(setup.contract.id(), POST, post.id()),
+            )
+            .await;
+            assert_paid_with_code(
+                &setup.process(&dynamic, &transaction),
+                REFERENCED_DOCUMENT_TYPE_DELETABLE,
+            );
+        }
     }
 }
 
