@@ -1,0 +1,66 @@
+{
+  "$formatVersion": "1",
+  "id": "7HTVK1Jwzjd4yRGCZnLT4QmwhmZidurFxwz2RMAiUyzk",
+  "ownerId": "8S5Wk8E83ofvLxWpyrt51HturU995zXCTtKBQovuBeUm",
+  "version": 1,
+  "config": {
+    "$formatVersion": "2",
+    "canBeDeleted": false,
+    "readonly": false,
+    "keepsHistory": false,
+    "documentsKeepHistoryContractDefault": false,
+    "documentsMutableContractDefault": true,
+    "documentsCanBeDeletedContractDefault": true,
+    "requiresIdentityEncryptionBoundedKey": null,
+    "requiresIdentityDecryptionBoundedKey": null,
+    "sizedIntegerTypes": true,
+    "moderation": {
+      "banlist": false,
+      "suspensions": false,
+      "warnings": false,
+      "moderators": {
+        "$type": "elected",
+        "seatContestable": false,
+        "maxAddedModerators": 2,
+        "moderatedDocumentTypes": {
+          "post": ["deleteDocuments"]
+        },
+        "interim": {
+          "$type": "contractOwner"
+        }
+      }
+    }
+  },
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 0
+        }
+      },
+      "required": ["$createdAt", "$updatedAt"],
+      "additionalProperties": false,
+      "moderatorAbilities": {
+        "delete": true,
+        "deleteWithin": 86400,
+        "deleteSettled": {
+          "leader": true,
+          "approvals": 2
+        }
+      },
+      "actionFees": {
+        "pricing": "fixed",
+        "create": {
+          "owner": 1000
+        },
+        "delete": {
+          "owner": 0,
+          "moderators": 10
+        }
+      }
+    }
+  }
+}
