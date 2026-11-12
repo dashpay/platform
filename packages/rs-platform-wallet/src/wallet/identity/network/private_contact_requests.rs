@@ -6795,7 +6795,7 @@ mod tests {
                 &alice_crypto,
             ));
             let mut cx = Context::from_waker(Waker::noop());
-            let wallet_manager = old.wallet_manager();
+            let wallet_manager = &old.wallet_manager;
             let mut held = wallet_manager.write().await;
             let mut gated = false;
             for _ in 0..200 {
@@ -9680,7 +9680,7 @@ mod tests {
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
         );
-        let mut held_wallet = alice_wallet.wallet_manager().write().await;
+        let mut held_wallet = alice_wallet.wallet_manager.write().await;
         drop(held_store);
         // The restoration reads its journal snapshot, then waits for the wallet.
         assert!(
@@ -9768,7 +9768,7 @@ mod tests {
             restore.as_mut().poll(&mut cx).is_pending(),
             "waits for the store"
         );
-        let mut held_wallet = wallet.wallet_manager().write().await;
+        let mut held_wallet = wallet.wallet_manager.write().await;
         drop(held_store);
         // The restoration reads the redrive records, then waits for the
         // wallet before it opens the entry.

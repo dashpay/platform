@@ -991,11 +991,21 @@ mod tests {
     #[test]
     fn a_heal_page_is_held_only_under_a_run_claim() {
         use crate::test_fixtures::mock_manager;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
-        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
-        let wallet_id = [0x6bu8; 32];
-        let (reconciler, engine) = PLATFORM_WALLET_MANAGER_STORAGE
-            .with_item(handle, |m| (m.txo_reconciler(), m.wallet_manager_arc()))
+        let manager = mock_manager();
+        let wallet = crate::runtime::runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &[0x6b; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            ))
+            .expect("an empty wallet");
+        let wallet_id = wallet.wallet_id();
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| m.txo_reconciler())
             .expect("manager");
         let heal_page = |held: &mut *mut TxoReconcileHeldVerdictsFFI| {
             let mut rows: *const TxoHealRowFFI = std::ptr::null();
@@ -1034,11 +1044,11 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert!(!held.is_null());
         assert!(
-            engine.try_write().is_err(),
+            wallet.try_state_mut().is_none(),
             "the engine is held until the page is released"
         );
         unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
-        assert!(engine.try_write().is_ok());
+        assert!(wallet.try_state_mut().is_some());
 
         reconciler.finish(&wallet_id, TxoReconcileFinish::NotRun);
         drop(PLATFORM_WALLET_MANAGER_STORAGE.remove(handle));
@@ -1118,6 +1128,7 @@ mod tests {
         use std::sync::Arc;
 
         use crate::test_fixtures::mock_manager;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
         /// Poll `condition` until it holds, failing after [`WAIT`].
         fn wait_for(what: &str, condition: impl Fn() -> bool) {
@@ -1128,8 +1139,17 @@ mod tests {
             }
         }
 
-        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
-        let wallet_id = [0x5au8; 32];
+        let manager = mock_manager();
+        let wallet = crate::runtime::runtime()
+            .block_on(manager.create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &[0x5a; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            ))
+            .expect("an empty wallet");
+        let wallet_id = wallet.wallet_id();
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
         let (reconciler, engine) = PLATFORM_WALLET_MANAGER_STORAGE
             .with_item(handle, |m| (m.txo_reconciler(), m.wallet_manager_arc()))
             .expect("manager");
@@ -1170,8 +1190,8 @@ mod tests {
 
         // An engine writer queued behind the guard. With the guard held, a
         // fresh engine read is refused exactly while a writer waits.
-        let writer_engine = Arc::clone(&engine);
-        let writer = std::thread::spawn(move || drop(writer_engine.blocking_write()));
+        let writer_wallet = Arc::clone(&wallet);
+        let writer = std::thread::spawn(move || drop(writer_wallet.state_mut_blocking()));
         wait_for("the engine writer never queued behind the guard", || {
             engine.try_read().is_err()
         });

@@ -209,11 +209,8 @@ impl Fixture {
             .await
             .unwrap();
         wallet
-            .wallet_manager()
-            .write()
+            .state_mut()
             .await
-            .get_wallet_info_mut(&wallet.wallet_id())
-            .unwrap()
             .identity_manager
             .add_identity(identity.clone(), 0, wallet.wallet_id(), wallet.persister())
             .unwrap();

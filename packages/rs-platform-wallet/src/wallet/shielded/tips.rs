@@ -343,6 +343,8 @@ impl PlatformWallet {
         }
         let _placement = self.identity.identity_placement.read().await;
         let account = self.tip_source_account(seed, source).await?;
+        #[cfg(test)]
+        test_hooks::before_spend(self).await;
         self.shielded_transfer_to(
             coordinator,
             seed,
@@ -367,63 +369,72 @@ pub(crate) mod test_hooks {
     use tokio::sync::oneshot;
 
     type Hook = (oneshot::Sender<()>, oneshot::Receiver<()>);
-    static AFTER_SNAPSHOT: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
-    static AFTER_BIND: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    enum Stage {
+        Snapshot,
+        Bound,
+        Spend,
+    }
+    static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
 
     fn key(wallet: &PlatformWallet) -> usize {
         Arc::as_ptr(&wallet.shielded_config_lock) as usize
     }
 
-    /// Arm the pause for `wallet`. Returns a receiver that fires when
-    /// preparation reaches the pause, and the sender that resumes it.
-    pub(crate) fn pause_after_snapshot(
+    fn pause(
         wallet: &PlatformWallet,
+        stage: Stage,
     ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
         let (reached_tx, reached_rx) = oneshot::channel();
         let (resume_tx, resume_rx) = oneshot::channel();
-        AFTER_SNAPSHOT
+        HOOKS
             .lock()
             .unwrap()
             .get_or_insert_with(HashMap::new)
-            .insert(key(wallet), (reached_tx, resume_rx));
+            .insert((key(wallet), stage), (reached_tx, resume_rx));
         (reached_rx, resume_tx)
     }
 
-    pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
-        let hook = AFTER_SNAPSHOT
+    async fn reach(wallet: &PlatformWallet, stage: Stage) {
+        let hook = HOOKS
             .lock()
             .unwrap()
             .as_mut()
-            .and_then(|hooks| hooks.remove(&key(wallet)));
+            .and_then(|hooks| hooks.remove(&(key(wallet), stage)));
         if let Some((reached, resume)) = hook {
             let _ = reached.send(());
             let _ = resume.await;
         }
+    }
+
+    pub(crate) fn pause_after_snapshot(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::Snapshot)
+    }
+
+    pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
+        reach(wallet, Stage::Snapshot).await;
     }
 
     pub(crate) fn pause_after_bind(
         wallet: &PlatformWallet,
     ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
-        let (reached_tx, reached_rx) = oneshot::channel();
-        let (resume_tx, resume_rx) = oneshot::channel();
-        AFTER_BIND
-            .lock()
-            .unwrap()
-            .get_or_insert_with(HashMap::new)
-            .insert(key(wallet), (reached_tx, resume_rx));
-        (reached_rx, resume_tx)
+        pause(wallet, Stage::Bound)
     }
 
     pub(crate) async fn after_bind(wallet: &PlatformWallet) {
-        let hook = AFTER_BIND
-            .lock()
-            .unwrap()
-            .as_mut()
-            .and_then(|hooks| hooks.remove(&key(wallet)));
-        if let Some((reached, resume)) = hook {
-            let _ = reached.send(());
-            let _ = resume.await;
-        }
+        reach(wallet, Stage::Bound).await;
+    }
+
+    pub(crate) fn pause_before_spend(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::Spend)
+    }
+
+    pub(crate) async fn before_spend(wallet: &PlatformWallet) {
+        reach(wallet, Stage::Spend).await;
     }
 }
 

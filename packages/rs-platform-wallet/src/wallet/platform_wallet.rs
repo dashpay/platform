@@ -390,6 +390,7 @@ pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_manager_reader: WalletManagerReader,
     // Sub-wallets that hold a broadcaster are monomorphized with
     // `SpvBroadcaster` — the only production broadcaster in use.
     // Swapping this out to another broadcaster is a three-line flip
@@ -528,9 +529,9 @@ impl PlatformWallet {
         Arc::clone(&self.sdk)
     }
 
-    /// Get a reference to the shared wallet manager lock.
-    pub fn wallet_manager(&self) -> &Arc<RwLock<WalletManager<PlatformWalletInfo>>> {
-        &self.wallet_manager
+    /// Read the shared wallet manager. Mutations use [`Self::state_mut`].
+    pub fn wallet_manager(&self) -> &WalletManagerReader {
+        &self.wallet_manager_reader
     }
 
     /// Get the lock-free balance for UI reads.
@@ -565,10 +566,14 @@ impl PlatformWallet {
 
     /// Write-lock the wallet manager and return a guard that derefs to this
     /// wallet's `PlatformWalletInfo` (with `DerefMut`).
+    /// Holds the identity-placement write lock first, so replacing the manager
+    /// or removing/re-adding an identity cannot race a tip operation.
     pub async fn state_mut(&self) -> WalletStateWriteGuard<'_> {
+        let placement = self.identity.identity_placement.write().await;
         WalletStateWriteGuard {
             guard: self.wallet_manager.write().await,
             wallet_id: self.wallet_id,
+            _placement: placement,
         }
     }
 
@@ -582,14 +587,17 @@ impl PlatformWallet {
 
     /// Blocking write-lock.
     ///
+    /// Holds identity placement before wallet state, like [`Self::state_mut`].
     /// Uses `tokio::sync::RwLock::blocking_write` — must NOT be
     /// called from within a tokio async context. Exists so sync
     /// callers (e.g. SPV-driven transaction processing) can reach
     /// mutation methods that require the wallet-manager write lock.
     pub fn state_mut_blocking(&self) -> WalletStateWriteGuard<'_> {
+        let placement = self.identity.identity_placement.blocking_write();
         WalletStateWriteGuard {
             guard: self.wallet_manager.blocking_write(),
             wallet_id: self.wallet_id,
+            _placement: placement,
         }
     }
 
@@ -747,15 +755,17 @@ impl PlatformWallet {
     }
 
     /// Non-blocking write-lock. Returns `None` if the lock is currently
-    /// held by any reader or writer. Same safety properties as
+    /// held by any reader or writer, or identity placement is in use. Same safety properties as
     /// [`try_state`]: never panics, never blocks.
     pub fn try_state_mut(&self) -> Option<WalletStateWriteGuard<'_>> {
+        let placement = self.identity.identity_placement.try_write().ok()?;
         self.wallet_manager
             .try_write()
             .ok()
             .map(|guard| WalletStateWriteGuard {
                 guard,
                 wallet_id: self.wallet_id,
+                _placement: placement,
             })
     }
 
@@ -845,6 +855,7 @@ impl PlatformWallet {
         Self {
             wallet_id,
             sdk,
+            wallet_manager_reader: WalletManagerReader::new(Arc::clone(&wallet_manager)),
             wallet_manager,
             core,
             identity,
@@ -2978,6 +2989,7 @@ impl Clone for PlatformWallet {
             wallet_id: self.wallet_id,
             sdk: self.sdk.clone(),
             wallet_manager: self.wallet_manager.clone(),
+            wallet_manager_reader: self.wallet_manager_reader.clone(),
             core: self.core.clone(),
             identity: self.identity.clone(),
             platform: self.platform.clone(),
@@ -3054,6 +3066,40 @@ impl std::fmt::Debug for PlatformWallet {
 // Wallet state guard types — lock WalletManager, deref to PlatformWalletInfo
 // ---------------------------------------------------------------------------
 
+/// Shared read access without exposing an unlocked identity-placement mutation path.
+/// Use [`PlatformWallet::state_mut`] to change a live wallet's state.
+///
+/// ```compile_fail
+/// async fn bypass(reader: &platform_wallet::wallet::platform_wallet::WalletManagerReader) {
+///     reader.write().await;
+/// }
+/// ```
+#[derive(Clone)]
+pub struct WalletManagerReader {
+    inner: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+}
+
+impl WalletManagerReader {
+    pub(crate) fn new(inner: Arc<RwLock<WalletManager<PlatformWalletInfo>>>) -> Self {
+        Self { inner }
+    }
+
+    pub async fn read(&self) -> RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.inner.read().await
+    }
+
+    pub fn blocking_read(&self) -> RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>> {
+        self.inner.blocking_read()
+    }
+
+    pub fn try_read(
+        &self,
+    ) -> Result<RwLockReadGuard<'_, WalletManager<PlatformWalletInfo>>, tokio::sync::TryLockError>
+    {
+        self.inner.try_read()
+    }
+}
+
 /// Read guard that locks `WalletManager` and derefs to this wallet's
 /// `PlatformWalletInfo`. Also provides `.wallet()` for key material access.
 pub struct WalletStateReadGuard<'a> {
@@ -3084,6 +3130,7 @@ impl Deref for WalletStateReadGuard<'_> {
 pub struct WalletStateWriteGuard<'a> {
     guard: RwLockWriteGuard<'a, WalletManager<PlatformWalletInfo>>,
     wallet_id: WalletId,
+    _placement: RwLockWriteGuard<'a, ()>,
 }
 
 impl<'a> WalletStateWriteGuard<'a> {

@@ -1697,11 +1697,8 @@ mod tests {
             PLATFORM_WALLET_STORAGE
                 .with_item(wallet_handle, |wallet| {
                     runtime().block_on(async {
-                        let mut wm = wallet.wallet_manager().write().await;
-                        let manager = &mut wm
-                            .get_wallet_info_mut(&wallet.wallet_id())
-                            .expect("the wallet's info")
-                            .identity_manager;
+                        let mut state = wallet.state_mut().await;
+                        let manager = &mut state.identity_manager;
                         manager
                             .add_identity(bob.clone(), 0, wallet.wallet_id(), wallet.persister())
                             .expect("Bob");
@@ -1828,9 +1825,8 @@ mod tests {
             revision: 0,
         });
         runtime().block_on(async {
-            let mut wm = wallet.wallet_manager().write().await;
-            wm.get_wallet_info_mut(&wallet.wallet_id())
-                .expect("the wallet's info")
+            let mut state = wallet.state_mut().await;
+            state
                 .identity_manager
                 .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())
                 .expect("the identity");

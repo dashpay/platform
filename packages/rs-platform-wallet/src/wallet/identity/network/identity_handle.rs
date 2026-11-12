@@ -686,27 +686,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         self.wallet_manager.read().await
     }
 
-    /// Get a write-lock handle to the shared [`WalletManager`].
-    ///
-    /// Access wallet info via `wm.get_wallet_info_mut(&wallet_id)` on the
-    /// returned guard. This allows callers to mutate managed identities (e.g.
-    /// adding or updating identities from an external persistence layer).
-    pub async fn wallet_manager_write(
-        &self,
-    ) -> tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>> {
-        self.wallet_manager.write().await
-    }
-
-    /// Try to acquire a write-lock on the shared [`WalletManager`] without blocking.
-    ///
-    /// Returns `None` if the lock is currently held by another task.
-    /// Useful for synchronous callers that cannot await.
-    pub fn try_wallet_manager_write(
-        &self,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>>> {
-        self.wallet_manager.try_write().ok()
-    }
-
     /// The wallet ID for this identity wallet's underlying key material.
     pub fn wallet_id(&self) -> &WalletId {
         &self.wallet_id

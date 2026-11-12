@@ -460,9 +460,8 @@ mod tests {
             revision: 0,
         });
         crate::runtime::runtime().block_on(async {
-            let mut wm = wallet.wallet_manager().write().await;
-            wm.get_wallet_info_mut(&wallet.wallet_id())
-                .expect("the wallet's info")
+            let mut state = wallet.state_mut().await;
+            state
                 .identity_manager
                 .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())
                 .expect("the identity");
@@ -504,10 +503,9 @@ mod tests {
                 PLATFORM_WALLET_STORAGE
                     .with_item(handle, |wallet| {
                         crate::runtime::runtime().block_on(async {
-                            let mut wm = wallet.wallet_manager().write().await;
+                            let mut state = wallet.state_mut().await;
                             change(
-                                wm.get_wallet_info_mut(&wallet.wallet_id())
-                                    .expect("the wallet's info")
+                                state
                                     .identity_manager
                                     .managed_identity_mut(&identity_id)
                                     .expect("the identity"),

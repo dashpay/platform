@@ -21,7 +21,7 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
-use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::platform_wallet::{WalletId, WalletManagerReader};
 use crate::wallet::PlatformWallet;
 
 /// Result of [`PlatformWalletManager::provider_masternode_txs_blocking`]:
@@ -1155,14 +1155,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// and waiting on this lock inside that closure would stall
     /// `platform_wallet_manager_destroy` (a registry write) and, through
     /// parking_lot's writer preference, every other registry reader.
-    pub fn wallet_manager_arc(
-        &self,
-    ) -> Arc<
-        tokio::sync::RwLock<
-            key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
-        >,
-    > {
-        Arc::clone(&self.wallet_manager)
+    pub fn wallet_manager_arc(&self) -> WalletManagerReader {
+        WalletManagerReader::new(Arc::clone(&self.wallet_manager))
     }
 
     /// [`wallet_utxos_page`] under this manager's read lock. Blocking;

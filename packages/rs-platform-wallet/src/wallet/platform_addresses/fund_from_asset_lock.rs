@@ -1428,7 +1428,7 @@ mod tests {
         let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
         let signer =
-            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+            fund_test_platform_wallet(&wallet.wallet_manager, &wallet_id, 10_000_000).await;
         let address = wallet
             .platform()
             .next_unused_receive_address(PlatformPaymentAccountKey {
@@ -1477,7 +1477,7 @@ mod tests {
         let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
         let signer =
-            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+            fund_test_platform_wallet(&wallet.wallet_manager, &wallet_id, 10_000_000).await;
         let address = wallet
             .platform()
             .next_unused_receive_address(PlatformPaymentAccountKey {

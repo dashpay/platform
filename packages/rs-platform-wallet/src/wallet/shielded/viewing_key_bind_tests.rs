@@ -1280,7 +1280,7 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
     // Restored at the host's placeholder 0, but its keys are identity 5's.
     let id = Identifier::from([0x55; 32]);
     {
-        let mut wm = wallet.wallet_manager().write().await;
+        let mut wm = wallet.wallet_manager.write().await;
         wm.get_wallet_info_mut(&wallet.wallet_id())
             .unwrap()
             .identity_manager
@@ -1375,7 +1375,7 @@ async fn should_refuse_tip_account_for_a_placeholder_index_until_it_is_verified(
 
     // Rediscovery proves index 5 and re-slots the identity.
     {
-        let mut wm = wallet.wallet_manager().write().await;
+        let mut wm = wallet.wallet_manager.write().await;
         wm.get_wallet_info_mut(&wallet.wallet_id())
             .unwrap()
             .identity_manager
@@ -1470,7 +1470,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             crate::changeset::DurableCursors::default(),
         );
         {
-            let mut wm = wallet.wallet_manager().write().await;
+            let mut wm = wallet.wallet_manager.write().await;
             wm.get_wallet_info_mut(&wallet.wallet_id())
                 .unwrap()
                 .identity_manager
@@ -1488,7 +1488,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
                 .unwrap();
         }
         {
-            let mut wm = wallet.wallet_manager().write().await;
+            let mut wm = wallet.wallet_manager.write().await;
             wm.get_wallet_info_mut(&wallet.wallet_id())
                 .unwrap()
                 .identity_manager
@@ -1724,8 +1724,12 @@ async fn tip_race_fixture(
         Arc::clone(&wallet_manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
     ));
+    let mock_dir = temp_dir(tag);
+    std::fs::create_dir_all(&mock_dir).unwrap();
     let sdk = dash_sdk::SdkBuilder::new_mock()
         .with_network(Network::Testnet)
+        .with_dump_dir(&mock_dir)
+        .with_version(dpp::version::PlatformVersion::latest())
         .build()
         .unwrap();
     let persister = Arc::new(CapturingPersistence::default());
@@ -1742,7 +1746,7 @@ async fn tip_race_fixture(
     );
     let id = Identifier::from([0x66; 32]);
     {
-        let mut wm = wallet.wallet_manager().write().await;
+        let mut wm = wallet.wallet_manager.write().await;
         wm.get_wallet_info_mut(&wallet.wallet_id())
             .unwrap()
             .identity_manager
@@ -1873,7 +1877,7 @@ async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stal
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     let (wallet, seed, id, coordinator) = tip_race_fixture("tips_placement_move").await;
     {
-        let mut wm = wallet.wallet_manager().write().await;
+        let mut wm = wallet.wallet_manager.write().await;
         let managed = wm
             .get_wallet_info_mut(&wallet.wallet_id())
             .unwrap()
@@ -1901,7 +1905,7 @@ async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stal
         let wallet = wallet.clone();
         tokio::spawn(async move {
             let _placement = wallet.identity.identity_placement.write().await;
-            let mut wm = wallet.wallet_manager().write().await;
+            let mut wm = wallet.wallet_manager.write().await;
             wm.get_wallet_info_mut(&wallet.wallet_id())
                 .unwrap()
                 .identity_manager
@@ -2042,5 +2046,184 @@ async fn should_refuse_shielded_identity_creation_at_an_occupied_slot_before_der
         matches!(error, crate::PlatformWalletError::InvalidIdentityData(ref message)
         if message.contains("index 2") && message.contains(&format!("{occupant}"))),
         "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn should_order_public_identity_manager_replacement_after_tip_spending() {
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+    use dash_sdk::{platform::DocumentQuery, query_types::Documents};
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::platform_value::Value;
+    use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+    use futures::FutureExt;
+
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_public_mutation").await;
+    let recipient = Identifier::from([0x77; 32]);
+    let address = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0)
+        .unwrap()
+        .default_address
+        .to_raw_address_bytes();
+    let mut sdk = wallet.sdk().clone();
+    let dpns =
+        load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest()).unwrap();
+    sdk.mock()
+        .expect_fetch(SystemDataContract::DPNS.id(), Some(dpns.clone()))
+        .await
+        .unwrap();
+    let domain = Document::V0(DocumentV0 {
+        id: Identifier::from([3; 32]),
+        owner_id: recipient,
+        revision: Some(1),
+        properties: [(
+            "records".into(),
+            Value::Map(vec![(
+                Value::Text("identity".into()),
+                Value::Identifier(recipient.to_buffer()),
+            )]),
+        )]
+        .into(),
+        ..Default::default()
+    });
+    let query = DocumentQuery::new(dpns, "domain")
+        .unwrap()
+        .with_where(WhereClause {
+            field: "normalizedParentDomainName".into(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".into()),
+        })
+        .with_where(WhereClause {
+            field: "normalizedLabel".into(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("a11ce".into()),
+        })
+        .with_limit(1);
+    sdk.mock()
+        .expect_fetch_many::<Identifier, Document, _, Documents>(
+            query,
+            Some([(domain.id(), Some(domain))].into()),
+        )
+        .await
+        .unwrap();
+    let profile = Document::V0(DocumentV0 {
+        id: Identifier::from([4; 32]),
+        owner_id: recipient,
+        revision: Some(1),
+        properties: [("shieldedAddress".into(), Value::Bytes(address.to_vec()))].into(),
+        ..Default::default()
+    });
+    let query = DocumentQuery::new(
+        crate::wallet::identity::network::dashpay_contract().unwrap(),
+        "profile",
+    )
+    .unwrap()
+    .with_where(WhereClause {
+        field: "$ownerId".into(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![recipient.into()]),
+    })
+    .with_order_by(OrderClause {
+        field: "$ownerId".into(),
+        ascending: true,
+    })
+    .with_limit(100);
+    sdk.mock()
+        .expect_fetch_many::<Identifier, Document, _, Documents>(
+            query,
+            Some([(profile.id(), Some(profile))].into()),
+        )
+        .await
+        .unwrap();
+
+    let (reached, resume) = super::tips::test_hooks::pause_before_spend(&wallet);
+    let mut sending = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .send_shielded_tip(
+                    &coordinator,
+                    &seed,
+                    crate::ShieldedTipSource::Identity(id),
+                    "Alice.dash",
+                    &crate::ShieldedTipRecipient {
+                        identity_id: recipient,
+                        address,
+                    },
+                    0,
+                    [0; 36],
+                    &super::CachedOrchardProver::new(),
+                )
+                .await
+        })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::select! {
+            result = reached => result.unwrap(),
+            result = &mut sending => panic!("tip send stopped before source validation: {result:?}"),
+        }
+    })
+        .await
+        .expect("tip send reached source validation");
+    assert!(
+        wallet.try_state_mut().is_none(),
+        "public writes must respect placement"
+    );
+    let mut replacing = Box::pin(wallet.state_mut());
+    assert!(
+        replacing.as_mut().now_or_never().is_none(),
+        "replacement must wait for the send"
+    );
+    resume.send(()).unwrap();
+    let error = sending.await.unwrap().unwrap_err();
+    assert!(
+        matches!(error, crate::PlatformWalletError::ShieldedBuildError(ref message) if message.starts_with("amount must be > 0")),
+        "{error:?}"
+    );
+    let mut state = replacing.await;
+    let mut replacement = state.identity_manager.clone();
+    let identity = replacement
+        .remove_identity(&id, wallet.persister())
+        .unwrap();
+    replacement
+        .add_identity(identity, 7, wallet.wallet_id(), wallet.persister())
+        .unwrap();
+    state.identity_manager = replacement;
+    assert_eq!(state.identity_manager.identity_index(&id), Some(7));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_order_blocking_public_state_mutation_against_identity_placement() {
+    let (wallet, _, id, _) = tip_race_fixture("tips_blocking_public_mutation").await;
+    let placement = wallet.identity.identity_placement.read().await;
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let mut writing = {
+        let wallet = wallet.clone();
+        tokio::task::spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            let mut state = wallet.state_mut_blocking();
+            let identity = state
+                .identity_manager
+                .remove_identity(&id, wallet.persister())
+                .unwrap();
+            state
+                .identity_manager
+                .add_identity(identity, 7, wallet.wallet_id(), wallet.persister())
+                .unwrap();
+        })
+    };
+    started_rx.await.unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(500), &mut writing)
+            .await
+            .is_err()
+    );
+    drop(placement);
+    writing.await.unwrap();
+    assert_eq!(
+        wallet.state().await.identity_manager.identity_index(&id),
+        Some(7)
     );
 }
