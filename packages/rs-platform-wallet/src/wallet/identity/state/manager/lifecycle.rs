@@ -206,7 +206,9 @@ impl IdentityManager {
     /// updated `wallet_id` / `identity_index`. Fails with
     /// [`PlatformWalletError::IdentityIndexOccupied`], changing nothing, when
     /// the slot already holds a different identity.
-    pub fn adopt_into_wallet(
+    /// Live-wallet callers hold `identity_placement` before the manager write
+    /// lock so a tip operation keeps its verified source slot until it finishes.
+    pub(crate) fn adopt_into_wallet(
         &mut self,
         identity_id: &Identifier,
         wallet_id: WalletId,

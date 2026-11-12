@@ -100,6 +100,45 @@ final class PersistentShieldedNotePredicateTests: XCTestCase {
         XCTAssertEqual(notes.reduce(UInt64(0)) { $0 + $1.value }, 150)
     }
 
+    func testIdentityFundingHasNoSourceBalanceForTipOnlyWallet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let wallet = walletId(0xAA)
+        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
+                                nullifier: 0x01, isSpent: false, value: 900))
+        try context.save()
+
+        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
+            predicate: CreateIdentityView.shieldedFundingPredicate
+        ))
+        XCTAssertTrue(notes.isEmpty)
+        XCTAssertEqual(notes.reduce(UInt64(0)) { $0 + $1.value }, 0)
+    }
+
+    func testIdentityFundingBalanceIncludesOnlyUnspentAccountZeroInSelectedWallet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let wallet = walletId(0xAA)
+        let otherWallet = walletId(0xBB)
+        context.insert(makeNote(walletId: wallet, nullifier: 0x01, isSpent: false, value: 100))
+        context.insert(makeNote(walletId: wallet, nullifier: 0x02, isSpent: false, value: 50))
+        context.insert(makeNote(walletId: wallet, nullifier: 0x03, isSpent: true, value: 999))
+        context.insert(makeNote(walletId: wallet, accountIndex: 1,
+                                nullifier: 0x04, isSpent: false, value: 200))
+        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
+                                nullifier: 0x05, isSpent: false, value: 900))
+        context.insert(makeNote(walletId: otherWallet,
+                                nullifier: 0x06, isSpent: false, value: 300))
+        try context.save()
+
+        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
+            predicate: CreateIdentityView.shieldedFundingPredicate
+        ))
+        XCTAssertEqual(notes.count, 3)
+        XCTAssertEqual(notes.filter { $0.walletId == wallet }.reduce(UInt64(0)) { $0 + $1.value }, 150)
+        XCTAssertEqual(notes.filter { $0.walletId == otherWallet }.reduce(UInt64(0)) { $0 + $1.value }, 300)
+    }
+
     private func makeNote(
         walletId: Data,
         accountIndex: UInt32 = 0,

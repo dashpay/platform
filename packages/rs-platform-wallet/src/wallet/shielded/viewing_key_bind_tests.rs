@@ -1950,3 +1950,97 @@ async fn should_order_an_identity_move_after_tip_preparation_and_refuse_its_stal
             .expect("publishable");
     }
 }
+
+#[tokio::test]
+async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_clear").await;
+    let address = wallet
+        .prepare_shielded_tip_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .check_tip_address_publication(&id, &address)
+        .await
+        .unwrap();
+
+    coordinator.clear().await.unwrap();
+    assert!(wallet
+        .check_tip_address_publication(&id, &address)
+        .await
+        .is_err());
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .unwrap();
+    assert!(wallet
+        .check_tip_address_publication(&id, &address)
+        .await
+        .is_err());
+
+    assert_eq!(
+        wallet
+            .prepare_shielded_tip_address(&seed, &id, &coordinator)
+            .await
+            .unwrap(),
+        address
+    );
+    wallet
+        .check_tip_address_publication(&id, &address)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn should_refuse_tip_preparation_cleared_after_its_bind() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_clear_during_prepare").await;
+    let (reached, resume) = super::tips::test_hooks::pause_after_bind(&wallet);
+    let preparing = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .prepare_shielded_tip_address(&seed, &id, &coordinator)
+                .await
+        })
+    };
+    reached.await.unwrap();
+    let address = wallet
+        .shielded_default_address(crate::shielded_tip_account_index(2).unwrap())
+        .await
+        .unwrap();
+    coordinator.clear().await.unwrap();
+    resume.send(()).unwrap();
+    assert!(matches!(
+        preparing.await.unwrap(),
+        Err(crate::PlatformWalletError::ShieldedNotBound)
+    ));
+    assert!(wallet
+        .check_tip_address_publication(&id, &address)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn should_refuse_shielded_identity_creation_at_an_occupied_slot_before_deriving_or_spending()
+{
+    let (wallet, _, occupant, coordinator) = tip_race_fixture("tips_occupied_creation").await;
+    let error = wallet
+        .shielded_identity_create_from_pool(
+            &coordinator,
+            &[],
+            0,
+            2,
+            vec![],
+            0,
+            dpp::address_funds::PlatformAddress::P2pkh([0x11; 20]),
+            &NoSigner,
+            &super::CachedOrchardProver::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, crate::PlatformWalletError::InvalidIdentityData(ref message)
+        if message.contains("index 2") && message.contains(&format!("{occupant}"))),
+        "{error:?}"
+    );
+}

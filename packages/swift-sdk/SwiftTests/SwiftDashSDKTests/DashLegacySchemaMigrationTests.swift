@@ -842,8 +842,9 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
             ("converted.store", dropIndex + drop
                 + "ALTER TABLE ZPERSISTENTTOKENBALANCE ADD COLUMN Z14TOKENBALANCES VARCHAR;"),
         ] {
+            let candidate = try renumbered(name, tail: tail)
             XCTAssertThrowsError(
-                try DashLegacyStoreSQLite.validatePreservation(from: before, to: try renumbered(name, tail: tail)),
+                try DashLegacyStoreSQLite.validatePreservation(from: before, to: candidate),
                 name)
         }
     }

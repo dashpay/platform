@@ -108,6 +108,15 @@ pub enum PlatformWalletError {
         occupant: Identifier,
     },
 
+    #[error(
+        "Identity {identity_id} was created on chain but could not be registered locally: \
+         {reason}; do not re-submit identity creation"
+    )]
+    IdentityCreatedButNotRegistered {
+        identity_id: Identifier,
+        reason: String,
+    },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

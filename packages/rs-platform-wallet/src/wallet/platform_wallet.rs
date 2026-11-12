@@ -44,6 +44,8 @@ use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+#[cfg(feature = "shielded")]
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
@@ -58,6 +60,7 @@ use {
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
     },
+    super::shielded::tips::PreparedTipAccount,
     super::shielded::{
         FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
     },
@@ -449,11 +452,11 @@ pub struct PlatformWallet {
     /// The tip account each identity's address was last prepared for in
     /// this session, after its slot was proved with the seed. Publication
     /// of a wallet tip address requires it, so an address is published only
-    /// for the identity and slot it was prepared for. `Arc` so cloned wallet
-    /// handles share it.
+    /// for the identity and slot it was prepared for, and invalidated by a
+    /// coordinator Clear. `Arc` so cloned wallet handles share it.
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
-        Arc<std::sync::Mutex<BTreeMap<dpp::prelude::Identifier, u32>>>,
+        Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -2284,8 +2287,9 @@ impl PlatformWallet {
     /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
     /// there (mirroring `register_from_addresses`) so the host persister emits the
     /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
-    /// registration after a successful broadcast is logged and swallowed — the identity already
-    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
+    /// registration after a successful broadcast returns
+    /// [`PlatformWalletError::IdentityCreatedButNotRegistered`], carrying the created identity's
+    /// id. Creation must not be re-submitted in that case.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -2307,6 +2311,23 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            if let Some(occupant) = info
+                .identity_manager
+                .wallet_identities
+                .get(&self.wallet_id)
+                .and_then(|identities| identities.get(&identity_index))
+            {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Cannot create an identity at index {identity_index}: the slot holds identity {}",
+                    occupant.identity.id()
+                )));
+            }
+        }
         let (identity_id, identity) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
@@ -2331,36 +2352,22 @@ impl PlatformWallet {
         // Register the proof-verified identity in the local manager at its HD slot, exactly like
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
-        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
-        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
-        // identity exists on chain and the next sync heals the local view.
         {
             let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::IdentityCreatedButNotRegistered {
+                    identity_id,
+                    reason: "wallet was removed from the manager".to_string(),
                 }
-                None => {
-                    tracing::warn!(
-                        identity_index,
-                        "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
-                         not found in the manager; skipping local registration (heals on next sync)"
-                    );
-                }
-            }
+            })?;
+            info.identity_manager
+                .add_identity(identity, identity_index, self.wallet_id, &self.persister)
+                .map_err(
+                    |error| PlatformWalletError::IdentityCreatedButNotRegistered {
+                        identity_id,
+                        reason: error.to_string(),
+                    },
+                )?;
         }
 
         Ok(identity_id)

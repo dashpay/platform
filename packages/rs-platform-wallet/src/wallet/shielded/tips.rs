@@ -14,7 +14,13 @@ use crate::{PlatformWalletError, ShieldedTipRecipient};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::PaymentAddress;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, PoisonError, Weak};
+
+pub(crate) struct PreparedTipAccount {
+    account: u32,
+    coordinator: Weak<NetworkShieldedCoordinator>,
+    clear_generation: u64,
+}
 
 pub const SHIELDED_TIP_ACCOUNT_BASE: u32 = 0x4000_0000;
 
@@ -136,6 +142,7 @@ impl PlatformWallet {
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
+        let clear_generation = coordinator.clear_generation();
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
@@ -152,10 +159,22 @@ impl PlatformWallet {
             .shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        #[cfg(test)]
+        test_hooks::after_bind(self).await;
+        if coordinator.clear_generation() != clear_generation {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         self.prepared_tip_accounts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(*identity_id, account);
+            .insert(
+                *identity_id,
+                PreparedTipAccount {
+                    account,
+                    coordinator: Arc::downgrade(coordinator),
+                    clear_generation,
+                },
+            );
         Ok(address)
     }
 
@@ -264,7 +283,12 @@ impl PlatformWallet {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(identity_id)
-            .copied();
+            .is_some_and(|prepared| {
+                prepared.account == owning_account
+                    && prepared.coordinator.upgrade().is_some_and(|coordinator| {
+                        coordinator.clear_generation() == prepared.clear_generation
+                    })
+            });
         let wm = self.wallet_manager.read().await;
         let current = wm
             .get_wallet_info(&self.wallet_id())
@@ -272,7 +296,7 @@ impl PlatformWallet {
             .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
             .and_then(|identity| identity.identity_index)
             .and_then(|index| shielded_tip_account_index(index).ok());
-        if prepared == Some(owning_account) && current == Some(owning_account) {
+        if prepared && current == Some(owning_account) {
             Ok(())
         } else {
             Err(PlatformWalletError::InvalidIdentityData(
@@ -344,6 +368,7 @@ pub(crate) mod test_hooks {
 
     type Hook = (oneshot::Sender<()>, oneshot::Receiver<()>);
     static AFTER_SNAPSHOT: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
+    static AFTER_BIND: Mutex<Option<HashMap<usize, Hook>>> = Mutex::new(None);
 
     fn key(wallet: &PlatformWallet) -> usize {
         Arc::as_ptr(&wallet.shielded_config_lock) as usize
@@ -366,6 +391,31 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         let hook = AFTER_SNAPSHOT
+            .lock()
+            .unwrap()
+            .as_mut()
+            .and_then(|hooks| hooks.remove(&key(wallet)));
+        if let Some((reached, resume)) = hook {
+            let _ = reached.send(());
+            let _ = resume.await;
+        }
+    }
+
+    pub(crate) fn pause_after_bind(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (resume_tx, resume_rx) = oneshot::channel();
+        AFTER_BIND
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(key(wallet), (reached_tx, resume_rx));
+        (reached_rx, resume_tx)
+    }
+
+    pub(crate) async fn after_bind(wallet: &PlatformWallet) {
+        let hook = AFTER_BIND
             .lock()
             .unwrap()
             .as_mut()

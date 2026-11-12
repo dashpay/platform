@@ -43,6 +43,7 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::prelude::Identifier;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
@@ -915,9 +916,9 @@ fn map_asset_lock_funding_result(
 /// independently if needed.
 ///
 /// `out_identity_id` is ALSO written on the [`ErrorShieldedBroadcastUnconfirmed`] result code: the
-/// broadcast was accepted but its execution result couldn't be confirmed, so the derived id is
-/// handed back (the identity may already exist on chain) and the host must hold the slot rather than
-/// treat the registration as failed. On every other error code `out_identity_id` is left untouched.
+/// broadcast could not be confirmed, or creation succeeded on chain but local registration failed.
+/// The diagnostic distinguishes these outcomes. The host must hold the slot rather than re-submit
+/// creation. On every other error code `out_identity_id` is left untouched.
 ///
 /// [`ErrorShieldedBroadcastUnconfirmed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
 ///
@@ -1055,13 +1056,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
+    map_identity_create_result(result, &mut *out_identity_id)
+}
+
+fn map_identity_create_result(
+    result: Result<Identifier, PlatformWalletError>,
+    out_identity_id: &mut [u8; 32],
+) -> PlatformWalletFFIResult {
     match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
             PlatformWalletFFIResult::ok()
         }
         // Broadcast accepted but its execution result couldn't be confirmed and a direct fetch came
-        // back empty. The identity MAY exist on chain, so — unlike every other error arm — we still
+        // back empty. The identity MAY exist on chain, so we still
         // write the derived id to `out_identity_id` (see the `# Safety` note) so the caller can hold
         // the slot against re-submission and surface the pending identity. The notes' reservations
         // were intentionally NOT released wallet-side.
@@ -1075,6 +1083,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 format!(
                     "shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
                 ),
+            )
+        }
+        Err(error @ PlatformWalletError::IdentityCreatedButNotRegistered { identity_id, .. }) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                error.to_string(),
             )
         }
         // Retryable: no Platform-recorded anchor covered the selected notes yet
@@ -3510,6 +3525,53 @@ mod tests {
             message.contains("do NOT retry"),
             "the message must carry the do-not-retry guidance: {message}"
         );
+    }
+
+    #[test]
+    fn should_preserve_created_identity_and_hold_its_slot_after_local_registration_failure() {
+        let identity_id = Identifier::from([0x42; 32]);
+        let error = PlatformWalletError::IdentityCreatedButNotRegistered {
+            identity_id,
+            reason: "identity slot is occupied".to_string(),
+        };
+        let diagnostic = error.to_string();
+        let mut out_identity_id = [0; 32];
+        let mut result = map_identity_create_result(Err(error), &mut out_identity_id);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(out_identity_id, identity_id.to_buffer());
+        assert_eq!(message_of(&result), diagnostic);
+        assert!(diagnostic.contains("created on chain"));
+        assert!(diagnostic.contains("could not be registered locally"));
+        assert!(diagnostic.contains("do not re-submit"));
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_preserve_unconfirmed_identity_create_diagnostic_and_id() {
+        let identity_id = Identifier::from([0x43; 32]);
+        let mut out_identity_id = [0; 32];
+        let mut result = map_identity_create_result(
+            Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id,
+                reason: "result proof unavailable".to_string(),
+            }),
+            &mut out_identity_id,
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(out_identity_id, identity_id.to_buffer());
+        assert_eq!(
+            message_of(&result),
+            format!("shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): result proof unavailable")
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// `map_spend_result` pins the retry-relevant code split the three spend
