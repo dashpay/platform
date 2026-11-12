@@ -16,11 +16,14 @@ pub use contender::{Contender, ContenderWithSerializedDocument};
 /// Represents a finalized contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct FinalizedContenderWithSerializedDocument {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The serialized document associated with the contender.
     pub serialized_document: Vec<u8>,
@@ -31,7 +34,7 @@ pub struct FinalizedContenderWithSerializedDocument {
 /// Represents a finalized contender in the contested document vote poll.
 /// This is for keeping information about previous vote polls
 ///
-/// This struct holds the identity ID of the contender, the serialized document,
+/// This struct holds the id the contest names the contender by, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode, DecodeUntrusted)]
 pub struct FinalizedResourceVoteChoicesWithVoterInfo {
@@ -59,11 +62,14 @@ impl fmt::Display for FinalizedResourceVoteChoicesWithVoterInfo {
 /// Represents a finalized contender in the contested document vote poll.
 /// This is for internal use where the document is in serialized form
 ///
-/// This struct holds the identity ID of the contender, the document,
+/// This struct holds the id the contest names the contender by, the document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Clone)]
 pub struct FinalizedContender {
-    /// The identity ID of the contender.
+    /// The id the contest names the contender by: the contending identity's id, or, in a
+    /// vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the
+    /// contending document's id. There the identity that entered the document is the
+    /// document's `owner_id`, and one identity may have entered several contenders.
     pub identity_id: Identifier,
     /// The document associated with the contender.
     pub document: Document,

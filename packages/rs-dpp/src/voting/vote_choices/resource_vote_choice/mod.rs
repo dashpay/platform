@@ -33,6 +33,10 @@ use std::fmt;
 // (consensus binary format is unaffected).
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum ResourceVoteChoice {
+    /// A vote for a contender, by the id the contest names its contenders by: the
+    /// contending identity's id, or, in a vote among documents
+    /// (`ContestedIndexResolution::MasternodeVoteOnDocuments`), the contending document's
+    /// id. The id of an identity that entered documents there names no contender.
     TowardsIdentity(Identifier),
     #[default]
     Abstain,

@@ -1,9 +1,12 @@
 # Decision proposals
 
-A decision proposal is a yes/no question that any identity puts to the
-masternodes. Creating one opens a masternode yes/no vote poll on it, which the
-proposal's owner funds. The result is signaling only: nothing on Platform acts
-on it.
+A decision proposal is a question that any identity puts to the masternodes.
+A yes/no one is a `proposal`: creating it opens a masternode yes/no vote poll
+on it, which the proposal's owner funds. A multiple choice one is a
+`multipleChoiceProposal` and the `choice` documents entered for it, which the
+masternodes vote among as a contest (see
+[Multiple choice proposals](#multiple-choice-proposals)). A result is signaling
+only: nothing on Platform acts on it.
 
 The proposals live in the decision proposals system contract. It activates at
 protocol version 15: a chain born at 15 registers it at genesis
@@ -15,7 +18,7 @@ system contract cache and the trusted context provider serve it from 15 on.
 - Owner: the all-zero system identity
 - Registry entry: `SystemDataContract::DecisionProposals = 11`
 - Schema version: 1
-- Document types: `proposal`
+- Document types: `proposal`, `multipleChoiceProposal`, `choice`
 
 ## `proposal`
 
@@ -118,6 +121,109 @@ The result is signaling only. Nothing on Platform acts on a passed or failed
 proposal (`on_yes_no_vote_poll_finished` does nothing for this purpose); what
 it means is up to the people who read it.
 
+## Multiple choice proposals
+
+A multiple choice proposal is two document types. The `multipleChoiceProposal`
+is the question; each `choice` is an answer to it, entered by any identity.
+The choices of one proposal are the contenders of one
+[contest](../../book/src/data-model/contested-documents.md), so the vote among
+them runs on the contested document machinery DPNS names use. The contest is a
+vote among documents (`resolution: 2`, new in protocol version 15): each choice
+is a contender of its own, so an identity may enter several.
+
+### `multipleChoiceProposal`
+
+Undeletable (`canBeDeleted: false`), so a `choice` can refer to it as a
+`permanentDocument`. The owner may edit `title`, `description` and `url` until
+two hours after the proposal was created: each is an `immutable` entry whose
+condition,
+`{ "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 7200000] }`,
+freezes it once that time has passed, and an edit after it is refused
+(`DocumentImmutablePropertyChangedError`, 40128). The window runs from the
+proposal's creation whether or not a choice has been entered, so a choice
+entered in the first two hours may answer a text that is edited afterwards.
+The type keeps its history (`documentsKeepHistory: true`), so every version
+stays readable. `open` is listed under `immutable` by name and never changes.
+Creating one opens no vote and states no fund. Additional properties are
+rejected.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
+| `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What is being decided |
+| `url` | string, `format: uri`, 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
+| `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is `false` |
+
+Indexes: `byOwner` (`$ownerId`, `$createdAt`) and `byCreatedAt` (`$createdAt`),
+neither unique.
+
+### `choice`
+
+Immutable and undeletable. Additional properties are rejected.
+
+| Property | Type | Meaning |
+| --- | --- | --- |
+| `proposalId` | identifier, required | The proposal this answers: `refersTo` a `permanentDocument` of type `multipleChoiceProposal`, so a choice for a proposal that does not exist is refused (`ReferencedEntityNotFoundError`, 40120) |
+| `title` | string, 1 to 128 characters and at most 512 bytes, required | The answer, in one line |
+| `description` | string, 1 to 4096 characters and at most 4096 bytes | What voting for this answer means |
+
+Its only index, `byProposal` on `proposalId`, is unique and `contested` with
+`resolution: 2` and no `fieldMatches`, so every choice is contested, each is a
+contender named by its document id, and the contest is keyed by the proposal's
+id:
+`ContestedDocumentResourceVotePoll { contract_id, document_type_name: "choice", index_name: "byProposal", index_values: [proposalId] }`.
+
+One `propertyConstraints` rule, `closedProposalTakesItsOwnersChoices`, reads
+the proposal through `proposalId`:
+`{ "ifThen": [{ "equal": [{ "referenced": ["proposalId", "open"] }, 0] }, { "equal": [{ "referenced": ["proposalId", "$ownerId"] }, "$ownerId"] }] }`.
+If the proposal is not open (a rule reads `false` as 0), the choice's owner
+must be the proposal's owner; a choice anyone else enters is refused
+(`DocumentPropertyConstraintViolatedError`, 10422) and opens no vote.
+
+### The vote
+
+- **Entering a choice.** The create states the contest's fund as its prefunded
+  voting balance, `["byProposal", amount]`, which the transition builders fill
+  in: the contested document fund, 0.1 Dash, doubling once the contest holds
+  250 choices and again for every 50 more. The first choice opens the vote;
+  later ones join it while the join window is open (one week on mainnet) and
+  are refused after it (`DocumentContestNotJoinableError`, 40111). A vote holds
+  at most 1,000 choices.
+- **Who enters choices, and how many.** A choice is a contender by itself, kept
+  under its document id, so an identity enters as many as it wants, each
+  paying the fund. For an open proposal anyone may enter choices, the proposer
+  included, and the proposer does not decide which choices the vote holds. For
+  a proposal that is not open only the proposer may, so the proposer supplies
+  every choice.
+- **Voting.** Masternodes and evonodes vote with `MasternodeVote` transitions
+  for the length of the poll (two weeks on mainnet, counted from the first
+  choice): towards a choice; abstain; or lock, which here means none of the
+  choices. A vote towards a choice is a `TowardsIdentity` vote choice carrying
+  the choice's document id, not its owner's identity id, which names no
+  contender here and is refused (`VoteChoiceNotAllowedForVotePollError`,
+  40307).
+- **The result.** The choice with the most votes is stored as an ordinary
+  document and the other choices are removed. A tie goes to the earliest
+  choice: by creation time, then block height, then core block height.
+  Choices entered in the same block share all three, and among them the lower
+  document id wins, whichever was entered first. A vote in which nobody votes
+  is a tie among every choice, so it keeps the earliest by that order. When
+  the lock votes outnumber the leading choice, no choice is stored, and no
+  choice can be entered for that proposal again
+  (`DocumentContestCurrentlyLockedError`, 40110). The vote runs its full
+  length even with a single choice. The stored result names the winning choice
+  by its document id, and the choice is stored under the identity that entered
+  it.
+- **Reading it.** `getContestedResourceVoteState` returns the choices and their
+  tallies while the vote runs and its outcome afterwards. Once the vote has
+  ended, the text of the choices that were not kept is no longer in state. The
+  stored result, which the query returns, still lists every choice by its
+  document id with its tally.
+
+Unlike a yes/no proposal, a multiple choice proposal has no pass threshold, no
+minimum turnout and no end date of its own: the contest's windows and its
+most-votes rule apply.
+
 ## From the SDKs
 
 The Rust SDK (`dash_sdk::platform::decision_proposals`), the JavaScript SDKs
@@ -130,3 +236,10 @@ an existing one new text to replace it with, list proposals through the three
 indexes a page at a time, and read and answer a proposal's poll by the
 proposal's id. A masternode's vote names the poll by its id, which the SDKs
 derive from the proposal's id with the protocol version they speak.
+
+A multiple choice proposal and its choices are ordinary documents and an
+ordinary contest: the SDKs' document create builds both (a `choice` create is
+given its contest fund like any contested create), and their contested resource
+queries and masternode vote read and answer the vote, with a choice's document
+id wherever they name a contender by an identity id. They have no helpers of
+their own yet.
