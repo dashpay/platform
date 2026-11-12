@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
@@ -111,6 +113,14 @@ class AppState(
     private val _quorumSource = MutableStateFlow(Sdk.QuorumSource.TRUSTED)
     val quorumSource: StateFlow<Sdk.QuorumSource> = _quorumSource.asStateFlow()
 
+    /**
+     * Held while a pick is persisted and applied, and while [initializeSdk]
+     * applies the mode to the SDK it publishes. Each holder reads the latest
+     * pick, and the lock is granted in request order, so the last pick is
+     * the one saved and applied, on whichever SDK is current.
+     */
+    private val quorumModeLock = Mutex()
+
     /** Restore persisted preferences; called once from bootstrap. */
     suspend fun restorePreferences() {
         val prefs = dataStore.data.first()
@@ -146,15 +156,17 @@ class AppState(
             )
             // Apply the picked mode before anything can verify a proof with
             // this SDK (Swift `AppState.makeSdk`): built in Auto and switched
-            // later, it would take trusted keys in between.
-            try {
-                newSdk.setQuorumMode(_quorumMode.value.sdkMode)
-            } catch (e: Exception) {
-                newSdk.closeSuspending()
-                throw e
+            // later, it would take trusted keys in between. A pick still
+            // being applied finishes on the old SDK first.
+            val old = quorumModeLock.withLock {
+                try {
+                    newSdk.setQuorumMode(_quorumMode.value.sdkMode)
+                } catch (e: Exception) {
+                    newSdk.closeSuspending()
+                    throw e
+                }
+                _sdk.value.also { _sdk.value = newSdk }
             }
-            val old = _sdk.value
-            _sdk.value = newSdk
             refreshQuorumSource()
             // Eagerly learn the network's protocol version (iOS
             // `refreshProtocolVersion(for:)` parity): reset first so a
@@ -213,22 +225,34 @@ class AppState(
      * Pick the quorum source — port of the Swift `AppState.quorumMode`
      * `didSet`: persist it, apply it to the current SDK and refresh the
      * indicator, on this object's scope so leaving the screen does not cut
-     * that short. Each apply reads the latest pick, so quick successive picks
-     * leave the SDK in the last one. A refusal is reported through
-     * [errorMessage].
+     * that short. Picks are persisted and applied one at a time under
+     * [quorumModeLock], each reading the latest pick, so quick successive
+     * picks leave the saved mode and the SDK on the last one. A save or a
+     * refusal that fails is reported through [errorMessage]; neither stops
+     * the other.
      */
     fun setQuorumMode(mode: QuorumMode) {
         _quorumMode.value = mode
         scope.launch {
-            val picked = _quorumMode.value
-            dataStore.edit { it[KEY_QUORUM_MODE] = picked.rawValue }
-            val sdk = _sdk.value ?: return@launch
-            try {
-                sdk.setQuorumMode(picked.sdkMode)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to apply quorum mode: ${e.message}"
+            quorumModeLock.withLock {
+                val picked = _quorumMode.value
+                try {
+                    dataStore.edit { it[KEY_QUORUM_MODE] = picked.rawValue }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _errorMessage.value = "Failed to save quorum mode: ${e.message}"
+                }
+                val sdk = _sdk.value
+                if (sdk != null) {
+                    try {
+                        sdk.setQuorumMode(picked.sdkMode)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        _errorMessage.value = "Failed to apply quorum mode: ${e.message}"
+                    }
+                }
             }
             refreshQuorumSource()
         }
