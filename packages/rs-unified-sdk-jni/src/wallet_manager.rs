@@ -1904,12 +1904,35 @@ fn decode_funding_recipients(
 /// Decode the credit-outputs BLOB for a wallet-signed platform-address
 /// transfer into `AddressBalanceEntryFFI` rows.
 ///
-/// BLOB layout (big-endian): `u32 rowCount` then per row
-/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`. The row's
-/// `balance` carries the credits to route to that recipient; `nonce` /
-/// `account_index` / `address_index` are left `0` (the FFI only reads the
-/// address + amount for a transfer output). Returns `None` (after throwing)
-/// on a malformed / truncated blob.
+/// The blob uses the shared credit-row format parsed by
+/// [`parse_credit_rows`]: `u32 rowCount` then per row
+/// `u8 addressType (0 P2PKH only), u8[20] hash, u64 credits`, big-endian.
+/// The row's `balance` carries the credits to route to that recipient;
+/// `nonce` / `account_index` / `address_index` / `as_of_height` are left `0`
+/// (the FFI only reads the address + amount for a transfer output).
+fn decode_transfer_outputs(
+    bytes: &[u8],
+) -> Result<Vec<platform_wallet_ffi::AddressBalanceEntryFFI>, String> {
+    let rows = parse_credit_rows(bytes, "outputs blob")?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(address_type, hash, credits)| platform_wallet_ffi::AddressBalanceEntryFFI {
+                address: platform_wallet_ffi::PlatformAddressFFI { address_type, hash },
+                balance: credits,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+                // Request path names only outputs/amounts — 0 per the FFI doc
+                // (the height pin is a persistence-round-trip concern).
+                as_of_height: 0,
+            },
+        )
+        .collect())
+}
+
+/// [`decode_transfer_outputs`] over a Java `byte[]`. Returns `None` (after
+/// throwing) on a null array or a malformed / truncated blob.
 fn decode_credit_outputs(
     env: &mut JNIEnv,
     arr: &JByteArray,
@@ -1922,81 +1945,13 @@ fn decode_credit_outputs(
             return None;
         }
     };
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<Vec<u8>> {
-        if *cursor + n > bytes.len() {
-            return None;
+    match decode_transfer_outputs(&bytes) {
+        Ok(outputs) => Some(outputs),
+        Err(msg) => {
+            throw_sdk_exception(env, 1, &msg);
+            None
         }
-        let s = bytes[*cursor..*cursor + n].to_vec();
-        *cursor += n;
-        Some(s)
-    };
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, "outputs blob truncated (row count)");
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.as_slice().try_into().ok()?) as usize;
-    // Length-before-allocation guard: rows are a fixed 29 bytes, so a
-    // header claiming more than the remaining payload holds is malformed
-    // — prevents a huge `with_capacity` abort from a raw-JNI blob.
-    if count
-        .checked_mul(29)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("outputs blob claims {count} rows but body is too short"),
-        );
-        return None;
     }
-    let mut outputs = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} type"));
-            return None;
-        };
-        let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("outputs blob truncated at row {i} hash"));
-            return None;
-        };
-        let Some(credit_bytes) = read(&mut cursor, 8) else {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("outputs blob truncated at row {i} credits"),
-            );
-            return None;
-        };
-        let mut hash = [0u8; 20];
-        hash.copy_from_slice(&hash_bytes);
-        let credits = u64::from_be_bytes(credit_bytes.as_slice().try_into().ok()?);
-        // The Kotlin encoder writes this field from a signed long; a set
-        // sign bit means a negative amount crossed the boundary — reject
-        // rather than treat it as a huge unsigned credit value.
-        if credits & (1 << 63) != 0 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("outputs blob row {i} credits amount out of range"),
-            );
-            return None;
-        }
-        outputs.push(platform_wallet_ffi::AddressBalanceEntryFFI {
-            address: platform_wallet_ffi::PlatformAddressFFI {
-                address_type: type_byte[0],
-                hash,
-            },
-            balance: credits,
-            nonce: 0,
-            account_index: 0,
-            address_index: 0,
-            // Request path names only outputs/amounts — 0 per the FFI doc
-            // (the height pin is a persistence-round-trip concern).
-            as_of_height: 0,
-        });
-    }
-    Some(outputs)
 }
 
 /// Serialize a `PlatformAddressChangeSetFFI` into a `byte[]` blob:
@@ -4620,5 +4575,40 @@ mod tests {
         assert_eq!(decode_withdrawal_inputs(&long).expect("valid").len(), 1);
         // A header claiming more rows than the body holds must not allocate.
         assert!(decode_withdrawal_inputs(&u32::MAX.to_be_bytes()).is_err());
+    }
+
+    #[test]
+    fn should_decode_transfer_outputs_with_zeroed_request_metadata() {
+        let outputs =
+            decode_transfer_outputs(&blob(&[(0, [7u8; 20], 1_000), (0, [3u8; 20], 2_000)]))
+                .expect("valid blob");
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs[0].address.address_type, 0);
+        assert_eq!(outputs[0].address.hash, [7u8; 20]);
+        assert_eq!(outputs[0].balance, 1_000);
+        assert_eq!(outputs[1].address.hash, [3u8; 20]);
+        assert_eq!(outputs[1].balance, 2_000);
+        for out in &outputs {
+            assert_eq!(
+                (
+                    out.nonce,
+                    out.account_index,
+                    out.address_index,
+                    out.as_of_height
+                ),
+                (0, 0, 0, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_malformed_or_negative_transfer_outputs() {
+        assert!(decode_transfer_outputs(&[0, 0, 0]).is_err());
+        let mut short = blob(&[(0, [0u8; 20], 5)]);
+        short.pop();
+        assert!(decode_transfer_outputs(&short).is_err());
+        assert!(decode_transfer_outputs(&u32::MAX.to_be_bytes()).is_err());
+        let err = decode_transfer_outputs(&blob(&[(0, [0u8; 20], -1)])).unwrap_err();
+        assert!(err.starts_with("outputs blob"), "{err}");
     }
 }

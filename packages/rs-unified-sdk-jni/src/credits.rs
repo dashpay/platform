@@ -400,8 +400,9 @@ const CREDIT_ROW_LEN: usize = 1 + 20 + 8;
 /// error message, which never echoes a hash or amount.
 ///
 /// The one parser for this wire format: [`decode_credit_rows`] wraps it for
-/// the JNI exports, and the explicit platform-address withdrawal in
-/// `wallet_manager.rs` maps its rows into `ExplicitInputFFI`.
+/// the JNI exports here and in `identity.rs`, and `wallet_manager.rs` maps its
+/// rows into `AddressBalanceEntryFFI` (wallet-signed transfer outputs) and
+/// `ExplicitInputFFI` (explicit withdrawal inputs).
 pub(crate) fn parse_credit_rows(
     bytes: &[u8],
     field: &str,
