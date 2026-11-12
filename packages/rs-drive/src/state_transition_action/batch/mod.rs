@@ -221,6 +221,7 @@ pub fn record_gas_sponsor_as_storage_owner(
             } => owned_document_info
                 .document_info
                 .set_storage_flags_owner(gas_sponsor),
+            // Only delete operation generation 1 reads this owner, for the lifecycle record.
             DocumentOperationType::DeleteDocument { deleter_id, .. } => {
                 *deleter_id = Some(gas_sponsor_id);
             }
