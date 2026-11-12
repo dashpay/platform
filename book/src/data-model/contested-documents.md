@@ -79,6 +79,30 @@ contest ends then. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
 
+## Resolution 2: masternode vote among documents
+
+`ContestedIndexResolution::MasternodeVoteOnDocuments`, admitted where
+`parse_contested_documents_resolution` is set (protocol version 15). The choices are a contender,
+abstain, or lock, and the contest runs and ends exactly as under resolution 0. What differs is
+what a contender is. Under resolutions 0 and 1 a contender is an identity: the contest keeps its
+document under the identity's id, so an identity enters one document, and a vote, a tally and the
+result name the identity. Under resolution 2 a contender is a document: the contest keeps it
+under its document id, so an identity may enter several, each paying the fund and counting
+towards `max_contenders_per_contest`, and a second document from the same identity is not
+refused (no `DocumentContestIdentityAlreadyContestantError`).
+
+Everything that names a contender then carries a document id where it carries an identity id
+under the other resolutions: the identifier of a `TowardsIdentity` vote choice, a contender's
+identifier in `getContestedResourceVoteState`, the contender asked for in
+`getContestedResourceVotersForIdentity`, and the winner in the stored result. A vote towards an
+identifier that names no contender is refused (`VoteChoiceNotAllowedForVotePollError`, 40307),
+so a vote towards the id of an identity that entered documents is refused: the voter names the
+document. The winning document is stored under the owner the document itself names.
+
+The decision proposals contract uses this resolution for the `choice` documents entered for a
+`multipleChoiceProposal`: the contest is keyed by the proposal's id, each choice is a contender,
+and a lock means none of the choices (see `docs/protocol/decision-proposals.md`).
+
 ## Moderation elections
 
 An `electedCharter` contest of the moderation charters contract (protocol version 14), keyed by

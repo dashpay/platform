@@ -41,6 +41,7 @@ mod referenced_rules;
 mod repeated_properties_update;
 mod replacement;
 mod required_since;
+mod stored_non_document_reference;
 mod system_agreement;
 mod token_cost_policy;
 mod token_market_orders;
