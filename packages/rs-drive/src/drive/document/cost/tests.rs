@@ -61,6 +61,24 @@ fn insert_at(
     document: &Document,
     time_ms: u64,
 ) -> Result<FeeResult, Error> {
+    insert_at_version(
+        drive,
+        contract,
+        document_type,
+        document,
+        time_ms,
+        PlatformVersion::latest(),
+    )
+}
+
+fn insert_at_version(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    document: &Document,
+    time_ms: u64,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
     let flags = StorageFlags::new_single_epoch(0, Some(document.owner_id().to_buffer()));
     drive.add_document_for_contract(
         DocumentAndContractInfo {
@@ -75,7 +93,7 @@ fn insert_at(
         BlockInfo::default_with_time(time_ms),
         true,
         None,
-        PlatformVersion::latest(),
+        platform_version,
     )
 }
 
@@ -449,6 +467,160 @@ fn note_document(contract: &DataContract) -> Document {
     document.set("code", Value::Text("n-1".to_string()));
     document.set("text", Value::Text("a note about a trip".to_string()));
     document
+}
+
+#[test]
+fn should_price_fresh_creates_with_the_lifecycle_insert_generation() {
+    let version = PlatformVersion::latest();
+    let mut previous = version.clone();
+    previous
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_for_contract_operations = 1;
+    let mut unsupported = version.clone();
+    unsupported
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_for_contract_operations = 3;
+    assert!(matches!(
+        check_mirrored_method_versions(&unsupported),
+        Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            received: 3,
+            ..
+        }))
+    ));
+
+    let mut unsupported_costs = Vec::new();
+    for case in ["ordinary", "history", "ttl", "derived"] {
+        let mut schema = note_schema();
+        match case {
+            "history" => schema
+                .insert("documentsKeepHistory".into(), true.into())
+                .unwrap(),
+            "ttl" => {
+                schema.insert("ttl".into(), 86_400u32.into()).unwrap();
+                schema
+                    .insert(
+                        "required".into(),
+                        platform_value!(["$createdAt", "tag", "code", "text"]),
+                    )
+                    .unwrap();
+            }
+            "derived" => {
+                schema = platform_value!({
+                    "type": "object", "documentsMutable": false, "canBeDeleted": true,
+                    "properties": {
+                        "quoteId": {
+                            "type": "array", "byteArray": true,
+                            "minItems": 32, "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {"type": "permanentDocument", "documentType": "post"},
+                            "position": 0
+                        }
+                    },
+                    "indices": [{"name": "byQuotedOwner", "properties": [{"quoteId.$ownerId": "asc"}]}],
+                    "required": ["quoteId"], "additionalProperties": false
+                });
+            }
+            _ => {}
+        }
+        let contract = contract_with(platform_value!({
+            "note": schema,
+            "post": {
+                "type": "object", "documentsMutable": false, "canBeDeleted": false,
+                "properties": {"title": {"type": "string", "maxLength": 20, "position": 0}},
+                "additionalProperties": false
+            }
+        }));
+        let note = contract.document_type_for_name("note").unwrap();
+        let post_type = contract.document_type_for_name("post").unwrap();
+        let mut post = post_type.random_document(Some(7), version).unwrap();
+        post.set_id([5; 32].into());
+        let mut document = note.random_document(Some(1), version).unwrap();
+        document.set_revision(Some(1));
+        document.set_created_at(Some(1_000));
+        if case == "derived" {
+            document.set("quoteId", Value::Identifier(post.id().to_buffer()));
+        }
+        let mut priced_document = document.clone();
+        if case == "derived" {
+            priced_document.properties_mut().insert(
+                "quoteId.$ownerId".into(),
+                Value::Identifier(post.owner_id().to_buffer()),
+            );
+        }
+        let assumptions = CostAssumptions::new(version);
+        let previous_cost =
+            document_create_cost(&contract, note, &priced_document, &assumptions, &previous)
+                .unwrap();
+        let current_cost =
+            document_create_cost(&contract, note, &priced_document, &assumptions, version);
+        match current_cost {
+            Ok(cost) => assert_eq!(cost.to_value(), previous_cost.to_value(), "{case}"),
+            Err(error) => unsupported_costs.push(format!("{case}: {error}")),
+        }
+
+        let mut actual = Vec::new();
+        for insert_version in [&previous, version] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    version,
+                )
+                .unwrap();
+            if case == "derived" {
+                insert(&drive, &contract, post_type, &post).unwrap();
+            }
+            let fee = insert_at_version(&drive, &contract, note, &document, 1_000, insert_version)
+                .unwrap();
+            assert!(element(
+                &drive,
+                &contract,
+                "note",
+                &[vec![0]],
+                document.id().as_slice()
+            )
+            .is_some());
+            actual.push((fee.storage_fee, fee.processing_fee));
+        }
+        let estimated_processing = previous_cost.processing_credits().new_values;
+        let estimated_writes = previous_cost
+            .processing
+            .iter()
+            .find(|part| part.code == "writes")
+            .unwrap()
+            .credits
+            .new_values;
+        println!(
+            "CREATE_COST {case} estimated_storage={} estimated_processing={estimated_processing} estimated_writes={estimated_writes} actual_insert1={:?} actual_insert2={:?}",
+            previous_cost.storage_credits.new_values, actual[0], actual[1]
+        );
+        assert_eq!(
+            actual[0], actual[1],
+            "{case}: fresh insert fees must be unchanged"
+        );
+        assert_eq!(
+            previous_cost.storage_credits.new_values, actual[1].0,
+            "{case}"
+        );
+        assert!(
+            estimated_processing >= actual[1].1,
+            "{case}: processing must not be undercounted"
+        );
+    }
+    assert!(
+        unsupported_costs.is_empty(),
+        "the current insert generation must have a client cost: {unsupported_costs:?}"
+    );
 }
 
 #[test]

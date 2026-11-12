@@ -404,7 +404,8 @@ fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<
     for (method, known, received) in [
         (
             "add_document_for_contract_operations",
-            &[1][..],
+            // Generation 2 reserves retained ids without adding operations to a fresh create.
+            &[1, 2][..],
             document.insert.add_document_for_contract_operations,
         ),
         (
