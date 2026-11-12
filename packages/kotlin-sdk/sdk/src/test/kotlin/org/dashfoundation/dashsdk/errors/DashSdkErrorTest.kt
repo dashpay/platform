@@ -42,6 +42,7 @@ class DashSdkErrorTest {
             8 to DashSdkError.Timeout::class,
             9 to DashSdkError.NotImplemented::class,
             10 to DashSdkError.DriveInternalError::class,
+            11 to DashSdkError.StateTransitionResultUnconfirmed::class,
             99 to DashSdkError.InternalError::class,
         )
         cases.forEach { (code, expected) ->
@@ -49,6 +50,19 @@ class DashSdkErrorTest {
             assertEquals("code $code", expected, mapped::class)
             assertEquals("boom", mapped.message)
         }
+    }
+
+    @Test
+    fun shouldPreserveUnconfirmedSubmissionWithoutRetrying() {
+        val detail = "State transition may have executed: wait timeout after nonce rejection"
+        val native = DashSDKException(11, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.StateTransitionResultUnconfirmed)
+        assertEquals(detail, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertNull(mapped.consensusError)
+        assertFalse(mapped.isRetryable)
+        assertTrue(mapped.userMessage.contains("before submitting again"))
     }
 
     @Test
@@ -132,7 +146,7 @@ class DashSdkErrorTest {
             DashSdkError.fromNative(DashSDKException(offset + 18, "ambiguous spend"))
         assertTrue(spendUnconfirmed is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
         assertFalse(
-            "ShieldedSpendUnconfirmed must NOT be retryable (notes stay reserved)",
+            "ShieldedSpendUnconfirmed must NOT be retryable (a retry signs a second transition)",
             spendUnconfirmed.isRetryable,
         )
         // The message must warn against retrying, like the broadcast sibling.
@@ -190,6 +204,8 @@ class DashSdkErrorTest {
         )
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
+        assertTrue(broadcastUnconfirmed.message!!.contains("reconcile the original operation"))
+        assertFalse(broadcastUnconfirmed.message!!.contains("inputs reserved"))
 
         // Definitive broadcast rejection (26) must reach callers as its own type,
         // NOT as Generic: it is the definitive counterpart to the ambiguous
@@ -266,6 +282,122 @@ class DashSdkErrorTest {
             "Sync could not be stopped cleanly. Restart the app to use it again.",
             restart.userMessage,
         )
+    }
+
+    @Test
+    fun shouldRouteARequestThatNeedsAPrivateReplyByItsOwnCode() {
+        // PlatformWalletFFIResultCode::ErrorPrivateContactRequestNeedsPrivateReply = 68
+        // (rs-platform-wallet-ffi/src/error.rs); a host catches this type to
+        // accept privately, as the Swift app does on its typed error.
+        val detail = "the contact requests with 9fRYTJZW came or went privately; " +
+            "reply to or rotate with it privately"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 68, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRequestNeedsPrivateReply)
+        assertEquals(detail, mapped.message)
+        assertEquals(detail, mapped.userMessage)
+        assertEquals(native, mapped.cause)
+        assertFalse("the same public call is refused again", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldTellAPrivateReplyOnABuildWithoutShieldedSupportByItsOwnCode() {
+        val detail = "this contact request needs a private reply, which is paid " +
+            "from the shielded pool; this build has no shielded support"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 69, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedBuildRequired)
+        assertEquals(detail, mapped.message)
+        assertFalse("the same build refuses it again", mapped.isRetryable)
+    }
+
+    @Test
+    fun shouldTellARequestTheNetworkDoesNotServeYetByItsOwnCode() {
+        val detail = "get_private_document_entries needs protocol version 15; " +
+            "the network is proven at protocol version 14"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 70, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ProtocolVersionNotActive)
+        assertEquals(detail, mapped.message)
+    }
+
+    @Test
+    fun shouldReportAPendingPrivateRequestByItsOwnCode() {
+        val detail = "a private contact request to 9fRYTJZW is in flight or not yet read " +
+            "back from the store; sync private contact requests to settle it"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 71, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRequestPending)
+        assertEquals(detail, mapped.message)
+        assertFalse("pending, not a failure to retry", mapped.isRetryable)
+    }
+
+    /** Unrestored private payments hold the wallet: their own code, apart from 71. */
+    @Test
+    fun shouldReportUnrestoredPrivatePaymentsByTheirOwnCode() {
+        val detail = "the wallet's private payments are not restored from the shielded store yet"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 72, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactPaymentsNotRestored)
+        assertEquals(detail, mapped.message)
+        assertFalse("held, not a failure to retry", mapped.isRetryable)
+    }
+
+    /** A store that cannot keep a private payment's recovery state has its own code. */
+    @Test
+    fun shouldReportUnsupportedPrivateContactRecoveryByItsOwnCode() {
+        val detail = "the persister does not keep the private contact request scan state atomically"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 73, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactRecoveryUnsupported)
+        assertEquals(detail, mapped.message)
+        assertFalse("a configuration error, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * An unfinished private store read has its own code, apart from a
+     * pending request (71): nothing was reserved, and calling again
+     * continues the read.
+     */
+    @Test
+    fun shouldReportAnUnfinishedPrivateStoreReadByItsOwnCode() {
+        val detail = "the private contact request store was not read to its end for 9fRYTJZW"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 74, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PrivateContactStoreNotRead)
+        assertEquals(detail, mapped.message)
+        assertTrue("calling again continues the read", mapped.isRetryable)
+    }
+
+    /**
+     * An SDK pinned below the protocol version has its own code, apart from a
+     * network below it (70), which lifts by itself.
+     */
+    @Test
+    fun shouldReportAnSdkPinnedBelowTheProtocolVersionByItsOwnCode() {
+        val detail = "get_private_document_entries needs protocol version 15; " +
+            "the SDK is pinned at protocol version 14"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 75, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion)
+        assertEquals(detail, mapped.message)
+        assertFalse("only raising the pin lifts it", mapped.isRetryable)
+    }
+
+    /**
+     * A public request awaiting its outcome has its own code, apart from a
+     * private request pending (71): a DashPay sync, not a private one,
+     * settles it.
+     */
+    @Test
+    fun shouldReportAnUnconfirmedPublicRequestByItsOwnCode() {
+        val detail = "a public contact request to this identity awaits its outcome"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 76, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.PublicContactRequestUnconfirmed)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PrivateContactRequestPending)
+        assertEquals(detail, mapped.message)
+        assertFalse("a sync settles it, not a retry", mapped.isRetryable)
     }
 
     @Test

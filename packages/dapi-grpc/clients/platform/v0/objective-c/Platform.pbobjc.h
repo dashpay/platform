@@ -54,6 +54,10 @@ CF_EXTERN_C_BEGIN
 @class GetAddressesInfosResponse_GetAddressesInfosResponseV0;
 @class GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0;
 @class GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0;
+@class GetBlocksRequest_GetBlocksRequestV0;
+@class GetBlocksResponse_GetBlocksResponseV0;
+@class GetBlocksResponse_GetBlocksResponseV0_Block;
+@class GetBlocksResponse_GetBlocksResponseV0_Transaction;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -146,9 +150,15 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
 @class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV1;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory;
 @class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle;
 @class GetDocumentsRequest_DocumentFieldValue;
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
@@ -297,6 +307,9 @@ CF_EXTERN_C_BEGIN
 @class GetMasternodeYesNoVoteResponse_GetMasternodeYesNoVoteResponseV0_MasternodeYesNoVoteEntry;
 @class GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0;
 @class GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0;
+@class GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0;
+@class GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0;
+@class GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction;
 @class GetPathElementsRequest_GetPathElementsRequestV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
@@ -318,6 +331,11 @@ CF_EXTERN_C_BEGIN
 @class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
 @class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
 @class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
+@class GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending;
+@class GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown;
 @class GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors;
@@ -394,6 +412,10 @@ CF_EXTERN_C_BEGIN
 @class SecurityLevelMap;
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
+@class TenderdashBlockProof;
+@class TenderdashBlockProof_BlockId;
+@class TenderdashBlockProof_Header;
+@class TenderdashTransactionProof;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
 @class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
@@ -755,6 +777,27 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_EnumD
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Kind_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Active = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_Absent = 1,
+};
+
+GPBEnumDescriptor *GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetYesNoVotePollStateResponse_GetYesNoVotePollStateResponseV0_YesNoVotePoll_VotingPowerRounding
 
@@ -7126,11 +7169,13 @@ void GetDocumentsResponse_GetDocumentsResponseV1_CompositeDocuments_SubQueryResu
 
 typedef GPB_ENUM(GetDocumentHistoryRequest_FieldNumber) {
   GetDocumentHistoryRequest_FieldNumber_V0 = 1,
+  GetDocumentHistoryRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
   GetDocumentHistoryRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentHistoryRequest_Version_OneOfCase_V0 = 1,
+  GetDocumentHistoryRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
@@ -7138,6 +7183,8 @@ GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
 @property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *v1;
 
 @end
 
@@ -7187,15 +7234,93 @@ GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPB
 
 @end
 
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DataContractId = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentTypeName = 2,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_DocumentId = 3,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Limit = 4,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Prove = 5,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_FieldNumber_Revision = 9,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAfter = 7,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_StartAtRevision = 8,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase_Revision = 9,
+};
+
+/**
+ * Reads the retained revisions of a historical document (a type with
+ * documentsKeepHistory), selected by time, revision, or a composite cursor.
+ **/
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@property(nonatomic, readonly) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Filter_OneOfCase filterOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t startAtMs;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor *startAfter;
+
+@property(nonatomic, readwrite) uint64_t startAtRevision;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'filter'.
+ **/
+void GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_ClearFilterOneOfCase(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1 *message);
+
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor_FieldNumber_Revision = 2,
+};
+
+/**
+ * Exclusive cursor returned with a page. Several revisions can share a
+ * block time, so resuming needs the revision as well as the time.
+ **/
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV1_Cursor : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@end
+
 #pragma mark - GetDocumentHistoryResponse
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_FieldNumber) {
   GetDocumentHistoryResponse_FieldNumber_V0 = 1,
+  GetDocumentHistoryResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentHistoryResponse_Version_OneOfCase) {
   GetDocumentHistoryResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentHistoryResponse_Version_OneOfCase_V0 = 1,
+  GetDocumentHistoryResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
@@ -7203,6 +7328,8 @@ GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
 @property(nonatomic, readonly) GetDocumentHistoryResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *v1;
 
 @end
 
@@ -7282,6 +7409,125 @@ GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Doc
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry*> *documentEntriesArray;
 /** The number of items in @c documentEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentEntriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_History = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Proof = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_History = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase_Proof = 2,
+};
+
+/**
+ * A page of a historical document's retained revisions, with the
+ * document's lifecycle as of the same block. Only document types with
+ * documentsKeepHistory retain history; every field here describes such a
+ * historical document.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History *history;
+
+/**
+ * One GroveDB proof authenticates the offset-paginated history page,
+ * current pointer, lifecycle reservation, and retained revision count.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1 *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_TimeMs = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Revision = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry_FieldNumber_Document = 3,
+};
+
+/**
+ * One retained revision of the historical document.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint64_t revision;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *document;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_State = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_FieldNumber_RemainingRevisions = 2,
+};
+
+/**
+ * Where the historical document stands: still current, or gone with
+ * nothing retained. Later protocol versions add the states between.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State state;
+
+/** Revisions the history still retains for the document. */
+@property(nonatomic, readwrite) uint64_t remainingRevisions;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle's @c state property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message);
+/**
+ * Sets the raw value of an @c GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle's @c state property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle_State_RawValue(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *message, int32_t value);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_EntriesArray = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History_FieldNumber_Lifecycle = 2,
+};
+
+/**
+ * A page of retained revisions and the document's lifecycle as of the
+ * same block.
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_History : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Entry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV1_Lifecycle *lifecycle;
+/** Test to see if @c lifecycle has been set. */
+@property(nonatomic, readwrite) BOOL hasLifecycle;
 
 @end
 
@@ -7747,6 +7993,162 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
  * Clears whatever value was set for the oneof 'result'.
  **/
 void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message);
+
+#pragma mark - GetRecentStateTransitionStatusRequest
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_FieldNumber) {
+  GetRecentStateTransitionStatusRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_Version_OneOfCase) {
+  GetRecentStateTransitionStatusRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * The answering node's own view of a state transition, read from its Tenderdash
+ * at once, with nothing re-broadcast. Nothing in the answer is proved: mempools
+ * differ between nodes, anyone who saw the signed transition can broadcast it
+ * again, and a node can answer anything. Use it to decide whether waiting longer
+ * makes sense, never to decide that a transition cannot execute: a client that
+ * must know that reads the transition's inputs with proofs (the SDK's proven
+ * transition outcome). A shielded or private document client should ask only the
+ * node it broadcast to, since asking several nodes about one transition spreads
+ * the link between the client's address and the transition.
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentStateTransitionStatusRequest_ClearVersionOneOfCase(GetRecentStateTransitionStatusRequest *message);
+
+#pragma mark - GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0_FieldNumber) {
+  GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0_FieldNumber_StateTransitionHash = 1,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusRequest_GetRecentStateTransitionStatusRequestV0 : GPBMessage
+
+/** The 32-byte hash of the state transition */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_Version_OneOfCase) {
+  GetRecentStateTransitionStatusResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentStateTransitionStatusResponse_ClearVersionOneOfCase(GetRecentStateTransitionStatusResponse *message);
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Committed = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Pending = 2,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Unknown = 3,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_FieldNumber_Metadata = 4,
+};
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Committed = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Pending = 2,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase_Unknown = 3,
+};
+
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Status_OneOfCase statusOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed *committed;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending *pending;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown *unknown;
+
+/** The node's latest block when it answered, unproved */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'status'.
+ **/
+void GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_ClearStatusOneOfCase(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0 *message);
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed
+
+typedef GPB_ENUM(GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber) {
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Height = 1,
+  GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed_FieldNumber_Error = 2,
+};
+
+/**
+ * In a block of this node's chain, from its transaction index
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Committed : GPBMessage
+
+/** Height of the block that holds it */
+@property(nonatomic, readwrite) uint64_t height;
+
+/**
+ * Set only when its result code is not 0: the code and the error, as
+ * waitForStateTransitionResult reports a committed transition's error
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
+/** Test to see if @c error has been set. */
+@property(nonatomic, readwrite) BOOL hasError;
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending
+
+/**
+ * In this node's mempool
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Pending : GPBMessage
+
+@end
+
+#pragma mark - GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown
+
+/**
+ * Neither in this node's mempool nor in its chain. It may be in another
+ * node's mempool, may have been dropped, or may never have been broadcast.
+ * Tenderdash reads no RPC from its mempool cache, so a hash it saw and
+ * dropped also answers this.
+ **/
+GPB_FINAL @interface GetRecentStateTransitionStatusResponse_GetRecentStateTransitionStatusResponseV0_Unknown : GPBMessage
+
+@end
 
 #pragma mark - GetConsensusParamsRequest
 
@@ -14980,6 +15382,482 @@ GPB_FINAL @interface GetPrivateDocumentEntriesResponse_GetPrivateDocumentEntries
 
 /** entries the store holds */
 @property(nonatomic, readwrite) uint64_t totalCount;
+
+@end
+
+#pragma mark - TenderdashBlockProof
+
+typedef GPB_ENUM(TenderdashBlockProof_FieldNumber) {
+  TenderdashBlockProof_FieldNumber_Header = 1,
+  TenderdashBlockProof_FieldNumber_BlockId = 2,
+  TenderdashBlockProof_FieldNumber_Round = 3,
+  TenderdashBlockProof_FieldNumber_QuorumHash = 4,
+  TenderdashBlockProof_FieldNumber_QuorumType = 5,
+  TenderdashBlockProof_FieldNumber_Signature = 6,
+};
+
+/**
+ * Ties a Tenderdash block to the signature of the quorum that committed it. To
+ * check it, recompute the block hash and the state id from `header`, compare
+ * them with `block_id.hash` and `block_id.state_id`, and verify `signature`
+ * over the precommit vote for `block_id`. `header.data_hash` and
+ * `header.results_hash` then vouch for the block's transactions and their
+ * results.
+ **/
+GPB_FINAL @interface TenderdashBlockProof : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_Header *header;
+/** Test to see if @c header has been set. */
+@property(nonatomic, readwrite) BOOL hasHeader;
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_BlockId *blockId;
+/** Test to see if @c blockId has been set. */
+@property(nonatomic, readwrite) BOOL hasBlockId;
+
+/** the consensus round that committed the block */
+@property(nonatomic, readwrite) uint32_t round;
+
+/** the quorum that signed */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
+
+/** the LLMQ type of that quorum */
+@property(nonatomic, readwrite) uint32_t quorumType;
+
+/** its threshold signature over the block */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
+
+@end
+
+#pragma mark - TenderdashBlockProof_BlockId
+
+typedef GPB_ENUM(TenderdashBlockProof_BlockId_FieldNumber) {
+  TenderdashBlockProof_BlockId_FieldNumber_Hash_p = 1,
+  TenderdashBlockProof_BlockId_FieldNumber_PartSetTotal = 2,
+  TenderdashBlockProof_BlockId_FieldNumber_PartSetHash = 3,
+  TenderdashBlockProof_BlockId_FieldNumber_StateId = 4,
+};
+
+GPB_FINAL @interface TenderdashBlockProof_BlockId : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+@property(nonatomic, readwrite) uint32_t partSetTotal;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *partSetHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateId;
+
+@end
+
+#pragma mark - TenderdashBlockProof_Header
+
+typedef GPB_ENUM(TenderdashBlockProof_Header_FieldNumber) {
+  TenderdashBlockProof_Header_FieldNumber_BlockVersion = 1,
+  TenderdashBlockProof_Header_FieldNumber_AppVersion = 2,
+  TenderdashBlockProof_Header_FieldNumber_ChainId = 3,
+  TenderdashBlockProof_Header_FieldNumber_Height = 4,
+  TenderdashBlockProof_Header_FieldNumber_CoreChainLockedHeight = 5,
+  TenderdashBlockProof_Header_FieldNumber_TimeSeconds = 6,
+  TenderdashBlockProof_Header_FieldNumber_TimeNanos = 7,
+  TenderdashBlockProof_Header_FieldNumber_LastBlockId = 8,
+  TenderdashBlockProof_Header_FieldNumber_LastCommitHash = 9,
+  TenderdashBlockProof_Header_FieldNumber_DataHash = 10,
+  TenderdashBlockProof_Header_FieldNumber_ValidatorsHash = 11,
+  TenderdashBlockProof_Header_FieldNumber_NextValidatorsHash = 12,
+  TenderdashBlockProof_Header_FieldNumber_ConsensusHash = 13,
+  TenderdashBlockProof_Header_FieldNumber_NextConsensusHash = 14,
+  TenderdashBlockProof_Header_FieldNumber_AppHash = 15,
+  TenderdashBlockProof_Header_FieldNumber_ResultsHash = 16,
+  TenderdashBlockProof_Header_FieldNumber_EvidenceHash = 17,
+  TenderdashBlockProof_Header_FieldNumber_ProposerProTxHash = 18,
+  TenderdashBlockProof_Header_FieldNumber_ProposedAppVersion = 19,
+};
+
+/**
+ * The signed block header. The block hash covers every field except
+ * `core_chain_locked_height`. The state id covers that one, with
+ * `app_version`, `height`, `app_hash` and the time in milliseconds.
+ **/
+GPB_FINAL @interface TenderdashBlockProof_Header : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockVersion;
+
+@property(nonatomic, readwrite) uint64_t appVersion;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
+
+@property(nonatomic, readwrite) uint64_t height;
+
+@property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
+
+@property(nonatomic, readwrite) int64_t timeSeconds;
+
+@property(nonatomic, readwrite) int32_t timeNanos;
+
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof_BlockId *lastBlockId;
+/** Test to see if @c lastBlockId has been set. */
+@property(nonatomic, readwrite) BOOL hasLastBlockId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *lastCommitHash;
+
+/** Merkle root of the block's transactions */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *validatorsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nextValidatorsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *consensusHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nextConsensusHash;
+
+/** the state after this block's transactions */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *appHash;
+
+/** Merkle root of the block's execution results */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultsHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *evidenceHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proposerProTxHash;
+
+@property(nonatomic, readwrite) uint64_t proposedAppVersion;
+
+@end
+
+#pragma mark - TenderdashTransactionProof
+
+typedef GPB_ENUM(TenderdashTransactionProof_FieldNumber) {
+  TenderdashTransactionProof_FieldNumber_Index = 1,
+  TenderdashTransactionProof_FieldNumber_Total = 2,
+  TenderdashTransactionProof_FieldNumber_TransactionPathArray = 3,
+  TenderdashTransactionProof_FieldNumber_ResultPathArray = 4,
+};
+
+/**
+ * Merkle paths of one transaction in its block. Each path runs from the leaf's
+ * sibling up to a child of the root.
+ **/
+GPB_FINAL @interface TenderdashTransactionProof : GPBMessage
+
+/** the transaction's position in the block */
+@property(nonatomic, readwrite) uint32_t index;
+
+/** how many transactions the block holds */
+@property(nonatomic, readwrite) uint32_t total;
+
+/** Path from the SHA-256 of the transaction to `data_hash` */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *transactionPathArray;
+/** The number of items in @c transactionPathArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger transactionPathArray_Count;
+
+/**
+ * Path to `results_hash`, from the protobuf encoding of the transaction's
+ * `code`, `result_data` and `gas_used` as Tenderdash's ExecTxResult
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *resultPathArray;
+/** The number of items in @c resultPathArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger resultPathArray_Count;
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockRequest
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockRequest_FieldNumber) {
+  GetOwnerTransactionsInBlockRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockRequest_Version_OneOfCase) {
+  GetOwnerTransactionsInBlockRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetOwnerTransactionsInBlockRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetOwnerTransactionsInBlockRequest : GPBMessage
+
+@property(nonatomic, readonly) GetOwnerTransactionsInBlockRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetOwnerTransactionsInBlockRequest_ClearVersionOneOfCase(GetOwnerTransactionsInBlockRequest *message);
+
+#pragma mark - GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber) {
+  GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Height = 1,
+  GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_OwnerId = 2,
+  GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetOwnerTransactionsInBlockRequest_GetOwnerTransactionsInBlockRequestV0 : GPBMessage
+
+/** the Tenderdash block height, from 1 */
+@property(nonatomic, readwrite) uint64_t height;
+
+/**
+ * The 32-byte id of the owner: the identity that a state transition reports
+ * as its owner. A recipient is not an owner, and transitions funded from
+ * addresses or the shielded pool have no owner, so they never match.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *ownerId;
+
+/**
+ * Also return what proves the answer's transactions. When a block holds so
+ * many of the owner's transactions that the proved answer would pass about
+ * 4 MB, the request fails with FAILED_PRECONDITION: read the block with
+ * getBlocks instead.
+ **/
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockResponse
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_FieldNumber) {
+  GetOwnerTransactionsInBlockResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_Version_OneOfCase) {
+  GetOwnerTransactionsInBlockResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetOwnerTransactionsInBlockResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetOwnerTransactionsInBlockResponse : GPBMessage
+
+@property(nonatomic, readonly) GetOwnerTransactionsInBlockResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetOwnerTransactionsInBlockResponse_ClearVersionOneOfCase(GetOwnerTransactionsInBlockResponse *message);
+
+#pragma mark - GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber) {
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_TransactionsArray = 1,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_FieldNumber_Proof = 2,
+};
+
+GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0 : GPBMessage
+
+/** in block order */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction*> *transactionsArray;
+/** The number of items in @c transactionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger transactionsArray_Count;
+
+/**
+ * Only when asked to prove. This proves each returned transaction is in the
+ * block. It does not prove the list is complete: to be sure of that, read the
+ * whole block with getBlocks.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@end
+
+#pragma mark - GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction
+
+typedef GPB_ENUM(GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber) {
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_StateTransition = 1,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Hash_p = 2,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Code = 3,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_ResultData = 4,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_GasUsed = 5,
+  GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction_FieldNumber_Proof = 6,
+};
+
+GPB_FINAL @interface GetOwnerTransactionsInBlockResponse_GetOwnerTransactionsInBlockResponseV0_OwnerTransaction : GPBMessage
+
+/** the serialized state transition */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransition;
+
+/** its SHA-256, the hash Tenderdash knows it by */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+/** 0 if it executed, otherwise the code of the error it paid for */
+@property(nonatomic, readwrite) uint32_t code;
+
+/** the data of its execution result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultData;
+
+/** the gas of its execution result */
+@property(nonatomic, readwrite) int64_t gasUsed;
+
+/** only when asked to prove */
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashTransactionProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@end
+
+#pragma mark - GetBlocksRequest
+
+typedef GPB_ENUM(GetBlocksRequest_FieldNumber) {
+  GetBlocksRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetBlocksRequest_Version_OneOfCase) {
+  GetBlocksRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetBlocksRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetBlocksRequest : GPBMessage
+
+@property(nonatomic, readonly) GetBlocksRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetBlocksRequest_GetBlocksRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetBlocksRequest_ClearVersionOneOfCase(GetBlocksRequest *message);
+
+#pragma mark - GetBlocksRequest_GetBlocksRequestV0
+
+typedef GPB_ENUM(GetBlocksRequest_GetBlocksRequestV0_FieldNumber) {
+  GetBlocksRequest_GetBlocksRequestV0_FieldNumber_StartHeight = 1,
+  GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Count = 2,
+  GetBlocksRequest_GetBlocksRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetBlocksRequest_GetBlocksRequestV0 : GPBMessage
+
+/** the first Tenderdash height, from 1 */
+@property(nonatomic, readwrite) uint64_t startHeight;
+
+/** how many blocks, from 1 to 10 */
+@property(nonatomic, readwrite) uint32_t count;
+
+/** also return what proves each block */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetBlocksResponse
+
+typedef GPB_ENUM(GetBlocksResponse_FieldNumber) {
+  GetBlocksResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetBlocksResponse_Version_OneOfCase) {
+  GetBlocksResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetBlocksResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetBlocksResponse : GPBMessage
+
+@property(nonatomic, readonly) GetBlocksResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetBlocksResponse_GetBlocksResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetBlocksResponse_ClearVersionOneOfCase(GetBlocksResponse *message);
+
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0
+
+typedef GPB_ENUM(GetBlocksResponse_GetBlocksResponseV0_FieldNumber) {
+  GetBlocksResponse_GetBlocksResponseV0_FieldNumber_BlocksArray = 1,
+};
+
+GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0 : GPBMessage
+
+/**
+ * Consecutive blocks from the start height. There can be fewer than the count
+ * when the node's chain ends or the response reaches its size limit; ask from
+ * the height after the last one to continue.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetBlocksResponse_GetBlocksResponseV0_Block*> *blocksArray;
+/** The number of items in @c blocksArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger blocksArray_Count;
+
+@end
+
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0_Transaction
+
+typedef GPB_ENUM(GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber) {
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_StateTransition = 1,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Hash_p = 2,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_Code = 3,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_ResultData = 4,
+  GetBlocksResponse_GetBlocksResponseV0_Transaction_FieldNumber_GasUsed = 5,
+};
+
+GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Transaction : GPBMessage
+
+/** the serialized state transition */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransition;
+
+/** its SHA-256, the hash Tenderdash knows it by */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+/** 0 if it executed, otherwise the code of the error it paid for */
+@property(nonatomic, readwrite) uint32_t code;
+
+/** the data of its execution result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *resultData;
+
+/** the gas of its execution result */
+@property(nonatomic, readwrite) int64_t gasUsed;
+
+@end
+
+#pragma mark - GetBlocksResponse_GetBlocksResponseV0_Block
+
+typedef GPB_ENUM(GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber) {
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Height = 1,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Hash_p = 2,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_TimeMs = 3,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_CoreChainLockedHeight = 4,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_AppHash = 5,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_ProposerProTxHash = 6,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_TransactionsArray = 7,
+  GetBlocksResponse_GetBlocksResponseV0_Block_FieldNumber_Proof = 8,
+};
+
+GPB_FINAL @interface GetBlocksResponse_GetBlocksResponseV0_Block : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t height;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *hash_p;
+
+/** the block time, in milliseconds since the Unix epoch */
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
+
+/** the state after this block's transactions */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *appHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proposerProTxHash;
+
+/** in block order */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetBlocksResponse_GetBlocksResponseV0_Transaction*> *transactionsArray;
+/** The number of items in @c transactionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger transactionsArray_Count;
+
+/**
+ * Only when asked to prove. A block holds all its transactions, so recompute
+ * `data_hash` and `results_hash` from them; no Merkle paths are needed.
+ * Compare the fields above with `proof.header` too: only the header is signed.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) TenderdashBlockProof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
 
 @end
 

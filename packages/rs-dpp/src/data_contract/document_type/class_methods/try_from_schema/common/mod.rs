@@ -1143,7 +1143,11 @@ fn parse_indices(
                     // produced — which is what `TryFrom<&[(Value, Value)]> for
                     // Index` does, so without generation 3 this whole call
                     // collapses back to `.as_slice().try_into()`.
-                    let mut index: Index = Index::try_from_value_map(
+                    // A contested index's `resolution` is read as the platform version's
+                    // tables say (`ContestedIndexResolution::try_from_schema_value`): that
+                    // is a method version, not a property of the generation, since
+                    // protocol versions 14 and 15 both parse generation 3
+                    let mut index: Index = Index::try_from_value_map_for_platform_version(
                         index_value
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
@@ -1164,8 +1168,8 @@ fn parse_indices(
                                 .admit_range_countable_implies_countable,
                             no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
                         },
-                    )
-                    .map_err(consensus_or_protocol_data_contract_error)?;
+                        ctx.platform_version,
+                    )?;
 
                     // INTEGER RANGE: the index grammar cannot see property
                     // types, so the source's key encoding is resolved here,
@@ -3448,7 +3452,8 @@ fn apply_delete_keeps_fields(
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `where`, `findBy` source (a function's params
-/// included), `chooseFirst` function param and key id property, for every leaf of every reference expression, the
+/// included), `chooseFirst` function param and key id property, and every property a
+/// reference naming its target through the referring document reads it from, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -3475,6 +3480,13 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             } = leaf
             {
                 read.insert(top_level_property(key_id_property));
+            }
+            // A reference naming its target through the referring document reads where it
+            // points there: the contract id, the document type name, and every property a
+            // slot takes its property name from. A change to one of them outside a replace
+            // would leave the stored reference pointing at something nobody checked
+            if let Some(dynamic) = leaf.as_dynamic_document_reference() {
+                read.extend(dynamic.target_properties().map(top_level_property));
             }
             let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;

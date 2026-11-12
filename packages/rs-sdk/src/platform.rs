@@ -7,6 +7,7 @@
 
 pub mod address_sync;
 pub mod block_info_from_metadata;
+pub mod blocks;
 pub mod contract_fee_pots;
 pub mod contract_groups;
 pub mod contract_moderation;
@@ -44,7 +45,7 @@ pub mod yes_no_vote_polls;
 pub use dapi_grpc::platform::v0 as proto;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
-pub use dash_context_provider::{ContextProvider, QuorumKeyFuture};
+pub use dash_context_provider::{ContextProvider, QuorumKeyFuture, QuorumKeySource};
 pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::composite_document_query::{
     CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,

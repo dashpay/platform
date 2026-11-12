@@ -63,6 +63,16 @@ internal object WalletManagerNative {
         bridge: NativePersistenceBridge,
     ): String?
 
+    /**
+     * The persistence capability bits a manager created with [bridge] would
+     * attest, without creating one: its declaration intersected with the
+     * callbacks JNI wires for it, built exactly as [nativeCreate] builds
+     * them (which methods the bridge overrides decides some of those). The
+     * instrumented suite checks with it that a capability needs every
+     * override it depends on.
+     */
+    external fun nativeEffectivePersistenceCapabilityBits(bridge: NativePersistenceBridge): Long
+
     // ── Wallet creation / restore ─────────────────────────────────────
 
     /**
@@ -387,6 +397,46 @@ internal object WalletManagerNative {
      * [outPointVout] instead of a fresh amount/account.
      */
     external fun walletResumeFundFromAssetLock(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        platformAccountIndex: Int,
+        recipientsBlob: ByteArray,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Pay a third party's Platform address from a Core L1 asset lock built
+     * from the wallet balance. Sibling of [walletFundFromAssetLock] with the
+     * same parameters and blob layouts; binds
+     * `platform_address_wallet_fund_from_asset_lock_external_signer`, which
+     * lets explicit-amount rows be any P2PKH address while the single
+     * remainder row must still belong to [platformAccountIndex]. The
+     * returned changeset holds only the wallet's own addresses.
+     *
+     * @param onAssetLockBuilt called at most once with the new lock's raw
+     *   36-byte outpoint, before the lock is persisted or broadcast (see
+     *   [AssetLockBuiltBridge]); null for no callback.
+     */
+    external fun walletFundFromAssetLockExternal(
+        walletHandle: Long,
+        amountDuffs: Long,
+        accountIndex: Int,
+        platformAccountIndex: Int,
+        recipientsBlob: ByteArray,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+        onAssetLockBuilt: AssetLockBuiltBridge?,
+    ): ByteArray
+
+    /**
+     * Resume a stuck external-recipient funding from an already-tracked lock.
+     * Sibling of [walletResumeFundFromAssetLock] with the relaxed recipient
+     * rule of [walletFundFromAssetLockExternal]; binds
+     * `platform_address_wallet_resume_fund_from_asset_lock_external_signer`.
+     */
+    external fun walletResumeFundFromAssetLockExternal(
         walletHandle: Long,
         outPointTxid: ByteArray,
         outPointVout: Int,
@@ -745,4 +795,18 @@ internal object WalletManagerNative {
         budgetSecs: Long,
         gapLimit: Int,
     ): ByteArray
+}
+
+/**
+ * Native → Kotlin bridge for the asset-lock-built callback of
+ * [WalletManagerNative.walletFundFromAssetLockExternal]. Rust invokes
+ * [onAssetLockBuilt] at most once per call, on the SDK's runtime worker
+ * thread (the JNI trampoline attaches it as a daemon), after the lock
+ * transaction is signed and before the lock's row is persisted or the lock
+ * is broadcast. An exception thrown here is cleared by the trampoline and
+ * does not stop the funding.
+ */
+fun interface AssetLockBuiltBridge {
+    /** @param outPoint 36 bytes: 32-byte txid (wire order) then the 4-byte little-endian vout. */
+    fun onAssetLockBuilt(outPoint: ByteArray)
 }

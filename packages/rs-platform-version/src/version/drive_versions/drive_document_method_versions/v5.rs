@@ -1,7 +1,8 @@
 use crate::version::drive_versions::drive_document_method_versions::v4::DRIVE_DOCUMENT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentInsertContestedMethodVersions, DriveDocumentMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
     DriveDocumentUpdateMethodVersions,
 };
 
@@ -16,26 +17,53 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   `Some(0)` (`None` before): a `PrivateDocumentCreateFromShieldedPool` appends entries to one.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
-///   the insert's does, not as subtrees.
+///   the insert's does, not as subtrees, and under a summable index that layer and the deleted
+///   reference as references with sum items.
+/// * `insert.add_reference_for_index_level_for_contract_operations` is 1: an insert's estimate
+///   describes a summable index's entries for a value as references with sum items, not plain
+///   references.
 /// * `estimation_costs.stateless_delete_of_non_tree_for_costs` is 1: a delete's estimate prices
 ///   each height of the climb with the layer GroveDB deletes in there, not the one above it.
+/// * Retained-history writers, readers and estimators use the per-type revision layout.
 /// * `update.update_document_for_contract_operations` is 2: when an update names a new owner,
 ///   the references of the indexes it leaves unchanged are rewritten with that owner.
 /// * `update.update_document_for_contract_apply_and_add_to_operations` is 1: an update applied
 ///   on its own hands storage over as one in a batch of drive operations does.
 /// * `insert_contested.add_contested_document_for_contract_operations` is 2: a poll's end date
 ///   entries name whoever the document's storage flags name.
+/// * `query.single_document_path_query` is 1: a lookup of a document that may be contested
+///   states both branch caps for every type. In a type that keeps history, a single-document
+///   lookup at a block time selects the latest retained revision at or before it, and the
+///   maybe-contested status is refused at a block time.
+/// * `insert.add_indices_for_top_index_level_for_contract_operations` is 3: an insert writes no
+///   entry in a bucket of a time range index with a `ttl` that has expired at the block time,
+///   as an update already does not.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
+        document_history_storage_layout: 1,
+        query: DriveDocumentQueryMethodVersions {
+            single_document_path_query: 1, // changed: a temporal lookup selects the latest retained revision
+            fetch_document_history_query: 1,
+            fetch_document_history: 1,
+            prove_document_history: 1,
+            ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.query
+        },
+        insert: DriveDocumentInsertMethodVersions {
+            add_document_to_primary_storage: 1,
+            add_indices_for_top_index_level_for_contract_operations: 3, // changed: no entry in an expired time range bucket
+            add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
+            ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
+        },
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
         fetch_private_document_entries: Some(0), // changed: a page of a store's entries can be read
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
-            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
+            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references, with sum items under a summable index
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
+            add_estimation_costs_for_add_document_to_primary_storage: 1,
             stateless_delete_of_non_tree_for_costs: 1, // changed: each height gets the layer priced there
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.estimation_costs
         },

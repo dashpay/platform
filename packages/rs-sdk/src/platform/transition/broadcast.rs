@@ -3,7 +3,6 @@ use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
 use crate::platform::ProtocolRequirement;
 use crate::sync::retry;
-use crate::sync::retry_with_additional_error;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::BroadcastStateTransitionResponse;
@@ -12,9 +11,6 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse,
 };
 use dash_context_provider::ContextProviderError;
-use dpp::consensus::signature::SignatureError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::ConsensusError;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -27,18 +23,22 @@ use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
 use dpp::version::feature_initial_protocol_versions::PRIVATE_DOCUMENT_CREATE_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
 use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
-use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
+use rs_dapi_client::{
+    DapiRequest, DapiRequestExecutor, ExecutionError, InnerInto, IntoInner, RequestSettings,
+};
 use std::future::Future;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
+
+#[cfg(test)]
+pub(super) mod retry_tests;
 
 /// The gRPC method a state transition is sent with.
 pub(crate) const BROADCAST_STATE_TRANSITION_METHOD: &str = "broadcast_state_transition";
@@ -151,14 +151,6 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        trace!(
-            state_transition = %self.name(),
-            transaction_id = %self
-                .transaction_id()
-                .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string()),
-            "broadcast: start"
-        );
         // A kind the network may not serve yet is sent only once a verified answer shows it
         // does; otherwise it is refused here with `ProtocolVersionNotActive`.
         sdk.ensure_network_serves(
@@ -167,49 +159,26 @@ impl BroadcastStateTransition for StateTransition {
         )
         .await?;
 
-        let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-            None => sdk.dapi_client_settings,
-        };
-
-        let execute = |request: BroadcastStateTransitionRequest, request_settings| async move {
-            trace!("broadcast: executing request");
-            let result = request
-                .execute(sdk, request_settings)
-                .await
-                .map_err(|e| e.inner_into());
-
-            match &result {
-                Ok(_) => trace!("broadcast: request succeeded"),
-                Err(e) => warn!(error = ?e, "broadcast: request failed"),
-            }
-            result
-        };
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-        trace!("broadcast: starting retry mechanism");
+        let request_settings = settings.map_or(sdk.dapi_client_settings, |settings| {
+            sdk.dapi_client_settings
+                .override_by(settings.request_settings)
+        });
         let result = broadcast_with_retries(
             self,
             sdk.address_list(),
-            retry_settings,
-            execute,
+            request_settings,
+            |request, settings| async move { sdk.execute(request, settings).await.inner_into() },
             sdk.version(),
         )
-        .await
-        .into_inner()
-        .map(|_| ());
-
-        match &result {
-            Ok(_) => trace!("broadcast: completed successfully"),
-            Err(e) => {
-                warn!(error = ?e, "broadcast: failed after retries");
-                if let Some(owner_id) = self.owner_id() {
-                    sdk.refresh_identity_nonce(&owner_id).await;
-                }
+        .await;
+        if result.is_err() {
+            if let Some(owner) = self.owner_id() {
+                sdk.refresh_identity_nonce(&owner).await;
             }
         }
-        result
+        finish_broadcast(result)
     }
+
     async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
@@ -274,10 +243,11 @@ impl BroadcastStateTransition for StateTransition {
         settings: Option<PutSettings>,
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait_for_affected_state: start");
-        self.broadcast(sdk, settings).await?;
-        let result = self
-            .wait_for_affected_state_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            self.broadcast(sdk, settings).await,
+            self.wait_for_affected_state_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait_for_affected_state: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait_for_affected_state: failed"),
@@ -302,11 +272,11 @@ impl BroadcastStateTransition for StateTransition {
     ) -> Result<(T, ResponseMetadata), Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
         trace!("broadcast_and_wait: step 1 - broadcasting");
-        self.broadcast(sdk, settings).await?;
-        trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self
-            .wait_for_response_with_metadata::<T>(sdk, settings)
-            .await;
+        let result = wait_after_broadcast(
+            self.broadcast(sdk, settings).await,
+            self.wait_for_response_with_metadata::<T>(sdk, settings),
+        )
+        .await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
@@ -315,9 +285,53 @@ impl BroadcastStateTransition for StateTransition {
     }
 }
 
+/// Preserve attempt history before projecting the execution envelope.
+fn finish_broadcast(
+    result: ExecutionResult<BroadcastStateTransitionResponse, Error>,
+) -> Result<(), Error> {
+    result.map(|_| ()).map_err(|error| {
+        if error.is_possibly_accepted() {
+            error.inner.into_unconfirmed()
+        } else {
+            error.inner
+        }
+    })
+}
+
+/// Check the SAME signed transition after possible submission. No replacement is built here.
+pub(crate) async fn wait_after_broadcast<T>(
+    broadcast: Result<(), Error>,
+    wait: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    if let Err(error) = broadcast {
+        if !broadcast_may_have_been_accepted(&error) {
+            return Err(error);
+        }
+        // A later node's reported refusal cannot erase an earlier possible delivery.
+        // Its error metadata does not prove that the signed bytes were never accepted.
+        debug!(
+            ?error,
+            "checking the original submission after an uncertain acknowledgement"
+        );
+    }
+    // Result-stream errors are decoded before proof/signature verification. Even a typed
+    // consensus cause does not authenticate failure of the original submission.
+    wait.await.map_err(Error::into_unconfirmed)
+}
+
+fn broadcast_may_have_been_accepted(error: &Error) -> bool {
+    match error {
+        Error::StateTransitionResultUnconfirmed(_)
+        | Error::AlreadyExists(_)
+        | Error::TimeoutReached(..) => true,
+        Error::NoAvailableAddressesToRetry(inner) => broadcast_may_have_been_accepted(inner),
+        _ => false,
+    }
+}
+
 /// DPNS registration has two separate creates. Fail over each signed create,
 /// never restart the registration (which would generate a new preorder salt).
-/// This applies only to the immediate CheckTx rejection, not wait outcomes.
+/// Communication retries retain the same bytes; concrete Drive refusals are terminal.
 async fn broadcast_with_retries<Fut, Execute>(
     transition: &StateTransition,
     addresses: &AddressList,
@@ -343,6 +357,7 @@ where
     }
     let request = checked_broadcast_request(transition, platform_version).map_err(|inner| {
         ExecutionError {
+            possibly_accepted: false,
             inner,
             address: None,
             retries: 0,
@@ -393,24 +408,7 @@ where
             result
         }
     };
-    retry_with_additional_error(addresses, settings, factory, |error| {
-        (is_dpns_registration && is_missing_transition_owner(transition, error))
-            || is_address_nonce_ahead(transition, error)
-    })
-    .await
-}
-
-fn is_address_nonce_ahead(transition: &StateTransition, error: &Error) -> bool {
-    let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
-        return false;
-    };
-    // A lagging node may reject the signed input; replay/concurrent-spend errors stay terminal.
-    matches!(consensus.as_ref(),
-        ConsensusError::StateError(StateError::AddressInvalidNonceError(nonce_error))
-            if nonce_error.provided_nonce() > nonce_error.expected_nonce()
-                && transition.inputs().and_then(|inputs| inputs.get(nonce_error.address()))
-                    .is_some_and(|(nonce, _)| *nonce == nonce_error.provided_nonce())
-    )
+    retry(addresses, settings, factory).await
 }
 
 fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str> {
@@ -432,16 +430,6 @@ fn dpns_registration_document_type(transition: &StateTransition) -> Option<&str>
         name @ ("preorder" | "domain") => Some(name),
         _ => None,
     }
-}
-
-fn is_missing_transition_owner(transition: &StateTransition, error: &Error) -> bool {
-    let Error::Protocol(ProtocolError::ConsensusError(consensus)) = error else {
-        return false;
-    };
-    matches!(consensus.as_ref(),
-        ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(missing))
-            if Some(missing.identity_id()) == transition.owner_id()
-    )
 }
 
 /// Reject snapshot outcomes for the strict wait APIs with a typed error.
@@ -515,6 +503,7 @@ impl WaitForOutcome for StateTransition {
             let request = self
                 .wait_for_state_transition_result_request()
                 .map_err(|e| ExecutionError {
+                    possibly_accepted: false,
                     inner: e,
                     address: None,
                     retries: 0,
@@ -551,6 +540,7 @@ impl WaitForOutcome for StateTransition {
             }
 
             let context_provider = sdk.context_provider().ok_or(ExecutionError {
+                possibly_accepted: false,
                 inner: Error::from(ContextProviderError::Config(
                     "Context provider not initialized".to_string(),
                 )),
@@ -642,17 +632,127 @@ mod tests {
     use dapi_grpc::tonic::Status;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::IdentityNotFoundError;
+    use dpp::consensus::ConsensusError;
     use dpp::prelude::Identifier;
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
     use dpp::state_transition::batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
     use rs_dapi_client::transport::TransportError;
     use rs_dapi_client::DapiClientError;
     use rs_dapi_client::ExecutionResponse;
     use std::future::ready;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn should_wait_for_verified_result_after_ambiguous_broadcast() {
+        let errors = [
+            Error::AlreadyExists("tx already exists in cache".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "lost acknowledgement".into()),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::deadline_exceeded("relay timed out"),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::AlreadyExists("cached".into()))),
+        ];
+        for error in errors {
+            let result =
+                wait_after_broadcast(Err(error.into_unconfirmed()), async { Ok(42) }).await;
+            assert_eq!(result.expect("verified wait result"), 42);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_wait_after_dapi_confirmation_timeout_including_retry_wrappers() {
+        let timeout = || {
+            TransportError::Grpc(Status::resource_exhausted(
+                "broadcasting state transition is timed out",
+            ))
+        };
+        for error in [
+            Error::DapiClientError(DapiClientError::Transport(timeout())),
+            Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                timeout(),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::Transport(timeout()),
+            ))),
+            Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(timeout())),
+            ))),
+        ] {
+            assert_eq!(
+                wait_after_broadcast(Err(error.into_unconfirmed()), async { Ok(42) })
+                    .await
+                    .unwrap(),
+                42
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_other_resource_exhausted_refusals() {
+        for message in [
+            "mempool is full",
+            "tenderdash is not responding: too many requests",
+            "rate limited",
+        ] {
+            let error = Error::NoAvailableAddressesToRetry(Box::new(Error::DapiClientError(
+                DapiClientError::NoAvailableAddressesToRetry(Box::new(TransportError::Grpc(
+                    Status::resource_exhausted(message),
+                ))),
+            )));
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definite capacity refusal must not poll the result wait")
+            })
+            .await;
+            assert_eq!(result.unwrap_err().to_string(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_never_substitute_cache_hit_for_a_valid_proof() {
+        for wait_error in [
+            Error::InvalidProvedResponse("bad signature".into()),
+            Error::ExecutionNotProved("affected-state snapshot only".into()),
+            Error::TimeoutReached(Duration::from_secs(10), "no verified result".into()),
+        ] {
+            let expected = format!("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {wait_error}");
+            let result: Result<(), Error> = wait_after_broadcast(
+                Err(Error::AlreadyExists("tx already exists in cache".into())),
+                async { Err(wait_error) },
+            )
+            .await;
+            assert_eq!(
+                result.expect_err("proof is still mandatory").to_string(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_not_poll_result_wait_after_definite_broadcast_rejection() {
+        for error in [
+            missing_owner(owner_id()),
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+                Status::invalid_argument("invalid transition"),
+            ))),
+        ] {
+            let expected = error.to_string();
+            let result: Result<(), Error> = wait_after_broadcast(Err(error), async {
+                panic!("a definitive rejection must not poll the wait future")
+            })
+            .await;
+            assert_eq!(
+                result.expect_err("original rejection").to_string(),
+                expected
+            );
+        }
+    }
 
     fn owner_id() -> Identifier {
         Identifier::from([1; 32])
@@ -695,56 +795,6 @@ mod tests {
             .expect("valid addresses")
     }
 
-    #[test_case::test_case("preorder")]
-    #[test_case::test_case("domain")]
-    #[tokio::test]
-    async fn should_retry_identical_dpns_bytes_on_another_node(document_type: &str) {
-        let transition = document_create(SystemDataContract::DPNS.id(), document_type);
-        let expected_request = transition.broadcast_request_for_state_transition().unwrap();
-        let addresses = addresses();
-        let mut requests = Vec::new();
-        let mut used_addresses = Vec::new();
-
-        broadcast_with_retries(
-            &transition,
-            &addresses,
-            RequestSettings::default(),
-            |request, _| {
-                let address = addresses.get_live_addresses().into_iter().next().unwrap();
-                requests.push(request);
-                used_addresses.push(address.clone());
-                ready(if requests.len() == 1 {
-                    Err(ExecutionError {
-                        inner: missing_owner(owner_id()),
-                        address: Some(address),
-                        retries: 0,
-                    })
-                } else {
-                    Ok(ExecutionResponse {
-                        inner: BroadcastStateTransitionResponse {},
-                        address,
-                        retries: 0,
-                    })
-                })
-            },
-            PlatformVersion::latest(),
-        )
-        .await
-        .expect("second node accepts the same signed transition");
-
-        assert_eq!(requests, vec![expected_request.clone(), expected_request]);
-        assert_ne!(used_addresses[0], used_addresses[1]);
-        assert!(addresses.is_banned(&used_addresses[0]));
-        let bans = addresses.ban_info();
-        let rejected = bans
-            .iter()
-            .find(|info| info.uri == used_addresses[0].to_string())
-            .unwrap();
-        assert_eq!(rejected.ban_count, 1);
-        let remaining = rejected.banned_until.unwrap() - chrono::Utc::now();
-        assert!(remaining <= chrono::Duration::seconds(2));
-    }
-
     /// A transition over `max_state_transition_size` is refused with the
     /// typed size error before any node is asked, instead of DAPI's untyped
     /// refusal.
@@ -757,7 +807,7 @@ mod tests {
         assert!(transition.set_signature(vec![4; max_size].into()));
         let mut dispatched = 0;
 
-        let error = broadcast_with_retries(
+        let outcome = broadcast_with_retries(
             &transition,
             &addresses(),
             RequestSettings::default(),
@@ -771,124 +821,26 @@ mod tests {
             },
             PlatformVersion::latest(),
         )
-        .await
-        .expect_err("an oversized transition is refused");
+        .await;
+        assert!(!outcome.as_ref().unwrap_err().is_possibly_accepted());
+        let error = finish_broadcast(outcome).expect_err("an oversized transition is refused");
 
         assert_eq!(dispatched, 0, "nothing is sent");
         assert!(
             matches!(
-                &error.inner,
+                &error,
                 Error::Protocol(ProtocolError::ConsensusError(e)) if matches!(
                     e.as_ref(),
                     ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
                 )
             ),
             "unexpected error: {:?}",
-            error.inner
+            error
         );
     }
 
     #[tokio::test]
-    async fn should_keep_repeated_missing_owner_exclusions_short_and_flat() {
-        let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
-        let addresses = addresses();
-        for round in 0..2 {
-            let _ = broadcast_with_retries(
-                &transition,
-                &addresses,
-                RequestSettings::default(),
-                |_, _| {
-                    let address = addresses.get_live_addresses().into_iter().next().unwrap();
-                    ready(Err(ExecutionError {
-                        inner: missing_owner(owner_id()),
-                        address: Some(address),
-                        retries: 0,
-                    }))
-                },
-                PlatformVersion::latest(),
-            )
-            .await;
-            for ban in addresses.ban_info().iter().filter(|ban| ban.banned) {
-                assert_eq!(
-                    ban.ban_count, 1,
-                    "rejections must not climb the health ladder"
-                );
-                assert!(
-                    ban.banned_until.unwrap() - chrono::Utc::now() <= chrono::Duration::seconds(2)
-                );
-            }
-            if round == 0 {
-                // Bans expire by the wall clock, which a CI runner can step
-                // back against the monotonic clock behind tokio's sleep, so
-                // a fixed sleep races the expiry. Poll instead: the deadline
-                // is far above the 2-second exclusion and far below the 60s
-                // first rung of the health ladder.
-                tokio::time::timeout(Duration::from_secs(10), async {
-                    while addresses.get_live_addresses().len() < addresses.len() {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                })
-                .await
-                .expect("every short exclusion expires");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn should_retry_only_domain_after_successful_preorder() {
-        let preorder = document_create(SystemDataContract::DPNS.id(), "preorder");
-        let domain = document_create(SystemDataContract::DPNS.id(), "domain");
-        let preorder_request = preorder.broadcast_request_for_state_transition().unwrap();
-        let domain_request = domain.broadcast_request_for_state_transition().unwrap();
-        let addresses = addresses();
-        let mut requests = Vec::new();
-        let mut execute = |request, _| {
-            let address = addresses.get_live_addresses().into_iter().next().unwrap();
-            requests.push(request);
-            ready(if requests.len() == 2 {
-                Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
-                    address: Some(address),
-                    retries: 0,
-                })
-            } else {
-                Ok(ExecutionResponse {
-                    inner: BroadcastStateTransitionResponse {},
-                    address,
-                    retries: 0,
-                })
-            })
-        };
-
-        // The two registration stages use separate signed creates. Failure in
-        // the second broadcast must not replay the already accepted first one.
-        broadcast_with_retries(
-            &preorder,
-            &addresses,
-            RequestSettings::default(),
-            &mut execute,
-            PlatformVersion::latest(),
-        )
-        .await
-        .expect("preorder is accepted on its first attempt");
-        broadcast_with_retries(
-            &domain,
-            &addresses,
-            RequestSettings::default(),
-            &mut execute,
-            PlatformVersion::latest(),
-        )
-        .await
-        .expect("only the rejected domain is retried");
-
-        assert_eq!(
-            requests,
-            vec![preorder_request, domain_request.clone(), domain_request]
-        );
-    }
-
-    #[tokio::test]
-    async fn should_not_classify_timeouts_as_missing_owner_or_override_zero_retries() {
+    async fn should_preserve_timeouts_without_overriding_zero_retries() {
         let transition = document_create(SystemDataContract::DPNS.id(), "domain");
         let timeouts = [
             Error::TimeoutReached(Duration::from_secs(10), "broadcast timed out".to_string()),
@@ -897,7 +849,7 @@ mod tests {
             ))),
         ];
         for timeout in timeouts {
-            assert!(!is_missing_transition_owner(&transition, &timeout));
+            let expected = timeout.to_string();
             let addresses = addresses();
             let mut timeout = Some(timeout);
             let mut attempts = 0;
@@ -911,6 +863,7 @@ mod tests {
                 |_, _| {
                     attempts += 1;
                     ready(Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: timeout.take().expect("zero retries permits only one send"),
                         address: addresses.get_live_addresses().into_iter().next(),
                         retries: 0,
@@ -921,7 +874,7 @@ mod tests {
             .await
             .expect_err("ambiguous timeout is returned under the existing retry budget");
             assert_eq!(attempts, 1);
-            assert!(!is_missing_transition_owner(&transition, &error.inner));
+            assert_eq!(error.inner.to_string(), expected);
         }
     }
 
@@ -945,7 +898,8 @@ mod tests {
                 attempts += 1;
                 assert_eq!(settings.retries, Some(expected - attempts));
                 ready(Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
+                    possibly_accepted: true,
+                    inner: Error::TimeoutReached(Duration::from_secs(1), "lost".into()),
                     address: addresses.get_live_addresses().into_iter().next(),
                     retries: 0,
                 }))
@@ -953,11 +907,11 @@ mod tests {
             PlatformVersion::latest(),
         )
         .await
-        .expect_err("all nodes reject the owner");
+        .expect_err("all attempts lose their response");
         assert_eq!(attempts, expected);
         assert_eq!(error.retries, expected);
-        assert!(is_missing_transition_owner(&transition, &error.inner));
-        assert_eq!(addresses.get_live_addresses().len(), 4 - (expected - 1));
+        assert!(error.is_possibly_accepted());
+        assert_eq!(addresses.get_live_addresses().len(), 4 - expected);
     }
 
     #[tokio::test]
@@ -973,7 +927,8 @@ mod tests {
                 attempts += 1;
                 assert_eq!(settings.retries, Some(2));
                 ready(Err(ExecutionError {
-                    inner: missing_owner(owner_id()),
+                    possibly_accepted: true,
+                    inner: Error::TimeoutReached(Duration::from_secs(1), "lost response".into()),
                     address: addresses.get_live_addresses().into_iter().next(),
                     retries: 2,
                 }))
@@ -990,7 +945,10 @@ mod tests {
     #[test_case::test_case(true, false)]
     #[test_case::test_case(true, true)]
     #[tokio::test]
-    async fn should_stop_when_rejected_node_cannot_be_avoided(ban: bool, known_address: bool) {
+    async fn should_stop_on_concrete_rejection_regardless_of_node_failover_settings(
+        ban: bool,
+        known_address: bool,
+    ) {
         let transition = document_create(SystemDataContract::DPNS.id(), "domain");
         let addresses: AddressList = "http://127.0.0.1:3001".parse().unwrap();
         let address = addresses.get_live_addresses()[0].clone();
@@ -1005,6 +963,7 @@ mod tests {
             |_, _| {
                 attempts += 1;
                 ready(Err(ExecutionError {
+                    possibly_accepted: false,
                     inner: missing_owner(owner_id()),
                     address: known_address.then(|| address.clone()),
                     retries: 0,
@@ -1013,9 +972,12 @@ mod tests {
             PlatformVersion::latest(),
         )
         .await
-        .expect_err("cannot fail over safely");
+        .expect_err("concrete refusal ends sending");
         assert_eq!(attempts, 1);
-        assert!(is_missing_transition_owner(&transition, &error.inner));
+        assert_eq!(
+            error.inner.to_string(),
+            missing_owner(owner_id()).to_string()
+        );
         assert_eq!(addresses.get_live_addresses().len(), 1);
     }
 
@@ -1060,6 +1022,7 @@ mod tests {
                 |_, _| {
                     attempts += 1;
                     ready(Err(ExecutionError {
+                        possibly_accepted: false,
                         inner: error
                             .take()
                             .expect("unrelated rejection must not be retried"),

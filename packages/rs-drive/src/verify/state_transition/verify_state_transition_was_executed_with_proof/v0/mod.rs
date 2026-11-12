@@ -102,6 +102,7 @@ impl Drive {
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
         carries_owner_balance: bool,
+        proof_document_history_layout: u16,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         // The balance a document batch's proof carried, set by its arm.
@@ -424,12 +425,18 @@ impl Drive {
                             block_time_ms: None, //None because we want latest
                             contested_status,
                         };
+                        let mut verification_version = platform_version.clone();
+                        verification_version
+                            .drive
+                            .methods
+                            .document
+                            .document_history_storage_layout = proof_document_history_layout;
                         let (root_hash, document, owner_balance) = if carries_owner_balance {
                             // One strict verification of the prover's merged query:
                             // the document (present or proven absent) and the
                             // owner's balance, and nothing else.
                             let mut document_path_query =
-                                query.construct_path_query(platform_version)?;
+                                query.construct_path_query(&verification_version)?;
                             document_path_query.query.limit = None;
                             let owner_balance_query =
                                 Drive::identity_balance_query(&owner_id.to_buffer());
@@ -471,11 +478,13 @@ impl Drive {
                                 .transpose()?;
                             (root_hash, document, Some(owner_balance))
                         } else {
+                            // Only the stored path follows the signed producer version.
+                            // Verification dispatch and decoding keep the caller's tables.
                             let (root_hash, document) = query.verify_proof(
                                 false,
                                 proof,
                                 document_type,
-                                platform_version,
+                                &verification_version,
                             )?;
                             (root_hash, document, None)
                         };
@@ -1466,6 +1475,7 @@ impl Drive {
                     transition,
                     known_contracts_provider_fn,
                     carries_owner_balance,
+                    proof_document_history_layout,
                     platform_version,
                 )
             }
@@ -1500,6 +1510,7 @@ impl Drive {
                     transition,
                     known_contracts_provider_fn,
                     carries_owner_balance,
+                    proof_document_history_layout,
                     platform_version,
                 )
             }
@@ -3352,6 +3363,7 @@ fn verify_contract_document_deletion_execution(
     transition: &ContractUserModerationTransition,
     known_contracts_provider_fn: &ContractLookupFn,
     verify_subset_of_proof: bool,
+    proof_document_history_layout: u16,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
     let contract_id = transition.data_contract_id();
@@ -3381,11 +3393,19 @@ fn verify_contract_document_deletion_execution(
             document_type.documents_keep_history(),
             document_id.into_buffer(),
         );
+        // Only the stored path follows the signed producer version.
+        // Verification dispatch and decoding keep the caller's tables.
+        let mut verification_version = platform_version.clone();
+        verification_version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = proof_document_history_layout;
         let (root_hash, document) = query.verify_proof(
             verify_subset_of_proof,
             proof,
             document_type,
-            platform_version,
+            &verification_version,
         )?;
         if document.is_some() {
             return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -3599,6 +3619,7 @@ fn verify_contract_document_change_execution(
     transition: &ContractUserModerationTransition,
     known_contracts_provider_fn: &ContractLookupFn,
     verify_subset_of_proof: bool,
+    proof_document_history_layout: u16,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
     let contract_id = transition.data_contract_id();
@@ -3621,11 +3642,19 @@ fn verify_contract_document_change_execution(
         document_type.documents_keep_history(),
         document_id.into_buffer(),
     );
+    // Only the stored path follows the signed producer version.
+    // Verification dispatch and decoding keep the caller's tables.
+    let mut verification_version = platform_version.clone();
+    verification_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout = proof_document_history_layout;
     let (root_hash, document) = query.verify_proof(
         verify_subset_of_proof,
         proof,
         document_type,
-        platform_version,
+        &verification_version,
     )?;
     // The document as changed holds every value set and none removed. Its moderation stamp is
     // not compared: a later moderator's write to another field of the document moves it,

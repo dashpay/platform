@@ -76,7 +76,13 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
+    use crate::drive::document::fixture_contracts::small_sums;
+    use crate::util::batch::DocumentOperationType;
+    use crate::util::batch::DriveOperation::DocumentOperation;
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Getters;
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
@@ -931,95 +937,189 @@ mod tests {
         assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
     }
 
+    /// A profile delete's estimate at protocol version 14 and at the latest version. Protocol
+    /// version 15 describes an index's entries as references and prices each height of a
+    /// delete's climb with the layer deleted in there (protocol v15 note 14); protocol version 14
+    /// keeps its own estimate.
     #[test]
     fn test_delete_dashpay_documents_without_apply() {
-        let drive = setup_drive_with_initial_state_structure(None);
+        for (platform_version, estimated_processing_fee) in [
+            (
+                PlatformVersion::get(14).expect("expected protocol version 14"),
+                72064200,
+            ),
+            // estimated_size v1 adds the contract-version stamp varint to the worst-case
+            // document size
+            (PlatformVersion::latest(), 73034400),
+        ] {
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-        let db_transaction = drive.grove.start_transaction();
+            let db_transaction = drive.grove.start_transaction();
 
+            let contract = setup_contract(
+                &drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                Some(&db_transaction),
+                Some(platform_version),
+            );
+
+            let document_type = contract
+                .document_type_for_name("profile")
+                .expect("expected to get profile document type");
+
+            let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+            let dashpay_profile_document = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/profile0.json",
+                Some(random_owner_id.into()),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to get cbor document");
+
+            let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+            let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
+                0,
+                random_owner_id,
+            )));
+            let fee_result = drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &dashpay_profile_document,
+                                storage_flags,
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(&db_transaction),
+                    platform_version,
+                )
+                .expect("expected to insert a document successfully");
+
+            let added_bytes = fee_result.storage_fee
+                / FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte;
+            // We added 1558 bytes
+            assert_eq!(added_bytes, 1559);
+
+            let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
+                .into_vec()
+                .expect("should decode")
+                .as_slice()
+                .try_into()
+                .expect("this be 32 bytes");
+
+            // Let's delete the document at the third epoch
+            let fee_result = drive
+                .delete_document_for_contract(
+                    document_id,
+                    &contract,
+                    "profile",
+                    BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
+                    false,
+                    Some(&db_transaction),
+                    platform_version,
+                )
+                .expect("expected to be able to delete the document");
+
+            assert!(fee_result.fee_refunds.0.is_empty());
+            assert_eq!(fee_result.storage_fee, 0);
+            assert_eq!(
+                fee_result.processing_fee, estimated_processing_fee,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    /// A tip's estimates through the batch a transition runs: the tip jar's three summable
+    /// indexes each keep a tip's entry for a value as a reference with a sum item, which GroveDB
+    /// prices 10 bytes dearer per node than a plain reference. From protocol version 15 the
+    /// create's and the delete's estimates describe each index's entries for the tip's value so,
+    /// 138,600 credits more per index than a plain reference description (the entries layer's 33
+    /// estimated nodes, 10 bytes each, at 420 credits a byte), and the delete reads each deleted
+    /// reference as the 10 bytes larger element it is, 200 credits more: 28,499,880 and
+    /// 27,754,220 with plain references.
+    #[test]
+    fn should_estimate_a_tip_with_its_summable_index_entries_sum_items() {
         let platform_version = PlatformVersion::latest();
-
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = setup_contract(
             &drive,
-            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
             None,
             None,
             None::<fn(&mut DataContract)>,
-            Some(&db_transaction),
             None,
+            Some(platform_version),
         );
-
         let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get profile document type");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let dashpay_profile_document = json_document_to_document(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(random_owner_id.into()),
-            document_type,
-            platform_version,
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
-            0,
-            random_owner_id,
-        )));
-        let fee_result = drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&dashpay_profile_document, storage_flags)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
+            .document_type_for_name("tip")
+            .expect("expected the tip document type");
+        let mut tip = document_type
+            .random_document(Some(5), platform_version)
+            .expect("expected a tip");
+        small_sums(&mut tip, document_type, 3);
+        let create = || {
+            vec![DocumentOperation(DocumentOperationType::AddDocument {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &tip,
+                        Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, [7; 32]))),
+                    )),
+                    owner_id: None,
                 },
+                contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                document_type_info: DocumentTypeInfo::DocumentTypeName("tip".to_string()),
+                override_document: false,
+            })]
+        };
+
+        let estimated_create = drive
+            .apply_drive_operations(
+                create(),
                 false,
-                BlockInfo::default(),
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to estimate the create");
+        assert_eq!(estimated_create.processing_fee, 28915680);
+
+        drive
+            .apply_drive_operations(
+                create(),
                 true,
-                Some(&db_transaction),
+                &BlockInfo::default(),
+                None,
                 platform_version,
             )
-            .expect("expected to insert a document successfully");
-
-        let added_bytes = fee_result.storage_fee
-            / FeeVersion::first()
-                .storage
-                .storage_disk_usage_credit_per_byte;
-        // We added 1558 bytes
-        assert_eq!(added_bytes, 1559);
-
-        let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
-            .into_vec()
-            .expect("should decode")
-            .as_slice()
-            .try_into()
-            .expect("this be 32 bytes");
-
-        // Let's delete the document at the third epoch
-        let fee_result = drive
-            .delete_document_for_contract(
-                document_id,
-                &contract,
-                "profile",
-                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
+            .expect("expected to create the tip");
+        let estimated_delete = drive
+            .apply_drive_operations(
+                vec![DocumentOperation(DocumentOperationType::DeleteDocument {
+                    document_id: tip.id(),
+                    contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                    document_type_info: DocumentTypeInfo::DocumentTypeName("tip".to_string()),
+                })],
                 false,
-                Some(&db_transaction),
+                &BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch")),
+                None,
                 platform_version,
             )
-            .expect("expected to be able to delete the document");
-
-        assert!(fee_result.fee_refunds.0.is_empty());
-        assert_eq!(fee_result.storage_fee, 0);
-        // estimated_size v1 adds the contract-version stamp varint to the
-        // worst-case document size; from protocol version 15 the delete's estimate describes
-        // an index's entries as references and prices each height of its climb with the layer
-        // deleted in there (protocol v15 note 14)
-        assert_eq!(fee_result.processing_fee, 73034400);
+            .expect("expected to estimate the delete");
+        assert_eq!(estimated_delete.processing_fee, 28170620);
     }
 
     #[test]

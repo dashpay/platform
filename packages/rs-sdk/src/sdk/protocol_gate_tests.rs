@@ -323,6 +323,7 @@ where
             retries: 0,
         }),
         Err(status) => Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(status)),
             address: Some(node()),
             retries: 0,
@@ -677,25 +678,6 @@ async fn should_refuse_without_asking_when_pinned_below_the_version() {
     assert_eq!(sent(&sdk, &fee_pots()).await, 0);
 }
 
-/// Without a context provider the answer to the probe cannot be verified, so asking cannot
-/// show the network's version: refuse without asking.
-#[tokio::test]
-async fn should_refuse_without_asking_when_answers_cannot_be_verified() {
-    let mut sdk = mock_sdk(V13, false, 0);
-    answer_probe(&sdk, "pv14").await;
-    expect_fee_pots(&mut sdk).await;
-    sdk.context_provider.store(None);
-    assert_refused(
-        ContractFeePots::fetch(&sdk, fee_pots()).await,
-        "get_contract_fee_pots",
-        0,
-        false,
-        "no context provider",
-    );
-    assert_eq!(probes(&sdk).await, 0);
-    assert_eq!(sent(&sdk, &fee_pots()).await, 0);
-}
-
 /// A proved fetch the node answered fails with a configuration error naming `reason`, after
 /// one attempt, and bans no node.
 async fn assert_fails_on_the_sdk_setup(sdk: &Sdk, reason: &str) {
@@ -722,17 +704,6 @@ fn assert_failed_on_the_sdk_setup<T: std::fmt::Debug>(
     );
     assert_eq!(sent, 1, "sent once, never retried");
     assert!(!banned);
-}
-
-/// Without a context provider the SDK cannot check any answer, whichever node sent it. The
-/// fault is the SDK's own setup: a proved fetch fails on its first answer with a
-/// configuration error, is not sent to another node, and bans no node.
-#[tokio::test]
-async fn should_fail_a_proved_fetch_once_and_ban_no_node_without_a_context_provider() {
-    let sdk = mock_sdk(V13, false, 0);
-    answer_probe(&sdk, "pv13").await;
-    sdk.context_provider.store(None);
-    assert_fails_on_the_sdk_setup(&sdk, "context provider is not set").await;
 }
 
 /// A context provider set up so that it can never give a quorum key cannot check any answer
@@ -2626,9 +2597,9 @@ async fn should_tell_a_network_proven_below_a_version_from_a_pin_below_it() {
 }
 
 /// A version verified earlier, by this SDK or a clone, does not show the network below a
-/// version now, as it may have upgraded since: an SDK that cannot ask it, for want of a context
-/// provider or because it enforces no gate, takes the network as proven below only while a
-/// probe's epoch hold shows it. A test's mock version stands for such a hold.
+/// version now, as it may have upgraded since: an SDK that cannot ask it, because it enforces
+/// no gate, takes the network as proven below only while a probe's epoch hold shows it. A
+/// test's mock version stands for such a hold.
 #[tokio::test]
 async fn should_not_take_a_version_verified_earlier_as_the_network_below_now() {
     let now_ms = chrono::Utc::now().timestamp_millis() as u64;
@@ -2637,29 +2608,22 @@ async fn should_not_take_a_version_verified_earlier_as_the_network_below_now() {
         epoch,
         until_ms,
     };
-    let without_provider = mock_sdk(V13, false, V13);
-    without_provider.context_provider.store(None);
-    let unenforced = SdkBuilder::new_mock().build().unwrap();
-    for (case, sdk) in [
-        ("without a context provider", without_provider),
-        ("enforcing no gate", unenforced),
-    ] {
-        sdk.verified_protocol_version.store(V13, Ordering::Relaxed);
-        assert!(
-            !sdk.network_proven_below(V14).await.expect(case),
-            "{case}: a version verified earlier"
-        );
-        sdk.probe_hold.set(hold(3, now_ms - 1));
-        assert!(
-            !sdk.network_proven_below(V14).await.expect(case),
-            "{case}: a hold whose epoch has ended"
-        );
-        sdk.probe_hold.set(hold(4, now_ms + 3_600_000));
-        assert!(
-            sdk.network_proven_below(V14).await.expect(case),
-            "{case}: a hold that still shows it"
-        );
-    }
+    let sdk = SdkBuilder::new_mock().build().unwrap();
+    sdk.verified_protocol_version.store(V13, Ordering::Relaxed);
+    assert!(
+        !sdk.network_proven_below(V14).await.unwrap(),
+        "a version verified earlier"
+    );
+    sdk.probe_hold.set(hold(3, now_ms - 1));
+    assert!(
+        !sdk.network_proven_below(V14).await.unwrap(),
+        "a hold whose epoch has ended"
+    );
+    sdk.probe_hold.set(hold(4, now_ms + 3_600_000));
+    assert!(
+        sdk.network_proven_below(V14).await.unwrap(),
+        "a hold that still shows it"
+    );
 
     let mock = SdkBuilder::new_mock().build().unwrap();
     mock.mock_verified_protocol_version(V13).unwrap();

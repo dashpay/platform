@@ -75,6 +75,16 @@ public final class SDK: @unchecked Sendable {
     case trace = 4
   }
 
+  /// Fixed context provider installed when the Rust SDK is constructed.
+  public enum ContextProviderKind: Sendable {
+    /// Trusted HTTP quorum keys plus local contract/token resolution.
+    case trusted
+    /// SPV-only quorum keys plus local contract/token resolution.
+    case spv
+    /// Runtime-selectable Trusted/SPV/Auto quorum routing.
+    case adaptive
+  }
+
   /// Enable logging for gRPC and SDK operations
   /// This will log all network requests, including endpoints being contacted
   public static func enableLogging(level: LogLevel = .debug) {
@@ -241,11 +251,12 @@ public final class SDK: @unchecked Sendable {
     return active.map(\.dapiUrl).joined(separator: ",")
   }
 
-  /// Create a new SDK instance with trusted setup
+  /// Create a new SDK instance with a fixed context-provider policy.
   ///
-  /// This uses a trusted context provider that fetches quorum keys and
-  /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
-  /// This is suitable for mobile applications where proof verification would be resource-intensive.
+  /// `contextProvider` selects one provider identity for the SDK's lifetime.
+  /// Production SPV never falls back to trusted quorum keys; Adaptive is
+  /// intended for examples and deployments that explicitly need live policy
+  /// changes.
   ///
   /// `platformVersion`:
   /// - `0` (default) — let the Rust SDK seed at the per-network minimum
@@ -256,7 +267,11 @@ public final class SDK: @unchecked Sendable {
   ///   testnet floor 12 = V1), so this picks the right wire without a
   ///   Swift-side network→version map.
   /// - non-zero — pin the SDK to this exact `PlatformVersion`.
-  public init(network: Network, platformVersion: UInt32 = 0) throws {
+  public init(
+    network: Network,
+    platformVersion: UInt32 = 0,
+    contextProvider: ContextProviderKind = .trusted
+  ) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
@@ -271,8 +286,8 @@ public final class SDK: @unchecked Sendable {
     // versions. A non-zero value is an explicit pin via `with_version`.
     config.platform_version = platformVersion
 
-    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
-    // UserDefaults and apply on:
+    // Create the SDK with the selected provider. DAPI / quorum-URL overrides
+    // come from UserDefaults and apply on:
     //
     //   * Regtest unconditionally — the Rust side has no built-in DAPI
     //     defaults for it, so we must supply addresses every time
@@ -328,8 +343,8 @@ public final class SDK: @unchecked Sendable {
       } else {
         // Quorum URL unset, or /masternodes unreachable / wrong shape.
         // Fall through with nil; Rust will refuse to build the SDK
-        // and the resulting error surfaces in the iOS UI as
-        // "Disconnected", prompting the user to fix the Quorum URL.
+        // and the build error reaches the caller, which can prompt the
+        // user to fix the Quorum URL.
         overrideAddresses = nil
       }
     } else if useOverrideAddresses {
@@ -345,7 +360,14 @@ public final class SDK: @unchecked Sendable {
       var mutableConfig = config
       if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
       if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
-      return dash_sdk_create_trusted(&mutableConfig)
+      switch contextProvider {
+      case .trusted:
+        return dash_sdk_create_trusted(&mutableConfig)
+      case .spv:
+        return dash_sdk_create_spv(&mutableConfig)
+      case .adaptive:
+        return dash_sdk_create_adaptive(&mutableConfig)
+      }
     }
 
     // Check for errors
@@ -366,6 +388,57 @@ public final class SDK: @unchecked Sendable {
     // Store the handle and network
     handle = OpaquePointer(result.data)
     self.network = network
+  }
+
+  /// Which quorum-key source this SDK's proof verification currently uses.
+  public enum QuorumSource: Sendable {
+    case trusted
+    case spv
+    /// The SDK's context provider does not say: one native code set in place
+    /// of the provider this SDK was built with, or the mock's. Also reported
+    /// by an SDK without a native handle.
+    case custom
+  }
+
+  /// Policy used by the SDK's fixed adaptive context provider.
+  public enum QuorumMode: UInt8, Sendable {
+    /// SPV while it is synced, the trusted quorum service whenever it is
+    /// not. Cutting the client off from its SPV peers forces the trusted
+    /// service, so use `.spv` when proofs must never be verified with its
+    /// keys.
+    case auto = 0
+    /// SPV only; proofs fail whenever SPV is not synced.
+    case spv = 1
+    /// The trusted quorum service only.
+    case trusted = 2
+  }
+
+  /// The quorum source proof verification uses right now, as the native
+  /// SDK's current context provider reports it: fixed for a Trusted or SPV
+  /// SDK, and following SPV readiness for an Adaptive SDK in Auto mode.
+  public var quorumSource: QuorumSource {
+    guard let handle else { return .custom }
+    switch dash_sdk_get_context_provider_source(handle) {
+    case 0: return .trusted
+    case 1: return .spv
+    default: return .custom
+    }
+  }
+
+  /// Set the quorum mode of the native SDK's context provider without
+  /// replacing it. Only an Adaptive SDK has one; any other refuses, as does
+  /// an Adaptive SDK whose provider native code has replaced.
+  public func setQuorumMode(_ mode: QuorumMode) throws {
+    guard let handle else {
+      throw SDKError.internalError("Cannot set quorum mode: SDK handle is nil")
+    }
+    let result = dash_sdk_set_context_provider_mode(handle, mode.rawValue)
+    if result.error != nil {
+      let error = result.error!.pointee
+      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      defer { dash_sdk_error_free(result.error) }
+      throw SDKError.internalError("Failed to set quorum mode: \(message)")
+    }
   }
 
   /// Offline SDK over the FFI mock (`dash_sdk_create_handle_with_mock`), for
@@ -417,8 +490,9 @@ public final class SDK: @unchecked Sendable {
     }
   }
 
-  /// Load known contracts into the trusted context provider
-  /// This avoids network calls for these contracts when they're needed
+  /// Load known contracts into the SDK's context provider, which avoids
+  /// network calls for these contracts when they're needed. A provider that
+  /// keeps no contracts ignores them.
   public func loadKnownContracts(_ contracts: [(id: String, data: Data)]) throws {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
@@ -431,26 +505,22 @@ public final class SDK: @unchecked Sendable {
     // Prepare contract IDs as comma-separated string
     let contractIds = contracts.map { $0.id }.joined(separator: ",")
 
-    // Prepare arrays of contract data
-    let contractDataPointers = contracts.map { contract in
-      contract.data.withUnsafeBytes { bytes in
-        bytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
-      }
-    }
-
     let contractLengths = contracts.map { $0.data.count }
 
-    // Call the FFI function
+    // Call the FFI function. Rust reads every contract through its pointer
+    // during the call, so all of them must stay valid until it returns.
     let result = contractIds.withCString { idsCStr in
-      contractDataPointers.withUnsafeBufferPointer { dataPointers in
-        contractLengths.withUnsafeBufferPointer { lengths in
-          dash_sdk_add_known_contracts(
-            handle,
-            idsCStr,
-            dataPointers.baseAddress,
-            lengths.baseAddress,
-            UInt(contracts.count)
-          )
+      Self.withUnsafeBytePointers(to: contracts.map { $0.data }) { contractDataPointers in
+        contractDataPointers.withUnsafeBufferPointer { dataPointers in
+          contractLengths.withUnsafeBufferPointer { lengths in
+            dash_sdk_add_known_contracts(
+              handle,
+              idsCStr,
+              dataPointers.baseAddress,
+              lengths.baseAddress,
+              UInt(contracts.count)
+            )
+          }
         }
       }
     }
@@ -467,6 +537,29 @@ public final class SDK: @unchecked Sendable {
     }
 
     print("✅ Successfully loaded \(contracts.count) known contracts into SDK")
+  }
+
+  /// Run `body` with a pointer to the bytes of each buffer, in order, all
+  /// valid until `body` returns. A pointer from `Data.withUnsafeBytes` is
+  /// valid only inside that closure (for a `Data` small enough to be stored
+  /// inline it points at a temporary copy), so the bytes are copied into one
+  /// allocation this function owns and frees after `body`. Every pointer is
+  /// non-nil, an empty buffer's included.
+  static func withUnsafeBytePointers<R>(
+    to buffers: [Data],
+    _ body: ([UnsafePointer<UInt8>?]) -> R
+  ) -> R {
+    let total = buffers.reduce(0) { $0 + $1.count }
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: max(total, 1))
+    defer { storage.deallocate() }
+    var offset = 0
+    let pointers = buffers.map { buffer -> UnsafePointer<UInt8>? in
+      let start = storage + offset
+      buffer.copyBytes(to: start, count: buffer.count)
+      offset += buffer.count
+      return UnsafePointer(start)
+    }
+    return body(pointers)
   }
 
   deinit {
@@ -595,7 +688,17 @@ public final class SDK: @unchecked Sendable {
 public struct SDKStatus: Codable {
   public let version: String
   public let network: String
+  /// The context provider the SDK was built with: `"trusted"`, `"spv"`,
+  /// `"adaptive"`, or `"custom"` for a provider the native SDK did not build
+  /// (caller-supplied or mock). It stays so after native code replaces the
+  /// provider.
   public let mode: String
+  /// The source the SDK's current provider answers quorum lookups from now,
+  /// `"trusted"` or `"spv"`; an adaptive provider reports its live choice.
+  /// `nil` for a provider that does not say.
+  public let quorumSource: String?
+  /// Quorums in the cache of the trusted provider the SDK was built with,
+  /// whichever source answers; `0` without one.
   public let quorumCount: Int
 }
 
@@ -611,6 +714,9 @@ public enum SDKError: Error {
   case timeout(String)
   case notImplemented(String)
   case internalError(String)
+  /// The transition may have executed. Reconcile the original operation
+  /// before submitting again; the associated diagnostic is not a safe retry verdict.
+  case stateTransitionResultUnconfirmed(String)
   /// Platform refused the state transition. Carries the rs-dpp consensus
   /// code and family, so a host can branch on the exact rule that refused it
   /// (`error.consensusError?.code == 10422` is a violated propertyConstraints
@@ -628,6 +734,10 @@ public enum SDKError: Error {
 
   public static func fromDashSDKError(_ error: DashSDKError) -> SDKError {
     let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+
+    if error.code == StateTransitionResultUnconfirmed {
+      return .stateTransitionResultUnconfirmed(message)
+    }
 
     // Platform's verdict wins over the coarse code, which rs-sdk-ffi picks
     // from the rendered text: the same refusal can arrive as ProtocolError or
@@ -663,8 +773,9 @@ public enum SDKError: Error {
   }
 
   /// The error to throw under `message` when an FFI call that signs,
-  /// broadcasts or waits for a state transition fails: `.consensusRejection`
-  /// when `ffiError` carries Platform's verdict, otherwise
+  /// broadcasts or waits for a state transition fails: an unconfirmed result
+  /// retains its submission status; `.consensusRejection` when `ffiError`
+  /// carries Platform's definitive verdict, otherwise
   /// `fallback(message)`, the case the call site threw before the verdict
   /// crossed the FFI. Read `ffiError` before freeing it.
   static func stateTransitionFailure(
@@ -672,6 +783,9 @@ public enum SDKError: Error {
     ffiError: DashSDKError?,
     otherwise fallback: (String) -> SDKError = SDKError.internalError
   ) -> SDKError {
+    if let ffiError, ffiError.code == StateTransitionResultUnconfirmed {
+      return .stateTransitionResultUnconfirmed(message)
+    }
     if let ffiError, let consensus = PlatformConsensusError(ffi: ffiError) {
       return .consensusRejection(consensus, message)
     }
@@ -702,6 +816,8 @@ extension SDKError: LocalizedError {
       return "Feature Not Implemented: \(message)"
     case .internalError(let message):
       return "Internal Error: \(message)"
+    case .stateTransitionResultUnconfirmed(let message):
+      return "Submission result is unconfirmed. Check history and reconcile the original operation before submitting again. \(message)"
     case .consensusRejection(_, let message):
       return "Rejected by Platform: \(message)"
     case .unknown(let message):

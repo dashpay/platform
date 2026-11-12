@@ -18,9 +18,10 @@
 //!    asset-lock-proof signature is routed through the external
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
 //!    IS→CL fallback fires when `needs_chain_lock_proof` matches:
-//!    Platform rejected the IS signature, or the InstantSend proof
+//!    Platform rejected the IS signature, the InstantSend proof
 //!    made the transition too large (the SDK refuses that before
-//!    broadcast with a typed error).
+//!    broadcast with a typed error), or its funding transaction has
+//!    more inputs than an InstantSend proof may carry.
 //! 4. **Finalize lock state** — a verified submit completes a wallet drain
 //!    (`DrainCompleted`) or consumes a generic lock. A resumed drain that
 //!    Platform rejects because its exact outpoint was already consumed is

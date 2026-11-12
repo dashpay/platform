@@ -898,8 +898,9 @@ mod deletion_tests {
         document.set("senderKeyIndex", Value::U32(1));
         document.set("accountReference", Value::U32(0));
         // an IV plus whole AES blocks, as the label's `encryptedFor` requires from protocol
-        // version 15
+        // version 15, and so for the shielded address DashPay v3 adds
         document.set("encryptedAccountLabel", Value::Bytes(vec![0u8; 48]));
+        document.set("encryptedShieldedAddress", Value::Bytes(vec![0u8; 64]));
 
         let mut altered_document = document.clone();
 

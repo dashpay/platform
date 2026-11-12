@@ -2,13 +2,14 @@ import Foundation
 import DashSDKFFI
 
 /// Thrown by `shieldedIdentityCreateFromPool` when the Type-20
-/// transition was broadcast and ACCEPTED by the relay, but the SDK
-/// could not confirm its execution result and a direct fetch of the
-/// derived id also came back empty (the Rust side already retried).
+/// transition may have reached a node (a broadcast a node accepted, a
+/// send attempt that may have delivered it, a node's refusal or verdict),
+/// its result is not proved, and a direct fetch of the derived id also
+/// came back empty (the Rust side already retried).
 ///
 /// This is NOT a registration failure: the identity may already exist
-/// on chain (the broadcast landed; only the result-proof confirmation
-/// failed — e.g. a transient DAPI/proof error). The caller MUST hold
+/// on chain or may still be created (its result is not proved, e.g. after
+/// a transient DAPI/proof error or a node's refusal). The caller MUST hold
 /// the slot against re-submission and surface the pending identity
 /// rather than treating it as unregistered — re-registering the same
 /// keys while the identity is live would fail the registered-key-hash
@@ -581,6 +582,121 @@ extension PlatformWalletManager {
         return present ? Data(bytes) : nil
     }
 
+    /// Draw a fresh Orchard payment address for `account` on `walletId`,
+    /// as the 43 raw bytes. Every call draws a new, uniformly random
+    /// 88-bit diversifier index from the OS CSPRNG; index 0 (the
+    /// default shielded address) is never returned. Nothing is stored:
+    /// the incoming viewing key finds notes sent to any address this
+    /// returns, now and after a restore.
+    ///
+    /// Returns `nil` when the wallet is known but has no bound shielded
+    /// sub-wallet, or `account` isn't bound on it. Throws when the
+    /// manager is not configured, `walletId` is not 32 bytes, the wallet
+    /// id isn't known to the manager, or the CSPRNG fails.
+    ///
+    /// The host bech32m-encodes the result for display, as for
+    /// `shieldedDefaultAddress`. Synchronous and blocking on the main
+    /// actor, like every member of this class: the FFI call drives the Rust
+    /// runtime with `block_on` and returns once the address is derived.
+    public func shieldedFreshAddress(
+        walletId: Data,
+        account: UInt32 = 0
+    ) throws -> Data? {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        var bytes = [UInt8](repeating: 0, count: 43)
+        var present = false
+        try walletId.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            }
+            try bytes.withUnsafeMutableBufferPointer { outBuf in
+                guard let outPtr = outBuf.baseAddress else {
+                    throw PlatformWalletError.invalidParameter(
+                        "shieldedFreshAddress out buffer baseAddress is nil"
+                    )
+                }
+                try platform_wallet_manager_shielded_fresh_address(
+                    handle,
+                    ptr,
+                    account,
+                    outPtr,
+                    &present
+                ).check()
+            }
+        }
+        return present ? Data(bytes) : nil
+    }
+
+    /// Whether the 43-byte raw Orchard address `raw43` is one of the
+    /// payment addresses of `account` on `walletId` — the default one
+    /// or any diversified (fresh) one. Tests the address against the
+    /// account's incoming viewing key (`diversifier_index`), the same
+    /// test the shielded scan uses for self-change; nothing is looked up
+    /// in storage.
+    ///
+    /// Returns `nil` when the wallet is known but has no bound shielded
+    /// sub-wallet, or `account` isn't bound on it — ownership is unknown,
+    /// not `false`. Returns `false` for a `raw43` that is not 43 bytes or
+    /// is not a valid Orchard address, so a corrupt recipient never masks
+    /// a real send. Throws when the manager is not configured, `walletId`
+    /// is not 32 bytes, or the wallet id isn't known to the manager.
+    /// Synchronous and blocking on the main actor, like every member of this
+    /// class: the FFI call drives the Rust runtime with `block_on`.
+    public func isOwnShieldedAddress(
+        walletId: Data,
+        account: UInt32 = 0,
+        raw43: Data
+    ) throws -> Bool? {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        // An empty `Data` has no base address; the FFI needs a non-null
+        // pointer even for a zero length, so back it with one byte.
+        let address = raw43.isEmpty ? [UInt8(0)] : [UInt8](raw43)
+        var isOwn = false
+        var present = false
+        try walletId.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            }
+            try address.withUnsafeBufferPointer { addressBuf in
+                guard let addressPtr = addressBuf.baseAddress else {
+                    throw PlatformWalletError.invalidParameter(
+                        "isOwnShieldedAddress address baseAddress is nil"
+                    )
+                }
+                try platform_wallet_manager_is_own_shielded_address(
+                    handle,
+                    ptr,
+                    account,
+                    addressPtr,
+                    UInt(raw43.count),
+                    &isOwn,
+                    &present
+                ).check()
+            }
+        }
+        return present ? isOwn : nil
+    }
+
     /// Build the Halo 2 proving key on a background thread so the
     /// first shielded send doesn't pay the ~30 s build cost
     /// inline. Idempotent and safe to call from any thread; later
@@ -676,11 +792,12 @@ extension PlatformWalletManager {
     /// stays resident between spends (the launch-time bind is
     /// viewing-grade only).
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the spend may already be on chain, so the caller
-    /// must NOT retry (the spent notes stay reserved Rust-side; the
-    /// next shielded sync reconciles them).
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// spend may have reached a node and its result is not proved (a
+    /// failed result wait, a node's refusal or consensus verdict
+    /// included): it may already be on chain or may still execute, so the
+    /// caller must NOT retry (the spent notes stay reserved Rust-side
+    /// until a later shielded sync resolves them).
     public func shieldedTransfer(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -848,12 +965,12 @@ extension PlatformWalletManager {
     /// Heavy CPU work (Halo 2 proof + per-input signing) runs on a
     /// detached task so the caller's actor isn't blocked.
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the shield may already be on chain, so the caller
-    /// must NOT retry (a retry would rebuild the bundle and could
-    /// double-shield; the next sync reconciles the outcome). A shield
-    /// spends no notes, so nothing is reserved wallet-side.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// shield may have reached a node and its result is not proved (a
+    /// node's refusal or consensus verdict, stale nonce included): it may
+    /// already be on chain, so the caller must NOT retry (a retry signs a
+    /// second transition). Its activity row stays pending until the
+    /// shielded scan sees its note; nothing is reserved wallet-side.
     public func shieldedShield(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -918,10 +1035,11 @@ extension PlatformWalletManager {
     /// Heavy CPU work (Halo 2 proof + the identity signature) runs on a
     /// detached task so the caller's actor isn't blocked.
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed: the shield may already be on chain, so the caller must
-    /// NOT retry (a retry would rebuild the bundle and could double-shield;
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// shield may have reached a node and its result is not proved (a
+    /// node's refusal or consensus verdict included): it may already be on
+    /// chain or may still execute, so the caller must
+    /// NOT retry (a retry signs a second transition;
     /// the next sync reconciles the outcome). Like every shield it spends
     /// no notes. An unresolved debit blocks a fresh shield from that identity
     /// with `.shieldedIdentityDebitPending`. Inspect durable records with
@@ -1006,12 +1124,12 @@ extension PlatformWalletManager {
     /// or Rust rejects it. The 36-byte on-chain encoding is done on the
     /// Rust side.
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the shield may already be on chain, so the caller
-    /// must NOT retry (a retry would rebuild the bundle and could
-    /// double-pay; the next sync reconciles the outcome). A shield
-    /// spends no notes, so nothing is reserved wallet-side.
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// shield may have reached a node and its result is not proved (a
+    /// node's refusal or consensus verdict, stale nonce included): it may
+    /// already be on chain, so the caller must NOT retry (a retry signs a
+    /// second transition). Its activity row stays pending until the
+    /// shielded scan sees its note; nothing is reserved wallet-side.
     public func shieldedShieldToRecipient(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1086,11 +1204,12 @@ extension PlatformWalletManager {
     /// `resolver` supplies the per-operation Orchard spend authority
     /// (see [`shieldedTransfer`]).
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the spend may already be on chain, so the caller
-    /// must NOT retry (the spent notes stay reserved Rust-side; the
-    /// next shielded sync reconciles them).
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// spend may have reached a node and its result is not proved (a
+    /// failed result wait, a node's refusal or consensus verdict
+    /// included): it may already be on chain or may still execute, so the
+    /// caller must NOT retry (the spent notes stay reserved Rust-side
+    /// until a later shielded sync resolves them).
     public func shieldedUnshield(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1152,11 +1271,12 @@ extension PlatformWalletManager {
     /// supplies per operation (see [`shieldedTransfer`]), exactly as for
     /// [`shieldedUnshield`].
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed: the spend may already be on chain, so the caller must
-    /// NOT retry (the spent notes stay reserved Rust-side; the next
-    /// shielded sync reconciles them).
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// spend may have reached a node and its result is not proved (a
+    /// failed result wait, a node's refusal or consensus verdict
+    /// included): it may already be on chain or may still execute, so the
+    /// caller must NOT retry (the spent notes stay reserved Rust-side
+    /// until a later shielded sync resolves them).
     public func shieldedIdentityTopUpFromPool(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1220,11 +1340,12 @@ extension PlatformWalletManager {
     /// `resolver` supplies the per-operation Orchard spend authority
     /// (see [`shieldedTransfer`]).
     ///
-    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
-    /// broadcast was accepted but its execution result couldn't be
-    /// confirmed — the spend may already be on chain, so the caller
-    /// must NOT retry (the spent notes stay reserved Rust-side; the
-    /// next shielded sync reconciles them).
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` once the
+    /// spend may have reached a node and its result is not proved (a
+    /// failed result wait, a node's refusal or consensus verdict
+    /// included): it may already be on chain or may still execute, so the
+    /// caller must NOT retry (the spent notes stay reserved Rust-side
+    /// until a later shielded sync resolves them).
     public func shieldedWithdraw(
         walletId: Data,
         resolver: MnemonicResolver,
@@ -1412,9 +1533,9 @@ extension PlatformWalletManager {
             // would construct a second wrapper over the same struct and
             // double-free). Inspect the typed code directly:
             //   - success: return the derived id.
-            //   - unconfirmed: the broadcast landed but its result couldn't be
-            //     confirmed; Rust filled `outIdentityId` with the derived id on
-            //     THIS code (and only this code). Throw the typed
+            //   - unconfirmed: the transition may have reached a node and its
+            //     result is not proved; Rust filled `outIdentityId` with the
+            //     derived id on THIS code (and only this code). Throw the typed
             //     `ShieldedIdentityCreateUnconfirmedError` so the caller holds
             //     the slot instead of treating it as failed.
             //   - any other non-success: throw the regular typed error.

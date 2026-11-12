@@ -113,7 +113,7 @@ impl Checker<'_> {
     }
 
     /// An array of `minimum` to `maximum` items, `check` run on each with its index.
-    fn tuple(
+    pub(super) fn tuple(
         &self,
         value: &JsonValue,
         minimum: usize,

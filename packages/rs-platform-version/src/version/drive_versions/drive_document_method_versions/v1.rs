@@ -27,6 +27,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 0,
             start_at_document: 0,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -89,6 +90,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_uniqueness_of_data: 0,
         },
         primary_key_tree_type: 0,
+        document_history_storage_layout: 0,
         fetch_property_constraint_aggregate: 0,
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15

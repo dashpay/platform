@@ -16,6 +16,10 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    /// `uses_current_document_history_layout`: selects legacy revision subtrees (0)
+    /// or current-document pointers into retained history (1) for derived reads,
+    /// cost estimation, layout descriptions and primary-key query lowering.
+    pub document_history_storage_layout: FeatureVersion,
     pub expiration: DriveDocumentExpirationMethodVersions,
     /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
     /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
@@ -142,6 +146,14 @@ pub struct DriveDocumentQueryMethodVersions {
     /// on such a type (`DocumentQuery::required_protocol_version` in
     /// `dash-platform-queries`).
     pub start_at_document: FeatureVersion,
+    /// Building the GroveDB query of a `SingleDocumentDriveQuery`, shared by prover and
+    /// verifier. 0 preserves released producers' queries and reads the current pointer when
+    /// verifying a newer producer's composite-layout execution proof. 1 (protocol version 15)
+    /// also supports time-bounded reads: the newest retained revision at or before the time,
+    /// highest revision first at equal times, or absence before the first retained entry.
+    /// It states both caps of a maybe-contested query for merge generation 2, and refuses
+    /// history documents in that status at a block time because contests keep no history.
+    pub single_document_path_query: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

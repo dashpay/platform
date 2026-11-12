@@ -8,22 +8,27 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
-    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn,
-    PersistAssetLockOperationIdFn, PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
-    PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
-    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
+    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
+    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
+    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
+    PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
+    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
+    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+use dash_context_provider::SpvSourceLease;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use platform_wallet::PlatformWalletManager;
+use platform_wallet::changeset::PlatformWalletPersistence;
+use platform_wallet::{claim_spv_quorum_lease, PlatformWalletManager};
 use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -77,6 +82,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
 ) -> PlatformWalletFFIResult {
     platform_wallet_manager_create_impl(
         sdk_ptr,
+        None,
         persistence,
         event_handler,
         PersistenceCapabilities::NONE,
@@ -103,6 +109,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     platform_wallet_manager_create_impl(
         sdk_ptr,
+        None,
         persistence,
         event_handler,
         declaration,
@@ -136,6 +143,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
     let extensions = persistence_extension_callbacks(persistence_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
+        None,
         persistence,
         event_handler,
         declaration,
@@ -167,6 +175,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
+        None,
         persistence,
         event_handler,
         declaration,
@@ -174,6 +183,86 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         dpns_event_callback,
         out_handle,
     )
+}
+
+/// Create a manager from an owning SDK handle, with the persistence and event
+/// extensions of [`platform_wallet_manager_create_with_extensions`].
+///
+/// When the SDK's current context provider takes quorum keys from an SPV
+/// client, as the providers `dash_sdk_create_spv` and
+/// `dash_sdk_create_adaptive` build do, the manager serves them from its own
+/// SPV client for as long as the manager lives. Only one manager can serve an
+/// SDK; a second one fails here.
+///
+/// The SDK handle is borrowed only for this synchronous call. The manager
+/// retains an `Sdk` clone, never the raw handle. Context ownership follows
+/// [`platform_wallet_manager_create`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    event_extension: *const EventHandlerCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(sdk_handle);
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    check_ptr!(event_extension);
+
+    let sdk_ptr = rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle);
+    if sdk_ptr.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "SDK has no inner SDK".to_string(),
+        );
+    }
+    // Claimed before the manager exists, so a refusal never takes ownership
+    // of the host's callback contexts.
+    let spv_quorum_lease =
+        unwrap_result_or_return!(claim_spv_quorum_lease(&*(sdk_ptr as *const Sdk)));
+
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let persistence_extensions = persistence_extension_callbacks(persistence_extension);
+    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        spv_quorum_lease,
+        persistence,
+        event_handler,
+        declaration,
+        persistence_extensions,
+        dpns_event_callback,
+        out_handle,
+    )
+}
+
+/// The persistence capabilities a manager created from these callbacks
+/// would attest, without creating one: the declaration intersected with what
+/// the vtable and the extension structurally carry, as
+/// [`platform_wallet_manager_create_with_extensions`] computes them. For a
+/// host adapter's own tests, such as the JNI layer checking which bridge
+/// overrides keep a capability. `persistence` is consumed: its `release_fn`
+/// runs before this returns.
+///
+/// # Safety
+/// As for [`platform_wallet_manager_create_with_extensions`]: `extension`
+/// must point to a readable [`PersistenceCallbacksExtension`] of at least
+/// its declared `struct_size`, and `persistence`'s context must be valid
+/// for its `release_fn`.
+pub unsafe fn effective_persistence_capabilities(
+    persistence: PersistenceCallbacks,
+    declared: &PersistenceCapabilitiesFFI,
+    extension: *const PersistenceCallbacksExtension,
+) -> PersistenceCapabilities {
+    FFIPersister::new_with_persistence_capabilities_and_extensions(
+        persistence,
+        persistence_capabilities_declaration(declared),
+        persistence_extension_callbacks(extension),
+    )
+    .persistence_capabilities()
 }
 
 /// Read one negotiated slot out of a size/version-tagged extension struct
@@ -299,6 +388,26 @@ unsafe fn persistence_extension_callbacks(
             on_load_asset_lock_shielded_recipient_fn,
             LoadAssetLockShieldedRecipientFn
         ),
+        persist_private_contact_scan_state: slot!(
+            on_persist_private_contact_scan_state_fn,
+            PersistPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state: slot!(
+            on_load_private_contact_scan_state_fn,
+            LoadPrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_free: slot!(
+            on_load_private_contact_scan_state_free_fn,
+            FreePrivateContactScanStateFn
+        ),
+        load_private_contact_scan_state_wallets: slot!(
+            on_load_private_contact_scan_state_wallets_fn,
+            LoadPrivateContactScanStateWalletsFn
+        ),
+        load_private_contact_scan_state_wallets_free: slot!(
+            on_load_private_contact_scan_state_wallets_free_fn,
+            FreePrivateContactScanStateWalletsFn
+        ),
     }
 }
 
@@ -327,6 +436,7 @@ unsafe fn event_extension_dpns_callback(
 #[allow(clippy::too_many_arguments)]
 unsafe fn platform_wallet_manager_create_impl(
     sdk_ptr: *const c_void,
+    spv_quorum_lease: Option<SpvSourceLease>,
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
@@ -390,6 +500,9 @@ unsafe fn platform_wallet_manager_create_impl(
     let _runtime_guard = runtime().enter();
 
     let manager = PlatformWalletManager::new(sdk, persister, handler);
+    if let Some(lease) = spv_quorum_lease {
+        manager.serve_spv_quorums(lease);
+    }
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
     *out_handle = handle;
 
@@ -876,6 +989,17 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contact_persistence::{
+        ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
+    };
+    use dash_context_provider::{
+        ContextProvider, ContextProviderError, ContractSource, SpvContextProvider,
+    };
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+    use std::ffi::{CStr, CString};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1140,6 +1264,237 @@ mod tests {
         assert_eq!(event_releases.load(Ordering::SeqCst), 1);
     }
 
+    /// An SDK handle `create` builds for regtest, on loopback addresses no
+    /// test waits on: a strict SPV SDK only parses them.
+    fn regtest_sdk_handle(
+        create: unsafe extern "C" fn(*const rs_sdk_ffi::DashSDKConfig) -> rs_sdk_ffi::DashSDKResult,
+    ) -> *mut rs_sdk_ffi::SDKHandle {
+        let loopback = CString::new("http://127.0.0.1:1").expect("address");
+        let config = rs_sdk_ffi::DashSDKConfig {
+            network: rs_sdk_ffi::FFINetwork::Regtest,
+            dapi_addresses: loopback.as_ptr(),
+            skip_asset_lock_proof_verification: false,
+            request_retry_count: 1,
+            request_timeout_ms: 1_000,
+            quorum_url: loopback.as_ptr(),
+            platform_version: 0,
+        };
+        let result = unsafe { create(&config) };
+        assert!(result.error.is_null(), "the SDK must build offline");
+        result.data as *mut rs_sdk_ffi::SDKHandle
+    }
+
+    /// `platform_wallet_manager_create_with_sdk` with no capabilities or
+    /// extensions declared, returning the result's code and message.
+    fn create_with_sdk(
+        sdk: *mut rs_sdk_ffi::SDKHandle,
+        persistence: &PersistenceCallbacks,
+        events: &EventHandlerCallbacks,
+        out_handle: *mut Handle,
+    ) -> (PlatformWalletFFIResultCode, String) {
+        let capabilities = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: 0,
+        };
+        let persistence_extension = PersistenceCallbacksExtension::default();
+        let event_extension = EventHandlerCallbacksExtension::default();
+        let mut result = unsafe {
+            platform_wallet_manager_create_with_sdk(
+                sdk,
+                persistence,
+                events,
+                &capabilities,
+                &persistence_extension,
+                &event_extension,
+                out_handle,
+            )
+        };
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    /// No contracts, for a strict SPV provider whose contracts no test reads.
+    struct NoContracts;
+
+    impl ContractSource for NoContracts {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn register_data_contract(&self, _contract: Arc<DataContract>) {}
+    }
+
+    /// The manager serves the SPV slot of its SDK's current provider. Native
+    /// code can replace the provider an FFI-built SDK started with; a manager
+    /// serving the replaced provider's slot would serve keys nobody reads,
+    /// while the current provider's lookups fail closed.
+    #[test]
+    fn should_claim_the_slot_of_a_provider_set_after_build() {
+        let sdk_handle = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+        let sdk = unsafe { &*(rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle) as *const Sdk) };
+        let replacement = SpvContextProvider::new(Arc::new(NoContracts), sdk.network);
+        let slot = replacement.spv_source_slot().expect("an SPV slot");
+        sdk.set_context_provider(replacement)
+            .expect("a provider for the SDK's network");
+
+        let mut handle = 0;
+        let (code, message) = create_with_sdk(
+            sdk_handle,
+            &persistence_callbacks(),
+            &event_callbacks(),
+            &mut handle,
+        );
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+        assert!(
+            slot.claim().is_err(),
+            "the manager must serve the current provider's slot"
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk_handle) };
+    }
+
+    /// Persistence and event vtables whose contexts count their releases in
+    /// `persistence` and `events`.
+    fn counted_callbacks(
+        persistence: &AtomicUsize,
+        events: &AtomicUsize,
+    ) -> (PersistenceCallbacks, EventHandlerCallbacks) {
+        let mut persistence_callbacks = persistence_callbacks();
+        persistence_callbacks.context = persistence as *const AtomicUsize as *mut c_void;
+        persistence_callbacks.release_fn = Some(counting_release);
+        let mut event_callbacks = event_callbacks();
+        event_callbacks.context = events as *const AtomicUsize as *mut c_void;
+        event_callbacks.release_fn = Some(counting_release);
+        (persistence_callbacks, event_callbacks)
+    }
+
+    /// Only one manager serves an SDK's SPV quorum keys. A second create on
+    /// the same SDK is refused before it reads the callback vtables, so Rust
+    /// never owns that caller's contexts: Swift releases the contexts it
+    /// retained for a failed create, and a release from Rust as well would
+    /// free them twice. Destroying the first manager frees the SDK for
+    /// another.
+    #[test]
+    fn should_refuse_a_second_manager_on_one_sdk_without_releasing_its_contexts() {
+        let sdk = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+        let (first_persistence, first_events) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let (second_persistence, second_events) = (AtomicUsize::new(0), AtomicUsize::new(0));
+
+        let (persistence, events) = counted_callbacks(&first_persistence, &first_events);
+        let mut first = 0;
+        assert_eq!(
+            create_with_sdk(sdk, &persistence, &events, &mut first).0,
+            PlatformWalletFFIResultCode::Success
+        );
+
+        let (persistence, events) = counted_callbacks(&second_persistence, &second_events);
+        let mut second = 0;
+        let (code, message) = create_with_sdk(sdk, &persistence, &events, &mut second);
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a second manager must not serve the same SDK"
+        );
+        assert!(message.contains("already serves"), "{message}");
+        assert_eq!(
+            (
+                second_persistence.load(Ordering::SeqCst),
+                second_events.load(Ordering::SeqCst)
+            ),
+            (0, 0),
+            "a refused create must not release the caller's contexts"
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(first) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            (
+                first_persistence.load(Ordering::SeqCst),
+                first_events.load(Ordering::SeqCst)
+            ),
+            (1, 1)
+        );
+
+        let mut third = 0;
+        assert_eq!(
+            create_with_sdk(
+                sdk,
+                &persistence_callbacks(),
+                &event_callbacks(),
+                &mut third
+            )
+            .0,
+            PlatformWalletFFIResultCode::Success,
+            "destroying the first manager must free the SDK for another"
+        );
+        let result = unsafe { platform_wallet_manager_destroy(third) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk) };
+    }
+
+    /// A create refused after it claimed the SDK's slot, here for a borrowed
+    /// callback context or a null out pointer, must leave the slot free: a
+    /// slot held by a create that failed would refuse every later manager on
+    /// that SDK.
+    #[test]
+    fn should_free_the_slot_when_a_create_fails_after_claiming_it() {
+        let sdk = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+
+        let mut borrowed = persistence_callbacks();
+        borrowed.context = 0xC0FFEEusize as *mut c_void;
+        let mut handle = 0;
+        let (code, message) = create_with_sdk(sdk, &borrowed, &event_callbacks(), &mut handle);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("release_fn"), "{message}");
+        assert_eq!(
+            create_with_sdk(
+                sdk,
+                &persistence_callbacks(),
+                &event_callbacks(),
+                std::ptr::null_mut()
+            )
+            .0,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+
+        let (code, message) = create_with_sdk(
+            sdk,
+            &persistence_callbacks(),
+            &event_callbacks(),
+            &mut handle,
+        );
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::Success,
+            "the refused creates must have left the slot free: {message}"
+        );
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk) };
+    }
+
     fn query(handle: Handle) -> PersistenceCapabilitiesFFI {
         let mut out = PersistenceCapabilitiesFFI {
             version: 0,
@@ -1381,6 +1736,137 @@ mod tests {
         assert!(parsed.load_identity_balance_block_time.is_none());
     }
 
+    /// The effective capabilities are the declaration intersected with what
+    /// the callbacks carry, and the vtable's `release_fn` runs once.
+    #[test]
+    fn should_compute_the_effective_persistence_capabilities_without_a_manager() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static RELEASES: AtomicUsize = AtomicUsize::new(0);
+        unsafe extern "C" fn release(_: *mut c_void) {
+            RELEASES.fetch_add(1, Ordering::SeqCst);
+        }
+        let declared = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE)
+                .bits(),
+        };
+        let extension = PersistenceCallbacksExtension::default();
+        let effective = unsafe {
+            effective_persistence_capabilities(
+                PersistenceCallbacks {
+                    context: std::ptr::NonNull::<u8>::dangling().as_ptr().cast(),
+                    release_fn: Some(release),
+                    on_changeset_begin_fn: Some(begin_changeset),
+                    on_changeset_end_fn: Some(end_changeset),
+                    ..PersistenceCallbacks::default()
+                },
+                &declared,
+                &extension,
+            )
+        };
+        assert!(effective.contains(PersistenceCapabilities::ATOMIC_CHANGESETS));
+        assert!(
+            !effective.contains(PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+            "declared without the callbacks it needs"
+        );
+        assert_eq!(RELEASES.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn should_size_gate_private_contact_scan_state_slots_independently() {
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const PrivateContactRequestsPositionFFI,
+            _: *mut usize,
+            _: *mut *const PrivateShieldedAddressFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free(
+            _: *mut c_void,
+            _: *const PrivateContactRequestsPositionFFI,
+            _: usize,
+            _: *const PrivateShieldedAddressFFI,
+            _: usize,
+        ) {
+        }
+        unsafe extern "C" fn list(_: *mut c_void, _: *mut *const [u8; 32], _: *mut usize) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free_list(_: *mut c_void, _: *const [u8; 32], _: usize) {}
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_private_contact_scan_state_fn: Some(persist),
+            on_load_private_contact_scan_state_fn: Some(load),
+            on_load_private_contact_scan_state_free_fn: Some(free),
+            on_load_private_contact_scan_state_wallets_fn: Some(list),
+            on_load_private_contact_scan_state_wallets_free_fn: Some(free_list),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_some());
+        // An extension sized before the wallet list leaves both list slots
+        // unread.
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_free.is_some());
+        assert!(parsed.load_private_contact_scan_state_wallets.is_none());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_wallets_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state_wallets.is_some());
+        assert!(parsed
+            .load_private_contact_scan_state_wallets_free
+            .is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_private_contact_scan_state_free_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.load_private_contact_scan_state.is_some());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_private_contact_scan_state_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state.is_none());
+        assert!(parsed.load_private_contact_scan_state_free.is_none());
+    }
+
     #[test]
     fn should_size_gate_asset_lock_operation_id_slots_independently() {
         unsafe extern "C" fn persist(
@@ -1592,7 +2078,11 @@ mod tests {
     #[test]
     fn classify_outpoints_answers_unknown_for_an_unmappable_account_tag() {
         use crate::core_wallet_types::{OutPointFFI, OutpointOwnershipQueryFFI};
-        use crate::manager_diagnostics::platform_wallet_classify_outpoints;
+        use crate::txo_reconcile::{
+            platform_wallet_txo_reconcile_classify_outpoints,
+            platform_wallet_txo_reconcile_held_verdicts_free, TxoReconcileHeldVerdictsFFI,
+        };
+        use platform_wallet::manager::txo_reconcile::TxoReconcileFinish;
         let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
         let callbacks = persistence_callbacks();
         let event_cbs = event_callbacks();
@@ -1626,26 +2116,52 @@ mod tests {
         // An identity-key account tag, a mappable BIP44 tag, and a tag from
         // the future, in one batch.
         let queries = [query(15), query(0), query(200)];
+        // The classifier answers only a wallet that holds a run claim, and
+        // holds nothing otherwise; every slot still reads Unknown.
         let mut out = [0xFFu8; 3];
+        let mut held: *mut TxoReconcileHeldVerdictsFFI = std::ptr::null_mut();
         let result = unsafe {
-            platform_wallet_classify_outpoints(
+            platform_wallet_txo_reconcile_classify_outpoints(
                 handle,
                 wallet_id.as_ptr(),
                 queries.as_ptr(),
                 queries.len(),
                 out.as_mut_ptr(),
+                &mut false,
+                &mut held,
             )
         };
         assert_eq!(
             result.code,
-            PlatformWalletFFIResultCode::Success,
-            "an unmappable tag degrades that query to Unknown, it does not fail the batch"
+            PlatformWalletFFIResultCode::ErrorWalletOperation
         );
-        assert_eq!(
-            out,
-            [0, 0, 0],
-            "every slot is answered, Unknown where nothing can be said"
-        );
+        assert_eq!(out, [0, 0, 0]);
+        assert!(held.is_null());
+
+        // With a run claim, an unmappable tag degrades that query to
+        // Unknown rather than failing the batch, every slot is answered and
+        // the guard comes back.
+        let reconciler = PLATFORM_WALLET_MANAGER_STORAGE
+            .with_item(handle, |m| m.txo_reconciler())
+            .expect("manager");
+        assert!(reconciler.claim_without_gate(&wallet_id, 0).is_some());
+        let mut out = [0xFFu8; 3];
+        let result = unsafe {
+            platform_wallet_txo_reconcile_classify_outpoints(
+                handle,
+                wallet_id.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                out.as_mut_ptr(),
+                &mut false,
+                &mut held,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out, [0, 0, 0]);
+        assert!(!held.is_null());
+        unsafe { platform_wallet_txo_reconcile_held_verdicts_free(held) };
+        reconciler.finish(&wallet_id, TxoReconcileFinish::NotRun);
         let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
     }

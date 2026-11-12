@@ -54,7 +54,7 @@ export default function getBaseConfigFactory() {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:23',
+          image: 'dashpay/dashd:24',
           commandArgs: [],
         },
         p2p: {
@@ -94,7 +94,7 @@ export default function getBaseConfigFactory() {
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
                 'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
-                'getspecialtxes', 'getdeploymentinfo',
+                'getspecialtxes', 'getdeploymentinfo', 'protxinfo',
               ],
               lowPriority: false,
             },

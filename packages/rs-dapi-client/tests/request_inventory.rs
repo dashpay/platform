@@ -53,6 +53,12 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     ("rpc getYesNoVotePollState GetYesNoVotePollStateRequest", Verdict::Gate(15)),
     ("rpc getMasternodeYesNoVote GetMasternodeYesNoVoteRequest", Verdict::Gate(15)),
     ("rpc getPrivateDocumentEntries GetPrivateDocumentEntriesRequest", Verdict::Gate(15)),
+    (
+        "rpc getRecentStateTransitionStatus GetRecentStateTransitionStatusRequest",
+        Verdict::Gate(15),
+    ),
+    ("rpc getOwnerTransactionsInBlock GetOwnerTransactionsInBlockRequest", Verdict::Gate(15)),
+    ("rpc getBlocks GetBlocksRequest", Verdict::Gate(15)),
     // A 4.1 node drops both and proves the plain page or the inner query instead. The SDK
     // refuses them before protocol 14 from the query they are encoded from, which reads its
     // version tables; the wire request declares nothing.
@@ -99,6 +105,12 @@ const ADDITIONS: &[(&str, Verdict)] = &[
     (
         "field GetIdentityByNonUniquePublicKeyHashRequest.v1 = 2 GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV1",
         Verdict::Gate(14),
+    ),
+    // A 5.0 node does not know V1, and every node before protocol 15 refuses it: the history
+    // layout it reads exists only from protocol 15.
+    (
+        "field GetDocumentHistoryRequest.v1 = 2 GetDocumentHistoryRequest.GetDocumentHistoryRequestV1",
+        Verdict::Gate(15),
     ),
     (
         "field WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.request_user_balance = 3 bool",
@@ -157,6 +169,7 @@ requests!(
     GetIdentityByPublicKeyHashRequest,
     GetIdentityByNonUniquePublicKeyHashRequest,
     WaitForStateTransitionResultRequest,
+    GetRecentStateTransitionStatusRequest,
     GetConsensusParamsRequest,
     GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeVoteStatusRequest,
@@ -170,6 +183,8 @@ requests!(
     GetYesNoVotePollStateRequest,
     GetMasternodeYesNoVoteRequest,
     GetPrivateDocumentEntriesRequest,
+    GetOwnerTransactionsInBlockRequest,
+    GetBlocksRequest,
     GetPrefundedSpecializedBalanceRequest,
     GetTotalCreditsInPlatformRequest,
     GetPathElementsRequest,

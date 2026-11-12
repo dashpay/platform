@@ -1,8 +1,10 @@
 //! Wallet creation, registration, and removal on [`PlatformWalletManager`].
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_spv::chain::CheckpointManager;
+use dpp::prelude::Identifier;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -11,8 +13,9 @@ use key_wallet::Network;
 #[cfg(any(feature = "bls", feature = "eddsa"))]
 use crate::changeset::ProviderKeyExtendedPubKey;
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-    PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
+    AccountAddressPoolEntry, AccountRegistrationEntry, ClientWalletStartState,
+    PlatformWalletChangeSet, PlatformWalletPersistence, PrivateContactRequestsPosition,
+    ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
@@ -353,8 +356,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
             .unwrap_or(wallet.wallet_id);
 
-        let platform_info = PlatformWalletInfo {
+        let mut platform_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
@@ -410,31 +414,47 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // must measure durable writes against the host's cursor, not the one
         // it just built, and keeps the host's DashPay backfill record for the
         // receival accounts it holds (see the seed below).
+        //
+        // And the private contact request scan state records the host kept
+        // marked for this id, its wallet's identities' or those kept after the
+        // wallet's removal: a private payment one stands for may still
+        // execute, while the identity is added afresh, with no reservation or
+        // record of it. Each such identity is held as it is added, before it
+        // can send or accept, in every build.
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
-        let (mut persisted_platform_addresses, mut host_wallets) =
+        let (mut persisted_platform_addresses, mut host_wallets, retained_markers) =
             match super::run_blocking_load(move || load_persister.load()).await {
                 Ok(crate::changeset::ClientStartState {
                     platform_addresses,
                     wallets,
+                    retained_private_contact_scan_states,
                     ..
-                }) => (
-                    platform_addresses,
-                    wallets
-                        .into_iter()
-                        .map(|(id, state)| {
-                            (
-                                id,
+                }) => {
+                    let retained_markers = retained_private_payment_markers(
+                        registration_wallet_id,
+                        &wallets,
+                        &retained_private_contact_scan_states,
+                    );
+                    (
+                        platform_addresses,
+                        wallets
+                            .into_iter()
+                            .map(|(id, state)| {
                                 (
-                                    state.wallet_info.metadata.synced_height,
-                                    state.dashpay_backfill,
-                                ),
-                            )
-                        })
-                        .collect::<std::collections::BTreeMap<
-                            WalletId,
-                            (u32, crate::changeset::DashPayBackfillRecord),
-                        >>(),
-                ),
+                                    id,
+                                    (
+                                        state.wallet_info.metadata.synced_height,
+                                        state.dashpay_backfill,
+                                    ),
+                                )
+                            })
+                            .collect::<std::collections::BTreeMap<
+                                WalletId,
+                                (u32, crate::changeset::DashPayBackfillRecord),
+                            >>(),
+                        retained_markers,
+                    )
+                }
                 Err(e) => {
                     tracing::error!(
                         wallet_id = %hex::encode(registration_wallet_id),
@@ -502,6 +522,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // runs first, so a wallet still registered under this id never has
         // its record overwritten; every publisher holds the cursor lock, so
         // none can appear between that check and the insert.
+        platform_info
+            .identity_manager
+            .retain_private_payment_markers(retained_markers);
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let (snapshot_cursor, mut host_backfill) =
             match host_wallets.remove(&registration_wallet_id) {
@@ -722,6 +745,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
+        // Before the wallet is published: hold or restore its private
+        // payments (`PlatformWalletManager::hold_or_restore_private_payments`).
+        #[cfg(feature = "shielded")]
+        self.hold_or_restore_private_payments(&platform_wallet)
+            .await;
+
         // Register the PlatformWallet handle. `rcu` publishes a new map
         // snapshot; the closure can rerun under a concurrent-writer
         // retry, so it must stay pure map manipulation.
@@ -730,6 +759,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
             wallets
         });
+        // A store configured since the check above restored the wallets it
+        // found published, which this one was not yet.
+        #[cfg(feature = "shielded")]
+        self.restore_private_payments_configured_since(&platform_wallet)
+            .await;
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -991,6 +1025,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                      their identity-sync rows are left for the next launch to reconcile"
                 );
             }
+            // The reconcile schedule is keyed by id too: forget it while this
+            // generation still holds the id, so a same-id wallet added later
+            // is reconciled at once rather than waiting out this one's
+            // cadence, and no successor's checkpoint or claim is touched. A
+            // run in flight is marked forgotten and records nothing; one
+            // claimed from here on finds the wallet gone at its gate.
+            self.forget_txo_reconcile(wallet_id);
             if let Err(e) = self.remove_from_wallet_manager(&mut wm, wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
@@ -1060,6 +1101,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         Ok(removed)
     }
+}
+
+/// The identities of `wallet_id` whose private contact request scan state
+/// record the host kept marked
+/// (`PrivateContactRequestsPosition::private_payments_unresolved`): those of
+/// its own identities, when the host still holds the wallet, and those it kept
+/// after the wallet's removal
+/// (`ClientStartState::retained_private_contact_scan_states`).
+pub(super) fn retained_private_payment_markers(
+    wallet_id: WalletId,
+    wallets: &BTreeMap<WalletId, ClientWalletStartState>,
+    retained: &BTreeMap<WalletId, BTreeMap<Identifier, PrivateContactRequestsPosition>>,
+) -> BTreeSet<Identifier> {
+    let held = wallets
+        .get(&wallet_id)
+        .into_iter()
+        .flat_map(|state| state.identity_manager.wallet_identities.values())
+        .flat_map(|identities| identities.values())
+        .filter(|managed| managed.dashpay().private_payments_unresolved())
+        .map(|managed| managed.id());
+    let kept = retained
+        .get(&wallet_id)
+        .into_iter()
+        .flat_map(|records| records.iter())
+        .filter(|(_, record)| record.private_payments_unresolved)
+        .map(|(owner, _)| *owner);
+    held.chain(kept).collect()
 }
 
 #[cfg(test)]
@@ -2497,6 +2565,15 @@ mod remove_versus_recreate_tests {
                         .identity_sync_manager
                         .register_identity(Identifier::new(SHARED_IDENTITY_ID), [])
                         .await;
+                    // G2 starts a reconcile run that is still in flight when
+                    // the removal finishes.
+                    assert!(
+                        manager
+                            .txo_reconciler()
+                            .claim_without_gate(&id, 0)
+                            .is_some(),
+                        "the recreated wallet holds no run yet"
+                    );
                     *recreated_slot.lock().expect("recreated slot") = Some(wallet);
                 })
             }));
@@ -2581,6 +2658,34 @@ mod remove_versus_recreate_tests {
                 .await,
             "the removal's id-keyed unregister deleted the identity-sync row the recreated \
              generation registered mid-removal"
+        );
+
+        // 7. So did G2's reconcile run: the removal forgot G1's schedule
+        //    while G1 still held the id, so G2's in-flight claim is not
+        //    marked forgotten and the page it applies moves its checkpoint.
+        let reconciler = manager.txo_reconciler();
+        let (_, held) = match reconciler.heal_page_held(&wallet_id, 0).await {
+            Some(crate::manager::txo_reconcile::TxoReconcileRead::Page(page, held)) => (page, held),
+            other => panic!("G2's claim must still read a heal page, got {other:?}"),
+        };
+        drop(held);
+        reconciler.heal_page_applied(&wallet_id);
+        reconciler.finish(
+            &wallet_id,
+            crate::manager::txo_reconcile::TxoReconcileFinish::Ran,
+        );
+        let next = reconciler
+            .claim_without_gate(&wallet_id, 0)
+            .expect("the run finished");
+        assert_ne!(
+            next.start,
+            crate::manager::txo_reconcile::TxoReconcileStart::Heal { resumed: false },
+            "the removal forgot the recreated wallet's in-flight run, so its applied page was \
+             not kept"
+        );
+        reconciler.finish(
+            &wallet_id,
+            crate::manager::txo_reconcile::TxoReconcileFinish::NotRun,
         );
     }
 }

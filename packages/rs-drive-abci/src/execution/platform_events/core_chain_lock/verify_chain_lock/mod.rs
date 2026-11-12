@@ -16,9 +16,14 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Verify the chain lock
-    /// If submit is true, we try to submit the chain lock if it is considered valid or we can not check to see if it is
-    /// valid on platform.
+    /// Verify the chain lock against the chain lock quorums Platform holds, and leave it to
+    /// `verify_chain_lock_through_core` when Platform cannot tell on its own.
+    ///
+    /// With `make_sure_core_is_synced`, a chain lock found valid locally is submitted to Core
+    /// to find out whether Core is synced to it. A chain lock left to Core is submitted by
+    /// `verify_chain_lock_through_core` 0 without a signature check of its own; from
+    /// `verify_chain_lock_through_core` 1 (protocol version 15) it is submitted only after
+    /// Core's `verifychainlock` accepts it.
     pub fn verify_chain_lock(
         &self,
         round: u32,

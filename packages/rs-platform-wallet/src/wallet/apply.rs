@@ -234,6 +234,9 @@ impl PlatformWalletInfo {
                 established,
                 ignored,
                 unignored,
+                private_contact_requests_positions,
+                private_shielded_addresses,
+                removed_private_shielded_addresses,
             } = contact_cs;
 
             for (key, entry) in sent_requests {
@@ -301,6 +304,23 @@ impl PlatformWalletInfo {
             for (owner_id, sender_id) in unignored {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
                     managed.apply_unignored_sender(&sender_id);
+                }
+            }
+            // The private contact request scan state: each owner's read
+            // position, and its contacts' shielded addresses, removals last.
+            for (owner_id, position) in private_contact_requests_positions {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_contact_requests_position(position);
+                }
+            }
+            for ((owner_id, contact_id), address) in private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_private_shielded_address(contact_id, address);
+                }
+            }
+            for (owner_id, contact_id) in removed_private_shielded_addresses {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.apply_removed_private_shielded_address(&contact_id);
                 }
             }
         }
@@ -474,6 +494,7 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            finalized_spends: Default::default(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),

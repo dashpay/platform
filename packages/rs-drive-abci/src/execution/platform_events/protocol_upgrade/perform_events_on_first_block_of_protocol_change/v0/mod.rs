@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
@@ -46,7 +47,10 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Executes protocol-specific events on the first block after a protocol version change.
     ///
     /// This function is triggered when there is a protocol version upgrade detected in the network.
@@ -69,6 +73,7 @@ impl<C> Platform<C> {
     pub(super) fn perform_events_on_first_block_of_protocol_change_v0(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -122,7 +127,12 @@ impl<C> Platform<C> {
         }
 
         if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
-            self.transition_to_version_15(block_info, transaction, platform_version)?;
+            self.transition_to_version_15(
+                block_platform_state,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
         }
 
         Ok(())
@@ -917,14 +927,34 @@ impl<C> Platform<C> {
     /// trigger, re-store the DashPay contract whose v3 schema states the checks of
     /// both its data triggers, create the vote decisions trees that yes/no polls
     /// live in, insert the decision proposals contract whose proposals open those
-    /// polls, and add the token marketplace: its escrow trees and the token market
-    /// contract.
+    /// polls, add the token marketplace: its escrow trees and the token market
+    /// contract, and reconcile the operator payouts of Platform's masternode list
+    /// with Dash Core's.
     fn transition_to_version_15(
         &self,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Operator payouts (v15 note 32): from this version they follow Core's diffs, and this
+        // fixes once what earlier versions left stale. Reconciled against Core's list at the
+        // last committed chain locked core height, the height the masternode list is at here;
+        // this block's own diff to its chain locked height is applied afterwards, under this
+        // version's rules. That height is chain locked and already processed, so every node's
+        // Core holds it and reports the same list. This puts Core on the upgrade block's path
+        // whatever the block's own height: a node whose Core cannot answer cannot execute the
+        // upgrade block. It goes first, so a round whose Core cannot answer stops before the
+        // rest of this transition's work.
+        let core_height = block_platform_state.last_committed_core_height();
+        self.reconcile_operator_payouts_with_core(
+            block_platform_state,
+            core_height,
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+
         // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
         // which no contract update can turn a unique index into, so the `preorder` type is
         // rebuilt and every preorder made before this block is deleted, unrefunded.
@@ -1194,6 +1224,7 @@ mod tests {
         // When previous == current, no transition_to_version_* should be triggered
         let result = platform.perform_events_on_first_block_of_protocol_change_v0(
             &platform_state,
+            &mut PlatformState::clone(&platform_state),
             &block_info,
             &transaction,
             platform_version.protocol_version,
@@ -1894,6 +1925,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
@@ -1933,7 +1965,12 @@ mod tests {
         };
 
         platform
-            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .transition_to_version_15(
+                &mut PlatformState::clone(&platform.state.load()),
+                &block_info,
+                &transaction,
+                platform_version,
+            )
             .expect("expected the transition to succeed");
 
         let stored = platform
@@ -1951,8 +1988,13 @@ mod tests {
 
         assert_eq!(stored.contract.id(), decision_proposals_id);
         assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
-        assert!(stored.contract.document_type_for_name("proposal").is_ok());
-        assert_eq!(stored.contract.document_types().len(), 1);
+        for document_type in ["proposal", "multipleChoiceProposal", "choice"] {
+            assert!(stored
+                .contract
+                .document_type_for_name(document_type)
+                .is_ok());
+        }
+        assert_eq!(stored.contract.document_types().len(), 3);
         assert_eq!(
             platform
                 .drive
@@ -2342,6 +2384,7 @@ mod tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &transaction,
                 13,
@@ -2455,6 +2498,7 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_state = platform.state.load();
@@ -2598,6 +2642,7 @@ mod tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &transaction,
                 14,
@@ -2667,8 +2712,12 @@ mod tests {
                 .keys()
                 .map(|path| path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["encryptedAccountLabel", "encryptedPublicKey"],
-            "the stored DashPay v3 keeps both encryptedFor declarations"
+            vec![
+                "encryptedAccountLabel",
+                "encryptedPublicKey",
+                "encryptedShieldedAddress"
+            ],
+            "the stored DashPay v3 keeps its three encryptedFor declarations"
         );
         assert_eq!(
             encrypted,
@@ -2997,10 +3046,12 @@ mod tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let upgraded = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = upgraded.drive.grove.start_transaction();
@@ -3026,7 +3077,12 @@ mod tests {
         }
 
         upgraded
-            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .transition_to_version_15(
+                &mut PlatformState::clone(&upgraded.state.load()),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
             .expect("expected version 15 transition to succeed");
 
         for key in [ACTIVE_POLLS_TREE_KEY, IDENTITY_VOTES_TREE_KEY] {
@@ -3215,10 +3271,12 @@ mod tests {
         let born_at_15 = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
         let upgraded = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = upgraded.drive.grove.start_transaction();
@@ -3229,7 +3287,12 @@ mod tests {
             epoch: Epoch::new(1).expect("expected epoch"),
         };
         upgraded
-            .transition_to_version_15(&block_info, &transaction, platform_version)
+            .transition_to_version_15(
+                &mut PlatformState::clone(&upgraded.state.load()),
+                &block_info,
+                &transaction,
+                platform_version,
+            )
             .expect("expected version 15 transition to succeed");
 
         let element = |platform: &Platform<MockCoreRPCLike>,
@@ -3570,6 +3633,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(10)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let transaction = platform.drive.grove.start_transaction();
@@ -3586,6 +3650,7 @@ mod tests {
         platform
             .perform_events_on_first_block_of_protocol_change_v0(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &transaction,
                 10,
@@ -4531,11 +4596,13 @@ mod tests {
         let platform_a = TestPlatformBuilder::new()
             .with_initial_protocol_version(15)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_b = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         // A genuine v14 genesis has neither escrow tree yet.
@@ -4565,7 +4632,12 @@ mod tests {
 
         let txn_b = platform_b.drive.grove.start_transaction();
         platform_b
-            .transition_to_version_15(&BlockInfo::default(), &txn_b, platform_version_15)
+            .transition_to_version_15(
+                &mut PlatformState::clone(&platform_b.state.load()),
+                &BlockInfo::default(),
+                &txn_b,
+                platform_version_15,
+            )
             .expect("upgrade: transition_to_version_15 should succeed");
 
         let roots = [
@@ -4665,6 +4737,7 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
             .build_with_mock_rpc()
+            .with_no_core_masternodes()
             .set_genesis_state();
 
         let platform_version_14 = PlatformVersion::get(14).expect("expected platform version 14");
@@ -4690,7 +4763,12 @@ mod tests {
         );
 
         platform
-            .transition_to_version_15(&BlockInfo::default(), &transaction, platform_version)
+            .transition_to_version_15(
+                &mut PlatformState::clone(&platform.state.load()),
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
             .expect("expected the transition to succeed");
 
         let stored = platform
