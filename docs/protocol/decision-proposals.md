@@ -146,8 +146,9 @@ proposal's creation whether or not a choice has been entered, so a choice
 entered in the first two hours may answer a text that is edited afterwards.
 The type keeps its history (`documentsKeepHistory: true`), so every version
 stays readable. `open` is listed under `immutable` by name and never changes.
-Creating one opens no vote and states no fund. Additional properties are
-rejected.
+Creating one opens no vote and states no fund. It pays a flat processing fee
+instead, 0.2 Dash on top of its gas (see [What it costs](#what-it-costs)).
+Additional properties are rejected.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
@@ -163,9 +164,9 @@ neither unique.
 
 #### The description
 
-A proposal costs its storage and nothing else, so text held in it would be
-cheap to fill with anything and could never be taken down: the proposal is
-undeletable. It therefore holds no description. What is being decided is said
+Text held in a proposal could never be taken down: the proposal is
+undeletable, and for the price of one proposal it would stay for good. It
+therefore holds no description. What is being decided is said
 in one of two places, or both:
 
 - **A description document**, hosted on Platform where an elected team can
@@ -326,6 +327,23 @@ the proposal through `proposalId`:
 If the proposal is not open (a rule reads `false` as 0), the choice's owner
 must be the proposal's owner; a choice anyone else enters is refused
 (`DocumentPropertyConstraintViolatedError`, 10422) and opens no vote.
+
+### What it costs
+
+| Action | Pays | Where it goes |
+| --- | --- | --- |
+| Creating a multiple choice proposal | 0.2 Dash, added to the processing fee of the create (`multiple_choice_proposal_processing_fee` in `VoteResolutionFundFees`, set in `FEE_VERSION4`, protocol version 15), and its gas | The processing fee pools, like any processing fee |
+| Entering a choice | The contest's fund, 0.1 Dash, doubling once the vote holds 250 choices and again for every 50 more, and its gas | The vote's prefunded balance: each masternode vote takes a fixed cost from it (0.00002 Dash), and what is left when the vote ends is released as processing fees |
+
+The proposal's fee is not a fund. A multiple choice proposal opens no poll of
+its own (the first choice does), so there are no votes for it to prefund. The
+create does not state the fee: it is charged as processing, whoever pays the
+gas pays it, and an identity whose balance does not cover it creates no
+proposal (`IdentityInsufficientBalanceError`). A create that is refused pays
+its gas alone. A batch pays the fee once for each proposal it creates.
+
+A question with two answers therefore costs 0.4 Dash and its gas, against the
+0.5 Dash fund of a yes/no proposal.
 
 ### The vote
 

@@ -866,6 +866,18 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     names with the one its document type expects by contract, document type and index
 ///     name, where generation 1, which protocol v14 keeps, compares them whole. Protocol
 ///     v14 keeps generation 0 of `canonical_contested_index_values`.
+///
+/// 40. **A multiple choice proposal pays a processing fee**: a `multipleChoiceProposal` of
+///     the decision proposals contract opens no poll (its first choice does, note 37), so
+///     its create prefunds no votes. `FEE_VERSION4` charges it
+///     `multiple_choice_proposal_processing_fee` (0.2 Dash, in `VoteResolutionFundFees`)
+///     instead: the execution event of a document batch adds it to the batch's processing
+///     fee once for each such proposal the batch creates, read off the transitions as state
+///     validation left them, so a create that is refused pays its gas alone. It goes to the
+///     processing fee pools with the rest of the processing fee, the create does not state
+///     it, and a payer whose balance does not cover it is refused
+///     (`IdentityInsufficientBalanceError`). The fee schedules of protocol v14 and earlier
+///     carry 0, and the contract does not exist there, so nothing is charged.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
@@ -894,7 +906,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
-    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
