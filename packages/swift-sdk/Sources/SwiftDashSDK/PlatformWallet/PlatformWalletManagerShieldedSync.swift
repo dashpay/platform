@@ -466,9 +466,14 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
+    ///
+    /// Throws `invalidHandle` while an async native operation is admitted
+    /// (for example a shielded spend or a wallet drain): Clear would wipe the
+    /// recovery state that operation is about to write or has armed.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
+        try ensureSyncNativeOpAllowed("clearShielded")
         try withShieldedLocalBalanceMutation {
             try platform_wallet_manager_shielded_clear(handle).check()
         }

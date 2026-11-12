@@ -1360,7 +1360,7 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    private func ensureSyncNativeOpAllowed(_ name: String) throws {
+    func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
