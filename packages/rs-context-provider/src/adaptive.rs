@@ -170,8 +170,9 @@ impl ContextProvider for AdaptiveContextProvider {
     }
 
     /// In [`ContextProviderMode::Auto`], SPV only while the client published
-    /// into the slot says it is ready; a client that cannot say counts as not
-    /// ready, as it does for lookups.
+    /// into the slot says it is ready and declares no network other than this
+    /// provider's. A client that cannot say, or that declares another
+    /// network, counts as not ready, as it does for lookups.
     fn quorum_source(&self) -> Option<QuorumKeySource> {
         Some(self.current_source())
     }

@@ -7,11 +7,13 @@
 #[repr(u8)]
 pub enum ContextProviderMode {
     /// SPV while its source is published and synced, trusted whenever it is
-    /// not. The fallback can be forced, see
+    /// not. A source that declares a network other than the provider's
+    /// counts as not ready. The fallback can be forced, see
     /// [`AdaptiveContextProvider`](crate::AdaptiveContextProvider).
     Auto = 0,
     /// SPV only; lookups fail whenever its source is not published and
-    /// synced, and never fall back to the trusted provider.
+    /// synced, or declares another network, and never fall back to the
+    /// trusted provider.
     Spv = 1,
     /// The trusted provider only.
     Trusted = 2,
