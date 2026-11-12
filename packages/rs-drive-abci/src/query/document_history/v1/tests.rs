@@ -688,7 +688,7 @@ fn should_derive_deleted_and_erasing_lifecycle_from_the_proof() {
             .unwrap();
     }
 
-    let key = SecretKey::<Bls12381G2Impl>::from_hash(b"document-history-quorum");
+    let key = SecretKey::from_be_bytes(&[1; 32]).unwrap();
     let provider = Provider {
         contract: Arc::new(contract.clone()),
         key: key.public_key().to_bytes().try_into().unwrap(),

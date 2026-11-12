@@ -319,11 +319,10 @@ impl Fixture {
                         document_type,
                     },
                     true,
-                    BlockInfo::default_with_time(1_000 + revision),
+                    BlockInfo::default(),
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to retain a revision");
         }
