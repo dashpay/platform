@@ -1065,6 +1065,11 @@ class ManagedPlatformWallet internal constructor(
      * owns selection / balancing / nonces / signing; Kotlin only marshals the
      * recipient list. Returns the resulting per-address updated balances.
      *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
      * @param signerHandle the platform-address per-input `SignerHandle`
      *   (`PlatformWalletManager.signerHandle`).
      */
@@ -1072,7 +1077,7 @@ class ManagedPlatformWallet internal constructor(
         outputs: List<CreditOutput>,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = gate.op {
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressTransfer(
@@ -1092,6 +1097,11 @@ class ManagedPlatformWallet internal constructor(
      * network-checked Rust-side. Returns the resulting per-address updated
      * balances.
      *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
      * @param coreFeePerByte a Fibonacci-sequence core fee rate (DPP rejects
      *   non-Fibonacci values).
      * @param signerHandle the platform-address per-input `SignerHandle`.
@@ -1101,7 +1111,7 @@ class ManagedPlatformWallet internal constructor(
         coreFeePerByte: Int,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = gate.op {
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val blob = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressWithdraw(
@@ -1147,6 +1157,11 @@ class ManagedPlatformWallet internal constructor(
      * overload. Rust also validates [inputs] (see [WithdrawalInput]),
      * including an empty list.
      *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, the updated balances are still returned (see
+     * [opReturningCompletedResult]), so a completed payment is never hidden.
+     * Handle the result before the next suspension point.
+     *
      * @param coreFeePerByte a Fibonacci-sequence core fee rate (DPP rejects
      *   non-Fibonacci values).
      * @param signerHandle the platform-address per-input `SignerHandle`.
@@ -1160,7 +1175,7 @@ class ManagedPlatformWallet internal constructor(
         coreFeePerByte: Int,
         signerHandle: Long,
         accountIndex: Int = 0,
-    ): List<UpdatedBalance> = gate.op {
+    ): List<UpdatedBalance> = gate.opReturningCompletedResult {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         val inputsBlob = encodeWithdrawalInputs(inputs)
         val blob = mapNativeErrors {
