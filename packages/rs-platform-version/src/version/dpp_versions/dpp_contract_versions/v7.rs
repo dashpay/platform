@@ -58,6 +58,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // unchanged: sys.random.uniform stays refused until block execution draws the values
             random_generated_from: None,
             // changed: the depth and cycle check reads a `$ref` pointer as the validator does
+            // and holds arrays to the maximum depth as it does maps
             validate_max_depth: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
