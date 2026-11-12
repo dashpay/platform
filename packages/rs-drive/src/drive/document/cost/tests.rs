@@ -14,6 +14,7 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::setup_contract;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -620,6 +621,158 @@ fn should_price_fresh_creates_with_the_lifecycle_insert_generation() {
     assert!(
         unsupported_costs.is_empty(),
         "the current insert generation must have a client cost: {unsupported_costs:?}"
+    );
+}
+
+#[test]
+fn should_match_applied_delete_refunds_without_refunding_retained_history() {
+    let latest = PlatformVersion::latest();
+    let mut mismatches = Vec::new();
+    for (version, keeps_history) in [
+        (PlatformVersion::get(14).unwrap(), false),
+        (latest, false),
+        (latest, true),
+    ] {
+        let mut schema = note_schema();
+        schema
+            .insert("documentsKeepHistory".into(), keeps_history.into())
+            .unwrap();
+        let contract = contract_with(platform_value!({"note": schema}));
+        let note = contract.document_type_for_name("note").unwrap();
+        let document = note_document(&contract);
+        let cost = document_create_cost(
+            &contract,
+            note,
+            &document,
+            &CostAssumptions::new(version),
+            version,
+        )
+        .unwrap();
+        println!(
+            "DELETE_REFUND pv={} history={keeps_history} same_epoch={:?} after_one_year={:?}",
+            version.protocol_version, cost.refund_same_epoch, cost.refund_after_one_year
+        );
+        if !keeps_history {
+            assert_eq!(
+                cost.refund_same_epoch,
+                Some(Scenarios {
+                    new_values: 54_929_132,
+                    known_values: 33_976_675,
+                })
+            );
+            assert_eq!(
+                cost.refund_after_one_year,
+                Some(Scenarios {
+                    new_values: 52_181_962,
+                    known_values: 32_277_376,
+                })
+            );
+        }
+        if keeps_history {
+            let released = PlatformVersion::get(14).unwrap();
+            let legacy_cost = document_create_cost(
+                &contract,
+                note,
+                &document,
+                &CostAssumptions::new(released),
+                released,
+            )
+            .unwrap();
+            assert_eq!(
+                legacy_cost.refund_same_epoch,
+                Some(Scenarios {
+                    new_values: 53_796_789,
+                    known_values: 32_843_893,
+                })
+            );
+            assert_eq!(
+                legacy_cost.refund_after_one_year,
+                Some(Scenarios {
+                    new_values: 51_106_242,
+                    known_values: 31_201_257,
+                })
+            );
+            println!(
+                "DELETE_REFUND legacy_history_pv14 same_epoch={:?} after_one_year={:?}",
+                legacy_cost.refund_same_epoch, legacy_cost.refund_after_one_year
+            );
+        }
+        for (epochs_later, expected) in [
+            (0, cost.refund_same_epoch.unwrap().new_values),
+            (
+                DEFAULT_EPOCHS_PER_ERA,
+                cost.refund_after_one_year.unwrap().new_values,
+            ),
+        ] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    version,
+                )
+                .unwrap();
+            insert_at_version(&drive, &contract, note, &document, 0, version).unwrap();
+            let block = BlockInfo {
+                epoch: Epoch::new(epochs_later).unwrap(),
+                ..BlockInfo::default_with_time(2_000)
+            };
+            let fee = drive
+                .delete_document_for_contract(
+                    document.id(),
+                    &contract,
+                    "note",
+                    block,
+                    true,
+                    None,
+                    version,
+                )
+                .unwrap();
+            let actual: u64 = fee
+                .fee_refunds
+                .0
+                .values()
+                .flat_map(|epochs| epochs.values())
+                .sum();
+            assert!(element(
+                &drive,
+                &contract,
+                "note",
+                &[vec![0]],
+                document.id().as_slice()
+            )
+            .is_none());
+            if keeps_history {
+                assert!(element(
+                    &drive,
+                    &contract,
+                    "note",
+                    &[vec![2]],
+                    document.id().as_slice()
+                )
+                .is_some());
+            }
+            println!(
+                "DELETE_REFUND pv={} history={keeps_history} epochs_later={epochs_later} estimated={expected} actual={actual}",
+                version.protocol_version
+            );
+            if expected != actual {
+                mismatches.push((
+                    version.protocol_version,
+                    keeps_history,
+                    epochs_later,
+                    expected,
+                    actual,
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "delete refund must match removed bytes: {mismatches:?}"
     );
 }
 

@@ -363,7 +363,15 @@ pub fn document_create_cost(
     let refundable = if document_type.documents_ttl_seconds().is_some() {
         Scenarios::default()
     } else {
-        refundable_bytes(&writes, &known, &elements)
+        let retains_history = document_type.documents_keep_history()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .delete
+                .delete_document_for_contract_operations
+                >= 1;
+        refundable_bytes(&writes, &known, &elements, retains_history)
     };
     let refund_same_epoch = refund(document_type, refundable, credits_per_byte, 0)?;
     let refund_after_one_year = refund(
@@ -565,11 +573,25 @@ fn written_when_values_known(writes: &[Write], document_id: &[u8]) -> Vec<bool> 
 /// The storage bytes a delete refunds: those of the elements it removes that
 /// carry the owner's flags. Not refunded: elements without flags (a ranked
 /// tree's rows, trees an index writes without flags), ephemeral elements,
-/// and preallocated trees, which a delete keeps.
-fn refundable_bytes(writes: &[Write], known: &[bool], elements: &[ElementCost]) -> Scenarios {
+/// and preallocated trees, which a delete keeps. A lifecycle delete also keeps
+/// the retained revisions and their per-document history tree until erasure.
+fn refundable_bytes(
+    writes: &[Write],
+    known: &[bool],
+    elements: &[ElementCost],
+    retains_history: bool,
+) -> Scenarios {
     let mut total = Scenarios::default();
     for ((write, known), element) in writes.iter().zip(known).zip(elements) {
-        if write.flagged && !write.ephemeral && write.referring_type.is_none() {
+        if write.flagged
+            && !write.ephemeral
+            && write.referring_type.is_none()
+            && !(retains_history
+                && matches!(
+                    write.role,
+                    LayoutRole::DocumentHistory | LayoutRole::RetainedRevision
+                ))
+        {
             total.add(Scenarios {
                 new_values: element.bytes,
                 known_values: if *known { element.bytes } else { 0 },
