@@ -981,7 +981,8 @@ struct EraseDocumentView: View {
                     documentType: documentTypeName,
                     documentId: documentIdText
                 )
-                guard !isSubmitting, submissions == 0 else { return }
+                // A skipped submission also has a newer lifecycle observation.
+                guard !isSubmitting, submissions == 0, progress == nil else { return }
                 lifecycle = observed
             }
             .alert(item: $actionError) { err in
