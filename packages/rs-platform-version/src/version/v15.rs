@@ -336,22 +336,38 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     action fee (the root at the pot's level 3, not 1), a token mint, and a transition writing
 ///     to the credit shielded pool (the root at level 4, not 3; token pools sit under `Tokens`).
 ///
-///     Three estimators describe their layers as they are from this version:
+///     Four estimators describe their layers as they are from this version:
 ///     `remove_reference_for_index_level_for_contract_operations` 2 describes an index's entries
 ///     for a value (its `[0]` layer) as references, as the insert does, where 1 described them as
 ///     subtrees, so a create consuming a document of its own type under the same index value
-///     was priced with the cheaper description; `stateless_delete_of_non_tree_for_costs` 1 gives
-///     each height of a delete's climb the layer GroveDB deletes in there, where 0 gave the one
-///     above it; and `for_total_system_credits_update` 1 describes `Misc` with its expirations
-///     and token supplies trees beside the credits item, where 0 described the credits item
-///     alone, which generation 1 could not price after a token mint in the same batch.
+///     was priced with the cheaper description; under a summable index it describes them, and
+///     the reference it deletes, as references with sum items, as
+///     `add_reference_for_index_level_for_contract_operations` 1 describes the entries an insert
+///     adds to, where 0 described plain references. GroveDB prices a reference with a sum item
+///     10 bytes dearer per node, so a document create or delete under summable indexes is
+///     estimated 138,600 credits higher per summable index whose entries it writes (the entries
+///     layer's 33 estimated nodes, at 420 credits a byte), and a delete 200 more for reading the
+///     deleted reference: the tip jar fixture's tip, under three summable indexes, from
+///     28,499,880 to 28,915,680 to create and from 27,754,220 to 28,170,620 to delete.
+///     `stateless_delete_of_non_tree_for_costs` 1 gives each height of a delete's climb the
+///     layer GroveDB deletes in there, where 0 gave the one above it. And
+///     `for_total_system_credits_update` 1 describes `Misc` with its expirations and token
+///     supplies trees beside the credits item, where 0 described the credits item alone, which
+///     generation 1 could not price after a token mint in the same batch. GroveDB prices
+///     `Misc`'s subtree nodes cheaper than the credits item's, so this one estimate falls:
+///     every batch that adds to or removes from the total system credits (an asset lock
+///     funding, a withdrawal, a move between an identity and the shielded pool) is estimated
+///     7,980 credits lower (19 replaced bytes at 420 credits a byte), still above what it
+///     costs. A lone addition of 5 credits is estimated at 332,800 at protocol v14 and 324,820
+///     here, and costs 265,200 at both.
 ///
 ///     The estimate is consensus: `validate_fees_of_event` checks a payer's balance against it,
 ///     decides whether a gas sponsor or the signer pays (a strict sponsorship is refused), checks
 ///     a budgeted signing key's remaining budget against its user fee increase (refusing the
 ///     transition, unpaid, with `IdentityPublicKeyBudgetExceededError`), and checks a shield's
 ///     pool fee and a shielded spend's denomination against it; check_tx reports it as
-///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted. The fee a
+///     `gas_wanted`. A raised estimate can so refuse what protocol v14 admitted, and the lower
+///     system credits estimate admit what it refused near a balance or budget threshold. The fee a
 ///     transition pays is unchanged, as applying a batch is generation 1's. Protocol v14 keeps
 ///     `apply_drive_operations` 1 and the estimators' earlier versions, and protocol v13 and
 ///     earlier keep `apply_drive_operations` 0; neither resolves an estimate.
@@ -715,9 +731,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     primary entries reference the current revision, and matching queries and verifiers
 ///     authenticate history pages. The first block crossing into v15 migrates existing
 ///     history after the operator-payout reconciliation (note 32) and all other activation
-///     events in the same transaction.
-///     Insert v1 and delete v2 describe summable index entries as `AllReferencesWithSumItem`
-///     for every type, so estimates also change for summable types without history.
+///     events in the same transaction. Keep-history index references shrink from 44 to
+///     42 bytes by targeting the primary pointer, lowering their reference-size estimates.
 ///
 /// 36. **Retained-history lifecycle**: a deletable history document loses its current
 ///     pointer and index entries on delete, retaining its revisions and a lifecycle record.
@@ -732,7 +747,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     limits and wire bounds, and cannot admit an erase.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); history delete 1, insert 2, lifecycle and erase operations, and typed single-document verification 1 extend retained history (note 36)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); history delete 1, insert 2, lifecycle and erase operations, and typed single-document verification 1 extend retained history (note 36)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)

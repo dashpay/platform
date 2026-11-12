@@ -2,14 +2,14 @@ use crate::util::estimated_layers::EstimatedLayers;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllReferencesWithSumItem};
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::document_reference_estimated_layer_sizes_v1;
+use crate::drive::document::document_reference_size_v1;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
 use crate::drive::document::{index_only_entry_payload_max_size, INDEX_ONLY_ROW_COMMITMENT_SIZE};
@@ -26,9 +26,19 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::version::PlatformVersion;
 
 impl Drive {
-    /// Removes an index reference with the same pruning as v1. Estimates describe the
-    /// entries layer and each deleted reference as the insert walker writes them,
-    /// including primary-pointer and summable reference shapes.
+    /// Removes the terminal reference.
+    ///
+    /// v2 (protocol version 15) is v1, describing for an estimate the references a delete
+    /// removes as the elements they are, as `add_reference_for_index_level_for_contract_operations`
+    /// 1 does: the `[0]` layer of a non-unique, contested or null-field index (its entries for
+    /// a value, keyed by document id) as references, not subtrees, and both that layer and the
+    /// deleted reference, in it or at a unique index's key `[0]`, as references with sum items
+    /// under a summable index, which GroveDB prices 10 bytes dearer per node. v1 describes the
+    /// layer as subtrees, so a batch that inserts a document under an index value and deletes
+    /// another under the same one (a create consuming a document of its own type) described
+    /// the layer two ways, and its estimate kept the cheaper subtree description.
+    /// Keep-history references use the 42-byte primary pointer instead of v1's
+    /// 44-byte reference into the legacy history layout.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(
@@ -102,6 +112,18 @@ impl Drive {
         }
 
         let document_type = document_and_contract_info.document_type;
+
+        // A reference the index stores, sized as GroveDB prices it: a `ReferenceWithSumItem`
+        // under a summable index, a plain `Reference` otherwise.
+        let reference_sizes = |key_size: u8| {
+            let reference_size = document_reference_size_v1();
+            let flags_size = storage_flags.map(|s| s.serialized_size());
+            if index_type.summable.is_some() {
+                AllReferencesWithSumItem(key_size, reference_size, flags_size)
+            } else {
+                AllReference(key_size, reference_size, flags_size)
+            }
+        };
 
         // indexOnly terminal: the member key is the terminal property's
         // value and the stored element is a commitment `Item` (an
@@ -237,7 +259,7 @@ impl Drive {
 
             // Delete-side sum-decrement is implicit: under a summable
             // index, the existing reference at `[..., 0, doc_id]` is an
-            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
+            // `Element::ReferenceWithSumItem(reference_path, amount_i64, flags)`
             // (written by the insert path). The contribution is
             // recovered from the reference element itself — Drive
             // never re-reads the source document at delete time
@@ -255,21 +277,13 @@ impl Drive {
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
-                            DEFAULT_HASH_SIZE_U8,
-                            storage_flags.map(|s| s.serialized_size()),
-                            index_type.summable.is_some(),
-                        ),
+                        estimated_layer_sizes: reference_sizes(DEFAULT_HASH_SIZE_U8),
                     },
                 );
             }
 
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                document_reference_estimated_layer_sizes_v1(
-                    DEFAULT_HASH_SIZE_U8,
-                    storage_flags.map(|s| s.serialized_size()),
-                    index_type.summable.is_some(),
-                ),
+                reference_sizes(DEFAULT_HASH_SIZE_U8),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some(MaybeTree::NotTree),
@@ -294,11 +308,7 @@ impl Drive {
             )?;
         } else {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
-                document_reference_estimated_layer_sizes_v1(
-                    1,
-                    storage_flags.map(|s| s.serialized_size()),
-                    index_type.summable.is_some(),
-                ),
+                reference_sizes(1),
                 &key_info_path,
                 // we know we are not deleting a tree
                 Some(MaybeTree::NotTree),

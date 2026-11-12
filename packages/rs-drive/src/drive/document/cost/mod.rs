@@ -395,6 +395,10 @@ pub fn document_create_cost(
 
 /// Refuses a platform version whose insert methods are not the ones the
 /// estimate mirrors: another version of any of them may write other elements.
+/// Primary-storage generation 1 uses the per-type history layout. Index-reference
+/// generation 1 writes a keep-history type's references to the primary pointer,
+/// which `writes.rs` mirrors by selecting the v1 constructors, and describes
+/// summable entries with their sum items.
 fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
     let document = &platform_version.drive.methods.document;
     for (method, known, received) in [

@@ -78,10 +78,12 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
 ///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
-///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2,
+///   `add_reference_for_index_level_for_contract_operations` to 1 and
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
-///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
-///   system credits update describe their layers as they are. Applying a batch is unchanged.
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete, an
+///   insert under a summable index and a system credits update describe their layers as they
+///   are. Applying a batch is unchanged.
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
@@ -144,7 +146,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates; a single document at a block time
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
             ..DRIVE_VERSION_V9.methods.batch_operations

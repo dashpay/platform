@@ -1,14 +1,9 @@
-use crate::util::estimated_layers::EstimatedLayers;
-// Protocol 15 generation: index references point at the primary key tree
-// entry for every document type, including keep-history types whose entry
-// is itself a reference into the history tree; everything else matches v0.
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
 use crate::drive::document::{
-    document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
-    make_document_reference_v1, make_document_reference_with_sum_item_v1,
-    read_document_sum_contribution,
+    document_reference_size_v1, make_document_reference_v1,
+    make_document_reference_with_sum_item_v1, read_document_sum_contribution,
 };
 use crate::drive::document::{
     encode_index_only_entry_payload, index_only_item_estimated_value_size,
@@ -19,6 +14,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
 use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::util::object_size_info::DocumentInfo::{
@@ -39,11 +35,18 @@ use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllItems;
+use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllReferencesWithSumItem};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 
 impl Drive {
     /// Adds the terminal reference.
+    ///
+    /// v1 (protocol version 15) is v0, describing for an estimate the `[0]` layer of a summable
+    /// non-unique, contested or null-field index (its entries for a value, keyed by document id)
+    /// as the references with sum items it holds, which GroveDB prices 10 bytes dearer per node
+    /// than the plain references v0 describes there, as
+    /// `remove_reference_for_index_level_for_contract_operations` 2 does. References target
+    /// the primary entry, allowing a second hop for a keep-history type's current revision.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_reference_for_index_level_for_contract_operations_v1(
@@ -101,8 +104,9 @@ impl Drive {
 
         // The terminal reference's tree type is driven by the
         // composition of the index's countability AND summability,
-        // per-axis (the TreeType set distinguishes provable from root-only
-        // on each axis independently):
+        // per-axis (grovedb PR 670's expanded TreeType set
+        // distinguishes provable from root-only on each axis
+        // independently):
         //
         // - count provable + sum root → `ProvableCountSumTree`
         //   (existing variant: per-node count, root-only sum)
@@ -110,7 +114,8 @@ impl Drive {
         //   (no dedicated "count-root + sum-provable" variant exists;
         //   upgrades count to per-node too)
         // - count provable + sum provable →
-        //   `ProvableCountProvableSumTree` (both per-node)
+        //   `ProvableCountProvableSumTree` (PR 670 newcomer: both
+        //   per-node)
         //
         // Same dispatch shape as the primary-key tree dispatcher's v1
         // arm in `primary_key_tree_type.rs` — see
@@ -125,7 +130,7 @@ impl Drive {
         // Element-shape selector. Under a summable index path the
         // reference element MUST be
         // `Element::ReferenceWithSumItem(reference_path, amount_i64,
-        // flags)` rather than a plain
+        // flags)` (grovedb PR 670) rather than a plain
         // `Element::Reference` — only `ReferenceWithSumItem`
         // contributes a sum to the ancestor sum trees while still
         // dereferencing to the document body in primary storage
@@ -202,17 +207,24 @@ impl Drive {
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
-                // On this level we will have a 0 and all the top index paths
+                // The `[0]` layer: the index's entries for this value, references with sum
+                // items under a summable index
+                let reference_size = document_reference_size_v1();
+                let flags_size = storage_flags.map(|s| s.serialized_size());
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: document_reference_estimated_layer_sizes_v1(
-                            DEFAULT_HASH_SIZE_U8,
-                            storage_flags.map(|s| s.serialized_size()),
-                            sum_property_name.is_some(),
-                        ),
+                        estimated_layer_sizes: if sum_property_name.is_some() {
+                            AllReferencesWithSumItem(
+                                DEFAULT_HASH_SIZE_U8,
+                                reference_size,
+                                flags_size,
+                            )
+                        } else {
+                            AllReference(DEFAULT_HASH_SIZE_U8, reference_size, flags_size)
+                        },
                     },
                 );
             }
@@ -334,12 +346,12 @@ impl Drive {
             } else {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
-                    target: QueryTargetValue(document_reference_estimated_value_size_v1(
-                        storage_flags
-                            .map(|s| s.serialized_size())
-                            .unwrap_or_default(),
-                        sum_property_name.is_some(),
-                    )),
+                    target: QueryTargetValue(
+                        document_reference_size_v1()
+                            + storage_flags
+                                .map(|s| s.serialized_size())
+                                .unwrap_or_default(),
+                    ),
                 }
             };
 
