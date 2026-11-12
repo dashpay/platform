@@ -35,8 +35,8 @@ use super::store::{
     SpendContext, SubwalletId,
 };
 use crate::broadcast_outcome::{
-    broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
-    BroadcastDelivery,
+    broadcast_tracking_delivery, broadcast_tracking_delivery_checked, broadcast_was_refused,
+    carries_consensus_rejection, BroadcastDelivery,
 };
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
@@ -1898,6 +1898,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 &state_transition,
                 "private document create from shielded pool",
                 SpendResultWait::AffectedState,
+                || Ok(()),
             )
             .await
         },
@@ -4326,7 +4327,11 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
         operation,
         Some(dispatch_check.spend_context()),
         || dispatch_check.ensure_holds(),
-        || broadcast_shielded_spend_classified(sdk, state_transition, operation, wait),
+        || {
+            broadcast_shielded_spend_classified(sdk, state_transition, operation, wait, || {
+                dispatch_check.ensure_holds()
+            })
+        },
     )
     .await
 }
@@ -5024,6 +5029,19 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
             continue;
         };
+        // The claim waited for the store: the context is checked again right before the
+        // broadcast, as another task can verify a newer network version meanwhile. The
+        // claimed attempt stays counted; the record stays, unretired.
+        if let Some(context) = &redrive.spend_context {
+            if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) {
+                warn!(
+                    saved = ?context,
+                    "redrive: the context the spend was priced in stopped holding while its \
+                     claim waited; keeping the record without re-broadcasting it"
+                );
+                continue;
+            }
+        }
         let broadcast_result = st.broadcast(sdk, None).await;
         let err_display = broadcast_result
             .as_ref()
@@ -5105,6 +5123,10 @@ impl From<PlatformWalletError> for SpendFailure {
 /// result, telling a failure whose transition never left the wallet from one
 /// that may have reached the network:
 ///
+/// - `still_dispatchable` runs immediately before every dispatch. When it refuses the first,
+///   nothing was sent and the spend never left the wallet (the check's error,
+///   [`SpendFailure::never_delivered`] set); when it refuses a later one, an earlier dispatch
+///   may have been delivered, so no further one is sent and the spend reads as unconfirmed;
 /// - refused before anything was sent ([`BroadcastDelivery::NeverDelivered`]):
 ///   [`PlatformWalletError::ShieldedBroadcastFailed`], with
 ///   [`SpendFailure::never_delivered`] set, so the caller retires the saved
@@ -5125,8 +5147,47 @@ async fn broadcast_shielded_spend_classified(
     state_transition: &StateTransition,
     operation: &'static str,
     wait: SpendResultWait,
+    still_dispatchable: impl FnMut() -> Result<(), PlatformWalletError>,
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
-    match broadcast_tracking_delivery(sdk, state_transition).await {
+    let delivery = match broadcast_tracking_delivery_checked(
+        sdk,
+        state_transition,
+        still_dispatchable,
+    )
+    .await
+    {
+        Ok(delivery) => delivery,
+        // The check refused a dispatch: the transition is not sent again, whatever the
+        // build, the writes and the earlier dispatches were made under.
+        Err(stopped) if !stopped.may_have_been_delivered => {
+            return Err(SpendFailure {
+                error: stopped.error,
+                never_delivered: true,
+            });
+        }
+        // An earlier dispatch may have been delivered and may still execute: the outcome
+        // stays unconfirmed, with the notes reserved and the record saved, for the scan
+        // and the redrive pass (which holds to the same context) to resolve.
+        Err(stopped) => {
+            warn!(
+                operation,
+                error = %stopped.error,
+                "Shielded spend not dispatched again: its context no longer holds, and an \
+                 earlier dispatch may have been delivered"
+            );
+            return Err(SpendFailure::from(
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation,
+                    reason: format!(
+                        "a later dispatch was not sent because its context no longer \
+                             holds ({}), and an earlier one may have been delivered",
+                        stopped.error
+                    ),
+                },
+            ));
+        }
+    };
+    match delivery {
         BroadcastDelivery::Admitted => {}
         BroadcastDelivery::NeverDelivered(e) => {
             return Err(SpendFailure {
@@ -8168,6 +8229,119 @@ mod redrive_tests {
                 assert_eq!(left[0].attempts, attempts, "{name}: no attempt is claimed");
             }
         }
+    }
+
+    /// The network version another task verifies while the recovery pass waits for the claim
+    /// lock of a saved spend is not broadcast around: the context is checked again once the
+    /// claim is held, right before the broadcast, so the saved bytes are not sent under a fee
+    /// schedule the spend was not priced in.
+    #[tokio::test]
+    async fn should_not_rebroadcast_a_saved_spend_whose_context_moved_while_the_claim_waited() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use std::task::{Context, Poll, Waker};
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x5F; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        // A reader lets the pass load its records, and holds its claim (a write) back.
+        let reader = store.read().await;
+        let cancel = CancellationToken::new();
+        let mut recovery = Box::pin(redrive_pending_spends(
+            &handle, &store, id, &recorded, &cancel,
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            recovery.as_mut().poll(&mut cx).is_pending(),
+            "the pass waits for the claim lock"
+        );
+        // Another task verifies a newer protocol version meanwhile.
+        handle
+            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+            .expect("a mock SDK");
+        drop(reader);
+        let Poll::Ready(()) = recovery.as_mut().poll(&mut cx) else {
+            panic!("the pass finishes once the claim lock is free");
+        };
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            0,
+            "nothing is sent"
+        );
+        assert_eq!(
+            store
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the record stays"
+        );
+    }
+
+    /// A shielded spend's dispatches check the context before each one, and a check that
+    /// refuses a later dispatch after an earlier one may have been delivered reads as an
+    /// unconfirmed spend, which keeps the notes reserved; refused before the first dispatch
+    /// it reads as a spend that never left the wallet.
+    #[tokio::test]
+    async fn should_report_a_spend_unconfirmed_when_the_context_moves_after_a_dispatch() {
+        let (_sdk, handle) = pinned_v13_sdk();
+        let transition = SpendPath::Shared.transition();
+        let moved = || PlatformWalletError::ShieldedBuildError("the context moved".to_string());
+
+        let calls = std::cell::Cell::new(0usize);
+        let failure = broadcast_shielded_spend_classified(
+            &handle,
+            &transition,
+            "transfer",
+            SpendResultWait::ExecutionProved,
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 1 {
+                    Ok(())
+                } else {
+                    Err(moved())
+                }
+            },
+        )
+        .await
+        .expect_err("the second dispatch is refused");
+        assert_eq!(calls.get(), 2, "the check runs before each dispatch");
+        assert!(!failure.never_delivered);
+        assert!(
+            matches!(
+                failure.error,
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "transfer",
+                    ..
+                }
+            ),
+            "{:?}",
+            failure.error
+        );
+
+        let failure = broadcast_shielded_spend_classified(
+            &handle,
+            &transition,
+            "transfer",
+            SpendResultWait::ExecutionProved,
+            || Err(moved()),
+        )
+        .await
+        .expect_err("the first dispatch is refused");
+        assert!(failure.never_delivered);
+        assert!(matches!(
+            failure.error,
+            PlatformWalletError::ShieldedBuildError(_)
+        ));
     }
 
     /// A spend whose context stopped holding right after its record was saved is refused as
