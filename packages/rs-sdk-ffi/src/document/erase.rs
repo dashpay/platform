@@ -67,7 +67,7 @@ pub unsafe extern "C" fn dash_sdk_document_erase(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
         Ok(s) => s,
@@ -162,9 +162,7 @@ pub unsafe extern "C" fn dash_sdk_document_erase(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create erase transition: {}", e))
-            })?;
+            .map_err(|e| FFIError::sdk_call_failed("Failed to create erase transition", e))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -229,7 +227,7 @@ pub unsafe extern "C" fn dash_sdk_document_erase_and_wait(
 
     info!("[DOCUMENT ERASE] starting document erase operation");
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
@@ -352,7 +350,7 @@ pub unsafe extern "C" fn dash_sdk_document_erase_and_wait(
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT ERASE] SDK call failed");
-                FFIError::InternalError(format!("Failed to erase document and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to erase document and wait", e)
             })?;
 
         info!("[DOCUMENT ERASE] SDK call completed successfully");

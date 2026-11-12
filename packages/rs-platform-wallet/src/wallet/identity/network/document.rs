@@ -810,7 +810,7 @@ impl IdentityWallet {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
                 // operation failures get stringified into `InvalidIdentityData`.
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to erase document: {e}"
                     ))

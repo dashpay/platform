@@ -996,8 +996,10 @@ extension SDK {
 
                     if let error = result.error {
                         let errorMessage = String(cString: error.pointee.message)
+                        let failure = SDKError.stateTransitionFailure(
+                            errorMessage, ffiError: error.pointee, otherwise: SDKError.protocolError)
                         dash_sdk_error_free(error)
-                        throw SDKError.protocolError(errorMessage)
+                        throw failure
                     }
 
                     let totalTime = Date().timeIntervalSince(startTime)
