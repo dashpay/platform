@@ -34,7 +34,8 @@ final class WalletManagerStoreActivateTests: XCTestCase {
     }
 
     func testShouldFinishShuttingDownTheReplacedManagerBeforeItsReplacementTakesOver() async throws {
-        let store = WalletManagerStore(modelContainer: try DashModelContainer.createInMemory())
+        let store = WalletManagerStore(
+            modelContainer: try DashModelContainer.createInMemory(), makeSdk: strictSpvSdk)
         try await store.activate(
             network: .regtest, sdk: try SDK(network: .regtest, contextProvider: .spv))
         let replaced = store.activeManager
@@ -73,7 +74,8 @@ final class WalletManagerStoreActivateTests: XCTestCase {
     }
 
     func testShouldKeepTheCurrentManagerWhenItsReplacementFailsToConfigure() async throws {
-        let store = WalletManagerStore(modelContainer: try DashModelContainer.createInMemory())
+        let store = WalletManagerStore(
+            modelContainer: try DashModelContainer.createInMemory(), makeSdk: strictSpvSdk)
         try await store.activate(
             network: .regtest, sdk: try SDK(network: .regtest, contextProvider: .spv))
         let current = store.activeManager

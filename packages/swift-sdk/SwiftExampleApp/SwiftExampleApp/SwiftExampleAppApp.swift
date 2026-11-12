@@ -45,7 +45,7 @@ struct SwiftExampleAppApp: App {
     private let modelContainer: ModelContainer
 
     // Platform identity / document / contract state.
-    @StateObject private var platformState = AppState()
+    @StateObject private var platformState: AppState
 
     // Per-network wallet managers. The Rust `PlatformWalletManager`
     // is network-locked at `configure(...)` time, so swapping
@@ -109,14 +109,20 @@ struct SwiftExampleAppApp: App {
             fatalError("Failed to create ModelContainer: \(error)")
         }
         self.modelContainer = container
-        // Build the store eagerly so the autoclosure for
-        // `@StateObject` can capture the local `container`
-        // directly — referencing `self.modelContainer` here would
-        // make the autoclosure capture `self` mutating, which the
-        // compiler rejects. Same `container` is handed to every
-        // per-network manager the store lazy-creates.
+        // Build the state and the store eagerly so the autoclosures for
+        // `@StateObject` can capture the locals `container` and
+        // `platformState` directly — referencing `self.modelContainer`
+        // here would make the autoclosure capture `self` mutating, which
+        // the compiler rejects. Same `container` is handed to every
+        // per-network manager the store lazy-creates, and the store builds
+        // its background SDKs with `platformState`'s builder.
+        let platformState = AppState()
+        _platformState = StateObject(wrappedValue: platformState)
         _walletManagerStore = StateObject(
-            wrappedValue: WalletManagerStore(modelContainer: container)
+            wrappedValue: WalletManagerStore(
+                modelContainer: container,
+                makeSdk: { network in try platformState.makeSdk(for: network) }
+            )
         )
     }
 
@@ -188,7 +194,7 @@ struct SwiftExampleAppApp: App {
                         platformState: platformState
                     )
                 }
-                // Apply the Quorum Source picker to the fixed adaptive provider.
+                // Apply the Quorum Source picker to every SDK the app built.
                 .onChange(of: platformState.quorumMode) { _, _ in
                     platformState.applyQuorumMode()
                 }

@@ -180,14 +180,19 @@ final class WalletManagerStore: ObservableObject {
     /// cross-network bleed at restore time.
     private let modelContainer: ModelContainer
 
+    /// The app's SDK builder (`AppState.makeSdk`), which applies the user's
+    /// quorum mode. `backgroundManager(for:)` builds its SDKs with it.
+    private let makeSdk: @MainActor (Network) throws -> SDK
+
     /// Why opening each network's shielded store failed, until a later
     /// attempt succeeds. The DashPay views show it while the wallet's
     /// private payments wait for that store, and retry it
     /// (`configureShieldedAgain(_:)`).
     @Published private(set) var shieldedStoreFailures: [Network: String] = [:]
 
-    init(modelContainer: ModelContainer) {
+    init(modelContainer: ModelContainer, makeSdk: @escaping @MainActor (Network) throws -> SDK) {
         self.modelContainer = modelContainer
+        self.makeSdk = makeSdk
         // Placeholder. Held until the first `activate(...)` call
         // replaces it with a configured manager. Views gate against
         // bootstrap via `isInitialized` so they never see this
@@ -395,8 +400,11 @@ final class WalletManagerStore: ObservableObject {
     }
 
     /// Get-or-build the manager for `network` without changing the
-    /// currently active one. Builds a fresh `SDK` for that network
-    /// on demand the first time it's requested.
+    /// currently active one. Builds an `SDK` for that network with the
+    /// app's builder the first time it's requested, so it verifies proofs
+    /// with the quorum mode the user picked. In SPV mode its proven queries
+    /// fail closed, with no trusted keys and no node banned, unless that
+    /// network's manager runs SPV.
     ///
     /// Used by orphan-mnemonic recovery, which needs to route each
     /// rebuilt wallet to the manager bound to the network the
@@ -410,7 +418,7 @@ final class WalletManagerStore: ObservableObject {
         if let existing = managers[network] {
             return existing
         }
-        let sdk = try SDK(network: network, contextProvider: .adaptive)
+        let sdk = try makeSdk(network)
         try await activate(network: network, sdk: sdk, makeActive: false)
         guard let manager = managers[network] else {
             throw PlatformWalletError.invalidParameter(

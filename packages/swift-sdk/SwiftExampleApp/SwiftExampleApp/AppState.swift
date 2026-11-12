@@ -98,6 +98,12 @@ class AppState: ObservableObject {
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
+    /// Every SDK `makeSdk` built that is still alive: the published one, one a
+    /// rebuild is moving the wallet manager onto, and the wallet managers'
+    /// background SDKs. `applyQuorumMode` applies the user's mode to all of
+    /// them.
+    private let builtSdks = NSHashTable<SDK>.weakObjects()
+
     init() {
         // Load saved network preference or use default. Read via
         // `object(forKey:)` and cast — `integer(forKey:)` returns 0
@@ -141,14 +147,7 @@ class AppState: ObservableObject {
                 SDK.enableLogging(level: .debug)
 
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                // Build with one adaptive provider backed initially by trusted
-                // quorum data. The wallet manager leases its SPV source after
-                // synchronization starts successfully.
-                let newSDK = try SDK(network: currentNetwork, contextProvider: .adaptive)
-                // Apply strict SPV before publishing the SDK or starting any
-                // proven query. With no active SPV source yet, strict mode
-                // fails closed until manager startup acquires its lease.
-                try newSDK.setQuorumMode(sdkQuorumMode)
+                let newSDK = try makeSdk(for: currentNetwork)
                 sdk = newSDK
                 quorumSource = newSDK.quorumSource
                 NSLog("✅ AppState: SDK created successfully")
@@ -157,9 +156,6 @@ class AppState: ObservableObject {
                 // fee-sensitive flows reserve correctly before the
                 // first metadata-bearing response ratchets the SDK.
                 refreshProtocolVersion(for: newSDK)
-
-                // Load known contracts into the SDK's provider cache.
-                await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
                 isLoading = false
             } catch {
@@ -171,7 +167,9 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Apply the current policy to the SDK's fixed adaptive provider. Call when
+    /// Apply the current policy to the adaptive provider of every SDK
+    /// `makeSdk` built that is still alive, the wallet managers' background
+    /// SDKs included, so none keeps a mode the user has left. Call when
     /// `quorumMode` changes and when SPV progress or running state changes, so
     /// the active-source indicator follows Auto as SPV becomes ready or stops
     /// being ready.
@@ -187,19 +185,20 @@ class AppState: ObservableObject {
     /// lag the requested mode while SPV isn't ready.
     @MainActor
     func applyQuorumMode() {
-        guard let sdk else { return }
-
-        do {
-            try sdk.setQuorumMode(sdkQuorumMode)
-            // Called on every SPV progress tick. Assigning an unchanged value
-            // still publishes, and every view observing this object, the
-            // root tab view among them, would re-render with each tick.
-            let source = sdk.quorumSource
-            if quorumSource != source {
-                quorumSource = source
+        for builtSdk in builtSdks.allObjects {
+            do {
+                try builtSdk.setQuorumMode(sdkQuorumMode)
+            } catch {
+                NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
             }
-        } catch {
-            NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
+        }
+        guard let sdk else { return }
+        // Called on every SPV progress tick. Assigning an unchanged value
+        // still publishes, and every view observing this object, the root
+        // tab view among them, would re-render with each tick.
+        let source = sdk.quorumSource
+        if quorumSource != source {
+            quorumSource = source
         }
     }
 
@@ -249,7 +248,7 @@ class AppState: ObservableObject {
             stopSpv: stopSpv,
             currentNetwork: { self.currentNetwork },
             prepare: prepare,
-            buildSdk: { await self.buildSdk(for: $0) },
+            buildSdk: { self.buildSdk(for: $0) },
             activateManager: activateManager,
             rollBack: rollBack,
             publish: { (target: Network, sdk: SDK) in
@@ -260,19 +259,31 @@ class AppState: ObservableObject {
         )
     }
 
-    /// Build an SDK for `network`, with the current quorum mode applied and
-    /// the stored contracts loaded, without publishing it. Returns `nil`
-    /// after showing the failure.
-    private func buildSdk(for network: Network) async -> SDK? {
+    /// Build an SDK for `network` the way this app builds every SDK, without
+    /// publishing it: one adaptive provider, the quorum mode the user picked,
+    /// and the stored contracts. The bootstrap, SDK rebuilds and the wallet
+    /// managers' background SDKs all build here, and `applyQuorumMode`
+    /// reaches every SDK built here while it lives.
+    func makeSdk(for network: Network) throws -> SDK {
+        let newSDK = try SDK(network: network, contextProvider: .adaptive)
+        // Apply the mode before any proven query can run on this SDK. With
+        // no SPV source yet, strict SPV fails closed until a wallet manager
+        // serves one.
+        try newSDK.setQuorumMode(sdkQuorumMode)
+        if let modelContext {
+            loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+        }
+        builtSdks.add(newSDK)
+        return newSDK
+    }
+
+    /// Build an SDK for a rebuild with `makeSdk`. Returns `nil` after showing
+    /// the failure.
+    private func buildSdk(for network: Network) -> SDK? {
         isLoading = true
         defer { isLoading = false }
         do {
-            let newSDK = try SDK(network: network, contextProvider: .adaptive)
-            try newSDK.setQuorumMode(sdkQuorumMode)
-            if let modelContext {
-                await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-            }
-            return newSDK
+            return try makeSdk(for: network)
         } catch {
             showError(
                 message: "Could not build the SDK for \(network.displayName), so the app stays on its current SDK. SPV stays stopped until you restart it from the Wallet tab. \(error.localizedDescription)"
@@ -347,7 +358,7 @@ class AppState: ObservableObject {
 
     // MARK: - Contract Loading
 
-    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) async {
+    private func loadKnownContractsIntoSDK(sdk: SDK, modelContext: ModelContext) {
         do {
             // Fetch all stored contracts from SwiftData
             let descriptor = FetchDescriptor<PersistentDataContract>()

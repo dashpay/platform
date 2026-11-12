@@ -52,7 +52,7 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
 
     func testStopSpvCancellingPendingStartsBumpsGenerationBeforeStopping() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let before = store.spvStartGeneration
         var stopInvocations = 0
@@ -85,7 +85,8 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
     /// a start resuming after the stop would otherwise revive the manager
     /// the rebuild is replacing.
     func testStopSpvForReconfigurationCancelsPendingStarts() async throws {
-        let store = WalletManagerStore(modelContainer: try DashModelContainer.createInMemory())
+        let store = WalletManagerStore(
+            modelContainer: try DashModelContainer.createInMemory(), makeSdk: strictSpvSdk)
         let before = store.spvStartGeneration
 
         // The placeholder manager is not configured, so its stop throws; the
@@ -101,7 +102,7 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
     /// brings up, not silently give up.
     func testStopIssuedDuringAnAdmittedStartRunsAfterTheNativeStart() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
@@ -161,7 +162,7 @@ final class WalletManagerStoreStopSpvTests: XCTestCase {
     /// after the stop instead.
     func testStartAfterPauseWaitsForTheStopStillTearingDown() async throws {
         let container = try DashModelContainer.createInMemory()
-        let store = WalletManagerStore(modelContainer: container)
+        let store = WalletManagerStore(modelContainer: container, makeSdk: strictSpvSdk)
 
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
