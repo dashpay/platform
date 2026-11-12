@@ -573,6 +573,7 @@ mod tests {
 
     /// A contract stored as its schemas is parsed each time it is read from state, every
     /// pattern it holds compiled, so the query reads it through the contract cache.
+    #[cfg(feature = "full")]
     #[test]
     fn should_resolve_the_contract_through_the_contract_cache() {
         use crate::util::object_size_info::DataContractResolvedInfo;

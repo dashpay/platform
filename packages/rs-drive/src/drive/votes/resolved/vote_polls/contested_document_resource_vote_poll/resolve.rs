@@ -329,7 +329,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
     }
 }
 
-#[cfg(all(test, feature = "server"))]
+#[cfg(all(test, feature = "full"))]
 mod tests {
     use super::*;
     use crate::util::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
