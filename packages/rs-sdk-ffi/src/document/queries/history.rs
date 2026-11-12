@@ -196,10 +196,10 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid contract ID: {e}")))?;
 
         let document_id = Identifier::from_string(document_id_str, Encoding::Base58)
-            .map_err(|e| FFIError::InternalError(format!("Invalid document ID: {}", e)))?;
+            .map_err(|e| FFIError::InvalidParameter(format!("Invalid document ID: {e}")))?;
 
         // Resolve the contract through the trusted context provider, as the
         // other document reads do, so the document type is checked before the
