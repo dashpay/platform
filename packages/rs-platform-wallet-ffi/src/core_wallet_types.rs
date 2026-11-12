@@ -147,6 +147,10 @@ pub fn build_dashpay_backfill_covered_for_callback(
             contact_identity_id: entry.contact.to_buffer(),
             account_index: entry.account_index,
             covered_from: entry.covered_from,
+        })
+        .collect()
+}
+
 /// One change to a wallet's locked outpoints, carried by the persistence
 /// extension's `on_persist_wallet_changeset_outpoint_locks_fn` slot.
 ///

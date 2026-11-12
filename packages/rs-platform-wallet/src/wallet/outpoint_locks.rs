@@ -45,7 +45,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;

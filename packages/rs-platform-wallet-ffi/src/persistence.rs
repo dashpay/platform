@@ -199,12 +199,13 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
+
 /// Locked outpoints (masternode collateral, and outpoints locked by hand)
 /// are persisted AND restored. Requires the extension trio
 /// `on_persist_wallet_changeset_outpoint_locks_fn` +
 /// `on_load_wallet_locked_outpoints_fn` +
 /// `on_load_wallet_locked_outpoints_free_fn`, and the host declaring the bit.
-pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS: u64 = 1 << 13;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS: u64 = 1 << 16;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -462,6 +463,7 @@ pub type FreePrivateContactScanStateWalletsFn = unsafe extern "C" fn(
     wallet_ids: *const [u8; 32],
     wallet_ids_count: usize,
 );
+
 /// Carries a round's changes to the wallet's locked outpoints (see
 /// [`OutpointLockFFI`]): store a row per `locked` entry, keyed by
 /// `(wallet_id, outpoint)`, and delete the row of every other entry. A lock
@@ -744,6 +746,7 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids: *const [u8; 32],
             wallet_ids_count: usize,
         ),
+    >,
     /// The round's outpoint lock changes (see
     /// [`PersistWalletChangesetOutpointLocksFn`]). Wired together with the
     /// load + free pair below: the `OUTPOINT_LOCKS` capability is attested
@@ -12286,6 +12289,36 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_wallets_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_outpoint_locks_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_outpoint_locks_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetOutpointLocksFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_wallet_locked_outpoints_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_wallet_locked_outpoints_fn
+            ) + std::mem::size_of::<Option<LoadWalletLockedOutpointsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_wallet_locked_outpoints_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_wallet_locked_outpoints_free_fn
+            ) + std::mem::size_of::<Option<FreeWalletLockedOutpointsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12355,6 +12388,8 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+        );
+        assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS,
             PersistenceCapabilities::OUTPOINT_LOCKS.bits()
         );
@@ -15152,7 +15187,6 @@ mod outpoint_lock_tests {
     //! and `OUTPOINT_LOCKS` is attested only with the whole trio declared.
 
     use super::*;
-    use dashcore::hashes::Hash as _;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use platform_wallet::changeset::CoreChangeSet;
 

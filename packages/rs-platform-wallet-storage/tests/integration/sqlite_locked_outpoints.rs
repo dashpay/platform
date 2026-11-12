@@ -5,12 +5,11 @@
 //! `load_state` and `apply_persisted_core_state`, whether or not the wallet
 //! already holds the coin, and keep the collateral out of coin selection.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::{Address, BlockHash, OutPoint, Transaction, TxIn, TxOut};
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;

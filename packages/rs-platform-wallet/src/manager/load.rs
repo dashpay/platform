@@ -2229,7 +2229,6 @@ mod masternode_collateral_load_tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, Transaction};
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -2278,6 +2277,7 @@ mod masternode_collateral_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {

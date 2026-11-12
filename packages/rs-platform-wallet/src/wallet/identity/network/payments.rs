@@ -15896,7 +15896,6 @@ mod tests {
     async fn should_pay_a_contact_from_the_spare_coin_and_never_the_masternode_collateral() {
         use crate::test_support::{masternode_registration, MASTERNODE_COLLATERAL_DUFFS};
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
-        use dashcore::hashes::Hash;
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 
         const DASH: u64 = 100_000_000;
@@ -15932,8 +15931,8 @@ mod tests {
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
             .expect("valid mnemonic")
             .to_seed("");
-        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
-        let signer = SeedSigner::new(seed, Network::Testnet);
+        let provider = SeedCryptoProvider::from_seed(*seed, Network::Testnet);
+        let signer = SeedSigner::new(*seed, Network::Testnet);
         let broadcaster = Arc::new(RecordingBroadcaster {
             sent: Mutex::new(Vec::new()),
         });
@@ -15944,6 +15943,9 @@ mod tests {
             wallet_id: real.wallet_id,
             asset_locks: Arc::clone(&real.asset_locks),
             persister: real.persister.clone(),
+            sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
+            generation: Arc::clone(&real.generation),
             broadcaster: Arc::clone(&broadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),

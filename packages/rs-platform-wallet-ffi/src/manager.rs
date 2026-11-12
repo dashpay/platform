@@ -11,8 +11,8 @@ use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
     FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockOperationIdFn,
     LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
-    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn,
-    LoadTrackedMasternodesFn, LoadWalletLockedOutpointsFn, PersistAssetLockOperationIdFn,
+    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
+    LoadWalletLockedOutpointsFn, PersistAssetLockOperationIdFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
@@ -408,6 +408,7 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
         wallet_changeset_outpoint_locks: slot!(
             on_persist_wallet_changeset_outpoint_locks_fn,
             PersistWalletChangesetOutpointLocksFn

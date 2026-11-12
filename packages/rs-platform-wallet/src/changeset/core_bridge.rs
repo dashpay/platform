@@ -5718,6 +5718,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
         manager
             .write()
@@ -5771,6 +5772,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5837,6 +5839,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5918,6 +5921,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(synced_height);
         let manager = test_manager();
@@ -6148,6 +6152,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
         successor.rewind_barrier.inherit(retired);
         assert!(
@@ -9225,7 +9230,6 @@ mod outpoint_lock_projection_tests {
 
     use super::*;
     use crate::test_support::{masternode_registration, wallet_manager_with_registered_collateral};
-    use dashcore::hashes::Hash;
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::transaction_checking::BlockInfo;
 

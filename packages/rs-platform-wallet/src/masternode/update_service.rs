@@ -2110,8 +2110,14 @@ mod tests {
         );
         let entry = operator_entry(0x45, false);
 
-        let placeholder = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect("placeholder");
+        let placeholder = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
         let prepared =
             build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
                 .await
@@ -2132,8 +2138,14 @@ mod tests {
                 .expect("wallet present in manager");
             assert!(info.core_wallet.lock_outpoint(spare));
         }
-        let placeholder = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect("placeholder");
+        let placeholder = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
         let err =
             build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
                 .await

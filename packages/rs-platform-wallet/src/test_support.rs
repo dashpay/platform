@@ -14,6 +14,8 @@ use dashcore::blockdata::script::Builder;
 use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::ecdsa::EcdsaSecretKey;
 use dashcore::BlockHash;
+#[cfg(test)]
+use dashcore::PubkeyHash;
 use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]
 use dashcore::Txid;
@@ -292,39 +294,14 @@ pub(crate) const MASTERNODE_COLLATERAL_DUFFS: u64 = 100_000_000_000;
 /// only through the collateral it names.
 #[cfg(test)]
 pub(crate) fn masternode_registration(collateral: dashcore::OutPoint) -> Transaction {
-    use dashcore::blockdata::transaction::special_transaction::provider_registration::{
-        ProviderMasternodeType, ProviderRegistrationPayload,
-    };
-    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
-    use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hash_types::InputsHash;
-    use dashcore::{PubkeyHash, ScriptBuf};
-
-    Transaction {
-        version: 3,
-        lock_time: 0,
-        input: vec![],
-        output: vec![],
-        special_transaction_payload: Some(TransactionPayload::ProviderRegistrationPayloadType(
-            ProviderRegistrationPayload {
-                version: ProviderRegistrationPayload::CURRENT_VERSION,
-                masternode_type: ProviderMasternodeType::Regular,
-                masternode_mode: 0,
-                collateral_outpoint: collateral,
-                service_address: "10.0.0.1:9999".parse().expect("socket address"),
-                owner_key_hash: PubkeyHash::from_byte_array([0x71; 20]),
-                operator_public_key: BLSPublicKey::from([0x72; 48]),
-                voting_key_hash: PubkeyHash::from_byte_array([0x73; 20]),
-                operator_reward: 0,
-                script_payout: ScriptBuf::new(),
-                inputs_hash: InputsHash::all_zeros(),
-                signature: vec![],
-                platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
-            },
-        )),
-    }
+    let mut registration = Transaction::dummy_provider_registration(
+        collateral,
+        PubkeyHash::from_byte_array([0x71; 20]),
+        Vec::new(),
+        0,
+    );
+    registration.input.clear();
+    registration
 }
 
 /// The outpoint of the coin worth `value` in the wallet's `account_type`
