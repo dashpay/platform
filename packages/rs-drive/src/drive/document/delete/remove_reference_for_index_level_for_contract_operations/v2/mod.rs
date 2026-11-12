@@ -37,6 +37,8 @@ impl Drive {
     /// layer as subtrees, so a batch that inserts a document under an index value and deletes
     /// another under the same one (a create consuming a document of its own type) described
     /// the layer two ways, and its estimate kept the cheaper subtree description.
+    /// Keep-history references use the 42-byte primary pointer instead of v1's
+    /// 44-byte reference into the legacy history layout.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(

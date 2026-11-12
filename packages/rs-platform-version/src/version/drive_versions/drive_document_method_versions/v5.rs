@@ -47,7 +47,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document_to_primary_storage: 1,
-            add_reference_for_index_level_for_contract_operations: 1, // changed: summable entries are described with their sum items
+            add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
@@ -55,7 +55,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
-            remove_reference_for_index_level_for_contract_operations: 2, // changed: entries and deleted references include their sum items
+            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references, with sum items under a summable index
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {

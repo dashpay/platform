@@ -199,11 +199,11 @@ mod tests {
         }
     }
 
-    /// Pin the current unique-index existence estimate: a sum item does not
-    /// change its loaded-byte allowance. History's primary pointer has the
-    /// same two-segment path as a plain document reference after activation.
+    /// The history layout changes the unique-index lookup allowance from 44 to
+    /// 42 bytes. A sum item adds no allowance for a create's existence check:
+    /// the applied lookup is on an absent key and loads zero bytes.
     #[test]
-    fn should_preserve_unique_index_create_lookup_estimates_across_history_activation() {
+    fn should_size_unique_index_create_lookups_for_the_active_history_layout() {
         for version in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
             for history in [false, true] {
                 let mut loaded = Vec::new();
@@ -303,7 +303,7 @@ mod tests {
                 }
                 assert_eq!(
                     loaded[1], loaded[0],
-                    "upstream unique-check sum delta at PV{} history={history}",
+                    "unique-check sum allowance delta at PV{} history={history}",
                     version.protocol_version
                 );
             }

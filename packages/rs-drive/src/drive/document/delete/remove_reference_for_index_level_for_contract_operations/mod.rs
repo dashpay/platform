@@ -93,7 +93,8 @@ impl Drive {
                 platform_version,
             ),
             // v2 (protocol version 15): an estimate describes the index's entries for a value
-            // as the references they are.
+            // as the references they are. Keep-history references use the 42-byte primary
+            // pointer instead of v1's 44-byte legacy reference.
             2 => self.remove_reference_for_index_level_for_contract_operations_v2(
                 document_and_contract_info,
                 index_path_info,
@@ -125,17 +126,21 @@ mod tests {
     use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevelTypeInfo};
     use dpp::data_contract::DataContract;
     use dpp::data_contract::DataContractFactory;
+    use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::Document;
+    use dpp::document::DocumentV0Setters;
     use dpp::identifier::Identifier;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::version::PlatformVersion;
     use grovedb::batch::KeyInfoPath;
@@ -143,7 +148,8 @@ mod tests {
     use grovedb::EstimatedLayerInformation;
     use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem, AllSubtrees};
     use grovedb::EstimatedSumTrees::NoSumTrees;
-    use grovedb::TreeType;
+    use grovedb::{Element, TreeType};
+    use std::borrow::Cow;
 
     /// Removes `document`'s reference from the index of `document_type_name` on `properties`
     /// for an estimate, every layer the delete climbs through described before, as the index
@@ -424,11 +430,6 @@ mod tests {
     }
     #[test]
     fn should_cover_history_index_updates_with_consistent_reference_estimates() {
-        use dpp::block::block_info::BlockInfo;
-        use dpp::data_contract::DataContractFactory;
-        use dpp::document::document_factory::DocumentFactory;
-        use dpp::document::DocumentV0Setters;
-        use dpp::platform_value::{platform_value, Value};
         let version = PlatformVersion::latest();
         for unique in [false, true] {
             for null in [false, true] {
@@ -587,6 +588,132 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+    /// Storage flags make an update refresh an unchanged index reference through
+    /// an untrusted read. The estimate must cover that read's sum item and flags
+    /// both when the reference targets a body and when it follows a history pointer.
+    #[test]
+    fn should_cover_flagged_updates_refreshing_unchanged_summable_unique_references() {
+        let version = PlatformVersion::latest();
+        for history in [false, true] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            let contract = DataContractFactory::new(version.protocol_version)
+                .unwrap()
+                .create_with_value_config(
+                    [7; 32].into(), 0,
+                    platform_value!({"note": {
+                        "type": "object", "documentsKeepHistory": history,
+                        "documentsMutable": true, "canBeDeleted": false,
+                        "indices": [{"name": "byTag", "properties": [{"tag": "asc"}],
+                            "unique": true, "summable": "amount"}],
+                        "properties": {
+                            "tag": {"type": "string", "maxLength": 20, "position": 0},
+                            "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1}
+                        },
+                        "required": ["tag", "amount"], "additionalProperties": false
+                    }}), None, None,
+                ).unwrap().data_contract_owned();
+            drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            let dt = contract.document_type_for_name("note").unwrap();
+            let mut document = DocumentFactory::new(version.protocol_version)
+                .unwrap()
+                .create_document(
+                    &contract,
+                    [7; 32].into(),
+                    "note".into(),
+                    platform_value!({"tag": "a", "amount": 5}),
+                )
+                .unwrap();
+            let flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, [7; 32])));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, flags.clone())),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type: dt,
+                    },
+                    false,
+                    BlockInfo::default_with_time(2000),
+                    true,
+                    None,
+                    version,
+                )
+                .unwrap();
+            let mut index_path =
+                contract_document_type_path_vec(contract.id_ref().as_bytes(), "note");
+            index_path.push(b"tag".to_vec());
+            index_path.push(
+                document
+                    .get_raw_for_document_type("tag", dt, None, version)
+                    .unwrap()
+                    .unwrap(),
+            );
+            let before = drive
+                .grove
+                .get_raw(
+                    index_path.as_slice().into(),
+                    &[0],
+                    None,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+                .unwrap();
+            assert!(matches!(
+                before,
+                Element::ReferenceWithSumItem(_, _, 5, Some(_))
+            ));
+
+            document.set_revision(Some(2));
+            document.set("amount", Value::I64(6));
+            let block = BlockInfo::default_with_time(3000);
+            let estimate = drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    dt,
+                    None,
+                    block,
+                    false,
+                    flags.clone(),
+                    None,
+                    version,
+                )
+                .unwrap();
+            let applied = drive
+                .update_document_for_contract(
+                    &document, &contract, dt, None, block, true, flags, None, version,
+                )
+                .unwrap();
+            println!("FLAGGED_UPDATE history={history} estimated_storage={} applied_storage={} estimated_processing={} applied_processing={}",
+                estimate.storage_fee, applied.storage_fee, estimate.processing_fee, applied.processing_fee);
+            assert!(
+                estimate.storage_fee >= applied.storage_fee,
+                "history={history} storage: {estimate:?} < {applied:?}"
+            );
+            assert!(
+                estimate.processing_fee >= applied.processing_fee,
+                "history={history} processing: {estimate:?} < {applied:?}"
+            );
+            let after = drive
+                .grove
+                .get_raw(
+                    index_path.as_slice().into(),
+                    &[0],
+                    None,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(after, Element::ReferenceWithSumItem(_, _, 6, Some(_))),
+                "the unchanged index key must refresh its sum contribution and retain its flags"
+            );
         }
     }
 }
