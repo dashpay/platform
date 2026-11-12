@@ -14,6 +14,7 @@ use crate::{PlatformWalletError, ShieldedTipRecipient};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::PaymentAddress;
+use orchard::keys::Scope;
 use std::sync::{Arc, PoisonError, Weak};
 
 pub(crate) struct PreparedTipAccount {
@@ -259,7 +260,8 @@ impl PlatformWallet {
     /// holds the slot selecting that account, and the identity still holds
     /// it. Discovery can move an identity whose keys derive at several
     /// indices, and a restored placeholder index is not proof of a slot.
-    /// Ordinary accounts cannot be published; addresses of other wallets are
+    /// Ordinary accounts and internal-scope identity addresses cannot be published;
+    /// this wallet scans external receiving addresses. Addresses of other wallets are
     /// the owner's choice. Only bound accounts are recognised; preparation binds the
     /// account it hands out. Callers hold the placement lock through the
     /// profile write.
@@ -276,17 +278,27 @@ impl PlatformWallet {
         let owning_account = {
             let keys = self.shielded_keys.read().await;
             keys.as_ref().and_then(|keys| {
-                keys.iter()
-                    .find(|(_, views)| views.full_viewing_key.scope_for_address(&address).is_some())
-                    .map(|(account, _)| *account)
+                keys.iter().find_map(|(account, views)| {
+                    views
+                        .full_viewing_key
+                        .scope_for_address(&address)
+                        .map(|scope| (*account, scope))
+                })
             })
         };
-        let Some(owning_account) = owning_account else {
+        let Some((owning_account, scope)) = owning_account else {
             return Ok(());
         };
         if !is_shielded_identity_account(owning_account) {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if matches!(scope, Scope::Internal) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only external receiving addresses from this wallet can be published \
                  in an identity profile"
                     .to_string(),
             ));

@@ -2002,12 +2002,27 @@ async fn should_reject_ordinary_account_profile_addresses_at_every_diversifier()
         crate::shielded_identity_account_index(2).unwrap(),
     )
     .unwrap();
+    for index in [0u32, 17] {
+        let address = own.full_viewing_key.address_at(index, Scope::Internal);
+        let error = wallet
+            .check_tip_address_publication(&id, &address.to_raw_address_bytes())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, crate::PlatformWalletError::InvalidIdentityData(ref message) if message.contains("external receiving addresses")),
+            "{error:?}"
+        );
+    }
     let external = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0).unwrap();
     for address in [
         prepared,
         own.address_at(17).to_raw_address_bytes(),
         external.default_address.to_raw_address_bytes(),
         external.address_at(17).to_raw_address_bytes(),
+        external
+            .full_viewing_key
+            .address_at(17u32, Scope::Internal)
+            .to_raw_address_bytes(),
     ] {
         wallet
             .check_tip_address_publication(&id, &address)
