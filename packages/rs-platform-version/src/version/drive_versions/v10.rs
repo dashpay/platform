@@ -120,6 +120,10 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   its proof outside a contest. A history document that may be contested is refused at a
 ///   block time; explicitly contested queries ignore the time.
 ///
+/// * **An insert writes no entry in an expired time range bucket** (protocol v15 note 36):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert.add_indices_for_top_index_level_for_contract_operations` to 3.
+///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
     methods: DriveMethodVersions {
@@ -146,7 +150,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
             ..DRIVE_VERSION_V9.methods.batch_operations
