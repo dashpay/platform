@@ -82,4 +82,30 @@ final class DocumentHistoryLifecycleTests: XCTestCase {
             .replacingOccurrences(of: "\"ERASING\"", with: "\"PURGED\"")
         XCTAssertNil(try lifecycle(fromJSON: unknown))
     }
+
+    func testUnchangedDeletedHistoryDoesNotClaimEraseCompletion() throws {
+        let deletedJSON = json(remainingRevisions: "5")
+            .replacingOccurrences(of: "\"ERASING\"", with: "\"DELETED\"")
+        let before = try XCTUnwrap(lifecycle(fromJSON: deletedJSON))
+        let after = try XCTUnwrap(lifecycle(fromJSON: deletedJSON))
+        let text = DocumentHistoryLifecycle.describeEraseProgress(before: before, after: after)
+        XCTAssertTrue(text.hasPrefix("Not established"))
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("complete"))
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("accepted"))
+    }
+
+    func testErasingHistoryShowsTheRemainingRevisions() throws {
+        let after = try XCTUnwrap(lifecycle(fromJSON: json(remainingRevisions: "50")))
+        let text = DocumentHistoryLifecycle.describeEraseProgress(before: nil, after: after)
+        XCTAssertTrue(text.hasPrefix("Erasure in progress: 50"))
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("complete"))
+    }
+
+    func testAbsentHistoryConfirmsEraseCompletion() throws {
+        let absentJSON = json(remainingRevisions: "0")
+            .replacingOccurrences(of: "\"ERASING\"", with: "\"ABSENT\"")
+        let after = try XCTUnwrap(lifecycle(fromJSON: absentJSON))
+        let text = DocumentHistoryLifecycle.describeEraseProgress(before: nil, after: after)
+        XCTAssertTrue(text.hasPrefix("Erasure complete"))
+    }
 }
