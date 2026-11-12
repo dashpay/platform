@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::sync::{Notify, RwLock};
 use tokio::task::{JoinError, JoinHandle};
 
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
@@ -863,6 +864,18 @@ impl SpvRuntime {
                 .map(|qualified| qualified.masternode_list_entry.clone())
                 .collect(),
         )
+    }
+
+    /// The coinbase payload of the newest block a masternode list diff
+    /// proved it in, as the SPV client keeps it. `None` when the client
+    /// isn't running, masternode sync is off, or no diff has been validated
+    /// yet. It is not checked against the tip: after a restart it is the
+    /// one stored before, until sync proves a newer one — as stale as the
+    /// masternode list read next to it. Read the same way as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn latest_coinbase(&self) -> Option<CoinbasePayload> {
+        let client_guard = self.client.read().await;
+        client_guard.as_ref()?.latest_coinbase().await
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads

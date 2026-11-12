@@ -16,6 +16,7 @@ pub const MAX_PROVIDER_KEY_CANDIDATES: u32 = 256;
 
 use super::list::MasternodeListSummary;
 use crate::error::PlatformWalletError;
+use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
 
@@ -32,6 +33,28 @@ pub struct ProviderKeyCandidate {
     /// proTxHash (wire order) of the masternode-list entry currently using
     /// this key, when one does.
     pub used_by: Option<[u8; 32]>,
+}
+
+/// [`provider_key_candidates`] against the live masternode list — the
+/// operation a host asks for.
+///
+/// Fails with [`PlatformWalletError::MasternodeListUnavailable`] while the
+/// list is not available: without it a key's usage is unknown, not
+/// "unused", and an operator key already on the list is refused by
+/// consensus.
+///
+/// Blocking, and panics on an async runtime worker, like
+/// [`provider_key_candidates`]: the list is read with `blocking_read` too.
+pub fn live_provider_key_candidates_blocking(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+    kind: ProviderKeyKind,
+    count: u32,
+) -> Result<Vec<ProviderKeyCandidate>, PlatformWalletError> {
+    let summaries = spv
+        .masternode_list_summaries_blocking()
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    provider_key_candidates(wallet, &summaries, kind, count)
 }
 
 /// Derive up to the first `count` keys of `kind` and join each against the
@@ -51,9 +74,7 @@ pub struct ProviderKeyCandidate {
 /// [`wallet_masternodes_blocking`](crate::PlatformWalletManager::wallet_masternodes_blocking):
 /// every derivation takes the wallet-manager lock via tokio's
 /// `blocking_read`, so call this from a plain or blocking thread — from
-/// async code, wrap it in `tokio::task::spawn_blocking`. (The candidates
-/// FFI extern awaits the masternode list on the runtime and then calls
-/// this on its plain calling thread for exactly this reason.)
+/// async code, wrap it in `tokio::task::spawn_blocking`.
 ///
 /// # Panics
 /// Called on an async runtime worker with a supported kind — tokio's

@@ -102,7 +102,7 @@ impl MasternodeListSummary {
                 entry.service_address,
                 dashcore::sml::masternode_list_entry::MasternodeNetInfo::Extended(_)
             ),
-            operator_key_is_legacy: entry.version < 2,
+            operator_key_is_legacy: entry.use_legacy_bls_keys(),
         }
     }
 
@@ -129,7 +129,7 @@ impl MasternodeListSummary {
 /// extended map is registered individually). Tor / I2P / CJDNS / domain
 /// entries have no `SocketAddr` form and are skipped; a caller-supplied
 /// `ip:port` value can never collide with them anyway.
-fn all_socket_addresses(
+pub(crate) fn all_socket_addresses(
     net_info: &dashcore::sml::masternode_list_entry::MasternodeNetInfo,
 ) -> Vec<SocketAddr> {
     use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry};

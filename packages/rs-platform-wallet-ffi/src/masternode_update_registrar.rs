@@ -24,10 +24,10 @@ use std::os::raw::c_char;
 
 use platform_wallet::masternode::{
     execute_masternode_update_registrar, execute_masternode_update_service_with_values,
-    parse_secret_for_role, prepare_masternode_update_registrar,
-    prepare_masternode_update_service_with_values, provider_key_candidates, LocatorSecret,
-    MasternodeKeyRole, MasternodeUpdateRegistrarParams, OwnerSecret, ProviderKeyCandidate,
-    UpdateServiceValues,
+    live_provider_key_candidates_blocking, parse_secret_for_role,
+    prepare_masternode_update_registrar, prepare_masternode_update_service_with_values,
+    LocatorSecret, MasternodeKeyRole, MasternodeUpdateRegistrarParams, OwnerSecret,
+    ProviderKeyCandidate, UpdateServiceValues,
 };
 use platform_wallet::ProviderKeyKind;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
@@ -719,17 +719,12 @@ pub unsafe extern "C" fn platform_wallet_manager_provider_key_candidates(
     };
 
     let ResolvedContext { wallet, spv, .. } = context;
-    // Only the list read runs on the runtime. Candidate derivation takes
-    // the wallet-manager lock via tokio's `blocking_read`, which panics on
-    // an async worker thread, so it stays on this plain FFI thread — the
-    // same split `platform_wallet_provider_key_at_index` uses.
-    let summaries = unwrap_result_or_return!(block_on_worker(async move {
-        spv.masternode_list_summaries()
-            .await
-            .ok_or(platform_wallet::PlatformWalletError::MasternodeListUnavailable)
-    }));
-    let candidates =
-        unwrap_result_or_return!(provider_key_candidates(&wallet, &summaries, kind, count));
+    // Blocking reads (tokio's `blocking_read`, which panics on an async
+    // worker thread), so this stays on the plain FFI thread — as
+    // `platform_wallet_provider_key_at_index` does.
+    let candidates = unwrap_result_or_return!(live_provider_key_candidates_blocking(
+        &wallet, &spv, kind, count
+    ));
 
     let mut entries: Vec<ProviderKeyCandidateFFI> =
         candidates.into_iter().map(candidate_to_ffi).collect();

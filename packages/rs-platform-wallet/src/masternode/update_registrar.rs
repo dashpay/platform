@@ -24,7 +24,7 @@ use dashcore::blockdata::transaction::special_transaction::{
 };
 use dashcore::bls_sig_utils::{BLSPublicKey, BlsScheme};
 use dashcore::hashes::hash160;
-use dashcore::{Address as DashAddress, Network, PubkeyHash, Txid};
+use dashcore::{Address as DashAddress, Network, PubkeyHash, Transaction, Txid};
 use dpp::secp256k1::ecdsa::RecoverableSignature;
 use dpp::secp256k1::{Message, SecretKey};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
@@ -586,6 +586,59 @@ pub(crate) fn owner_compact_signature(
     Ok(signature)
 }
 
+/// The funding builder for a ProUpRegTx: the placeholder payload, the
+/// finalizer that commits it to the selected inputs and owner-signs it,
+/// and one zero-value data output.
+///
+/// A ProUpRegTx moves no value, so without that output a selection whose
+/// surplus is below the dust limit (all of it booked as fee, no change
+/// output) leaves the transaction with no outputs, which consensus refuses
+/// (`bad-txns-vout-empty`). Same reason and same output as the
+/// update-service builder.
+pub(crate) fn update_registrar_builder(
+    placeholder: ProviderUpdateRegistrarPayload,
+    owner: OwnerSecret,
+) -> Result<TransactionBuilder, PlatformWalletError> {
+    Ok(TransactionBuilder::new()
+        .add_op_return(&[])
+        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?
+        .set_special_payload(TransactionPayload::ProviderUpdateRegistrarPayloadType(
+            placeholder,
+        ))
+        .set_payload_finalizer(move |unsigned| finalize_update_registrar_payload(unsigned, &owner)))
+}
+
+/// The payload finalizer: write `inputs_hash` over the selected inputs and
+/// the owner's compact signature.
+///
+/// Refuses a transaction without outputs before signing anything.
+/// key-wallet releases the build's reservation on any finalizer error, so
+/// the refusal leaves the selected inputs spendable.
+pub(crate) fn finalize_update_registrar_payload(
+    unsigned: &Transaction,
+    owner: &OwnerSecret,
+) -> Result<TransactionPayload, BuilderError> {
+    if unsigned.output.is_empty() {
+        return Err(BuilderError::InvalidData(
+            "the assembled ProUpRegTx has no outputs, which the network refuses".into(),
+        ));
+    }
+    let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(placeholder)) =
+        &unsigned.special_transaction_payload
+    else {
+        return Err(BuilderError::InvalidData(
+            "the ProUpRegTx placeholder payload is missing from the assembled transaction".into(),
+        ));
+    };
+    let mut finalized = placeholder.clone();
+    finalized.inputs_hash = unsigned.hash_inputs();
+    finalized.payload_sig = owner_compact_signature(&finalized, owner)
+        .map_err(|e| BuilderError::SigningFailed(e.to_string()))?;
+    Ok(TransactionPayload::ProviderUpdateRegistrarPayloadType(
+        finalized,
+    ))
+}
+
 /// Fund and finalize the ProUpRegTx: input selection reserves the funding
 /// inputs, the payload finalizer writes `inputs_hash` and the owner's
 /// compact signature, and only then are the inputs ECDSA-signed, since
@@ -601,29 +654,7 @@ where
     B: TransactionBroadcaster + ?Sized,
     S: TransactionSigner + ?Sized + Sync,
 {
-    let builder = TransactionBuilder::new()
-        .set_special_payload(TransactionPayload::ProviderUpdateRegistrarPayloadType(
-            placeholder,
-        ))
-        .set_payload_finalizer(move |unsigned| {
-            let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(placeholder)) =
-                &unsigned.special_transaction_payload
-            else {
-                return Err(BuilderError::InvalidData(
-                    "the ProUpRegTx placeholder payload is missing from the assembled \
-                     transaction"
-                        .into(),
-                ));
-            };
-            let mut finalized = placeholder.clone();
-            finalized.inputs_hash = unsigned.hash_inputs();
-            finalized.payload_sig = owner_compact_signature(&finalized, &owner)
-                .map_err(|e| BuilderError::SigningFailed(e.to_string()))?;
-            Ok(TransactionPayload::ProviderUpdateRegistrarPayloadType(
-                finalized,
-            ))
-        });
-
+    let builder = update_registrar_builder(placeholder, owner)?;
     core.finalize_transaction(builder, &SEND_FUNDING_SOURCES, 0, signer)
         .await
 }
@@ -633,10 +664,11 @@ mod tests {
     use super::super::list::test_support::masternode;
     use super::*;
     use crate::broadcaster::BroadcastError;
-    use crate::test_support::funded_wallet_manager;
+    use crate::test_support::{
+        funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
+    };
     use dashcore::hash_types::InputsHash;
     use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
-    use dashcore::Transaction;
     use dpp::secp256k1::ecdsa::RecoveryId;
     use key_wallet::account::StandardAccountType;
     use std::str::FromStr;
@@ -1103,6 +1135,130 @@ mod tests {
             })
             .expect("assembly succeeds");
         assert_eq!(placeholder.pro_tx_hash, Txid::from_byte_array([0x11; 32]));
+    }
+
+    /// A BIP44-funded core wallet holding one UTXO per value in `outputs`.
+    async fn core_with_outputs(
+        outputs: &[u64],
+    ) -> (
+        CoreWallet<RecordingBroadcaster>,
+        Arc<RecordingBroadcaster>,
+        WalletSigner,
+    ) {
+        let (wallet_manager, wallet_id, generation, signer) =
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, outputs).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(RecordingBroadcaster::default());
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            broadcaster.clone(),
+            generation,
+        );
+        (core, broadcaster, signer)
+    }
+
+    fn registrar_placeholder() -> ProviderUpdateRegistrarPayload {
+        ProviderUpdateRegistrarPayload::new(
+            Txid::from_byte_array([0x22; 32]),
+            0,
+            BLSPublicKey::from([4u8; 48]),
+            PubkeyHash::from_byte_array([3u8; 20]),
+            ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([5u8; 20])),
+            InputsHash::all_zeros(),
+            Vec::new(),
+        )
+    }
+
+    /// A lone 600-duff UTXO covers the fee but leaves less than the dust
+    /// limit over, so no change output is added. The zero-value data output
+    /// still gives the transaction an output.
+    #[tokio::test]
+    async fn should_carry_an_output_when_the_only_utxo_leaves_no_change() {
+        let (core, broadcaster, signer) = core_with_outputs(&[600]).await;
+
+        let prepared =
+            build_sign_update_registrar(&core, registrar_placeholder(), owner(), &signer)
+                .await
+                .expect("600 duffs pay the fee");
+
+        let tx = prepared.transaction();
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.output.len(), 1, "one output even with no change");
+        assert!(tx.output[0].script_pubkey.is_op_return());
+        assert_eq!(tx.output[0].value, 0, "the data output moves no value");
+        assert!(
+            broadcaster
+                .sent
+                .lock()
+                .expect("broadcaster lock")
+                .is_empty(),
+            "preparing must not broadcast"
+        );
+    }
+
+    /// Whichever UTXO selection picks next to a small one, the transaction
+    /// carries an output and the payload commits to the selected inputs.
+    #[tokio::test]
+    async fn should_carry_an_output_when_a_small_utxo_sits_next_to_a_large_one() {
+        let (core, _broadcaster, signer) = core_with_outputs(&[1_000_000_000, 600]).await;
+
+        let prepared =
+            build_sign_update_registrar(&core, registrar_placeholder(), owner(), &signer)
+                .await
+                .expect("registrar update builds");
+
+        let tx = prepared.transaction();
+        assert!(
+            !tx.output.is_empty(),
+            "a ProUpRegTx always carries an output"
+        );
+        let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(payload)) =
+            &tx.special_transaction_payload
+        else {
+            panic!("the transaction must carry the ProUpRegTx payload");
+        };
+        assert_eq!(payload.inputs_hash, tx.hash_inputs());
+    }
+
+    /// Without the data output a lone 600-duff UTXO assembles into a
+    /// transaction with no outputs. The finalizer refuses it before signing,
+    /// and the refusal releases the reservation: the same UTXO funds the
+    /// next build.
+    #[tokio::test]
+    async fn should_release_the_reservation_when_the_transaction_has_no_outputs() {
+        let (core, broadcaster, signer) = core_with_outputs(&[600]).await;
+
+        let secret = owner();
+        let without_output = TransactionBuilder::new()
+            .set_special_payload(TransactionPayload::ProviderUpdateRegistrarPayloadType(
+                registrar_placeholder(),
+            ))
+            .set_payload_finalizer(move |unsigned| {
+                finalize_update_registrar_payload(unsigned, &secret)
+            });
+        let err = core
+            .finalize_transaction(without_output, &SEND_FUNDING_SOURCES, 0, &signer)
+            .await
+            .expect_err("a transaction with no outputs is refused");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains("no outputs")),
+            "the refusal names the missing outputs, got {err:?}"
+        );
+        assert!(
+            broadcaster
+                .sent
+                .lock()
+                .expect("broadcaster lock")
+                .is_empty(),
+            "nothing is broadcast"
+        );
+
+        let rebuilt = build_sign_update_registrar(&core, registrar_placeholder(), owner(), &signer)
+            .await
+            .expect("the released UTXO funds the next build");
+        assert_eq!(rebuilt.transaction().input.len(), 1);
     }
 
     #[tokio::test]

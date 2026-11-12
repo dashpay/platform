@@ -40,11 +40,11 @@ use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
-use std::future::{Future, Ready};
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use zeroize::Zeroizing;
 
-use super::list::MasternodeListSummary;
+use super::list::{all_socket_addresses, MasternodeListSummary};
 use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -179,10 +179,7 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
                 script_payout.clone(),
             )
         },
-        // The pinned dash-spv does not expose the coinbase of the masternode
-        // list diffs it applies, so the list alone tells whether V24 is
-        // active.
-        None::<std::future::Ready<_>>,
+        spv.latest_coinbase(),
     )
     .await?;
 
@@ -240,45 +237,29 @@ fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
 /// version-3 entry's payload is the same on both sides of V24, so for those
 /// the list's view is final.
 ///
-/// Without a coinbase source (`latest_coinbase` is `None`) the list's view
-/// is final for every entry. The list shows V24 only once some entry is
-/// version 3, so right after activation, until a version-3 provider
-/// transaction is mined, a legacy evonode still gets the version-2 payload:
-/// Core refuses it and discourages the peers that relay it, and the inputs
-/// stay reserved until the reservation expires. Refusing every such build
-/// instead would block every evonode update before V24 as well.
+/// `latest_coinbase` is awaited only when the list's view gives a payload
+/// Core refuses after V24. It yields the coinbase payload of the newest
+/// block a masternode list diff proved it in, as the SPV client keeps it.
+/// Core requires coinbase payload version 4 or later exactly while V24 is
+/// active, so such a version rebuilds the placeholder for V24 and a lower
+/// one keeps it. This is what covers the stretch right after activation,
+/// when every list entry is still legacy and the list alone shows nothing.
 ///
-/// With a coinbase source, `latest_coinbase` is awaited only when the list's
-/// view gives a payload Core refuses after V24. It yields the coinbase
-/// payload of the highest block whose masternode list diff the SPV client
-/// applied with one. Core requires coinbase payload version 4 or later
-/// exactly while V24 is active, so such a version rebuilds the placeholder
-/// for V24 and a lower one keeps it.
-///
-/// A source that has no coinbase yet leaves V24 unknown and fails the build
-/// with a retryable [`PlatformWalletError::TransactionBuild`]. An SPV client
-/// that keeps the coinbase in memory only has none after a restart until the
-/// session's first masternode list diff arrives. Right after V24 activates,
-/// until a diff for a block past activation arrives, the coinbase still
-/// reads as pre-V24 and the version-2 payload built then is refused; a retry
-/// builds version 3.
-///
-/// A coinbase taken from a diff without checking its merkle proof and the
-/// payload's merkle roots is chosen by the peer that served the diff. A
-/// lying peer can only get this transaction refused and the wallet
-/// disconnected by the peers that relay it; no funds are at risk.
+/// No coinbase leaves V24 unknown and fails the build with a retryable
+/// [`PlatformWalletError::TransactionBuild`]. The coinbase is not checked
+/// against the tip: after a restart it is the one stored before, until
+/// sync proves a newer one, and right after V24 activates, until a diff
+/// for a block past activation arrives, it still reads as pre-V24. The
+/// version-2 payload built then is refused; a retry builds version 3.
 async fn update_service_placeholder(
     list_shows_v24: bool,
     build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,
-    latest_coinbase: Option<impl Future<Output = Option<CoinbasePayload>>>,
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
     let placeholder = build(list_shows_v24)?;
     if !refused_after_v24(&placeholder) {
         return Ok(placeholder);
     }
-    let Some(latest_coinbase) = latest_coinbase else {
-        return Ok(placeholder);
-    };
     let coinbase = latest_coinbase.await.ok_or_else(|| {
         PlatformWalletError::TransactionBuild(
             "cannot tell whether Dash Core's V24 fork is active (the SPV client has no \
@@ -386,23 +367,74 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
         wallet.network(),
     )?;
 
+    let placeholder = values_placeholder(
+        entry,
+        list_shows_v24,
+        &values,
+        script_payout,
+        &summaries,
+        spv.latest_coinbase(),
+    )
+    .await?;
+
+    build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+}
+
+/// The values placeholder for the V24 state Core will check it against
+/// (see [`update_service_placeholder`]), with every endpoint it ends up
+/// listing checked against the rest of the masternode list.
+async fn values_placeholder(
+    entry: &MasternodeListEntry,
+    list_shows_v24: bool,
+    values: &UpdateServiceValues,
+    script_payout: ScriptBuf,
+    summaries: &[MasternodeListSummary],
+    latest_coinbase: impl Future<Output = Option<CoinbasePayload>>,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
     let placeholder = update_service_placeholder(
         list_shows_v24,
         |v24_active| {
             prepare_update_service_placeholder_from_values(
                 entry,
                 v24_active,
-                &values,
+                values,
                 script_payout.clone(),
             )
         },
-        // As in `prepare_masternode_update_service`: the pinned dash-spv
-        // exposes no coinbase, so the list alone tells whether V24 is active.
-        None::<Ready<_>>,
+        latest_coinbase,
     )
     .await?;
+    require_unused_endpoints(&placeholder, summaries)?;
+    Ok(placeholder)
+}
 
-    build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+/// Refuse a payload listing an endpoint another masternode already
+/// advertises. Core's `CheckProUpServTx` checks every address a payload
+/// submits, not only the Core P2P one: a version-3 evonode map also lists
+/// the Platform P2P and HTTPS endpoints at the same IP, and each must be
+/// unused (`bad-protx-dup-netinfo-entry`). [`validate_update_service_values`]
+/// sees only the values, before the version is known, so the map that was
+/// actually built is checked here, before anything is funded.
+fn require_unused_endpoints(
+    payload: &ProviderUpdateServicePayload,
+    summaries: &[MasternodeListSummary],
+) -> Result<(), PlatformWalletError> {
+    let target = payload.pro_tx_hash.to_byte_array();
+    let endpoints = all_socket_addresses(&payload.service_address);
+    for other in summaries.iter().filter(|other| other.pro_tx_hash != target) {
+        if let Some(taken) = endpoints
+            .iter()
+            .find(|endpoint| other.service_addresses.contains(endpoint))
+        {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "{taken} is already advertised by masternode {} \
+                 (`bad-protx-dup-netinfo-entry`); every address this update registers, the \
+                 platform ones included, must be unused",
+                display_hex(&other.pro_tx_hash)
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Build the placeholder payload from caller-supplied values. The same
@@ -1852,7 +1884,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            Some(latest_coinbase),
+            latest_coinbase,
         )
         .await
     }
@@ -1901,7 +1933,7 @@ mod tests {
                     ScriptBuf::new(),
                 )
             },
-            Some(async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) }),
+            async { Some(coinbase(V24_COINBASE_PAYLOAD_VERSION)) },
         )
         .await
         .expect_err("another port is refused on mainnet");
@@ -1964,39 +1996,6 @@ mod tests {
                     && message.contains("try again")),
             "got {err:?}"
         );
-    }
-
-    /// Without a coinbase source the list alone decides: a legacy evonode
-    /// next to only legacy entries keeps version 2, and a version-3
-    /// neighbour converts it. Refusing the build instead would block every
-    /// evonode update until V24 activates.
-    #[tokio::test]
-    async fn should_keep_the_lists_view_of_v24_without_a_coinbase_source() {
-        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
-        let build = |list_shows_v24| {
-            update_service_placeholder(
-                list_shows_v24,
-                |v24_active| {
-                    prepare_update_service_placeholder(
-                        &entry,
-                        Network::Devnet,
-                        v24_active,
-                        Some(26656),
-                        ScriptBuf::new(),
-                    )
-                },
-                None::<std::future::Ready<_>>,
-            )
-        };
-
-        let before_v24 = build(false)
-            .await
-            .expect("an evonode update is built before V24");
-        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
-        assert_eq!(before_v24.platform_p2p_port, Some(26656));
-
-        let shown_by_list = build(true).await.expect("a version-3 neighbour shows V24");
-        assert_matches_core_v3_vector(shown_by_list);
     }
 
     /// Only an evonode payload below version 3 changes with V24, so only
@@ -2447,6 +2446,114 @@ mod tests {
         );
         assert_eq!(payload.platform_p2p_port, Some(26656));
         assert_eq!(payload.platform_http_port, Some(1443));
+    }
+
+    /// A masternode other than the target advertising `endpoint`.
+    fn neighbour_at(endpoint: &str) -> MasternodeListSummary {
+        let endpoint: SocketAddr = endpoint.parse().expect("socket address");
+        MasternodeListSummary {
+            service_address: Some(endpoint),
+            service_addresses: vec![endpoint],
+            ..masternode(0x21)
+        }
+    }
+
+    /// Right after V24 activates every entry is still legacy, so the list
+    /// shows nothing, while Core already refuses a version-2 evonode update.
+    /// The coinbase shows V24, so the reactivation after an operator
+    /// rotation is built at version 3; before V24 it stays version 2.
+    #[tokio::test]
+    async fn should_reactivate_at_the_version_the_coinbase_shows_when_every_entry_is_legacy() {
+        let entry = reset_legacy_entry(0x66, true);
+        let values = evonode_values();
+        let build = |coinbase_version| {
+            values_placeholder(&entry, false, &values, ScriptBuf::new(), &[], async move {
+                Some(coinbase(coinbase_version))
+            })
+        };
+
+        let after_v24 = build(4).await.expect("a V24 coinbase builds version 3");
+        assert_eq!(after_v24.version, ProTxVersion::ExtAddr as u16);
+        assert!(matches!(
+            after_v24.service_address,
+            MasternodeNetInfo::Extended(_)
+        ));
+
+        let before_v24 = build(3).await.expect("a pre-V24 coinbase keeps version 2");
+        assert_eq!(before_v24.version, ProTxVersion::BasicBLS as u16);
+
+        let err = values_placeholder(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[],
+            async { None },
+        )
+        .await
+        .expect_err("V24 is unknown without a coinbase");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains("try again")),
+            "got {err:?}"
+        );
+    }
+
+    /// A version-3 map registers the Platform P2P and HTTPS endpoints next
+    /// to the Core one, and Core refuses the update when another masternode
+    /// already advertises any of them. A version-2 payload registers only
+    /// the Core address, so the same neighbours do not block it.
+    #[tokio::test]
+    async fn should_refuse_a_version_3_map_listing_an_endpoint_another_masternode_advertises() {
+        let entry = reset_legacy_entry(0x66, true);
+        for taken in [
+            "34.214.48.66:19999",
+            "34.214.48.66:26656",
+            "34.214.48.66:1443",
+        ] {
+            let err = values_placeholder(
+                &entry,
+                true,
+                &evonode_values(),
+                ScriptBuf::new(),
+                &[neighbour_at(taken)],
+                coinbase_not_read(),
+            )
+            .await
+            .expect_err("an endpoint in use is refused");
+            assert!(
+                matches!(&err, PlatformWalletError::InvalidParameter(message)
+                    if message.contains(taken) && message.contains("bad-protx-dup-netinfo-entry")),
+                "{taken}: got {err:?}"
+            );
+        }
+
+        // The target's own endpoints and unrelated ones do not collide.
+        let own = MasternodeListSummary {
+            pro_tx_hash: entry.pro_reg_tx_hash.to_byte_array(),
+            ..neighbour_at("34.214.48.66:26656")
+        };
+        values_placeholder(
+            &entry,
+            true,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[own, neighbour_at("34.214.48.66:26657")],
+            coinbase_not_read(),
+        )
+        .await
+        .expect("no other masternode advertises these endpoints");
+
+        // Version 2 registers the Core address only.
+        values_placeholder(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+            &[neighbour_at("34.214.48.66:26656")],
+            async { Some(coinbase(3)) },
+        )
+        .await
+        .expect("a platform port is not a registered address at version 2");
     }
 
     /// Once V24 is active Core refuses an evonode update below version 3,
