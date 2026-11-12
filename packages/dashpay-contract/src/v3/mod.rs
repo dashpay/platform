@@ -23,9 +23,10 @@ use serde_json::Value;
 //
 // - `contactRequest.encryptedShieldedAddress`, optional and last in position: the
 //   sender's shielded payment address for this contact (43 bytes), encrypted as
-//   `encryptedPublicKey` is (`encryptedFor`). That is an IV and three AES blocks,
-//   64 bytes; the 80-byte length is kept for a later encoding. A contact request
-//   stored before the property existed ends before it and reads back without it.
+//   `encryptedPublicKey` is (`encryptedFor`). That is 64 bytes, an IV and three AES
+//   blocks. The contract also accepts 80 bytes, an IV and four blocks, which wallets
+//   keep for a later encoding. A contact request stored before the property existed
+//   ends before it and reads back without it.
 //
 // And it adds one type:
 //

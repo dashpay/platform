@@ -56,9 +56,10 @@ contact, encrypted with the same shared secret. It is exactly 64 bytes:
 - 48 bytes: AES-CBC ciphertext of the 43-byte address (an 11-byte diversifier
   followed by a 32-byte transmission key)
 
-The contract accepts 64 to 80 bytes and keeps the 80-byte length for a later
-encoding. A sender gives each contact a different address, so a payment that
-arrives on one is attributed to that contact.
+The contract accepts 64 or 80 bytes, the two lengths in its range that are an
+IV plus whole blocks. Wallets write 64 and keep 80 for a later encoding. A
+sender gives each contact a different address, so a payment that arrives on
+one is attributed to that contact.
 
 From protocol version 15 the DashPay contract (v3) states these checks in its
 schema, and a contact request that fails one is refused (and the fee charged):
