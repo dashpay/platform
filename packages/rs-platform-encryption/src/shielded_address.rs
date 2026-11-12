@@ -217,7 +217,8 @@ mod tests {
     #[test]
     fn should_keep_profile_and_wallet_indices_out_of_the_contact_range() {
         assert!(!is_shielded_contact_index(&[0; 11]));
-        // 2^32 - 1, the last wallet-local index, and 2^87 - 1, the last below the range.
+        // 2^32 - 1, an index a wallet may use for itself, and 2^87 - 1, the last below the
+        // range.
         assert!(!is_shielded_contact_index(&hex("ffffffff00000000000000")));
         assert!(!is_shielded_contact_index(&hex("ffffffffffffffffffff7f")));
         // 2^87, the first per-contact index.
