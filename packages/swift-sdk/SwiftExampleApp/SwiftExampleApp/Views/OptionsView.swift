@@ -9,7 +9,6 @@ struct OptionsView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
     @State private var showingAbout = false
-    @State private var isSwitchingNetwork = false
     @State private var isExportingLogs = false
     @State private var exportedLogs: ExportedLogsArchive?
     @State private var logExportError: String?
@@ -36,9 +35,9 @@ struct OptionsView: View {
     @State private var devnetQuorumURLSnapshot: String? = nil
     @State private var devnetNameSnapshot: String? = nil
 
-    /// Devnet edits whose rebuild has not completed: Options closed while a
-    /// network switch was running, or the rebuild's stop, SDK build or
-    /// wallet-manager move failed. The next close rebuilds for them; a
+    /// Devnet edits whose rebuild has not completed: Options closed while
+    /// another rebuild was running, from any window, or the rebuild's stop,
+    /// SDK build or wallet-manager move failed. The next close rebuilds for them; a
     /// completed network switch clears them, since every devnet SDK build
     /// reads the edited settings.
     @State private var devnetRebuildPending = false
@@ -142,25 +141,17 @@ struct OptionsView: View {
                     Picker("Current Network", selection: Binding(
                         get: { appState.currentNetwork },
                         set: { newNetwork in
-                            // One switch at a time: the stop below can take
-                            // tens of seconds, and a second pick meanwhile
-                            // would publish its network in whichever order
-                            // the two stops finish.
-                            if newNetwork != appState.currentNetwork && !isSwitchingNetwork {
-                                // Earliest synchronous point of the switch:
-                                // cancel any in-flight SPV start before the
-                                // async body stops the old manager, so a
-                                // start resuming in the stop→activate gap
-                                // can't revive it.
-                                walletManagerStore.invalidatePendingSpvStarts()
-                                isSwitchingNetwork = true
+                            // One rebuild at a time, across windows:
+                            // `AppState.rebuildSdk` refuses this one while
+                            // another runs, and the picker is disabled then.
+                            if newNetwork != appState.currentNetwork {
                                 let network = appState.currentNetwork
-                                // Leaving Local turns Docker off before the new
-                                // network's SDK is built, so the build reads the
-                                // cleared flag; a failed switch turns it back on.
-                                let disablesDocker = newNetwork != .regtest && appState.useDockerSetup
                                 Task {
-                                    defer { isSwitchingNetwork = false }
+                                    // Leaving Local turns Docker off before the
+                                    // new network's SDK is built, so the build
+                                    // reads the cleared flag; a failed switch
+                                    // turns it back on.
+                                    var disabledDocker = false
                                     // Devnet's SPV peers come from
                                     // `{platformQuorumURL}/masternodes`
                                     // — no UserDefaults state to seed
@@ -183,10 +174,13 @@ struct OptionsView: View {
                                         switchingTo: newNetwork,
                                         failurePrefix: "Failed to stop SPV, staying on \(network.displayName)",
                                         prepare: {
-                                            if disablesDocker { appState.useDockerSetup = false }
+                                            if newNetwork != .regtest && appState.useDockerSetup {
+                                                appState.useDockerSetup = false
+                                                disabledDocker = true
+                                            }
                                         },
                                         rollBack: {
-                                            if disablesDocker { appState.useDockerSetup = true }
+                                            if disabledDocker { appState.useDockerSetup = true }
                                         },
                                         beforePublish: {
                                             platformBalanceSyncService.reset()
@@ -223,7 +217,7 @@ struct OptionsView: View {
                     .modifier(
                         NetworkPickerInFlightGate(
                             coordinator: walletManager.registrationCoordinator,
-                            isSwitching: isSwitchingNetwork
+                            isSwitching: appState.isRebuildingSdk
                         )
                     )
 
@@ -235,32 +229,30 @@ struct OptionsView: View {
                         Toggle("Use Docker Setup", isOn: Binding(
                             get: { appState.useDockerSetup },
                             set: { useDocker in
-                                guard useDocker != appState.useDockerSetup,
-                                      !isSwitchingNetwork else { return }
+                                guard useDocker != appState.useDockerSetup else { return }
                                 // Docker changes the SDK's endpoints and the
                                 // SPV peers. The setting is written only after
                                 // SPV has stopped, so a running client never
                                 // disagrees with it; a failed stop leaves it
-                                // unchanged. Cancel any in-flight start first:
-                                // it captured the old peer config.
-                                walletManagerStore.invalidatePendingSpvStarts()
-                                isSwitchingNetwork = true
+                                // unchanged. A refused rebuild changes nothing.
                                 let network = appState.currentNetwork
                                 Task {
-                                    defer { isSwitchingNetwork = false }
+                                    var previous = appState.useDockerSetup
                                     _ = await rebuildSdk(
                                         on: network,
                                         failurePrefix: "Failed to stop SPV, so the Docker setting was not changed",
-                                        prepare: { appState.useDockerSetup = useDocker },
-                                        rollBack: { appState.useDockerSetup = !useDocker }
+                                        prepare: {
+                                            previous = appState.useDockerSetup
+                                            appState.useDockerSetup = useDocker
+                                        },
+                                        rollBack: { appState.useDockerSetup = previous }
                                     )
                                 }
                             }
                         ))
-                            // A network switch away from regtest keeps this
-                            // section on screen until it publishes the new
-                            // network; the toggle stays off-limits until then.
-                            .disabled(isSwitchingNetwork)
+                            // A rebuild keeps this section on screen until it
+                            // publishes; the toggle stays off-limits until then.
+                            .disabled(appState.isRebuildingSdk)
                             .help("Connect to local dashmate Docker network. Stops SPV; restart it from the Wallet tab.")
 
                         if appState.useDockerSetup {
@@ -369,26 +361,17 @@ struct OptionsView: View {
                             devnetSettingsNeeded = false
                             guard quorumChanged || nameChanged || devnetRebuildPending else { return }
                             guard appState.currentNetwork == .devnet else { return }
-                            // A network switch in progress replaces the SDK if
-                            // it succeeds; keep the edits pending in case it
-                            // fails and the app stays on devnet.
-                            guard !isSwitchingNetwork else {
-                                devnetRebuildPending = true
-                                return
-                            }
                             devnetRebuildPending = false
-                            // Widest supersession gap (stop → await SDK
-                            // rebuild → activate). Invalidate first so a
-                            // start resuming anywhere in it bails.
-                            walletManagerStore.invalidatePendingSpvStarts()
-                            isSwitchingNetwork = true
                             Task {
-                                defer { isSwitchingNetwork = false }
                                 let outcome = await rebuildSdk(
                                     on: .devnet,
                                     failurePrefix: "Failed to stop SPV, so the devnet settings were not applied"
                                 )
-                                if outcome == .stopFailed || outcome == .failed {
+                                // Another rebuild running, a network switch
+                                // included, may fail and leave the app on
+                                // devnet: keep the edits pending for the next
+                                // close, as after a failed rebuild.
+                                if outcome == .busy || outcome == .stopFailed || outcome == .failed {
                                     devnetRebuildPending = true
                                 }
                             }
@@ -397,7 +380,7 @@ struct OptionsView: View {
                         Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
                             // Its peer seed is network-specific, and during a
                             // switch `currentNetwork` is still the old one.
-                            .disabled(isSwitchingNetwork)
+                            .disabled(appState.isRebuildingSdk)
                             .onChange(of: customSpvPeersEnabled) { _, isOn in
                                 // When enabling, seed the peers field with
                                 // the network's localhost default if the
@@ -407,12 +390,10 @@ struct OptionsView: View {
                                 if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
                                     customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
                                 }
-                                // Cancel any in-flight start (it captured the
-                                // pre-toggle peer config) before stopping, so
-                                // the next start picks up the new peers.
-                                walletManagerStore.invalidatePendingSpvStarts()
-                                // Stop SPV so the next start picks up the
-                                // new peer config in CoreContentView.
+                                // Stop SPV, cancelling any in-flight start (it
+                                // captured the pre-toggle peer config), so the
+                                // next start picks up the new peers in
+                                // CoreContentView.
                                 Task {
                                     _ = await stopSpvForReconfiguration(
                                         failurePrefix: "Failed to stop SPV, so the new peer setting is not applied yet")
@@ -462,7 +443,7 @@ struct OptionsView: View {
                     HStack {
                         Text("Network Status")
                         Spacer()
-                        if isSwitchingNetwork {
+                        if appState.isRebuildingSdk {
                             HStack(spacing: 4) {
                                 ProgressView()
                                     .scaleEffect(0.8)
@@ -685,11 +666,12 @@ struct OptionsView: View {
 
     /// Rebuild the SDK for `newNetwork` (by default `network`, the network the
     /// flow started on), move the wallet manager onto it, then publish the
-    /// SDK and its network. See `rebuildSdkAndMoveWalletManager` for the order
-    /// and the rollback: `prepare` writes the settings the build reads,
-    /// `rollBack` restores them if the build or the move fails, and
-    /// `beforePublish` runs just before a successful publish. Callers own
-    /// `invalidatePendingSpvStarts()` and `isSwitchingNetwork`.
+    /// SDK and its network, through `AppState.rebuildSdk`: `.busy`, with
+    /// nothing done, while another rebuild runs from any window. See
+    /// `rebuildSdkAndMoveWalletManager` for the order and the rollback:
+    /// `prepare` writes the settings the build reads, `rollBack` restores them
+    /// if the build or the move fails, and `beforePublish` runs just before a
+    /// successful publish.
     @MainActor
     private func rebuildSdk(
         on network: Network,
@@ -699,13 +681,11 @@ struct OptionsView: View {
         rollBack: @MainActor () -> Void = {},
         beforePublish: @MainActor () -> Void = {}
     ) async -> SdkRebuildOutcome {
-        await rebuildSdkAndMoveWalletManager(
+        await appState.rebuildSdk(
             from: network,
             to: newNetwork ?? network,
             stopSpv: { await stopSpvForReconfiguration(failurePrefix: failurePrefix) },
-            currentNetwork: { appState.currentNetwork },
             prepare: prepare,
-            buildSdk: { await appState.buildSdk(for: $0) },
             activateManager: { (target: Network, sdk: SDK) async -> Bool in
                 do {
                     try await walletManagerStore.activate(network: target, sdk: sdk)
@@ -725,23 +705,20 @@ struct OptionsView: View {
                 }
             },
             rollBack: rollBack,
-            publish: { (target: Network, sdk: SDK) in
-                beforePublish()
-                appState.publish(sdk, for: target)
-            },
-            // The App scene's tick observer runs `rebindWalletScopedServices`.
-            rebindWalletScopedServices: { appState.walletScopedServicesRebindTick &+= 1 }
+            beforePublish: beforePublish
         )
     }
 
-    /// Stop SPV before a flow replaces or reconfigures it. Returns false,
-    /// after showing `failurePrefix` with the error, only when the stop may
-    /// have left the old run loop behind. A manager that is not configured,
-    /// or whose shutdown has begun, throws `invalidHandle`: it has nothing to
+    /// Stop the active manager's SPV before a flow replaces or reconfigures
+    /// it, cancelling any in-flight start first
+    /// (`WalletManagerStore.stopSpvForReconfiguration`). Returns false, after
+    /// showing `failurePrefix` with the error, only when the stop may have
+    /// left the old run loop behind. A manager that is not configured, or
+    /// whose shutdown has begun, throws `invalidHandle`: it has nothing to
     /// stop, so the flow goes ahead.
     private func stopSpvForReconfiguration(failurePrefix: String) async -> Bool {
         do {
-            try await walletManager.stopSpv()
+            try await walletManagerStore.stopSpvForReconfiguration()
             return true
         } catch {
             if case PlatformWalletError.invalidHandle = error { return true }

@@ -33,14 +33,19 @@ class AppState: ObservableObject {
     /// fall back to the currently-active network behavior when `nil`.
     @Published var platformProtocolVersion: UInt32?
 
-    /// Monotonic tick bumped after OptionsView moves the wallet manager
+    /// Monotonic tick bumped after `rebuildSdk` moves the wallet manager
     /// onto a rebuilt SDK and publishes it: a network switch, the Docker
     /// toggle or a devnet edit. SwiftExampleAppApp observes it to re-run
     /// `rebindWalletScopedServices()` against the new manager. A
     /// same-network rebuild changes neither the network nor the wallet ID
     /// set, so without the tick `PlatformBalanceSyncService` and
     /// `ShieldedService` would keep the old manager.
-    @Published var walletScopedServicesRebindTick: Int = 0
+    @Published private(set) var walletScopedServicesRebindTick: Int = 0
+
+    /// Whether an SDK rebuild is running, started from any window. Options
+    /// disables its rebuild controls on it; `rebuildSdk` refuses a second
+    /// rebuild by itself.
+    @Published private(set) var isRebuildingSdk = false
 
     @Published var useDockerSetup: Bool {
         didSet {
@@ -203,11 +208,62 @@ class AppState: ObservableObject {
         showError = true
     }
 
+    /// Rebuild the SDK for `target` through `rebuildSdkAndMoveWalletManager`
+    /// (see it for the steps and the rollback), or refuse with `.busy`,
+    /// running none of the steps, while another rebuild runs.
+    ///
+    /// Every window shares this object, and a rebuild changes shared
+    /// settings, the published SDK and network, and the active wallet
+    /// manager: a second rebuild beside the first would roll its prepared
+    /// settings back over the first one's, or publish its network in
+    /// whichever order the two finish. The rebuild is reserved before its
+    /// first suspension and released after its publish or rollback. This is
+    /// the only way the SDK and its network change after the bootstrap.
+    ///
+    /// The steps this object does not own are injected: `stopSpv` (the
+    /// wallet manager's), `prepare` and `rollBack` (the settings the flow
+    /// changes), `activateManager` (the wallet manager store's) and
+    /// `beforePublish` (the flow's own state).
+    func rebuildSdk(
+        from network: Network,
+        to target: Network,
+        stopSpv: @MainActor () async -> Bool,
+        prepare: @MainActor () -> Void,
+        activateManager: @MainActor (Network, SDK) async -> Bool,
+        rollBack: @MainActor () -> Void,
+        beforePublish: @MainActor () -> Void
+    ) async -> SdkRebuildOutcome {
+        guard !isRebuildingSdk else {
+            SDKLogger.event(
+                "sdk_rebuild_refused",
+                category: .lifecycle,
+                fields: ["network": .publicText(target.displayName)]
+            )
+            return .busy
+        }
+        isRebuildingSdk = true
+        defer { isRebuildingSdk = false }
+        return await rebuildSdkAndMoveWalletManager(
+            from: network,
+            to: target,
+            stopSpv: stopSpv,
+            currentNetwork: { self.currentNetwork },
+            prepare: prepare,
+            buildSdk: { await self.buildSdk(for: $0) },
+            activateManager: activateManager,
+            rollBack: rollBack,
+            publish: { (target: Network, sdk: SDK) in
+                beforePublish()
+                self.publish(sdk, for: target)
+            },
+            rebindWalletScopedServices: { self.walletScopedServicesRebindTick &+= 1 }
+        )
+    }
+
     /// Build an SDK for `network`, with the current quorum mode applied and
     /// the stored contracts loaded, without publishing it. Returns `nil`
-    /// after showing the failure. `rebuildSdkAndMoveWalletManager` publishes
-    /// the SDK, with its network, once the wallet manager has moved onto it.
-    func buildSdk(for network: Network) async -> SDK? {
+    /// after showing the failure.
+    private func buildSdk(for network: Network) async -> SDK? {
         isLoading = true
         defer { isLoading = false }
         do {
@@ -227,11 +283,10 @@ class AppState: ObservableObject {
     }
 
     /// Make `sdk`, built for `network`, the current SDK and `network` the
-    /// current network, together. Call it from the `publish` step of
-    /// `rebuildSdkAndMoveWalletManager`, after the wallet manager moved onto
-    /// `sdk`, so the selected network, the SDK and the manager change in one
-    /// main-actor turn.
-    func publish(_ sdk: SDK, for network: Network) {
+    /// current network, together. The `publish` step of `rebuildSdk`, after
+    /// the wallet manager moved onto `sdk`, so the selected network, the SDK
+    /// and the manager change in one main-actor turn.
+    private func publish(_ sdk: SDK, for network: Network) {
         // Identities, contracts, documents and token balances are scoped
         // per network inside SwiftData; `@Query` consumers filter by
         // `network` and follow the DataManager's scope.

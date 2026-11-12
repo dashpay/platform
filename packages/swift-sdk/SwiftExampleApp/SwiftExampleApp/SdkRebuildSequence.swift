@@ -2,10 +2,13 @@ import SwiftDashSDK
 
 /// How an SDK rebuild started from Options ended.
 enum SdkRebuildOutcome: Equatable {
+    /// Another rebuild was running, started from this window or another;
+    /// nothing ran.
+    case busy
+    /// The app had left the network the rebuild was started on; nothing ran.
+    case networkChanged
     /// SPV did not stop; nothing changed.
     case stopFailed
-    /// The network changed while SPV stopped; nothing changed.
-    case networkChanged
     /// The SDK build or the wallet manager's move failed and was reported.
     /// The prepared settings were rolled back and nothing was published.
     case failed
@@ -15,15 +18,15 @@ enum SdkRebuildOutcome: Equatable {
 
 /// Stop SPV, build the SDK for `target`, move the wallet manager onto it, and
 /// only then publish the network and the SDK, as one main-actor sequence.
-/// Options runs every SDK rebuild through it: a network switch, the Docker
-/// toggle and devnet edits.
+/// `AppState.rebuildSdk` runs every SDK rebuild through it, one at a time: a
+/// network switch, the Docker toggle and devnet edits.
 ///
 /// Each step runs only if the one before it succeeded:
 ///
-/// 1. `stopSpv`. A running SPV client must never disagree with the settings
+/// 1. The app must still be on `network`. A rebuild started before another
+///    one published a different network changes nothing.
+/// 2. `stopSpv`. A running SPV client must never disagree with the settings
 ///    the new SDK is built from.
-/// 2. The app must still be on `network`, re-checked because the stop
-///    suspends.
 /// 3. `prepare` writes settings the build reads, such as the Docker
 ///    endpoints.
 /// 4. `buildSdk` builds the SDK for `target` without publishing it, or
@@ -56,8 +59,8 @@ func rebuildSdkAndMoveWalletManager<Sdk>(
     publish: @MainActor (Network, Sdk) -> Void,
     rebindWalletScopedServices: @MainActor () -> Void
 ) async -> SdkRebuildOutcome {
-    guard await stopSpv() else { return .stopFailed }
     guard currentNetwork() == network else { return .networkChanged }
+    guard await stopSpv() else { return .stopFailed }
     prepare()
     guard let sdk = await buildSdk(target), await activateManager(target, sdk) else {
         rollBack()

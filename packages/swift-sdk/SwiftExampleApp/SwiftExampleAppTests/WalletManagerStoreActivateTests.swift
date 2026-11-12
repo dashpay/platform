@@ -15,11 +15,11 @@ import XCTest
 ///   managers would run against the same wallets;
 /// - a replacement that fails to configure leaves the current manager cached,
 ///   active and running, so the app keeps working on the SDK it keeps, and a
-///   later retry still replaces it;
-/// - an activation for a network whose previous activation is still waiting
-///   for the replaced manager's shutdown is refused before it configures
-///   anything. Both would otherwise replace the same cached manager, and the
-///   later one would publish over the earlier one without shutting it down.
+///   later retry still replaces it.
+///
+/// Two activations for one network never overlap: `AppState.rebuildSdk` runs
+/// one SDK rebuild at a time (`AppStateSdkRebuildTests`), and the bootstrap
+/// runs once, before any window can rebuild.
 ///
 /// Real regtest SDKs and native managers: building either needs no network,
 /// and nothing here starts a sync.
@@ -105,72 +105,5 @@ final class WalletManagerStoreActivateTests: XCTestCase {
         XCTAssertNotIdentical(store.activeManager, current)
         XCTAssertFalse(current.isConfigured)
         await store.activeManager.shutdown()
-    }
-
-    func testShouldRefuseASecondActivationWhileTheFirstAwaitsTheReplacedManagersShutdown() async throws {
-        let store = WalletManagerStore(modelContainer: try DashModelContainer.createInMemory())
-        try await store.activate(
-            network: .regtest, sdk: try SDK(network: .regtest, contextProvider: .spv))
-        let replaced = store.activeManager
-
-        // Hold the replaced manager's shutdown open at its first native step.
-        let gate = DispatchSemaphore(value: 0)
-        defer { gate.signal() }
-        let log = EventLog()
-        let calls = replaced.nativeTeardownCalls
-        replaced.nativeTeardownCalls = PlatformWalletNativeTeardownCalls(
-            spvStop: calls.spvStop,
-            platformAddressSyncStop: calls.platformAddressSyncStop,
-            shieldedSyncStop: { handle in
-                log.append("shutdown_held")
-                _ = gate.wait(timeout: .now() + 10)
-                return calls.shieldedSyncStop(handle)
-            },
-            dashPaySyncStop: calls.dashPaySyncStop,
-            dpnsSyncStop: calls.dpnsSyncStop,
-            destroy: calls.destroy,
-            spvStart: calls.spvStart)
-
-        // Two windows rebuild the SDK for the same network.
-        let firstSdk = try SDK(network: .regtest, contextProvider: .spv)
-        let first = Task { try await store.activate(network: .regtest, sdk: firstSdk) }
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !log.events.contains("shutdown_held") {
-            guard ContinuousClock.now < deadline else {
-                return XCTFail("the first activation never reached the replaced manager's shutdown")
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
-
-        // Refused for as long as the first is in flight, not only once.
-        let secondSdk = try SDK(network: .regtest, contextProvider: .spv)
-        for _ in 0..<2 {
-            do {
-                try await store.activate(network: .regtest, sdk: secondSdk)
-                XCTFail("an activation must be refused while one for the same network is in flight")
-            } catch {
-                XCTAssertTrue(
-                    error.localizedDescription.contains("already replacing"),
-                    error.localizedDescription)
-            }
-        }
-        XCTAssertIdentical(store.activeManager, replaced)
-        XCTAssertIdentical(store.manager(for: .regtest), replaced)
-        // The refused call configured no manager on its SDK, so the SDK's SPV
-        // quorum source slot is still free.
-        let slotHolder = try PlatformWalletManager(sdk: secondSdk)
-        await slotHolder.shutdown()
-
-        gate.signal()
-        try await first.value
-        let published = store.activeManager
-        XCTAssertNotIdentical(published, replaced)
-        XCTAssertIdentical(store.manager(for: .regtest), published)
-        XCTAssertFalse(replaced.isConfigured)
-        // The cache holds the first activation's SDK: activating with it again
-        // keeps the published manager instead of replacing it.
-        try await store.activate(network: .regtest, sdk: firstSdk)
-        XCTAssertIdentical(store.activeManager, published)
-        await published.shutdown()
     }
 }

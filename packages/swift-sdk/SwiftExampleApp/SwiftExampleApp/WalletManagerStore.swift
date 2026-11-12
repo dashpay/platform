@@ -59,11 +59,12 @@ final class WalletManagerStore: ObservableObject {
     /// re-checks it (alongside manager identity) after its off-main
     /// peer resolution; a mismatch means the start is stale and must
     /// not revive a stopped or replaced manager. Identity alone is not
-    /// enough because of the stop→activate gap: OptionsView stops the
-    /// old manager, then awaits the SDK rebuild, and the store swaps
-    /// `activeManager` only after that. This token is invalidated at
-    /// the *earliest* synchronous point of each such path, closing the
-    /// window. See the guard in `CoreSpvLauncher.start`.
+    /// enough because of the stop→activate gap: an SDK rebuild stops the
+    /// old manager, then awaits the SDK build, and the store swaps
+    /// `activeManager` only after that. Each such path invalidates this
+    /// token before it stops SPV (`stopSpvForReconfiguration`), so a start
+    /// resuming after the stop bails. See the guard in
+    /// `CoreSpvLauncher.start`.
     ///
     /// Not `@Published` — nothing renders off it; it's read
     /// synchronously by start call sites and their revalidation
@@ -74,15 +75,24 @@ final class WalletManagerStore: ObservableObject {
     ///
     /// Invariant: **every user-visible or programmatic stop / replace of
     /// the active manager's SPV must bump the generation first.** Call
-    /// this at the earliest synchronous point of any such path (network
-    /// switch, devnet/SDK rebuild, peer-config change, a Stop/Pause
-    /// button) so a start suspended in the stop→activate gap bails
-    /// instead of reviving the superseded manager. User-facing stop
-    /// buttons should route through `stopSpvCancellingPendingStarts(_:)`
-    /// so they can't forget; supersession flows (see `OptionsView`)
-    /// invalidate explicitly at their flow's earliest sync point.
+    /// this before any such path stops SPV (network switch, devnet/SDK
+    /// rebuild, peer-config change, a Stop/Pause button) so a start
+    /// suspended in the stop→activate gap bails instead of reviving the
+    /// superseded manager. User-facing stop buttons route through
+    /// `stopSpvCancellingPendingStarts(_:)` and reconfigurations through
+    /// `stopSpvForReconfiguration()`, so they can't forget.
     func invalidatePendingSpvStarts() {
         spvStartGeneration &+= 1
+    }
+
+    /// Stop the active manager's SPV before an SDK rebuild or a peer change
+    /// reconfigures it, after cancelling any in-flight
+    /// `CoreSpvLauncher.start`, and wait for the stop. It goes through the
+    /// SDK's async `stopSpv()`, which queues behind a start the SDK already
+    /// admitted and stops the client that start brings up.
+    func stopSpvForReconfiguration() async throws {
+        invalidatePendingSpvStarts()
+        try await activeManager.stopSpv()
     }
 
     /// Stop `manager`'s SPV client after cancelling any in-flight
@@ -164,20 +174,6 @@ final class WalletManagerStore: ObservableObject {
     /// the cached one.
     private var managerSdks: [Network: SDK] = [:]
 
-    /// Networks with an `activate` call still running. A replacement
-    /// suspends while the manager it replaces shuts down.
-    private var activatingNetworks: Set<Network> = []
-
-    /// Thrown by `activate` while another activation for the same network is
-    /// still running. The refused call configured and published nothing.
-    struct ActivationInProgress: LocalizedError {
-        let network: Network
-
-        var errorDescription: String? {
-            "Another rebuild is already replacing the \(network.displayName) wallet manager, so this one was not applied."
-        }
-    }
-
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
     /// fetch to its own network so the shared store doesn't cause
@@ -216,10 +212,15 @@ final class WalletManagerStore: ObservableObject {
     /// stop. Until then the old manager stays cached, and active if it
     /// was, but its handle is already revoked: `manager(for:)` and
     /// `backgroundManager(for:)` still return it, and calls on it fail
-    /// with `invalidHandle`. A call for a network whose activation is still
-    /// running throws `ActivationInProgress` before it configures anything:
-    /// both would replace the same cached manager, and the later one would
-    /// publish over the earlier one without shutting it down.
+    /// with `invalidHandle`.
+    ///
+    /// Two calls replacing one network's manager must not overlap: both
+    /// would replace the same cached manager, and the later one would
+    /// publish over the earlier one without shutting it down. They don't:
+    /// SDK rebuilds call this inside `AppState.rebuildSdk`, one at a time;
+    /// the bootstrap calls it before any window can rebuild; and
+    /// `backgroundManager(for:)` calls it only for a network without a
+    /// manager, which replaces nothing and never suspends.
     ///
     /// `makeActive == false` materializes the manager into the cache
     /// without swapping `activeManager`, unless the manager it replaces is
@@ -228,10 +229,6 @@ final class WalletManagerStore: ObservableObject {
     /// a non-active network without triggering a user-visible network
     /// switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) async throws {
-        guard activatingNetworks.insert(network).inserted else {
-            throw ActivationInProgress(network: network)
-        }
-        defer { activatingNetworks.remove(network) }
         // Stale-cache check: the cached manager's Sdk clone is locked
         // in at `configure` time (the FFI is single-shot — see
         // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
@@ -308,9 +305,9 @@ final class WalletManagerStore: ObservableObject {
         managerSdks[network] = sdk
         if becomesActive {
             // A freshly (re)built active manager supersedes any in-flight
-            // SPV start against the previous one (defensive backstop; the
-            // supersession call sites also invalidate at their earliest
-            // synchronous point).
+            // SPV start against the previous one (defensive backstop; a
+            // rebuild also invalidates before it stops SPV, in
+            // `stopSpvForReconfiguration`).
             invalidatePendingSpvStarts()
             activeManager = manager
         }

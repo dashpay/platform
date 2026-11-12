@@ -3,8 +3,9 @@ import XCTest
 @testable import SwiftExampleApp
 
 /// Pins the order of `rebuildSdkAndMoveWalletManager`, the sequence every
-/// SDK rebuild from Options runs: stop SPV, prepare the settings the build
-/// reads, build the SDK, move the wallet manager onto exactly that SDK, then
+/// SDK rebuild runs: check the app is still on the network the rebuild was
+/// started on, stop SPV, prepare the settings the build reads, build the
+/// SDK, move the wallet manager onto exactly that SDK, then
 /// publish the SDK and its network together and rebind the wallet-scoped
 /// services. A manager activated with an SDK other than the one published
 /// keeps another network's SDK clone and adaptive provider SPV source slot,
@@ -45,7 +46,6 @@ final class SdkRebuildSequenceTests: XCTestCase {
         from network: Network,
         to target: Network,
         stopSucceeds: Bool = true,
-        networkAfterStop: Network? = nil,
         buildSucceeds: Bool = true,
         activationSucceeds: Bool = true
     ) async -> SdkRebuildOutcome {
@@ -54,9 +54,6 @@ final class SdkRebuildSequenceTests: XCTestCase {
             to: target,
             stopSpv: {
                 app.steps.append(.stopSpv)
-                if let networkAfterStop {
-                    app.currentNetwork = networkAfterStop
-                }
                 return stopSucceeds
             },
             currentNetwork: { app.currentNetwork },
@@ -152,15 +149,15 @@ final class SdkRebuildSequenceTests: XCTestCase {
         XCTAssertEqual(app.currentNetwork, .testnet)
     }
 
-    /// The stop suspends; a flow whose network was replaced meanwhile must
-    /// not rebuild for a network the app has left.
-    func testNetworkChangedDuringTheStopChangesNothing() async {
-        let app = AppModel(currentNetwork: .testnet)
+    /// A rebuild tapped on a network another rebuild has since left must not
+    /// rebuild for it, and must not stop SPV on the network the app is on.
+    func testShouldChangeNothingForATapFromANetworkTheAppHasLeft() async {
+        let app = AppModel(currentNetwork: .devnet)
 
-        let outcome = await run(app, from: .testnet, to: .testnet, networkAfterStop: .devnet)
+        let outcome = await run(app, from: .testnet, to: .testnet)
 
         XCTAssertEqual(outcome, .networkChanged)
-        XCTAssertEqual(app.steps, [.stopSpv])
+        XCTAssertEqual(app.steps, [])
     }
 
     /// A failed SDK build during a network switch must leave the selected

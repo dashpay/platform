@@ -155,7 +155,7 @@ struct SwiftExampleAppApp: App {
                     appUIState.pendingInviteURL = url.absoluteString
                 }
                 .task {
-                    await bootstrap()
+                    await bootstrapOnce()
                 }
                 // Rebind wallet-scoped services whenever the set of
                 // managed wallets changes — wallet creation, restore
@@ -171,12 +171,12 @@ struct SwiftExampleAppApp: App {
                     rebindWalletScopedServices()
                 }
                 // SDK rebuilds from OptionsView: a network switch, the
-                // Docker toggle or a devnet edit. OptionsView builds the
-                // SDK, moves the wallet manager onto it, publishes the SDK
-                // and its network, then bumps this tick, so the services
-                // rebind against the new manager. A same-network rebuild
-                // changes neither the network nor the wallet ID set, so
-                // only this tick covers it.
+                // Docker toggle or a devnet edit. `AppState.rebuildSdk`
+                // builds the SDK, moves the wallet manager onto it,
+                // publishes the SDK and its network, then bumps this tick,
+                // so the services rebind against the new manager. A
+                // same-network rebuild changes neither the network nor the
+                // wallet ID set, so only this tick covers it.
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
@@ -477,6 +477,19 @@ struct SwiftExampleAppApp: App {
                 error: error
             )
         }
+    }
+
+    /// Run `bootstrap()` once per process. Every window's content runs this
+    /// task; a window opened later waits for, or finds finished, the first
+    /// one's bootstrap instead of building and publishing an SDK and
+    /// activating a manager of its own, which could interleave with an SDK
+    /// rebuild another window runs. `retryBootstrap` replaces the task.
+    @MainActor
+    private func bootstrapOnce() async {
+        if bootstrapTask == nil {
+            bootstrapTask = Task { await bootstrap() }
+        }
+        await bootstrapTask?.value
     }
 
     @MainActor
