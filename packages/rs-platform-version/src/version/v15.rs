@@ -752,6 +752,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     reference again when its value or a property it reads the target from changed.
 ///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
 ///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
+///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
+///     reference to a document whose `contractId` is written `"$self."`, or a `type` listing
+///     kinds), so a contract stored before 15 with `"$self."` keys on any other declaration
+///     is read as version 0 read it; registration refuses those keys there.
 ///
 /// 34. **A key with a budget or an expiry signs no data contract**: a budget counts what the
 ///     transitions a key signs take from its identity, and an expiry ends its signing, while a
@@ -781,15 +785,31 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     at the block time, so an expired bucket is never written again after its drop. Its
 ///     estimates keep every bucket, as generation 2's do. Protocol v14 keeps
 ///     `add_indices_for_top_index_level_for_contract_operations` 2, which writes every bucket.
+/// 37. **A contest among documents**: `CONTRACT_VERSIONS_V7` selects
+///     `parse_contested_documents_resolution` 0: a contested index may declare
+///     `"resolution": 2` (`ContestedIndexResolution::MasternodeVoteOnDocuments`), which the
+///     native schema check of note 7 admits and meta-schema v3 refuses. Masternodes vote for
+///     a contender, abstain or lock, as under resolution 0, but each document entered for the
+///     index values is a contender of its own: the contest keeps it under its document id
+///     where the other resolutions keep it under its owner's id, so an identity may enter
+///     several (no `DocumentContestIdentityAlreadyContestantError`), a vote towards a
+///     contender names the document id, and the stored result names the winning document.
+///     The winner is stored under the owner its document names. The methods that write, check
+///     and award a contender read the resolution of the contested index, which no contract
+///     registered before this version can declare, so the generations protocol v14 and
+///     earlier select behave as they did. The decision proposals contract's `choice` type
+///     uses it for the choices of a multiple choice proposal. Protocol v14 and earlier keep
+///     `parse_contested_documents_resolution` `None` and refuse the value.
 ///
-/// 37. **Removing the contested resource votes of a masternode that left the list**:
+///
+/// 38. **Removing the contested resource votes of a masternode that left the list**:
 ///     `remove_all_votes_given_by_identities` 1 (`DRIVE_VOTE_METHOD_VERSIONS_V4`, note 10)
 ///     removes every contested resource vote reference of the masternode, and deletes the
 ///     vote a reference points at while that vote is stored, once when two references point
 ///     at it. Generation 0 deletes at the path of every reference. Protocol v14 and earlier
 ///     keep generation 0.
 ///
-/// 38. **The contenders of one contest name one poll**: a contest is stored at the path of
+/// 39. **The contenders of one contest name one poll**: a contest is stored at the path of
 ///     its index keys, and its poll is named by an id hashed from its index values.
 ///     `canonical_contested_index_values` 1 (`CONTRACT_VERSIONS_V7`) writes every index
 ///     value of a contested create the one way its property's type keys it: an integer in

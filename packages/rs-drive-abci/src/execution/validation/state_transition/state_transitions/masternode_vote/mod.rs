@@ -110,6 +110,9 @@ mod contest_index_value_forms_tests;
 mod charter_election_tests;
 
 #[cfg(test)]
+mod multiple_choice_proposal_tests;
+
+#[cfg(test)]
 mod end_date_cleanup_tests;
 
 #[cfg(test)]
