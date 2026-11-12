@@ -643,14 +643,15 @@ class Contracts internal constructor(private val sdk: Sdk) {
     }
 
     /**
-     * Pre-load known contracts into the SDK's trusted context provider so
-     * proof verification resolves them without a network fetch — mirrors
+     * Pre-load known contracts into the SDK's context provider so proof
+     * verification resolves them without a network fetch — mirrors
      * Swift's `SDK.loadKnownContracts`. Each pair is
      * `(base58ContractId, versionedBinarySerialization)`; the second element
      * must be the contract's versioned binary serialization (what
      * `DataContract.versionedDeserialize` expects), NOT its JSON. Entries with
      * an empty id or empty bytes are skipped; empty input short-circuits.
-     * Throws on error (missing trusted provider or a malformed contract).
+     * Throws on error (a malformed contract). A provider that keeps no
+     * contracts ignores them.
      */
     suspend fun loadKnownContracts(contracts: List<Pair<String, ByteArray>>) =
         sdk.queryGate.op {

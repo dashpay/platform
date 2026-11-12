@@ -16,6 +16,7 @@
 //! type lists under `moderatorAbilities.deleteKeepsFields` (`moderatedDocument`, `$ownerId` or
 //! a kept field only). So a later read finds the value the entry was written under.
 
+use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
 use crate::drive::contract::moderation::types::{
     estimated_document_removal_kept_fields_size, estimated_document_removal_value_size,
 };
@@ -26,6 +27,7 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -307,7 +309,8 @@ impl Drive {
             )?;
             return Ok(ReferencedValues::Estimate);
         }
-        let element = if referenced_type.documents_keep_history() {
+        let current_history_layout = uses_current_document_history_layout(platform_version)?;
+        let element = if referenced_type.documents_keep_history() && !current_history_layout {
             // The `0` of a document keeping history is a reference to its current version
             let path = contract_documents_keeping_history_primary_key_path_for_document_id(
                 contract.id_ref().as_bytes(),
@@ -327,14 +330,25 @@ impl Drive {
                 contract.id_ref().as_bytes(),
                 referenced_type_name,
             );
-            self.grove_get_raw_optional(
-                (&path).into(),
-                referenced_id.as_slice(),
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                drive_operations,
-                &platform_version.drive,
-            )?
+            if referenced_type.documents_keep_history() {
+                self.grove_get(
+                    (&path).into(),
+                    referenced_id.as_slice(),
+                    QueryType::StatefulQuery,
+                    transaction,
+                    drive_operations,
+                    &platform_version.drive,
+                )?
+            } else {
+                self.grove_get_raw_optional(
+                    (&path).into(),
+                    referenced_id.as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    drive_operations,
+                    &platform_version.drive,
+                )?
+            }
         };
         match element {
             Some(Element::Item(bytes, _)) | Some(Element::ItemWithSumItem(bytes, _, _)) => {
@@ -413,7 +427,8 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let document_size = referenced_type.estimated_size(platform_version)? as u32;
-        if referenced_type.documents_keep_history() {
+        let current_history_layout = uses_current_document_history_layout(platform_version)?;
+        if referenced_type.documents_keep_history() && !current_history_layout {
             let path = contract_documents_keeping_history_primary_key_path_for_document_id(
                 contract.id_ref().as_bytes(),
                 referenced_type.name(),
@@ -442,17 +457,45 @@ impl Drive {
                 contract.id_ref().as_bytes(),
                 referenced_type.name(),
             );
-            self.grove_get_raw_optional(
-                (&path).into(),
-                &[0; 32],
-                DirectQueryType::StatelessDirectQuery {
-                    in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
-                    query_target: QueryTargetValue(document_size),
-                },
-                None,
-                drive_operations,
-                &platform_version.drive,
-            )?;
+            if referenced_type.documents_keep_history() {
+                let pointer_size = if referenced_type.documents_summable().is_some() {
+                    Element::required_reference_with_sum_item_space(
+                        DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                        0,
+                        &platform_version.drive.grove_version,
+                    )?
+                } else {
+                    Element::required_item_space(
+                        DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                        0,
+                        &platform_version.drive.grove_version,
+                    )?
+                };
+                self.grove_get(
+                    (&path).into(),
+                    &[0; 32],
+                    QueryType::StatelessQuery {
+                        in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
+                        query_target: QueryTargetValue(pointer_size),
+                        estimated_reference_sizes: vec![document_size],
+                    },
+                    None,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+            } else {
+                self.grove_get_raw_optional(
+                    (&path).into(),
+                    &[0; 32],
+                    DirectQueryType::StatelessDirectQuery {
+                        in_tree_type: referenced_type.primary_key_tree_type(platform_version)?,
+                        query_target: QueryTargetValue(document_size),
+                    },
+                    None,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+            }
         }
         if kind == DocumentReferenceKind::Moderated {
             let path = contract_document_type_removals_path(
@@ -562,6 +605,7 @@ pub(crate) fn set_derived_index_values(document: &mut Document, values: BTreeMap
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::DriveConfig;
     use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use crate::drive::Drive;
@@ -578,6 +622,76 @@ mod tests {
     use dpp::prelude::DataContract;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn should_price_current_history_pointer_reads_with_the_writers_element_size() {
+        use grovedb::batch::key_info::KeyInfo;
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::GroveDb;
+
+        let version = PlatformVersion::latest();
+        for summable in [true, false] {
+            let mut extra = platform_value!({
+                "documentsKeepHistory":true,
+                "documentsSummable":"amount",
+                "properties":{
+                    "topic":{"type":"string", "maxLength":20, "position":0},
+                    "amount":{"type":"integer", "minimum":0, "maximum":100, "position":1}
+                },
+                "required":["topic","amount"]
+            });
+            if !summable {
+                extra.remove("documentsSummable").unwrap();
+            }
+            let contract = contract_with(
+                extra,
+                platform_value!([{ "postId.topic": "asc" }]),
+                Value::Null,
+            );
+            let drive = setup(&contract);
+            let post = contract.document_type_for_name("post").unwrap();
+            let mut operations = vec![];
+            drive
+                .add_referenced_document_read_estimation(
+                    &contract,
+                    post,
+                    DocumentReferenceKind::Permanent,
+                    &mut operations,
+                    version,
+                )
+                .unwrap();
+            let pointer_size = if summable {
+                Element::required_reference_with_sum_item_space(
+                    DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                    0,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+            } else {
+                Element::required_item_space(
+                    DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE,
+                    0,
+                    &version.drive.grove_version,
+                )
+                .unwrap()
+            };
+            let path = contract_documents_primary_key_path(contract.id_ref().as_bytes(), "post");
+            let expected = GroveDb::average_case_for_get(
+                &KeyInfoPath::from_known_owned_path(path.map(|part| part.to_vec()).to_vec()),
+                &KeyInfo::KnownKey(vec![0; 32]),
+                post.primary_key_tree_type(version).unwrap(),
+                pointer_size,
+                vec![post.estimated_size(version).unwrap() as u32],
+                &version.drive.grove_version,
+            )
+            .unwrap();
+            let [LowLevelDriveOperation::CalculatedCostOperation(actual)] = operations.as_slice()
+            else {
+                panic!("one current-pointer read is priced");
+            };
+            assert_eq!(actual, &expected, "summable={summable}");
+        }
+    }
 
     const OWNER: [u8; 32] = [7; 32];
     const CREATOR: [u8; 32] = [8; 32];

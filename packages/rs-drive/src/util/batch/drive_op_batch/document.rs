@@ -224,9 +224,8 @@ fn force_delete_consumed_document_operations(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     match consumed_document.read {
-        Some(read) => drive.force_delete_read_document_for_contract_operations(
-            read.document,
-            read.storage_flags,
+        Some(document) => drive.force_delete_read_document_for_contract_operations(
+            document,
             contract,
             document_type,
             previous_batch_operations,

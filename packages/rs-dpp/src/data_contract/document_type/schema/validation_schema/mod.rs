@@ -752,6 +752,33 @@ pub(crate) fn validator_regex_within(
     pattern: &str,
     size_limit: Option<usize>,
 ) -> Option<regex::Regex> {
+    let mut builder = regex::RegexBuilder::new(&converted_regex(pattern));
+    if let Some(size_limit) = size_limit {
+        builder.size_limit(size_limit);
+    }
+    builder.build().ok()
+}
+
+/// Whether `value` parses as the JSON Schema validator's regex dialect: its syntax alone,
+/// read without compiling it. [`converted_regex`] applies the fork's `convert_regex`
+/// rewrites, then `regex-syntax`, the parser the `regex` crate uses, parses the result to
+/// an abstract syntax tree. The nest limit is the `regex` crate's default, so nesting is
+/// bounded the way the crate bounds it. Reading the syntax alone, without the compiler's
+/// later translation of the tree, accepts a few values the compiler does not, such as an
+/// unknown Unicode property name (`\p{Foobar}`): a well-formed pattern the engine holds no
+/// character class for.
+pub(crate) fn validator_regex_parses(value: &str) -> bool {
+    regex_syntax::ast::parse::Parser::new()
+        .parse(&converted_regex(value))
+        .is_ok()
+}
+
+/// `pattern` with the JSON Schema validator's `convert_regex` rewrites applied, ready for
+/// the `regex` crate to compile or its parser to read: each ECMA control escape `\cX`
+/// replaced with its control character, and the classes `\d`, `\D`, `\w`, `\W`, `\s` and
+/// `\S` rewritten as explicit ones. The `regex` crate refuses look-around and
+/// backreferences in what it reads.
+fn converted_regex(pattern: &str) -> String {
     let controlled = CONTROL_ESCAPE.replace_all(pattern, |captures: &regex::Captures| {
         // The escape's letter, an ASCII one, uppercased is at least `A` (65)
         captures
@@ -786,9 +813,5 @@ pub(crate) fn validator_regex_within(
             None => converted.push(current),
         }
     }
-    let mut builder = regex::RegexBuilder::new(&converted);
-    if let Some(size_limit) = size_limit {
-        builder.size_limit(size_limit);
-    }
-    builder.build().ok()
+    converted
 }

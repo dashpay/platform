@@ -79,10 +79,10 @@ impl Drive {
     ///
     /// The caller's `platform_version` selects the generation of this method and every
     /// rule inside it, so a producer's version cannot lower them. `query_platform_version`
-    /// selects only the layout the producer proved: whether the proof of an owned,
-    /// fee-paying transition carries the owner's credit balance, which the producer's
-    /// `prove_state_transition` generation decides. The caller must authenticate the
-    /// producer version together with the resulting root.
+    /// selects only the layout the producer proved. Its `prove_state_transition` generation
+    /// decides whether an owned, fee-paying transition carries the owner's credit balance;
+    /// `document_history_storage_layout` selects the document history layout. The caller
+    /// must authenticate the producer version together with the resulting root.
     ///
     /// # Parameters
     ///
@@ -97,8 +97,8 @@ impl Drive {
     /// The root hash of the proof and the verified outcome, as for
     /// [`Self::verify_state_transition_was_executed_with_proof`]. A generation this build
     /// does not know, of this method in the caller's version or of
-    /// `prove_state_transition` in the producer's, is reported as
-    /// [`DriveError::UnknownVersionMismatch`] naming that method.
+    /// `prove_state_transition` or `document_history_storage_layout` in the producer's,
+    /// is reported as [`DriveError::UnknownVersionMismatch`] naming that method.
     pub fn verify_state_transition_was_executed_with_proof_for_query_version(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -114,8 +114,8 @@ impl Drive {
             .state_transition
             .verify_state_transition_was_executed_with_proof
         {
-            // Generations 0 and 1 run the same checks. The layout comes from the
-            // producer's `prove_state_transition` generation, so either one verifies a
+            // Generations 0 and 1 run the same checks. The owner-balance layout comes from
+            // the producer's `prove_state_transition` generation, so either one verifies a
             // proof from any producer whose prover generation this build knows; an
             // unknown prover generation is refused. Protocol versions 1 to 13 select
             // verifier and prover generation 0, and protocol versions from 14 select 1
@@ -127,12 +127,32 @@ impl Drive {
                 proof,
                 known_contracts_provider_fn,
                 Self::proof_carries_owner_balance(query_platform_version)?,
+                Self::proof_document_history_layout(query_platform_version)?,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
+            })),
+        }
+    }
+
+    /// The producer's document history storage layout, restricted to supported layouts.
+    fn proof_document_history_layout(
+        query_platform_version: &PlatformVersion,
+    ) -> Result<u16, Error> {
+        match query_platform_version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout
+        {
+            layout @ (0 | 1) => Ok(layout),
+            received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "document_history_storage_layout".to_string(),
+                known_versions: vec![0, 1],
+                received,
             })),
         }
     }
@@ -163,9 +183,84 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::version::PlatformVersion;
+    use grovedb::PathQuery;
+
+    #[test]
+    fn should_reject_an_unknown_authenticated_document_history_layout() {
+        let mut producer = PlatformVersion::latest().clone();
+        producer
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 2;
+        assert!(matches!(Drive::proof_document_history_layout(&producer),
+            Err(Error::Drive(DriveError::UnknownVersionMismatch { method, received: 2, .. }))
+                if method == "document_history_storage_layout"));
+    }
+
+    #[test]
+    fn should_preserve_execution_queries_for_every_released_caller_and_producer() {
+        for caller in 1..=15 {
+            let caller_version = PlatformVersion::get(caller).expect("released caller");
+            for producer in 1..=15 {
+                let producer_version = PlatformVersion::get(producer).expect("released producer");
+                for keeps_history in [false, true] {
+                    for contested_status in [
+                        SingleDocumentDriveQueryContestedStatus::NotContested,
+                        SingleDocumentDriveQueryContestedStatus::Contested,
+                    ] {
+                        let query = SingleDocumentDriveQuery {
+                            contract_id: [1; 32],
+                            document_type_name: "note".to_string(),
+                            document_type_keeps_history: keeps_history,
+                            document_id: [2; 32],
+                            block_time_ms: None,
+                            contested_status,
+                        };
+                        let mut query_version = caller_version.clone();
+                        query_version
+                            .drive
+                            .methods
+                            .document
+                            .document_history_storage_layout =
+                            Drive::proof_document_history_layout(producer_version).unwrap();
+                        let mut old_query = query.construct_path_query(&query_version).unwrap();
+                        let mut producer_query =
+                            query.construct_path_query(producer_version).unwrap();
+                        assert_eq!(
+                            old_query, producer_query,
+                            "caller {caller}, producer {producer}"
+                        );
+
+                        if producer_version.drive.methods.prove.prove_state_transition == 1 {
+                            old_query.query.limit = None;
+                            producer_query.query.limit = None;
+                            let balance_query = Drive::identity_balance_query(&[3; 32]);
+                            let old_merged = PathQuery::merge(
+                                vec![&old_query, &balance_query],
+                                &caller_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            let producer_merged = PathQuery::merge(
+                                vec![&producer_query, &balance_query],
+                                &producer_version.drive.grove_version,
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                old_merged, producer_merged,
+                                "caller {caller}, producer {producer}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_verify_state_transition_was_executed_with_proof_unknown_version_mismatch() {
         let mut platform_version = PlatformVersion::latest().clone();

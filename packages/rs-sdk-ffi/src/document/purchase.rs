@@ -15,7 +15,6 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentPurchaseTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
-use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -99,25 +98,8 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
             FFIError::InternalError(format!("Failed to increment document revision: {}", e))
         })?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -269,25 +251,8 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
             FFIError::InternalError(format!("Failed to increment document revision: {}", e))
         })?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -629,15 +594,15 @@ mod tests {
             )
         };
 
-        // Mock SDK doesn't have trusted provider, so it will fail
+        // The mock SDK's provider serves no contracts, so it fails
         assert!(!result.error.is_null());
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InternalError);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(
-                error_msg.contains("trusted context provider"),
-                "Expected trusted provider error, got: '{}'",
+                error_msg.contains("Failed to get contract from context"),
+                "Expected the mock provider's contract lookup error, got: '{}'",
                 error_msg
             );
         }
@@ -685,15 +650,15 @@ mod tests {
             )
         };
 
-        // Mock SDK doesn't have trusted provider, so it will fail
+        // The mock SDK's provider serves no contracts, so it fails
         assert!(!result.error.is_null());
         unsafe {
             let error = &*result.error;
             assert_eq!(error.code, DashSDKErrorCode::InternalError);
             let error_msg = CStr::from_ptr(error.message).to_str().unwrap();
             assert!(
-                error_msg.contains("trusted context provider"),
-                "Expected trusted provider error, got: '{}'",
+                error_msg.contains("Failed to get contract from context"),
+                "Expected the mock provider's contract lookup error, got: '{}'",
                 error_msg
             );
         }

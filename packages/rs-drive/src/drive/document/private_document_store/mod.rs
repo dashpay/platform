@@ -375,6 +375,9 @@ mod tests {
     use super::*;
     use crate::drive::{Drive, RootTree};
     use crate::error::query::QuerySyntaxError;
+    use crate::query::document_history_drive_query::{
+        DocumentHistoryDriveQuery, DocumentHistoryFilter,
+    };
     use crate::query::DriveDocumentQuery;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
@@ -651,47 +654,25 @@ mod tests {
             )
         };
 
+        let query = DocumentHistoryDriveQuery {
+            contract_id: CONTRACT_ID,
+            document_type_name: "secret".to_string(),
+            document_id: [1; 32],
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: Some(10),
+        };
         assert!(refused(
             drive
-                .fetch_document_history(
-                    CONTRACT_ID,
-                    secret,
-                    [1; 32],
-                    None,
-                    0,
-                    Some(10),
-                    None,
-                    platform_version,
-                )
+                .fetch_document_history(&query, secret, None, platform_version)
                 .map(|_| ())
         ));
         assert!(refused(
             drive
-                .prove_document_history(
-                    CONTRACT_ID,
-                    secret,
-                    [1; 32],
-                    None,
-                    0,
-                    Some(10),
-                    None,
-                    platform_version,
-                )
+                .prove_document_history(&query, secret, None, platform_version)
                 .map(|_| ())
         ));
         assert!(refused(
-            Drive::verify_document_history(
-                &[],
-                CONTRACT_ID,
-                "secret",
-                secret,
-                [1; 32],
-                0,
-                Some(10),
-                None,
-                platform_version,
-            )
-            .map(|_| ())
+            Drive::verify_document_history(&query, &[], secret, platform_version).map(|_| ())
         ));
     }
 

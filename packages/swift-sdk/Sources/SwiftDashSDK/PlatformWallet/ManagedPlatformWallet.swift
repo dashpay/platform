@@ -3779,27 +3779,6 @@ extension ManagedPlatformWallet {
             trackedAssetLocksCount: Int(ffi.tracked_asset_locks_count)
         )
     }
-
-    /// Shared array-marshalling body for the two id-list explorer
-    /// readers above. Both wrap the same `IdentifierArray` FFI shape +
-    /// free helper, so the per-method variance is just the FFI call
-    /// itself.
-    private func readIdentifierArray(
-        _ fetch: (inout IdentifierArray) -> PlatformWalletFFIResult
-    ) throws -> [Identifier] {
-        var array = IdentifierArray()
-        try fetch(&array).check()
-        defer { platform_wallet_identifier_array_free(&array) }
-        guard array.items != nil, array.count > 0 else {
-            return []
-        }
-        var ids: [Identifier] = []
-        ids.reserveCapacity(Int(array.count))
-        for i in 0..<Int(array.count) {
-            ids.append(identifierFromFFIArray(array, at: i))
-        }
-        return ids
-    }
 }
 
 /// Run `body` with three optional C-string pointers, each `nil` when

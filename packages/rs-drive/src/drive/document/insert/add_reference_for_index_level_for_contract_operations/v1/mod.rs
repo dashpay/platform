@@ -2,8 +2,8 @@ use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
 use crate::drive::document::{
-    document_reference_size, make_document_reference, make_document_reference_with_sum_item,
-    read_document_sum_contribution,
+    document_reference_size_v1, make_document_reference_v1,
+    make_document_reference_with_sum_item_v1, read_document_sum_contribution,
 };
 use crate::drive::document::{
     encode_index_only_entry_payload, index_only_item_estimated_value_size,
@@ -45,7 +45,8 @@ impl Drive {
     /// non-unique, contested or null-field index (its entries for a value, keyed by document id)
     /// as the references with sum items it holds, which GroveDB prices 10 bytes dearer per node
     /// than the plain references v0 describes there, as
-    /// `remove_reference_for_index_level_for_contract_operations` 2 does.
+    /// `remove_reference_for_index_level_for_contract_operations` 2 does. References target
+    /// the primary entry, allowing a second hop for a keep-history type's current revision.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_reference_for_index_level_for_contract_operations_v1(
@@ -150,14 +151,14 @@ impl Drive {
                         // conversion is safe — propagated as
                         // `CorruptedCodeExecution` if it ever fails.
                         let sum_value = read_document_sum_contribution(document, prop_name)?;
-                        Ok(make_document_reference_with_sum_item(
+                        Ok(make_document_reference_with_sum_item_v1(
                             document,
                             document_and_contract_info.document_type,
                             sum_value,
                             storage_flags,
                         ))
                     }
-                    None => Ok(make_document_reference(
+                    None => Ok(make_document_reference_v1(
                         document,
                         document_and_contract_info.document_type,
                         storage_flags,
@@ -208,8 +209,7 @@ impl Drive {
             {
                 // The `[0]` layer: the index's entries for this value, references with sum
                 // items under a summable index
-                let reference_size =
-                    document_reference_size(document_and_contract_info.document_type);
+                let reference_size = document_reference_size_v1();
                 let flags_size = storage_flags.map(|s| s.serialized_size());
                 estimated_costs_only_with_layer_info.insert(
                     index_path_info.clone().convert_to_key_info_path(),
@@ -256,7 +256,7 @@ impl Drive {
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
                         // Match the sum-bearing variant the live path
-                        // would have written: `make_document_reference_with_sum_item`
+                        // would have written: `make_document_reference_with_sum_item_v1`
                         // emits `Element::ReferenceWithSumItem` when
                         // `sum_property_name.is_some()`. The sum-aware helper
                         // reserves 10 worst-case bytes for the i64 sum_value.
@@ -347,7 +347,7 @@ impl Drive {
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: reference_tree_type,
                     target: QueryTargetValue(
-                        document_reference_size(document_and_contract_info.document_type)
+                        document_reference_size_v1()
                             + storage_flags
                                 .map(|s| s.serialized_size())
                                 .unwrap_or_default(),
