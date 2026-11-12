@@ -39,6 +39,8 @@ pub mod system;
 
 /// Address funds proof verification module
 pub mod address_funds;
+/// Asset-lock outpoint proof verification.
+pub mod asset_lock;
 /// Contract group proof verification
 pub mod contract_groups;
 /// Contract moderation proofs: one identity's status and pages of a contract's lists.

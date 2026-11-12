@@ -23,11 +23,10 @@
 //!    broadcast with a typed error), or its funding transaction has
 //!    more inputs than an InstantSend proof may carry.
 //! 4. **Finalize lock state** — a verified submit completes a wallet drain
-//!    (`DrainCompleted`) or consumes a generic lock. A resumed drain that
-//!    Platform rejects because its exact outpoint was already consumed is
-//!    completed too: only this wallet can spend the lock, so an earlier
-//!    attempt landed. For a generic lock an unauthenticated "already
-//!    consumed" rejection is recorded only as nonterminal
+//!    (`DrainCompleted`) or consumes a generic lock. An "already consumed"
+//!    rejection does not identify the consuming transition or bind it to the
+//!    requested Orchard output, even if an outpoint query confirms full
+//!    consumption. For drains and generic locks it is recorded as nonterminal
 //!    consumption-unknown state after Core ChainLock finality; it never
 //!    creates a terminal `Consumed` tombstone.
 
@@ -51,9 +50,6 @@ use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::time::Duration;
 
-use crate::broadcaster::TransactionBroadcaster;
-use crate::error::is_asset_lock_already_consumed;
-use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
@@ -77,41 +73,6 @@ use crate::PlatformWalletError;
 /// With `dummy_outputs == 0` this returns `2`, the historical single-output count.
 pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize {
     (1 + dummy_outputs).max(2)
-}
-
-impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
-    /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
-    ///
-    /// A drain's lock is single-use and only this wallet holds its key, so
-    /// Platform's exact-outpoint "already consumed" verdict on an
-    /// operation-tagged lock means an earlier Type18 for the same lock landed:
-    /// the drain is completed and `Ok(None)` is returned (nothing landed in
-    /// THIS call, so the caller records no history; the scan surfaces the
-    /// note). Every other outcome, and every lock without an operation,
-    /// defers to the generic reconciliation unchanged.
-    async fn settle_asset_lock_submit_result<T>(
-        &self,
-        result: Result<T, dash_sdk::Error>,
-        out_point: &OutPoint,
-        effective_proof: &AssetLockProof,
-        chain_lock_timeout: Option<Duration>,
-        drain_operation_id: Option<[u8; 16]>,
-    ) -> Result<Option<T>, PlatformWalletError> {
-        if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
-            if is_asset_lock_already_consumed(error, out_point) {
-                self.complete_wallet_drain(*out_point, operation_id).await?;
-                return Ok(None);
-            }
-        }
-        self.reconcile_asset_lock_submit_result(
-            result,
-            out_point,
-            effective_proof,
-            chain_lock_timeout,
-        )
-        .await
-        .map(Some)
-    }
 }
 
 impl PlatformWallet {
@@ -561,37 +522,27 @@ impl PlatformWallet {
             )
             .await?;
 
-        // Platform's verdict settles the lock. For a wallet drain, an
-        // exact-outpoint "already consumed" rejection means an earlier attempt
-        // for the same lock landed: the drain completes with no landed bundle
-        // to record (the scan surfaces the note).
+        // An already-consumed rejection is not evidence that this request
+        // funded its recipient. Keep it nonterminal, including for drains;
+        // outpoint consumption alone cannot identify a competing consumer.
         let drain_operation_id = self
             .asset_locks
             .tracked_operation_id(&proof_out_point)
             .await;
-        let Some(landed) = self
+        let landed = self
             .asset_locks
-            .settle_asset_lock_submit_result(
+            .reconcile_asset_lock_submit_result(
                 submit_result,
                 &proof_out_point,
                 &effective_proof,
                 cl_wait,
-                drain_operation_id,
             )
-            .await?
-        else {
-            tracing::info!(
-                outpoint = %proof_out_point,
-                "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
-            );
-            return Ok(());
-        };
+            .await?;
 
         // A drain completes only when the verified proof attests the lock
         // was consumed in full. Checked before any history is written: a
         // drain left pending must not carry a Confirmed row for a bundle a
-        // later resume may replace. The next resume completes it from
-        // Platform's verdict.
+        // later resume may replace.
         if drain_operation_id.is_some() && !landed.fully_consumed {
             tracing::warn!(
                 outpoint = %proof_out_point,
@@ -1380,45 +1331,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn settle_completes_drain_on_exact_outpoint_already_consumed_report() {
+    async fn should_keep_drain_pending_on_exact_outpoint_already_consumed_report() {
         let (ctx, operation, _registration) = drain_report_context().await;
-        let landed = ctx
+        let error = ctx
             .manager
-            .settle_asset_lock_submit_result::<()>(
+            .reconcile_asset_lock_submit_result::<()>(
                 Err(already_consumed_error(ctx.out_point)),
                 &ctx.out_point,
                 &ctx.proof,
                 None,
-                Some(DRAIN_OPERATION_ID),
             )
             .await
-            .expect("an already-consumed drain lock completes the drain");
-        assert!(landed.is_none(), "nothing landed in this call");
+            .expect_err("outpoint consumption does not prove the requested output landed");
+        assert!(matches!(
+            error,
+            PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == ctx.out_point
+        ));
         let lock = live_lock(&ctx).await;
-        assert_eq!(lock.status, AssetLockStatus::DrainCompleted);
-        assert!(lock.proof.is_none());
-        // Completion is the only write: no consumption-unknown detour.
+        assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(lock.proof, Some(ctx.proof.clone()));
         assert_eq!(
             persisted_statuses(&ctx),
-            vec![AssetLockStatus::DrainCompleted]
+            vec![AssetLockStatus::RecoveredFromChain]
         );
-        assert_eq!(
-            operation.snapshot().state,
-            AssetLockOperationState::Completed
-        );
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
         assert_eq!(operation.snapshot().out_point, Some(ctx.out_point));
     }
 
     #[tokio::test]
-    async fn settle_defers_to_generic_reconciliation_without_operation_id() {
+    async fn should_keep_generic_lock_nonterminal_without_operation_id() {
         let ctx = consumption_report_context().await;
         let error = ctx
             .manager
-            .settle_asset_lock_submit_result::<()>(
+            .reconcile_asset_lock_submit_result::<()>(
                 Err(already_consumed_error(ctx.out_point)),
                 &ctx.out_point,
                 &ctx.proof,
-                None,
                 None,
             )
             .await
@@ -1433,7 +1381,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn settle_leaves_drain_pending_on_foreign_outpoint_or_unrelated_error() {
+    async fn should_leave_drain_pending_on_foreign_outpoint_or_unrelated_error() {
         let (ctx, operation, _registration) = drain_report_context().await;
         let foreign = OutPoint::new(ctx.out_point.txid, ctx.out_point.vout + 1);
         for error in [
@@ -1442,12 +1390,11 @@ mod tests {
         ] {
             let result = ctx
                 .manager
-                .settle_asset_lock_submit_result::<()>(
+                .reconcile_asset_lock_submit_result::<()>(
                     Err(error),
                     &ctx.out_point,
                     &ctx.proof,
                     None,
-                    Some(DRAIN_OPERATION_ID),
                 )
                 .await;
             assert!(matches!(result, Err(PlatformWalletError::Sdk(_))));
@@ -1460,50 +1407,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn settle_passes_a_landed_result_through_for_a_drain() {
+    async fn should_pass_a_landed_result_through_for_a_drain() {
         let (ctx, operation, _registration) = drain_report_context().await;
         let landed = ctx
             .manager
-            .settle_asset_lock_submit_result(
+            .reconcile_asset_lock_submit_result(
                 Ok::<_, dash_sdk::Error>(42u64),
                 &ctx.out_point,
                 &ctx.proof,
                 None,
-                Some(DRAIN_OPERATION_ID),
             )
             .await
             .expect("a landed submit passes through");
-        assert_eq!(landed, Some(42));
-        // Completion is the caller's step 5, not the settle's.
+        assert_eq!(landed, 42);
+        // Completion is the caller's step 5, not reconciliation's.
         assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
         assert!(persisted_statuses(&ctx).is_empty());
         assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
     }
 
-    async fn settle_already_consumed(
-        ctx: &ConsumptionReportContext,
-    ) -> Result<Option<()>, PlatformWalletError> {
-        ctx.manager
-            .settle_asset_lock_submit_result::<()>(
-                Err(already_consumed_error(ctx.out_point)),
-                &ctx.out_point,
-                &ctx.proof,
-                None,
-                Some(DRAIN_OPERATION_ID),
-            )
-            .await
-    }
-
     #[tokio::test]
-    async fn settle_keeps_drain_pending_when_completion_persistence_fails() {
+    async fn complete_wallet_drain_keeps_pending_when_completion_persistence_fails() {
         let (ctx, operation, _registration) = drain_report_context().await;
-        let settle = settle_already_consumed;
 
         ctx.persistence
             .fail_next_store
             .store(true, Ordering::SeqCst);
         assert!(matches!(
-            settle(&ctx).await,
+            ctx.manager
+                .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
+                .await,
             Err(PlatformWalletError::Persistence(_))
         ));
         assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
@@ -1516,7 +1449,7 @@ mod tests {
             .store_commits_inline
             .store(false, Ordering::SeqCst);
         assert!(matches!(
-            settle(&ctx).await,
+            ctx.manager.complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID).await,
             Err(PlatformWalletError::Persistence(message)) if message.contains("inline")
         ));
         assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
@@ -1532,10 +1465,11 @@ mod tests {
             .fail_next_flush
             .lock()
             .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
-        assert!(settle(&ctx)
+        assert!(ctx
+            .manager
+            .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
             .await
-            .expect("inline commit completes")
-            .is_none());
+            .is_ok());
         assert_eq!(
             live_lock(&ctx).await.status,
             AssetLockStatus::DrainCompleted

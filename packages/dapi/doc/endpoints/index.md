@@ -57,6 +57,7 @@ The following endpoints are defined in the gRPC service but are served by Drive 
 - `getDataContractsByRange`
 - `getDataContractHistory`
 - `getDataContractsLatestVersions`
+- `getAssetLockOutpointInfo`
 - `getContractGroupInfo`
 - `getContractGroupMembers`
 - `getContractGroupsForContract`

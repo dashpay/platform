@@ -1,4 +1,5 @@
 mod address_funds;
+mod asset_lock_outpoint_info;
 mod contract_group_queries;
 mod contract_moderation_queries;
 mod data_contract_based_queries;
