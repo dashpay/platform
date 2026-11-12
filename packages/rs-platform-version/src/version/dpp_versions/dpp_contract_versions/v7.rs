@@ -59,6 +59,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: sys.random.uniform is admitted, block execution drawing its values from
             // each block's random beacon
             random_generated_from: Some(0),
+            // changed: the depth and cycle check reads a `$ref` pointer as the validator does
+            validate_max_depth: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

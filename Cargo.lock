@@ -1752,12 +1752,14 @@ dependencies = [
 name = "dash-context-provider"
 version = "5.0.3"
 dependencies = [
+ "arc-swap",
  "dash-async",
  "dpp",
  "drive",
  "hex",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -2416,6 +2418,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.8.6",
  "regex",
+ "regex-syntax",
  "rust_decimal",
  "rust_decimal_macros",
  "secp256k1 0.33.1",
@@ -5467,6 +5470,7 @@ dependencies = [
  "bimap",
  "bs58",
  "dash-async",
+ "dash-context-provider",
  "dash-sdk",
  "dash-spv",
  "dashcore",
@@ -5507,6 +5511,7 @@ dependencies = [
  "async-trait",
  "bs58",
  "cbindgen",
+ "dash-context-provider",
  "dash-sdk",
  "dashcore",
  "dpp",
@@ -6613,6 +6618,7 @@ dependencies = [
  "bs58",
  "cbindgen",
  "dash-async",
+ "dash-context-provider",
  "dash-network",
  "dash-sdk",
  "dotenvy",

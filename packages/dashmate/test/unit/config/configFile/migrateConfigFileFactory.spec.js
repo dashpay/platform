@@ -53,6 +53,7 @@ describe('migrateConfigFileFactory', () => {
 
       if (semver.lt(release, '5.1.0-dev.1')) {
         removeFromWhitelist('protxinfo');
+        options.core.docker.image = 'dashpay/dashd:23';
       }
 
       if (semver.lt(release, '5.0.0-rc.2')) {
@@ -676,6 +677,62 @@ describe('migrateConfigFileFactory', () => {
       .to.include.members(['protxinfo', 'getblockcount']);
     // A user without a whitelist may already call every method.
     expect(migrated.configs.mainnet.core.rpc.users.drive_consensus.whitelist).to.equal(null);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should move a node on the stock Core 23 image to Core 24 and keep an operator image', async () => {
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    configFileData.configs.testnet.core.docker.image = 'example/dashd:23';
+    configFileData.configs.local.core.docker.image = 'dashpay/dashd:24.1.0-nightly';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.base.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.testnet.core.docker.image).to.equal('example/dashd:23');
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24.1.0-nightly');
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should keep a local network or devnet already set up on Core 23', async () => {
+    // Core 24 discards the sporks Core 23 stored. On a network whose nodes all
+    // move to Core 24 at once no peer has them anymore, and dashmate signs a
+    // local network's sporks only while setting it up.
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    for (const name of ['local_seed', 'local_1']) {
+      configFileData.configs[name] = structuredClone(configFileData.configs.local);
+      configFileData.configs[name].group = 'local';
+    }
+    configFileData.configs.devnet_1 = structuredClone(configFileData.configs.testnet);
+    configFileData.configs.devnet_1.network = 'devnet';
+    configFileData.configs.devnet_1.core.devnet.name = 'one';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.local_seed.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.local_1.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.devnet_1.core.docker.image).to.equal('dashpay/dashd:23');
+    // The preset a new local network is set up from moves, as do public networks.
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.testnet.core.docker.image).to.equal('dashpay/dashd:24');
 
     for (const [name, options] of Object.entries(migrated.configs)) {
       expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
