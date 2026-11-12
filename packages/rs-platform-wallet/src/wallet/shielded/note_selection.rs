@@ -228,7 +228,7 @@ pub fn select_notes_with_fee<'a>(
     })
 }
 
-/// The unspent notes of `unspent`, largest first; [`PlatformWalletError::ShieldedNoUnspentNotes`]
+/// The unspent notes of `unspent`, largest first (equal values by nullifier, ascending); [`PlatformWalletError::ShieldedNoUnspentNotes`]
 /// when there are none.
 fn spendable_largest_first(
     unspent: &[ShieldedNote],
@@ -238,7 +238,8 @@ fn spendable_largest_first(
     if sorted.is_empty() {
         return Err(PlatformWalletError::ShieldedNoUnspentNotes);
     }
-    sorted.sort_by_key(|note| std::cmp::Reverse(note.value));
+    // Equal values order by nullifier, so the selection does not depend on the store's order.
+    sorted.sort_by(|a, b| b.value.cmp(&a.value).then(a.nullifier.cmp(&b.nullifier)));
     Ok(sorted)
 }
 
@@ -640,6 +641,31 @@ mod tests {
             is_spent: false,
             value,
         }
+    }
+
+    /// Notes of equal value are ordered by nullifier, so the same notes held in another order
+    /// select the same notes and plan the same digest.
+    #[test]
+    fn test_equal_value_notes_select_the_same_in_any_insertion_order() {
+        let platform_version = PlatformVersion::latest();
+        let a = test_note(1_000_000_000_000, 1);
+        let b = test_note(1_000_000_000_000, 2);
+        let forward = vec![a.clone(), b.clone()];
+        let reverse = vec![b, a];
+        // One note covers the amount, so which of the two enters the plan is the tie-break.
+        let plan = |notes: &[ShieldedNote]| {
+            plan_spend(
+                notes,
+                ShieldedSpendKind::Transfer,
+                ShieldedSpendAmount::Exact(1_000),
+                platform_version,
+            )
+            .expect("one note covers the amount")
+        };
+        let (forward, reverse) = (plan(&forward), plan(&reverse));
+        assert_eq!(forward.nullifiers, reverse.nullifiers);
+        assert_eq!(forward.digest, reverse.digest);
+        assert_eq!(forward.nullifiers, vec![[1u8; 32]]);
     }
 
     #[test]

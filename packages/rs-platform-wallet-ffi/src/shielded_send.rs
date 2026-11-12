@@ -311,8 +311,12 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// `kind` numbers the spend as `platform_wallet_shielded_estimate_fee` does:
 /// `0` transfer, `1` unshield, `2` withdrawal, `4` identity top-up (`3`, the
 /// shield from an identity, spends no notes). With `sweep_all`, the spend
-/// sends every spendable note minus the fee for all of them, and `amount` must
-/// be `0`; otherwise it sends `amount` credits and the fee comes on top.
+/// sends the most the largest notes can send after their fee, and `amount` must
+/// be `0`; otherwise it sends `amount` credits and the fee comes on top. A
+/// sweep takes the notes largest first, at most as many as one transition
+/// spends, and a note joins only when it adds more than the fee it costs, so a
+/// note worth less than that stays unspent; a withdrawal sweep is also capped
+/// at the maximum withdrawal.
 /// `core_fee_per_byte` is the Core fee rate of a withdrawal (kind `2`) and is
 /// ignored for the other kinds. A withdrawal's `amount` is the reserve for
 /// Core, of which the Core fee is taken: the plan's `recipient_amount` is what
@@ -328,8 +332,7 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// returns `ErrorInvalidParameter`; notes that cannot pay the amount and its
 /// fee, or a zero amount, return `ErrorWalletOperation`, and an amount only
 /// more notes than one transition spends would cover returns
-/// `ErrorShieldedSpendTooManyNotes`, as the spends do. A sweep plans the most
-/// the notes one transition spends can send. A panic inside returns
+/// `ErrorShieldedSpendTooManyNotes`, as the spends do. A panic inside returns
 /// `ErrorWalletOperation`: planning reserves and sends nothing.
 ///
 /// # Safety

@@ -92,7 +92,10 @@ public enum ShieldedSpendKind: UInt8, Sendable {
 }
 
 /// What a planned shielded spend sends: an exact amount with the fee on top,
-/// or every spendable note minus the fee for all of them.
+/// or the most the largest notes can send after their fee: largest first, at
+/// most as many notes as one transition spends, a note joining only when it
+/// adds more than the fee it costs (a withdrawal sweep is also capped at the
+/// maximum withdrawal); notes left out stay unspent.
 public enum ShieldedSpendAmount: Sendable, Equatable {
     case exact(UInt64)
     case sweepAll
