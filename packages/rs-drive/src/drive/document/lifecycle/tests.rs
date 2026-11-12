@@ -2975,6 +2975,7 @@ fn should_cover_applied_lifecycle_delete_fees_in_the_admission_estimate() {
     use grovedb::Element;
 
     let version = latest();
+    // Processing has wide headroom; storage is the tight side of this fee matrix.
     let mut underestimates = vec![];
     for case in ["first-container", "summable-countable", "sponsored"] {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -3122,61 +3123,198 @@ fn should_cover_applied_lifecycle_delete_fees_in_the_admission_estimate() {
     );
 }
 
+fn assert_delete_estimate_covers_applied(
+    drive: &Drive,
+    contract: &DataContract,
+    id: Identifier,
+    block: BlockInfo,
+    fixture: &str,
+) {
+    let price = |apply| {
+        drive
+            .delete_document_for_contract(id, contract, "person", block, apply, None, latest())
+            .unwrap()
+    };
+    let estimated = price(false);
+    let applied = price(true);
+    println!(
+        "delete {fixture}: estimated storage={} processing={}, applied storage={} processing={}",
+        estimated.storage_fee,
+        estimated.processing_fee,
+        applied.storage_fee,
+        applied.processing_fee
+    );
+    // Processing has wide headroom; storage is the tight side of this estimate.
+    assert!(estimated.storage_fee >= applied.storage_fee);
+    assert!(estimated.processing_fee >= applied.processing_fee);
+}
+
 #[test]
-fn should_cover_the_owned_history_tree_read_in_the_delete_estimate() {
-    use crate::fees::op::LowLevelDriveOperation;
-    use grovedb::batch::key_info::KeyInfo;
-    use grovedb::batch::KeyInfoPath;
-    use grovedb::GroveDb;
+fn should_cover_applied_delete_fees_for_a_history_tree_node_with_two_children() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use grovedb::Element;
 
     let version = latest();
-    let (drive, contract, id) = setup_history(1, [7; 32]);
-    let mut history_root =
-        document_history_path(contract.id_ref().as_bytes(), "person", id.as_bytes());
-    history_root.pop();
-    let tree = drive
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = json_document_to_contract(FAMILY_HISTORY_CONTRACT, false, version).unwrap();
+    drive
+        .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+        .unwrap();
+    let document_type = document_type_of(&contract);
+    let owner = [7; 32];
+    let mut document =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, version).unwrap();
+    for id in [1, 2, 3] {
+        document.set_id([id; 32].into());
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((
+                            &document,
+                            Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                        )),
+                        owner_id: Some(owner),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default_with_time(1000),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+    }
+    let type_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "person");
+    let history_root = drive
         .grove
         .get_raw(
-            history_root.as_slice().into(),
-            id.as_bytes(),
+            type_path.as_slice().into(),
+            &[2],
             None,
             &version.drive.grove_version,
         )
         .value
         .unwrap();
-    let flags_size = tree.get_flags().as_ref().unwrap().len() as u32;
-    assert!(flags_size >= StorageFlags::approximate_size(true, None));
-    let expected = GroveDb::average_case_for_get_tree(
-        &KeyInfoPath::from_known_owned_path(history_root),
-        &KeyInfo::KnownKey(id.to_vec()),
-        flags_size,
-        TreeType::ProvableCountTree,
-        TreeType::NormalTree,
-        &version.drive.grove_version,
-    )
-    .unwrap();
-    let operations = drive
-        .delete_document_for_contract_operations(
-            id,
+    // With exactly three document ids, the middle root has both a left and a right child.
+    assert!(matches!(history_root, Element::Tree(Some(key), _) if key == vec![2; 32]));
+    assert_delete_estimate_covers_applied(
+        &drive,
+        &contract,
+        [2; 32].into(),
+        BlockInfo::default_with_time(5000),
+        "two-children-history-node",
+    );
+}
+
+#[test]
+fn should_cover_applied_delete_fees_for_migrated_history_with_multi_epoch_contract_flags() {
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dpp::tests::json_document::json_document_to_json_value;
+
+    let old = PlatformVersion::get(14).unwrap();
+    let version = latest();
+    let drive = setup_drive_with_initial_state_structure(None);
+    let owner = [7; 32];
+    let mut schema = json_document_to_json_value(FAMILY_HISTORY_CONTRACT).unwrap();
+    let contract = DataContract::from_json(schema.clone(), false, old).unwrap();
+    drive
+        .apply_contract(
             &contract,
-            document_type_of(&contract),
-            &BlockInfo::default_with_time(5000),
-            Some([8; 32].into()),
+            BlockInfo::default(),
+            true,
+            Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
             None,
-            &mut Some(EstimatedLayers::new()),
-            None,
-            version,
+            old,
         )
         .unwrap();
-    let Some(LowLevelDriveOperation::CalculatedCostOperation(estimated)) = operations.get(1) else {
-        panic!("the second read loads the per-document history tree");
-    };
-    println!(
-        "history tree read: estimated loaded={} expected loaded={}",
-        estimated.storage_loaded_bytes, expected.storage_loaded_bytes
+    let document_type = document_type_of(&contract);
+    let document =
+        json_document_to_document(PERSON, Some(owner.into()), document_type, old).unwrap();
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentInfo::DocumentRefInfo((
+                        &document,
+                        Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some(owner)))),
+                    )),
+                    owner_id: Some(owner),
+                },
+                contract: &contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default_with_time(1000),
+            true,
+            None,
+            old,
+        )
+        .unwrap();
+
+    // Growing the stored contract in a later epoch gives it multiple storing epochs.
+    schema["version"] = 2.into();
+    schema["documentSchemas"]["person"]["properties"]["extra"] = serde_json::json!({
+        "type": "string", "maxLength": 64, "position": 5
+    });
+    let contract = DataContract::from_json(schema, false, old).unwrap();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo {
+                epoch: Epoch::new(1).unwrap(),
+                ..BlockInfo::default_with_time(2000)
+            },
+            true,
+            Some(Cow::Owned(StorageFlags::new_single_epoch(1, Some(owner)))),
+            None,
+            old,
+        )
+        .unwrap();
+    let transaction = drive.grove.start_transaction();
+    drive
+        .migrate_document_history_storage(&transaction, version)
+        .unwrap();
+    drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .unwrap();
+    let mut history_type_path = document_history_path(
+        contract.id_ref().as_bytes(),
+        "person",
+        document.id().as_bytes(),
     );
+    history_type_path.pop();
+    let tree = drive
+        .grove
+        .get_raw(
+            history_type_path.as_slice().into(),
+            document.id().as_bytes(),
+            None,
+            &version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    let flags = StorageFlags::map_cow_some_element_flags_ref(tree.get_flags())
+        .unwrap()
+        .unwrap();
+    assert!(matches!(flags.as_ref(), StorageFlags::MultiEpochOwned(..)));
     assert!(
-        estimated.storage_loaded_bytes >= expected.storage_loaded_bytes,
-        "the history aggregate read must price its creator-owned flags"
+        tree.get_flags().as_ref().unwrap().len()
+            > StorageFlags::approximate_size(true, None) as usize
+    );
+    assert_delete_estimate_covers_applied(
+        &drive,
+        &contract,
+        document.id(),
+        BlockInfo {
+            epoch: Epoch::new(2).unwrap(),
+            ..BlockInfo::default_with_time(5000)
+        },
+        "migrated-multi-epoch-contract-flags",
     );
 }

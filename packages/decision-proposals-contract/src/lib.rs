@@ -62,8 +62,21 @@ mod tests {
         use v1::document_types::proposal;
 
         let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
-        // One type and no others.
-        assert_eq!(schema.as_object().map(|types| types.len()), Some(1));
+        // The yes/no proposal, and the two types of a multiple choice one.
+        let types: BTreeSet<&str> = schema
+            .as_object()
+            .expect("the schema is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            types,
+            BTreeSet::from([
+                proposal::NAME,
+                v1::document_types::multiple_choice_proposal::NAME,
+                v1::document_types::choice::NAME,
+            ])
+        );
         let proposal_type = &schema[proposal::NAME];
         let properties = proposal_type["properties"]
             .as_object()
@@ -139,6 +152,149 @@ mod tests {
                 "{property} freezes once its edit window ends"
             );
         }
+    }
+
+    #[test]
+    fn should_put_the_choices_of_a_multiple_choice_proposal_to_a_contest() {
+        use v1::document_types::{choice, multiple_choice_proposal};
+
+        let schema = load_documents_schemas(PlatformVersion::latest()).expect("schema loads");
+
+        // The question's text may be edited for two hours, every version kept, and then
+        // freezes. It is never deleted, which is what lets a choice refer to it.
+        let question = &schema[multiple_choice_proposal::NAME];
+        assert_eq!(question["documentsMutable"], Value::Bool(true));
+        assert_eq!(question["documentsKeepHistory"], Value::Bool(true));
+        assert_eq!(question["canBeDeleted"], Value::Bool(false));
+        let two_hours_after_creation = serde_json::json!({
+            "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 7_200_000]
+        });
+        let frozen: Vec<(&str, &Value)> = question["immutable"]
+            .as_array()
+            .expect("the question lists immutable properties")
+            .iter()
+            .filter(|entry| entry.is_object())
+            .map(|entry| {
+                (
+                    entry["property"].as_str().expect("a conditional entry"),
+                    &entry["when"],
+                )
+            })
+            .collect();
+        assert_eq!(
+            frozen,
+            [
+                (
+                    multiple_choice_proposal::properties::TITLE,
+                    &two_hours_after_creation
+                ),
+                (
+                    multiple_choice_proposal::properties::DESCRIPTION,
+                    &two_hours_after_creation
+                ),
+                (
+                    multiple_choice_proposal::properties::URL,
+                    &two_hours_after_creation
+                ),
+            ]
+        );
+        let declared: BTreeSet<&str> = question["properties"]
+            .as_object()
+            .expect("the question has properties")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            declared,
+            BTreeSet::from([
+                multiple_choice_proposal::properties::TITLE,
+                multiple_choice_proposal::properties::DESCRIPTION,
+                multiple_choice_proposal::properties::URL,
+                multiple_choice_proposal::properties::OPEN,
+            ])
+        );
+        // Every question says whether it is open, for good
+        assert_eq!(
+            question["properties"][multiple_choice_proposal::properties::OPEN]["type"],
+            "boolean"
+        );
+        assert!(question["required"]
+            .as_array()
+            .expect("the question lists required properties")
+            .contains(&Value::String(
+                multiple_choice_proposal::properties::OPEN.to_string()
+            )));
+        assert!(question["immutable"]
+            .as_array()
+            .expect("the question lists immutable properties")
+            .contains(&Value::String(
+                multiple_choice_proposal::properties::OPEN.to_string()
+            )));
+        let indexes: Vec<&str> = question["indices"]
+            .as_array()
+            .expect("the question has indexes")
+            .iter()
+            .filter_map(|index| index["name"].as_str())
+            .collect();
+        assert_eq!(
+            indexes,
+            [
+                multiple_choice_proposal::indexes::BY_OWNER,
+                multiple_choice_proposal::indexes::BY_CREATED_AT
+            ]
+        );
+
+        // A choice names its question, and the choices of one question share one contest:
+        // the only index is unique on the question alone, contested for every value, and
+        // resolved by a vote among documents, with a lock choice.
+        let choice_type = &schema[choice::NAME];
+        assert_eq!(choice_type["documentsMutable"], Value::Bool(false));
+        assert_eq!(choice_type["canBeDeleted"], Value::Bool(false));
+        let reference = &choice_type["properties"][choice::properties::PROPOSAL_ID]["refersTo"];
+        assert_eq!(reference["type"], "permanentDocument");
+        assert_eq!(reference["documentType"], multiple_choice_proposal::NAME);
+        let indexes = choice_type["indices"]
+            .as_array()
+            .expect("the choice has indexes");
+        assert_eq!(indexes.len(), 1);
+        let contest = &indexes[0];
+        assert_eq!(contest["name"], choice::indexes::BY_PROPOSAL);
+        assert_eq!(contest["unique"], Value::Bool(true));
+        assert_eq!(
+            contest["properties"],
+            serde_json::json!([{ choice::properties::PROPOSAL_ID: "asc" }])
+        );
+        // Resolution 2: each choice is a contender of its own, so an identity enters several
+        assert_eq!(contest["contested"]["resolution"], 2);
+        assert!(contest["contested"].get("fieldMatches").is_none());
+
+        // The choices of a question that is not open are its owner's
+        assert_eq!(
+            choice_type["propertyConstraints"],
+            serde_json::json!({
+                choice::rules::CLOSED_PROPOSAL_TAKES_ITS_OWNERS_CHOICES: {
+                    "ifThen": [
+                        {
+                            "equal": [
+                                {
+                                    "referenced": [
+                                        choice::properties::PROPOSAL_ID,
+                                        multiple_choice_proposal::properties::OPEN
+                                    ]
+                                },
+                                0
+                            ]
+                        },
+                        {
+                            "equal": [
+                                { "referenced": [choice::properties::PROPOSAL_ID, "$ownerId"] },
+                                "$ownerId"
+                            ]
+                        }
+                    ]
+                }
+            })
+        );
     }
 
     #[test]

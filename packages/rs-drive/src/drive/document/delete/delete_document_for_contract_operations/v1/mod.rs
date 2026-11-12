@@ -189,7 +189,9 @@ impl Drive {
         let history_query_type = if estimated_costs_only_with_layer_info.is_some() {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                // The history tree retains the creator's owner flags.
+                // A tree created at PV15 carries its creator's single-epoch owned flags;
+                // one migrated at activation carries the contract's flags, which can be larger.
+                // This is an average-case figure; the delete's total estimate covers the applied read.
                 query_target: QueryTargetTree(
                     StorageFlags::approximate_size(true, None),
                     TreeType::ProvableCountTree,

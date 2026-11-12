@@ -1025,6 +1025,7 @@ mod tests {
                 )
                 .unwrap()
         };
+        // Processing has wide headroom; storage is the tight side of this fee matrix.
         let estimated = price(false);
         let actual = price(true);
         println!("delete derived-index: estimated storage={} processing={}, actual storage={} processing={}", estimated.storage_fee, estimated.processing_fee, actual.storage_fee, actual.processing_fee);
