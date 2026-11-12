@@ -2005,7 +2005,10 @@ fn should_parse_a_condition_on_the_type_as_a_whole() {
             { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
             { "anyOf": [
                 { "absent": "$moderatorAbilities.deleteWithin" },
-                { "present": "$moderatorAbilities.deleteSettled" }
+                { "allOf": [
+                    { "present": "$moderatorAbilities.deleteSettled" },
+                    { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+                ] }
             ] }
         ] })
     };
@@ -2025,7 +2028,10 @@ fn should_parse_a_condition_on_the_type_as_a_whole() {
             ),
             SlotCondition::AnyOf(SlotConditions::new(vec![
                 SlotCondition::Absent(SlotConditionSetting::DeleteWithin),
-                SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                SlotCondition::AllOf(SlotConditions::new(vec![
+                    SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                    SlotCondition::Absent(SlotConditionSetting::SettledApproversPredateDocument),
+                ])),
             ])),
         ])))
     );
@@ -2081,10 +2087,16 @@ fn should_parse_a_condition_on_the_type_as_a_whole() {
         json!({ "contains": ["$electedAbilities", "$kind"] }),
         "naming an ability",
     );
-    // and a setting is one of the two that say how long a document stays deletable
+    // and a setting is one of those that say how long a document stays deletable
     refused(
         json!({ "absent": "$moderatorAbilities.delete" }),
-        "when absent tests \"$moderatorAbilities.deleteWithin\" or",
+        "when absent tests \"$moderatorAbilities.deleteWithin\", \
+         \"$moderatorAbilities.deleteSettled\" or \
+         \"$moderatorAbilities.deleteSettled.approversPredateDocument\"",
+    );
+    refused(
+        json!({ "absent": "$moderatorAbilities.deleteSettled.approvals" }),
+        "when absent tests",
     );
     refused(
         json!({ "present": ["$moderatorAbilities.deleteWithin"] }),

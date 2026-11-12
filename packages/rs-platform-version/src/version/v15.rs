@@ -737,8 +737,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     once for the named type as a whole, reading no `$property`; a `when` may also look
 ///     into `$electedAbilities` (the abilities the type's contract gives its elected
 ///     moderation team on the type) and test with `present` or `absent` whether the type
-///     declares `moderatorAbilities.deleteWithin` or `moderatorAbilities.deleteSettled`. The native schema check of note 7 admits the keys and meta-schema v3 refuses
-///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     declares `moderatorAbilities.deleteWithin` or `moderatorAbilities.deleteSettled`,
+///     or whether that rule sets `approversPredateDocument`. The native schema check of
+///     note 7 admits the keys and meta-schema v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or

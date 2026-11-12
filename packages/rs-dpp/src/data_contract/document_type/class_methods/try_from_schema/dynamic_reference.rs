@@ -13,6 +13,7 @@ use crate::data_contract::document_type::property::{
     REFERRING_DOCUMENT_PREFIX, SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS,
     SLOT_CONDITION_DELETE_SETTLED, SLOT_CONDITION_DELETE_WITHIN, SLOT_CONDITION_ELECTED_ABILITIES,
     SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
+    SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -78,16 +79,6 @@ impl SlotConditionLimits {
         }
     }
 }
-
-/// The names of the abilities a contract may give its elected moderation team on a document
-/// type, what `$electedAbilities` lists.
-const ELECTED_ABILITY_NAMES: [ModerationAbility; 5] = [
-    ModerationAbility::DeleteDocuments,
-    ModerationAbility::Ban,
-    ModerationAbility::Suspend,
-    ModerationAbility::Warn,
-    ModerationAbility::ChangeDocumentFields,
-];
 
 fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
@@ -710,13 +701,13 @@ fn parse_slot_condition(
                 let names_an_ability = matches!(
                     &needle,
                     SlotConditionValue::Constant(name)
-                        if ELECTED_ABILITY_NAMES.iter().any(|ability| ability.as_str() == name)
+                        if ModerationAbility::ALL.iter().any(|ability| ability.as_str() == name)
                 );
                 if !names_an_ability {
                     return Err(refused(format!(
                         "{at} when contains looks in \"{SLOT_CONDITION_ELECTED_ABILITIES}\" for \
                          a {{ \"const\": ... }} naming an ability: {}",
-                        ELECTED_ABILITY_NAMES
+                        ModerationAbility::ALL
                             .iter()
                             .map(ModerationAbility::as_str)
                             .collect::<Vec<_>>()
@@ -785,10 +776,14 @@ fn parse_slot_condition(
             let setting = match operand.as_text() {
                 Some(SLOT_CONDITION_DELETE_WITHIN) => SlotConditionSetting::DeleteWithin,
                 Some(SLOT_CONDITION_DELETE_SETTLED) => SlotConditionSetting::DeleteSettled,
+                Some(SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT) => {
+                    SlotConditionSetting::SettledApproversPredateDocument
+                }
                 _ => {
                     return Err(refused(format!(
-                        "{at} when {key} tests \"{SLOT_CONDITION_DELETE_WITHIN}\" or \
-                         \"{SLOT_CONDITION_DELETE_SETTLED}\", got {operand}"
+                        "{at} when {key} tests \"{SLOT_CONDITION_DELETE_WITHIN}\", \
+                         \"{SLOT_CONDITION_DELETE_SETTLED}\" or \
+                         \"{SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT}\", got {operand}"
                     )))
                 }
             };

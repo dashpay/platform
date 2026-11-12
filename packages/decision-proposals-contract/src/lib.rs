@@ -248,12 +248,17 @@ mod tests {
                 ),
                 "documentTypeRequirements": {
                     // The contract's elected team may delete documents of the type, and
-                    // at any time: no window, or a rule for deleting past it
+                    // at any time: no window, or a rule for deleting past it that counts
+                    // every member of the team, whenever the document was created
                     "when": { "allOf": [
                         { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
                         { "anyOf": [
                             { "absent": "$moderatorAbilities.deleteWithin" },
-                            { "present": "$moderatorAbilities.deleteSettled" }
+                            { "allOf": [
+                                { "present": "$moderatorAbilities.deleteSettled" },
+                                { "absent":
+                                    "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+                            ] }
                         ] }
                     ] },
                     "properties": {

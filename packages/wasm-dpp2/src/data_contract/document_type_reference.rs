@@ -361,6 +361,18 @@ export type DocumentTypeSlotConditionString =
   | { const: string };
 
 /**
+ * A setting of the referenced document type a `present` or an `absent`
+ * tests: whether the type declares `moderatorAbilities.deleteWithin` or
+ * `moderatorAbilities.deleteSettled`, or whether that rule counts a member
+ * the team's leader added only for documents created after its addition
+ * (`approversPredateDocument`, its default applied).
+ */
+export type DocumentTypeSlotConditionSetting =
+  | '$moderatorAbilities.deleteWithin'
+  | '$moderatorAbilities.deleteSettled'
+  | '$moderatorAbilities.deleteSettled.approversPredateDocument';
+
+/**
  * A condition of a slot's `when`, in the forms of a `propertyConstraints`
  * condition, read against the referenced document type instead of a
  * document. `contains` looks into the type's
@@ -368,9 +380,8 @@ export type DocumentTypeSlotConditionString =
  * empty where the type declares none, or into `'$electedAbilities'`, the
  * abilities the type's contract gives its elected moderation team on the
  * type (`'deleteDocuments'`, `'changeDocumentFields'`, ...), empty where it
- * elects none or leaves the type out. `present` and `absent` test whether
- * the type declares `moderatorAbilities.deleteWithin` or
- * `moderatorAbilities.deleteSettled`.
+ * elects none or leaves the type out. `present` and `absent` test a setting
+ * of the type (`DocumentTypeSlotConditionSetting`).
  */
 export type DocumentTypeSlotCondition =
   | { equal: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
@@ -387,8 +398,8 @@ export type DocumentTypeSlotCondition =
         '$property' | { const: string },
       ];
     }
-  | { present: '$moderatorAbilities.deleteWithin' | '$moderatorAbilities.deleteSettled' }
-  | { absent: '$moderatorAbilities.deleteWithin' | '$moderatorAbilities.deleteSettled' }
+  | { present: DocumentTypeSlotConditionSetting }
+  | { absent: DocumentTypeSlotConditionSetting }
   | { not: DocumentTypeSlotCondition }
   | { anyOf: Array<DocumentTypeSlotCondition> }
   | { allOf: Array<DocumentTypeSlotCondition> }

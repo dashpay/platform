@@ -127,6 +127,10 @@ const UNGRANTED_TEXT: &str = "ungrantedText";
 const WINDOWED_TEXT: &str = "windowedText";
 /// The same, with a rule for deleting a document past the hour.
 const SETTLED_TEXT: &str = "settledText";
+/// The same, under a rule two members meet, which counts a member the leader added only
+/// for documents created after its addition (the default once a rule asks for more than
+/// one approval).
+const PREDATED_TEXT: &str = "predatedText";
 
 /// A document type holding a `text`, with `extra` merged into its schema.
 fn text_schema(extra: Value) -> Value {
@@ -202,6 +206,7 @@ fn description_host_moderated_by(
                 DELETABLE_TEXT,
                 WINDOWED_TEXT,
                 SETTLED_TEXT,
+                PREDATED_TEXT,
             ]
             .into_iter()
             .map(|name| {
@@ -276,6 +281,18 @@ fn description_host_moderated_by(
                     "delete": true,
                     "deleteWithin": 3600,
                     "deleteSettled": { "approvals": 1 },
+                },
+            })),
+        ));
+        document_types.push((
+            PREDATED_TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "required": ["text", "$createdAt", "$updatedAt"],
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteWithin": 3600,
+                    "deleteSettled": { "approvals": 2 },
                 },
             })),
         ));
@@ -1963,6 +1980,7 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         (&elected, SETTLED_TEXT),
         (&owner_moderated, TEXT),
         (&owner_protecting, TEXT),
+        (&elected, PREDATED_TEXT),
     ] {
         let id = describe(
             &platform,
@@ -2095,9 +2113,16 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     );
 
     // A moderated type the contract's elected team is given no deletion on: once a team is
-    // seated, nobody could remove the text. And one moderators delete only for an hour after
-    // its last change, with no rule for later: the text would outlast the hour for good
-    for unremovable in [UNGRANTED_TEXT, WINDOWED_TEXT] {
+    // seated, nobody could remove the text. One moderators delete only for an hour after
+    // its last change, with no rule for later: the text would outlast the hour for good. And
+    // one whose rule for later counts a member the leader added only for documents created
+    // after its addition: a text older than the members the rule takes would stay for good
+    assert!(elected
+        .document_type_for_name(PREDATED_TEXT)
+        .expect("expected the type")
+        .moderator_settled_deletion()
+        .is_some_and(|rule| rule.approvers_predate_document));
+    for unremovable in [UNGRANTED_TEXT, WINDOWED_TEXT, PREDATED_TEXT] {
         let (transition, _) = create_transition(
             &contract,
             &mut proposer,
@@ -2118,7 +2143,7 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
             "{unremovable}: {error:?}"
         );
     }
-    // while a window with a rule for deleting past it qualifies
+    // while a window with a rule for deleting past it that counts every member qualifies
     let (settled, _) = create_transition(
         &contract,
         &mut proposer,

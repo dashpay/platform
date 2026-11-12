@@ -56,6 +56,10 @@ pub const SLOT_CONDITION_DELETE_WITHIN: &str = "$moderatorAbilities.deleteWithin
 /// The operand a `present` or an `absent` tests for the referenced type's
 /// `moderatorAbilities.deleteSettled`.
 pub const SLOT_CONDITION_DELETE_SETTLED: &str = "$moderatorAbilities.deleteSettled";
+/// The operand a `present` or an `absent` tests for the `approversPredateDocument` of the
+/// referenced type's `moderatorAbilities.deleteSettled`.
+pub const SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT: &str =
+    "$moderatorAbilities.deleteSettled.approversPredateDocument";
 
 /// The deepest a decoder accepts conditions inside one another. It only keeps crafted bytes
 /// from driving the decoder, and the evaluation of what it decodes, into unbounded
@@ -102,6 +106,12 @@ pub enum SlotConditionSetting {
     /// `$moderatorAbilities.deleteSettled`: the type says who of a seated team may delete a
     /// document past that window.
     DeleteSettled,
+    /// `$moderatorAbilities.deleteSettled.approversPredateDocument`: that rule counts a member
+    /// the team's leader added only for documents created after its addition, as the rule
+    /// reads once its default is applied (set unless one approval meets it). A document
+    /// older than the members it would take is then never deleted once settled. Absent on a
+    /// type with no such rule.
+    SettledApproversPredateDocument,
 }
 
 impl SlotConditionSetting {
@@ -110,6 +120,9 @@ impl SlotConditionSetting {
         match self {
             SlotConditionSetting::DeleteWithin => SLOT_CONDITION_DELETE_WITHIN,
             SlotConditionSetting::DeleteSettled => SLOT_CONDITION_DELETE_SETTLED,
+            SlotConditionSetting::SettledApproversPredateDocument => {
+                SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT
+            }
         }
     }
 }
@@ -174,6 +187,9 @@ pub struct SlotConditionSubject<'a> {
     pub deletion_window: bool,
     /// Whether the referenced type declares `moderatorAbilities.deleteSettled`.
     pub settled_deletion: bool,
+    /// Whether that rule counts a member the leader added only for documents created after
+    /// its addition (`approversPredateDocument`, its default applied).
+    pub settled_approvers_predate_document: bool,
 }
 
 impl SlotConditionSubject<'_> {
@@ -181,6 +197,9 @@ impl SlotConditionSubject<'_> {
         match setting {
             SlotConditionSetting::DeleteWithin => self.deletion_window,
             SlotConditionSetting::DeleteSettled => self.settled_deletion,
+            SlotConditionSetting::SettledApproversPredateDocument => {
+                self.settled_approvers_predate_document
+            }
         }
     }
 }
@@ -524,6 +543,7 @@ mod tests {
                     elected_abilities: &none,
                     deletion_window: false,
                     settled_deletion: false,
+                    settled_approvers_predate_document: false,
                 })
             };
 
@@ -560,6 +580,7 @@ mod tests {
             elected_abilities: &empty,
             deletion_window: false,
             settled_deletion: false,
+            settled_approvers_predate_document: false,
         };
         let name_is = |name: &str| {
             SlotCondition::Equal(
@@ -623,7 +644,8 @@ mod tests {
 
     /// A condition on the type as a whole: what its contract lets the elected team do on
     /// it, and which settings it declares. "The team may delete its documents, and a
-    /// document stays deletable": no window, or a rule for deleting past it.
+    /// document stays deletable": no window, or a rule for deleting past it that counts
+    /// every member of the team for every document.
     #[test]
     fn should_judge_a_type_by_what_its_moderation_says_of_it() {
         let condition = SlotCondition::AllOf(SlotConditions::new(vec![
@@ -633,15 +655,18 @@ mod tests {
             ),
             SlotCondition::AnyOf(SlotConditions::new(vec![
                 SlotCondition::Absent(SlotConditionSetting::DeleteWithin),
-                SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                SlotCondition::AllOf(SlotConditions::new(vec![
+                    SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                    SlotCondition::Absent(SlotConditionSetting::SettledApproversPredateDocument),
+                ])),
             ])),
         ]));
-        assert_eq!(condition.node_count(), 5);
+        assert_eq!(condition.node_count(), 7);
         assert!(!condition.reads_the_property());
         assert!(removed_with_the_document().reads_the_property());
 
         let empty = BTreeSet::new();
-        let holds = |abilities: &[&str], deletion_window, settled_deletion| {
+        let holds = |abilities: &[&str], deletion_window, settled_deletion, approvers_predate| {
             condition.holds(&SlotConditionSubject {
                 kind: DocumentReferenceKind::Moderated,
                 property_name: "",
@@ -650,15 +675,19 @@ mod tests {
                 elected_abilities: &kept(abilities),
                 deletion_window,
                 settled_deletion,
+                settled_approvers_predate_document: approvers_predate,
             })
         };
-        assert!(holds(&["deleteDocuments"], false, false));
-        assert!(holds(&["ban", "deleteDocuments"], true, true));
+        assert!(holds(&["deleteDocuments"], false, false, false));
+        assert!(holds(&["ban", "deleteDocuments"], true, true, false));
         // The team does not delete documents of the type
-        assert!(!holds(&[], false, false));
-        assert!(!holds(&["changeDocumentFields"], false, false));
+        assert!(!holds(&[], false, false, false));
+        assert!(!holds(&["changeDocumentFields"], false, false, false));
         // A window with nobody to delete past it
-        assert!(!holds(&["deleteDocuments"], true, false));
+        assert!(!holds(&["deleteDocuments"], true, false, false));
+        // A window, and a rule past it under which members added after a document do not
+        // count for it: a document older than the members it would take stays for good
+        assert!(!holds(&["deleteDocuments"], true, true, true));
 
         // Written back as declared, and decoded as encoded
         assert_eq!(
@@ -670,7 +699,11 @@ mod tests {
                 { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
                 { "anyOf": [
                     { "absent": "$moderatorAbilities.deleteWithin" },
-                    { "present": "$moderatorAbilities.deleteSettled" }
+                    { "allOf": [
+                        { "present": "$moderatorAbilities.deleteSettled" },
+                        { "absent":
+                            "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+                    ] }
                 ] }
             ] })
         );

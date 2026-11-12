@@ -256,7 +256,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 hex::encode(root),
-                "c320fa9fe6a942ee34cc802dec5d3bf78721ad6bb85f5bb6c84e866c75abeb59",
+                "4d8f2a9f55e6fdeb24307bea0c7faadcfa91baa93e0b5e72bd03865ed1803c69",
                 "activation includes the current system contracts and retained-history migration",
             );
             roots.push(root);

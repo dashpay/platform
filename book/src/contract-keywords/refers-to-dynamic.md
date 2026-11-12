@@ -142,6 +142,7 @@ When the type is a moderated one, the string filling `body` is one a moderator's
 | `"$moderatorAbilities.changeFields"` | The referenced type's [`changeFields`](moderator-abilities.md): the properties only moderators write. Empty when the type lists none. |
 | `"$electedAbilities"` | The abilities the referenced type's contract gives its [elected moderation team](../data-model/contract-moderation.md) on the type, by name: `deleteDocuments`, `ban`, `suspend`, `warn`, `changeDocumentFields`. Empty when the contract elects no team, or leaves the type out of what the team moderates. |
 | `"$moderatorAbilities.deleteWithin"`, `"$moderatorAbilities.deleteSettled"` | Settings of the referenced type a `present` or an `absent` tests: whether moderators delete a document only within a window after its last change, and whether the type says who of a seated team may delete one past it. |
+| `"$moderatorAbilities.deleteSettled.approversPredateDocument"` | A setting a `present` or an `absent` tests: whether that rule counts a member the team's leader added only for documents created after its addition ([`approversPredateDocument`](moderator-abilities.md), as the rule reads once its default is applied: set unless one approval meets it). Absent on a type with no such rule. |
 | `{ "const": "<string>" }` | The string, 1 to 256 characters. |
 
 | Condition | Holds when |
@@ -149,7 +150,7 @@ When the type is a moderated one, the string filling `body` is one a moderator's
 | `{ "equal": [a, b] }`, `{ "notEqual": [a, b] }` | `$kind` or `$property` is, or is not, the constant on the other side. Compared with `$kind`, the constant is `permanentDocument` or `moderatedDocument`. |
 | `{ "in": [a, [...]] }`, `{ "notIn": [a, [...]] }` | `$kind` or `$property` is, or is not, one of two or more distinct strings. |
 | `{ "contains": [list, a] }` | One of the two property lists holds `$property` or a constant, as a whole entry; or `$electedAbilities` holds the ability a constant names. |
-| `{ "present": setting }`, `{ "absent": setting }` | The type declares, or does not declare, `$moderatorAbilities.deleteWithin` or `$moderatorAbilities.deleteSettled`. |
+| `{ "present": setting }`, `{ "absent": setting }` | The type declares, or does not declare, `$moderatorAbilities.deleteWithin` or `$moderatorAbilities.deleteSettled`; or its settled rule sets, or does not set, `approversPredateDocument`. |
 | `{ "not": c }`, `{ "anyOf": [...] }`, `{ "allOf": [...] }` | As in `propertyConstraints`: `anyOf` and `allOf` take two or more conditions, none listed twice and none the same combinator; `not` holds no `not` and no `notIn`. |
 | `{ "ifThen": [c, then] }`, `{ "ifThenElse": [c, then, else] }` | `then` holds whenever `c` does; with an `else`, it holds when `c` does not. |
 
@@ -165,14 +166,17 @@ One `when` is made of at most 16 conditions (`max_document_type_requirement_cond
     { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
     { "anyOf": [
       { "absent": "$moderatorAbilities.deleteWithin" },
-      { "present": "$moderatorAbilities.deleteSettled" }
+      { "allOf": [
+        { "present": "$moderatorAbilities.deleteSettled" },
+        { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+      ] }
     ] }
   ] },
   "properties": { "body": { "name": "$any", "type": "string" } }
 }
 ```
 
-The contract of the named type gives its elected team the deletion of the type's documents, and a document stays deletable: the type sets no window, or says who of the team deletes one past it. Without the first, a type can be a moderated one that nobody may moderate once a team is seated; without the second, a document outlasts its window for good. A reference that relies on a document being removable asks for both, and usually for [an elected contract](#who-vouches-for-the-target) too.
+The contract of the named type gives its elected team the deletion of the type's documents, and a document stays deletable: the type sets no window, or says who of the team deletes one past it and counts every member for every document. Without the first, a type can be a moderated one that nobody may moderate once a team is seated; without the second, a document outlasts its window for good; without the third, a rule taking more approvals than the leader and the elected members give never deletes a document older than the members the leader added. A reference that relies on a document being removable asks for both, and usually for [an elected contract](#who-vouches-for-the-target) too.
 
 A slot's `when` reads the same facts beside `$property`. Each `when` is held to the limits above on its own.
 

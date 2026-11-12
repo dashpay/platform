@@ -38,9 +38,10 @@ const SLOT_CONDITION_LISTS: [&str; 3] = [
 ];
 
 /// The settings of the referenced type a `present` or an `absent` tests.
-const SLOT_CONDITION_SETTINGS: [&str; 2] = [
+const SLOT_CONDITION_SETTINGS: [&str; 3] = [
     "$moderatorAbilities.deleteWithin",
     "$moderatorAbilities.deleteSettled",
+    "$moderatorAbilities.deleteSettled.approversPredateDocument",
 ];
 
 /// The keys of a condition of a slot's `when`, each the one key of its object.

@@ -508,6 +508,7 @@ impl DocumentTypeRequirements {
             .flatten()
             .map(|ability| ability.as_str().to_string())
             .collect();
+        let settled_deletion = document_type.moderator_settled_deletion();
         // The type as a whole: no property is in hand, and its condition reads none
         let of_the_type = SlotConditionSubject {
             kind,
@@ -518,7 +519,9 @@ impl DocumentTypeRequirements {
             deletion_window: document_type
                 .documents_can_be_deleted_by_moderators_for()
                 .is_some(),
-            settled_deletion: document_type.moderator_settled_deletion().is_some(),
+            settled_deletion: settled_deletion.is_some(),
+            settled_approvers_predate_document: settled_deletion
+                .is_some_and(|rule| rule.approvers_predate_document),
         };
         if self
             .when

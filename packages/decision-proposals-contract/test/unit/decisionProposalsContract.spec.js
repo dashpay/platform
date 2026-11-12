@@ -302,7 +302,12 @@ describe('Decision Proposals Contract', () => {
               {
                 anyOf: [
                   { absent: '$moderatorAbilities.deleteWithin' },
-                  { present: '$moderatorAbilities.deleteSettled' },
+                  {
+                    allOf: [
+                      { present: '$moderatorAbilities.deleteSettled' },
+                      { absent: '$moderatorAbilities.deleteSettled.approversPredateDocument' },
+                    ],
+                  },
                 ],
               },
             ],

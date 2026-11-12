@@ -201,7 +201,10 @@ where `<removable by the elected team>` is
   { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
   { "anyOf": [
     { "absent": "$moderatorAbilities.deleteWithin" },
-    { "present": "$moderatorAbilities.deleteSettled" }
+    { "allOf": [
+      { "present": "$moderatorAbilities.deleteSettled" },
+      { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+    ] }
   ] }
 ] }
 ```
@@ -226,7 +229,7 @@ refusing the write:
 | A contract that does not exist, or has no such document type | `ReferencedDocumentTypeNotFoundError` (40121) |
 | A private document type, whose documents are encrypted entries the chain never reads | `ReferencedDocumentTypePrivateError` (40150) |
 | An `indexOnly` document type, whose documents are index entries with none to find by its id | `ReferencedDocumentTypeIndexOnlyError` (40146) |
-| A type its contract's elected team may not delete from (the contract elects no team, or leaves the type out of the team's `deleteDocuments`), or one moderators delete only within a window (`deleteWithin`) with no rule for later (`deleteSettled`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
+| A type its contract's elected team may not delete from (the contract elects no team, or leaves the type out of the team's `deleteDocuments`), or one moderators delete only within a window (`deleteWithin`) with no rule for later (`deleteSettled`), or with a rule that counts a member the leader added only for documents created after its addition (`approversPredateDocument`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
 | A moderated type with no string or byte array a removal takes away: every one is kept in the removal record (`deleteKeepsFields`) or is the moderators' to write (`changeFields`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
 | A document type whose documents their owner can delete, or that never leave state | `ReferencedDocumentTypeNotModeratedError` (40143) |
 | A document that is not there | `ReferencedEntityNotFoundError` (40120) |
@@ -253,8 +256,16 @@ What this does and does not give:
   delete only within a window after a document's last change
   (`moderatorAbilities.deleteWithin`) without saying who may delete a settled
   one (`deleteSettled`), since a description would outlast the window for
-  good. A settled document is deleted by a seated team alone, so within the
-  interim a description past its window waits for the first election.
+  good. And so is a type whose rule for a settled document counts a member the
+  team's leader added only for documents created after its addition
+  (`approversPredateDocument`, the default once a rule asks for more than one
+  approval): under a rule taking more approvals than the leader and the
+  elected members give, a description older than the added members could
+  never be deleted. A type with a window qualifies with a rule one approval
+  meets, or one that sets `approversPredateDocument` to false. A settled
+  document is deleted by a seated team alone, so within the interim a
+  description past its window waits for the first election, and a rule taking
+  several approvals takes that many members of the team.
 - The description's own edit rules are its document type's. A type that lets
   its author replace a document lets the author change the description after
   the two hours, and after choices were entered. The proposal's history keeps
