@@ -28,6 +28,9 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   document reference on an identifier property may name its target through the
 ///   referring document (`contractId` and `documentType` written `"$self.<property>"`), with what the named
 ///   document type must look like (`documentTypeRequirements`);
+/// - `parse_contested_documents_resolution`, `Some(0)` rather than `None`: a contested index
+///   may declare `"resolution": 2`, a masternode vote among documents, where each document
+///   entered is a contender named by its document id and an identity may enter several;
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property;
@@ -47,7 +50,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     },
     document_type_versions: DocumentTypeVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 4, // lifecycle flags extend the schema-v3 grammar (note 37)
+            try_from_schema: 4, // lifecycle flags extend the schema-v3 grammar (note 38)
             ..CONTRACT_VERSIONS_V6
                 .document_type_versions
                 .class_method_versions
@@ -60,6 +63,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             validation_schema: Some(0),
             // changed: the `private` keyword declares a private document type
             parse_private_document: Some(0),
+            // changed: a contested index may make each document a contender (`resolution` 2)
+            parse_contested_documents_resolution: Some(0),
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             // changed: also reads a reference whose target the referring document names
             apply_property_reference: Some(1),
