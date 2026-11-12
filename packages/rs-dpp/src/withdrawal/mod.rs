@@ -11,12 +11,26 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 
 use crate::balances::credits::CREDITS_PER_DUFF;
 #[cfg(feature = "state-transitions")]
-use crate::consensus::basic::identity::InvalidCreditWithdrawalTransitionCoreFeeError;
+use crate::consensus::basic::identity::{
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionAmountError,
+};
+#[cfg(feature = "state-transitions")]
+use crate::consensus::basic::state_transition::WithdrawalBelowMinAmountError;
+#[cfg(feature = "state-transitions")]
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
+#[cfg(feature = "state-transitions")]
+use crate::consensus::basic::BasicError;
+#[cfg(feature = "state-transitions")]
+use crate::consensus::ConsensusError;
 use crate::fee::Credits;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 #[cfg(feature = "state-transitions")]
+use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
+#[cfg(feature = "state-transitions")]
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_version::version::PlatformVersion;
 
@@ -108,6 +122,184 @@ pub fn min_withdrawal_amount_with_core_fee(
         .system_limits
         .min_withdrawal_amount
         .saturating_add(core_fee)
+}
+
+/// Rejects a Core fee rate that is not a non-zero Fibonacci number.
+///
+/// Stateless rule of every shielded withdrawal structure generation, shared with
+/// [`preflight_shielded_withdrawal`].
+#[cfg(feature = "state-transitions")]
+pub fn validate_core_fee_per_byte_is_non_zero_fibonacci(
+    core_fee_per_byte: u32,
+) -> SimpleConsensusValidationResult {
+    if is_non_zero_fibonacci_number(core_fee_per_byte as u64) {
+        SimpleConsensusValidationResult::new()
+    } else {
+        SimpleConsensusValidationResult::new_with_error(
+            InvalidCreditWithdrawalTransitionCoreFeeError::new(
+                core_fee_per_byte,
+                MIN_CORE_FEE_PER_BYTE,
+            )
+            .into(),
+        )
+    }
+}
+
+/// Rejects a `reserved_amount` (what a withdrawal reserves for Core) outside
+/// `[minimum_reserved_amount, maximum_reserved_amount]`.
+#[cfg(feature = "state-transitions")]
+pub fn validate_withdrawal_reserved_amount_range(
+    reserved_amount: Credits,
+    minimum_reserved_amount: Credits,
+    maximum_reserved_amount: Credits,
+) -> SimpleConsensusValidationResult {
+    if reserved_amount < minimum_reserved_amount {
+        return SimpleConsensusValidationResult::new_with_error(
+            BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
+                reserved_amount,
+                minimum_reserved_amount,
+                maximum_reserved_amount,
+            ))
+            .into(),
+        );
+    }
+
+    if reserved_amount > maximum_reserved_amount {
+        return SimpleConsensusValidationResult::new_with_error(
+            InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+                reserved_amount,
+                minimum_reserved_amount,
+                maximum_reserved_amount,
+            )
+            .into(),
+        );
+    }
+
+    SimpleConsensusValidationResult::new()
+}
+
+/// The Core fee in duffs an asset unlock transaction requests at `core_fee_per_byte` from
+/// protocol version 14: the rate is clamped to the version's `max_core_fee_per_byte`. Errors
+/// for a version without a cap, which does not carve the fee out of the withdrawn amount.
+pub fn asset_unlock_core_fee_duffs(
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Result<u64, ProtocolError> {
+    let max_core_fee_per_byte = platform_version
+        .system_limits
+        .max_core_fee_per_byte
+        .ok_or_else(|| {
+            ProtocolError::Generic(
+                "asset unlock conversion v1 requires a Core fee limit".to_string(),
+            )
+        })?;
+    (ASSET_UNLOCK_TX_SIZE as u64)
+        .checked_mul(core_fee_per_byte.min(max_core_fee_per_byte) as u64)
+        .ok_or_else(|| ProtocolError::Generic("asset unlock fee overflow".to_string()))
+}
+
+/// What a shielded withdrawal's reserve for Core pays out, as the withdrawal document
+/// conversion turns it into the asset unlock output.
+#[cfg(feature = "state-transitions")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShieldedWithdrawalReserve {
+    /// The Core fee carved out of the reserve, in duffs. 0 before protocol version 14, where
+    /// Core draws the fee from its credit pool on top of the reserve.
+    pub core_fee_duffs: u64,
+    /// The asset unlock output, in duffs: the reserve truncated to whole duffs, minus the fee.
+    pub output_duffs: u64,
+}
+
+#[cfg(feature = "state-transitions")]
+impl ShieldedWithdrawalReserve {
+    /// The output in credits: at most the reserve, without its sub-duff remainder and the Core
+    /// fee.
+    pub fn output_credits(&self) -> Credits {
+        self.output_duffs.saturating_mul(CREDITS_PER_DUFF)
+    }
+}
+
+/// Checks a shielded withdrawal that reserves `reserved_amount` for Core at `core_fee_per_byte`
+/// the way consensus does, and returns what it pays out.
+///
+/// The rules follow the protocol version's `validate_withdrawal_structure` generation: a
+/// non-zero Fibonacci rate always; from the generation that caps the rate also the cap, and a
+/// reserve above the floor plus the Core fee. Before it the reserve must lie in
+/// `[min_withdrawal_amount, max_withdrawal_amount]`, which drive enforces on the net amount
+/// there. The accounting follows the generation of `try_into_asset_unlock_base_transaction_info`.
+/// The reserve is gross: what the withdrawal debits is not changed by the result.
+#[cfg(feature = "state-transitions")]
+pub fn preflight_shielded_withdrawal(
+    reserved_amount: Credits,
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Result<ShieldedWithdrawalReserve, ConsensusError> {
+    let limits = &platform_version.system_limits;
+    let mut result = validate_core_fee_per_byte_is_non_zero_fibonacci(core_fee_per_byte);
+    match platform_version
+        .dpp
+        .state_transitions
+        .shielded
+        .validate_withdrawal_structure
+    {
+        0 => {
+            if result.is_valid() {
+                result = validate_withdrawal_reserved_amount_range(
+                    reserved_amount,
+                    limits.min_withdrawal_amount,
+                    limits.max_withdrawal_amount,
+                );
+            }
+        }
+        1 => {
+            if result.is_valid() {
+                result = validate_core_fee_per_byte_cap(core_fee_per_byte, platform_version);
+            }
+            if result.is_valid() {
+                result = validate_withdrawal_reserved_amount_range(
+                    reserved_amount,
+                    min_withdrawal_amount_with_core_fee(core_fee_per_byte, platform_version),
+                    limits.max_withdrawal_amount,
+                );
+            }
+        }
+        version => {
+            return Err(
+                BasicError::UnsupportedVersionError(UnsupportedVersionError::new(version, 0, 1))
+                    .into(),
+            )
+        }
+    }
+    if let Some(error) = result.errors.into_iter().next() {
+        return Err(error);
+    }
+
+    // Whole duffs first, then the fee: the order the withdrawal document conversion uses.
+    let core_fee_duffs = match platform_version
+        .dpp
+        .document_versions
+        .document_method_versions
+        .try_into_asset_unlock_base_transaction_info
+    {
+        0 => 0,
+        // A table that selects the carving generation without a cap cannot account for it.
+        1 => asset_unlock_core_fee_duffs(core_fee_per_byte, platform_version).map_err(|_| {
+            ConsensusError::from(BasicError::UnsupportedVersionError(
+                UnsupportedVersionError::new(1, 0, 0),
+            ))
+        })?,
+        version => {
+            return Err(
+                BasicError::UnsupportedVersionError(UnsupportedVersionError::new(version, 0, 1))
+                    .into(),
+            )
+        }
+    };
+    Ok(ShieldedWithdrawalReserve {
+        core_fee_duffs,
+        // A reserve in range exceeds the fee: the minimum adds the fee to the floor.
+        output_duffs: (reserved_amount / CREDITS_PER_DUFF).saturating_sub(core_fee_duffs),
+    })
 }
 
 /// Serde helper for `Pooling` fields exposed through the JS surface.
@@ -355,6 +547,95 @@ mod core_fee_tests {
         assert_eq!(platform_version.system_limits.max_core_fee_per_byte, None);
 
         assert!(validate_core_fee_per_byte_cap(u32::MAX, platform_version).is_valid());
+    }
+
+    fn rate_error(result: Result<ShieldedWithdrawalReserve, ConsensusError>, rate: u32) {
+        assert_matches!(
+            result,
+            Err(ConsensusError::BasicError(
+                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(error)
+            )) if error.core_fee_per_byte() == rate
+        );
+    }
+
+    #[test]
+    fn preflight_truncates_the_reserve_to_whole_duffs_before_the_core_fee() {
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+
+        // 1_000_000 duffs and 1 credit: the credit is dropped, then the 190-duff fee.
+        let reserve =
+            preflight_shielded_withdrawal(1_000_000_001, 1, version_14).expect("in range");
+        assert_eq!(reserve.core_fee_duffs, 190);
+        assert_eq!(reserve.output_duffs, 999_810);
+        assert_eq!(reserve.output_credits(), 999_810_000);
+
+        // A larger reserve at a higher rate, off a duff boundary by 999 credits.
+        let reserve =
+            preflight_shielded_withdrawal(2_345_678_999, 5, version_14).expect("in range");
+        assert_eq!(reserve.core_fee_duffs, 950);
+        assert_eq!(
+            reserve.output_credits(),
+            (2_345_678 - 950) * CREDITS_PER_DUFF
+        );
+    }
+
+    #[test]
+    fn preflight_before_the_core_fee_carve_out_pays_the_whole_duffs_of_the_reserve() {
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+
+        let reserve =
+            preflight_shielded_withdrawal(1_000_000_999, 1, version_13).expect("in range");
+        assert_eq!(reserve.core_fee_duffs, 0);
+        assert_eq!(reserve.output_credits(), 1_000_000_000);
+    }
+
+    #[test]
+    fn preflight_refuses_a_zero_or_non_fibonacci_rate_before_and_after_the_cap() {
+        for version in [13, 14] {
+            let platform_version = PlatformVersion::get(version).expect("protocol version");
+            for rate in [0, 4] {
+                rate_error(
+                    preflight_shielded_withdrawal(2_000_000_000, rate, platform_version),
+                    rate,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preflight_refuses_a_rate_above_the_cap_only_once_the_cap_applies() {
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+
+        assert!(preflight_shielded_withdrawal(2_000_000_000, 10_946, version_13).is_ok());
+        rate_error(
+            preflight_shielded_withdrawal(2_000_000_000, 10_946, version_14),
+            10_946,
+        );
+    }
+
+    #[test]
+    fn preflight_keeps_the_reserve_bounds_of_each_generation() {
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let version_14 = PlatformVersion::get(14).expect("protocol version 14");
+        let floor = version_14.system_limits.min_withdrawal_amount;
+        let max = version_14.system_limits.max_withdrawal_amount;
+        let carved_floor = min_withdrawal_amount_with_core_fee(1, version_14);
+
+        assert!(preflight_shielded_withdrawal(floor, 1, version_13).is_ok());
+        assert_matches!(
+            preflight_shielded_withdrawal(floor, 1, version_14),
+            Err(ConsensusError::BasicError(
+                BasicError::WithdrawalBelowMinAmountError(_)
+            ))
+        );
+        assert!(preflight_shielded_withdrawal(carved_floor, 1, version_14).is_ok());
+        assert_matches!(
+            preflight_shielded_withdrawal(max + 1, 1, version_14),
+            Err(ConsensusError::BasicError(
+                BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(_)
+            ))
+        );
     }
 
     #[test]
