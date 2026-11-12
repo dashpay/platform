@@ -37,8 +37,13 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         let entered = expectation(description: "spend entered the native call")
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
-        manager.nativeShieldFromIdentityToRecipientCall = { handle, _, _, _, _, _, _, newBalance in
+        manager.nativeShieldFromIdentityToRecipientCall = { handle, wid, acct, ident, rcp, amt, _, newBalance in
             XCTAssertEqual(handle, 77)
+            XCTAssertEqual(Data(bytes: wid, count: 32), Data(repeating: 1, count: 32))
+            XCTAssertEqual(acct, 5)
+            XCTAssertEqual(Data(bytes: ident, count: 32), Data(repeating: 2, count: 32))
+            XCTAssertEqual(Data(bytes: rcp, count: 43), Data(repeating: 3, count: 43))
+            XCTAssertEqual(amt, 123_456_789)
             entered.fulfill()
             XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
             newBalance.pointee = 7
@@ -47,8 +52,10 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         let signer = KeychainSigner(modelContainer: try DashModelContainer.createInMemory())
         let spend = Task {
             try await manager.shieldedShieldFromIdentityToRecipient(
-                walletId: Data(repeating: 1, count: 32), identityId: Data(repeating: 2, count: 32),
-                recipientRaw43: Data(repeating: 3, count: 43), amount: 1, identitySigner: signer)
+                walletId: Data(repeating: 1, count: 32), shieldedAccount: 5,
+                identityId: Data(repeating: 2, count: 32),
+                recipientRaw43: Data(repeating: 3, count: 43), amount: 123_456_789,
+                identitySigner: signer)
         }
         await fulfillment(of: [entered], timeout: 5)
 

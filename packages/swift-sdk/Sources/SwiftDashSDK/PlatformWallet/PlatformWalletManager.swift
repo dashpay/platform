@@ -1339,7 +1339,8 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
+    /// `clearShielded`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
