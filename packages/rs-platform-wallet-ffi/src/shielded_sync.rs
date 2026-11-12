@@ -1312,6 +1312,161 @@ mod fresh_address_tests {
         (PLATFORM_WALLET_MANAGER_STORAGE.insert(manager), wallet_id)
     }
 
+    /// A manager with one wallet whose shielded account 0 is bound from
+    /// its seed, plus the store path to clean up.
+    fn bound_manager() -> (Handle, [u8; 32], std::path::PathBuf) {
+        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        // A seed-backed bind persists the viewing keys, so the persister
+        // must declare it can hold them atomically.
+        let manager = crate::test_fixtures::mock_manager_with(
+            crate::persistence::FFIPersister::new_with_persistence_capabilities(
+                crate::persistence::PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_shielded_viewing_keys_fn: Some(
+                        crate::test_fixtures::noop_persist_viewing_keys,
+                    ),
+                    on_load_shielded_viewing_keys_fn: Some(
+                        crate::test_fixtures::noop_load_viewing_keys,
+                    ),
+                    on_load_shielded_viewing_keys_free_fn: Some(
+                        crate::test_fixtures::noop_free_viewing_keys,
+                    ),
+                    ..Default::default()
+                },
+                platform_wallet::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS.union(
+                    platform_wallet::changeset::PersistenceCapabilities::SHIELDED_VIEWING_KEYS,
+                ),
+            ),
+        );
+        let path = std::env::temp_dir().join(format!(
+            "ffi-shielded-fresh-address-{}-{}.sqlite",
+            std::process::id(),
+            next_handle()
+        ));
+        let wallet_id = runtime().block_on(async {
+            let wallet = manager
+                .create_wallet_from_seed_bytes(
+                    dashcore::Network::Testnet,
+                    &[42; 64],
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create mock wallet");
+            manager
+                .configure_shielded(&path)
+                .await
+                .expect("configure shielded");
+            let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+            wallet
+                .bind_shielded(&[42; 64], &[0], &coordinator)
+                .await
+                .expect("bind shielded");
+            wallet.wallet_id()
+        });
+        (
+            PLATFORM_WALLET_MANAGER_STORAGE.insert(manager),
+            wallet_id,
+            path,
+        )
+    }
+
+    unsafe fn fresh_address(handle: Handle, wallet_id: &[u8; 32]) -> [u8; 43] {
+        let mut out = [0u8; 43];
+        let mut present = false;
+        let mut r = platform_wallet_manager_shielded_fresh_address(
+            handle,
+            wallet_id.as_ptr(),
+            0,
+            out.as_mut_ptr(),
+            &mut present,
+        );
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(present, "bound account has a fresh address");
+        crate::platform_wallet_ffi_result_free(&mut r);
+        out
+    }
+
+    unsafe fn is_own(handle: Handle, wallet_id: &[u8; 32], address: &[u8]) -> bool {
+        let mut is_own = false;
+        let mut present = false;
+        let mut r = platform_wallet_manager_is_own_shielded_address(
+            handle,
+            wallet_id.as_ptr(),
+            0,
+            address.as_ptr(),
+            address.len(),
+            &mut is_own,
+            &mut present,
+        );
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(present, "bound account can answer");
+        crate::platform_wallet_ffi_result_free(&mut r);
+        is_own
+    }
+
+    #[test]
+    fn fresh_address_writes_a_new_address_on_a_bound_wallet() {
+        let (handle, wallet_id, path) = bound_manager();
+        unsafe {
+            let mut default = [0u8; 43];
+            let mut present = false;
+            let mut r = platform_wallet_manager_shielded_default_address(
+                handle,
+                wallet_id.as_ptr(),
+                0,
+                default.as_mut_ptr(),
+                &mut present,
+            );
+            assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+            assert!(present);
+            crate::platform_wallet_ffi_result_free(&mut r);
+
+            let first = fresh_address(handle, &wallet_id);
+            let second = fresh_address(handle, &wallet_id);
+            assert_ne!(first, default, "a fresh address is never the default");
+            assert_ne!(first, second, "each call draws a new address");
+            assert!(
+                is_own(handle, &wallet_id, &first),
+                "the 43 bytes decode to one of the wallet's own addresses"
+            );
+            assert_eq!(
+                crate::platform_wallet_manager_destroy(handle).code,
+                PlatformWalletFFIResultCode::Success
+            );
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn is_own_answers_for_own_and_foreign_addresses_on_a_bound_wallet() {
+        let (handle, wallet_id, path) = bound_manager();
+        let foreign = platform_wallet::wallet::shielded::OrchardKeySet::from_seed(
+            &[9; 64],
+            dashcore::Network::Testnet,
+            0,
+        )
+        .expect("foreign keys")
+        .default_address
+        .to_raw_address_bytes();
+        unsafe {
+            let fresh = fresh_address(handle, &wallet_id);
+            assert!(is_own(handle, &wallet_id, &fresh), "own fresh address");
+            assert!(!is_own(handle, &wallet_id, &foreign), "foreign address");
+            assert_eq!(
+                crate::platform_wallet_manager_destroy(handle).code,
+                PlatformWalletFFIResultCode::Success
+            );
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn fresh_address_reports_unbound_unknown_and_null() {
         let (handle, wallet_id) = unbound_manager();
