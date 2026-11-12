@@ -31,6 +31,14 @@ const DYNAMIC_KEYS: [&str; 3] = [
 /// The two keys a dynamic reference reads from the referring document.
 const TARGET_KEYS: [&str; 2] = [property_names::CONTRACT_ID, property_names::DOCUMENT_TYPE];
 
+/// The `refersTo` `type`s of a reference to a document, on each of which version 0 of
+/// `apply_property_reference` reads `contractId` as an identifier.
+const DOCUMENT_REFERENCE_TYPES: [&str; 3] = [
+    "permanentDocument",
+    "moderatedDocument",
+    "deletableDocument",
+];
+
 /// What `"$self.<rest>"` reads from the referring document: `<rest>`. `None` for a value
 /// that is not written with the prefix, a literal contract id or document type among them.
 fn read_from_referring_document(value: &Value) -> Option<&str> {
@@ -85,27 +93,42 @@ fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
-/// Whether a `refersTo` declaration names its target through the referring document: its
-/// `contractId` or its `documentType` is read from it (`"$self.<property>"`).
+/// Whether a `refersTo` declaration names its target through the referring document: a
+/// reference to a document whose `contractId` is read from it (`"$self.<property>"`), or one
+/// whose `type` lists kinds and whose `contractId` or `documentType` is read from it.
 ///
 /// Nothing else tells one. This runs on every parse, the reading of a contract stored
 /// under an earlier protocol version included, and must read such a contract as that
-/// version did. No stored declaration is written this way: before protocol version 15 a
-/// `contractId` that is no identifier does not parse, and a `documentType` names a document
-/// type that exists, whose name holds no `$` and no dot. `documentTypeRequirements` beside
-/// a target the schema names is another matter: earlier versions did not read the key, so
-/// a stored declaration may carry it, and it stays unread here. Registration refuses it
-/// (the native schema check), like every key a declaration does not take.
+/// version did. So it holds only for a declaration version 0 of `apply_property_reference`
+/// cannot read at all: version 0 reads the `contractId` of a reference to a document as an
+/// identifier, which no `"$self."` string is, and takes a `type` only as a string. Every
+/// declaration version 0 reads is read as it was, whatever a stored one carries: an
+/// `identity`, `contract`, `token` or `identityPublicKey` reference, whose `contractId` and
+/// `documentType` version 0 never reads, and a reference to a document whose `contractId` is
+/// an id or left out, whose `documentType` version 0 reads as a document type name, written
+/// `"$self."` or not. Registration refuses `"$self."` in either (the native schema check).
+/// `documentTypeRequirements` beside a target the schema names is the same: earlier
+/// versions did not read the key, so a stored declaration may carry it, and it stays unread
+/// here. Registration refuses it, like every key a declaration does not take.
 pub(super) fn declares_dynamic_target(refers_to_value: &Value) -> bool {
-    refers_to_value
-        .to_btree_ref_string_map()
-        .is_ok_and(|declaration| {
-            TARGET_KEYS.iter().any(|key| {
-                declaration
-                    .get(*key)
-                    .is_some_and(|value| read_from_referring_document(value).is_some())
-            })
-        })
+    let Ok(declaration) = refers_to_value.to_btree_ref_string_map() else {
+        return false;
+    };
+    let reads_from_referring_document = |key: &str| {
+        declaration
+            .get(key)
+            .is_some_and(|value| read_from_referring_document(value).is_some())
+    };
+    match declaration.get(property_names::TYPE) {
+        Some(Value::Text(reference_type)) => {
+            DOCUMENT_REFERENCE_TYPES.contains(&reference_type.as_str())
+                && reads_from_referring_document(property_names::CONTRACT_ID)
+        }
+        Some(Value::Array(_)) => TARGET_KEYS
+            .iter()
+            .any(|key| reads_from_referring_document(key)),
+        _ => false,
+    }
 }
 
 /// Whether a `refersTo` declaration, or an operand anywhere inside a reference expression

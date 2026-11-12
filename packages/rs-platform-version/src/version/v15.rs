@@ -760,6 +760,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     text a moderator's removal takes away. Protocol v14 and earlier keep
 ///     `apply_property_reference` 0, which does not read the keys, and
 ///     `document_reference_validation` 0, which no dynamic reference reaches.
+///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
+///     reference to a document whose `contractId` is written `"$self."`, or a `type` listing
+///     kinds), so a contract stored before 15 with `"$self."` keys on any other declaration
+///     is read as version 0 read it; registration refuses those keys there.
 ///
 /// 34. **A key with a budget or an expiry signs no data contract**: a budget counts what the
 ///     transitions a key signs take from its identity, and an expiry ends its signing, while a
