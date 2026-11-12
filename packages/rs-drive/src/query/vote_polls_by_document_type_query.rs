@@ -112,15 +112,15 @@ impl VotePollsByDocumentTypeQuery {
             limit,
             order_ascending,
         } = self;
+        // Through the contract cache: a contract stored as its schemas is parsed, every pattern
+        // it holds compiled, each time it is read from state
         let contract = drive
-            .fetch_contract(
+            .get_contract_with_fetch_info(
                 contract_id.to_buffer(),
-                None,
-                None,
+                true,
                 transaction,
                 platform_version,
-            )
-            .unwrap()?
+            )?
             .ok_or(Error::DataContract(DataContractError::MissingContract(
                 "data contract not found when resolving vote polls by document type query"
                     .to_string(),
@@ -569,6 +569,51 @@ mod tests {
         query
             .resolve_with_provided_borrowed_contract(contract)
             .expect("should resolve")
+    }
+
+    /// A contract stored as its schemas is parsed each time it is read from state, every
+    /// pattern it holds compiled, so the query reads it through the contract cache.
+    #[test]
+    fn should_resolve_the_contract_through_the_contract_cache() {
+        use crate::util::object_size_info::DataContractResolvedInfo;
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::block::block_info::BlockInfo;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        // What stored the contract cached it
+        drive.cache.data_contracts.clear();
+
+        let query = build_query(&contract, vec![], vec![], None, Some(10), true);
+        let resolve = || {
+            let resolved = query
+                .resolve(&drive, None, platform_version)
+                .expect("expected to resolve");
+            let DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) = resolved.contract
+            else {
+                panic!("expected the fetched contract");
+            };
+            fetch_info
+        };
+
+        let read_from_state = resolve();
+        let read_again = resolve();
+        assert!(
+            std::sync::Arc::ptr_eq(&read_from_state, &read_again),
+            "the second resolve is answered with the cached contract"
+        );
     }
 
     // -----------------------------------------------------------------------

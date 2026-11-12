@@ -129,7 +129,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
+        let contract = drive.get_contract_with_fetch_info(contract_id.to_buffer(), true, transaction, platform_version)?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll".to_string())))?;
         Ok(ContestedDocumentResourceVotePollWithContractInfo {
             contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(contract),
             document_type_name: document_type_name.clone(),
@@ -152,7 +152,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned".to_string())))?;
+        let contract = drive.get_contract_with_fetch_info(contract_id.to_buffer(), true, transaction, platform_version)?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned".to_string())))?;
         Ok(ContestedDocumentResourceVotePollWithContractInfo {
             contract: DataContractOwnedResolvedInfo::DataContractFetchInfo(contract),
             document_type_name,
@@ -175,7 +175,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as borrowed".to_string())))?;
+        let contract = drive.get_contract_with_fetch_info(contract_id.to_buffer(), true, transaction, platform_version)?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as borrowed".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),
@@ -259,7 +259,7 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_values,
         } = self;
 
-        let contract = drive.fetch_contract(contract_id.to_buffer(), None, None, transaction, platform_version).unwrap()?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned, but allowing borrowed".to_string())))?;
+        let contract = drive.get_contract_with_fetch_info(contract_id.to_buffer(), true, transaction, platform_version)?.ok_or(Error::DataContract(DataContractError::MissingContract("data contract not found when trying to resolve contested document resource vote poll as owned, but allowing borrowed".to_string())))?;
         Ok(
             ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
                 contract: DataContractResolvedInfo::ArcDataContractFetchInfo(contract),
@@ -326,5 +326,90 @@ impl ContestedDocumentResourceVotePollResolver for ContestedDocumentResourceVote
             index_name,
             index_values,
         })
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use crate::util::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+
+    /// A contract stored as its schemas is parsed each time it is read from state, every
+    /// pattern it holds compiled, so each resolver reads it through the contract cache.
+    #[test]
+    fn should_resolve_the_contract_through_the_contract_cache() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        // What stored the contract cached it
+        drive.cache.data_contracts.clear();
+
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: contract.id(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![],
+        };
+        let owned = |resolved: ContestedDocumentResourceVotePollWithContractInfo| {
+            let DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) =
+                resolved.contract
+            else {
+                panic!("expected the fetched contract");
+            };
+            fetch_info
+        };
+        let borrowed =
+            |resolved: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed| {
+                let DataContractResolvedInfo::ArcDataContractFetchInfo(fetch_info) =
+                    resolved.contract
+                else {
+                    panic!("expected the fetched contract");
+                };
+                fetch_info
+            };
+
+        let read_from_state = owned(
+            vote_poll
+                .resolve(&drive, None, platform_version)
+                .expect("expected to resolve"),
+        );
+        for read_again in [
+            owned(
+                vote_poll
+                    .clone()
+                    .resolve_owned(&drive, None, platform_version)
+                    .expect("expected to resolve"),
+            ),
+            borrowed(
+                vote_poll
+                    .resolve_allow_borrowed(&drive, None, platform_version)
+                    .expect("expected to resolve"),
+            ),
+            borrowed(
+                vote_poll
+                    .clone()
+                    .resolve_owned_allow_borrowed(&drive, None, platform_version)
+                    .expect("expected to resolve"),
+            ),
+        ] {
+            assert!(
+                Arc::ptr_eq(&read_from_state, &read_again),
+                "a later resolve is answered with the cached contract"
+            );
+        }
     }
 }
