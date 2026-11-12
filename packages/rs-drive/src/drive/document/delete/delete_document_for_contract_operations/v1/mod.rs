@@ -103,7 +103,7 @@ impl Drive {
                 document_id,
                 contract,
                 document_type,
-                None,
+                previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 block_info.time_ms,
                 transaction,
