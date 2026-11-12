@@ -11,7 +11,7 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
-use crate::wallet::outpoint_locks::{lock_known_masternode_collaterals, persist_outpoint_locks};
+use crate::wallet::outpoint_locks::persist_outpoint_locks;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -142,9 +142,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
             Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
-        // The outpoints the replay of unconfirmed sends locked in each wallet,
-        // stored once the load is past its rollback point.
-        let mut replay_locks_by_wallet: BTreeMap<WalletId, Vec<OutPoint>> = BTreeMap::new();
+        // The outpoints this load locked in each wallet (the replay of
+        // unconfirmed sends, and the collateral of the masternodes the wallet
+        // already knows), stored once the load is past its rollback point.
+        let mut load_locks_by_wallet: BTreeMap<WalletId, Vec<OutPoint>> = BTreeMap::new();
 
         // Each wallet's start state, and whether it was re-read under the
         // durable-cursor lock that `held` still holds (see the publication
@@ -304,8 +305,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 rewind_barrier: Default::default(),
                 tracked_collaterals: Default::default(),
             };
-            if !replay_locks.is_empty() {
-                replay_locks_by_wallet.insert(wallet_id, replay_locks);
+            // Keep the collateral of every masternode the wallet already
+            // knows out of coin selection before the wallet is published, so
+            // nothing can spend it in between: registrations restored into
+            // its history without a transaction check, and tracked
+            // masternodes whose registration has been fetched. See
+            // `wallet::outpoint_locks`.
+            let mut load_locks = replay_locks;
+            load_locks.extend(platform_info.lock_known_masternode_collaterals(
+                &self.tracked_masternodes_service().known_collaterals(),
+            ));
+            if !load_locks.is_empty() {
+                load_locks_by_wallet.insert(wallet_id, load_locks);
             }
             // A restored outbound-account marker says the contact's external
             // account was built from its current xpub, which suppresses the
@@ -736,21 +747,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
-        // Keep the collateral of every masternode the wallets already know out
-        // of coin selection: registrations restored into their histories
-        // without a transaction check, and tracked masternodes whose
-        // registration has been fetched. These locks and the ones the replay
-        // above made are stored here, since no wallet event carries them. See
-        // `wallet::outpoint_locks`.
-        let mut new_locks = lock_known_masternode_collaterals(
-            &self.wallet_manager,
-            &self.tracked_masternodes_service().known_collaterals(),
-        )
-        .await;
-        for (wallet_id, locked) in replay_locks_by_wallet {
-            new_locks.entry(wallet_id).or_default().extend(locked);
-        }
-        persist_outpoint_locks(&*self.persister, new_locks);
+        // The locks this load made are stored here, since no wallet event
+        // carries them. See `wallet::outpoint_locks`.
+        persist_outpoint_locks(&*self.persister, load_locks_by_wallet);
 
         // Past the rollback point. A store configured before this load
         // restores the held wallets' private payments now, with no keys and

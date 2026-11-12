@@ -5441,11 +5441,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Gated on the wallet's row like the round's other core callbacks (a
     /// stale callback after the wallet's deletion has nothing to write to,
     /// and that is not a failure), and stored under this handler's network,
-    /// else the wallet row's. With neither known the locks are not stored
-    /// and the round goes on: these changes ride the round that stores a
-    /// block, and failing it would stop the wallet's sync for good. The
-    /// wallet keeps such a lock for the session and makes it again from the
-    /// registration on the next load.
+    /// else the wallet row's. With neither known the write refuses, like the
+    /// private contact request scan state, rather than file the lock under a
+    /// guessed network or report a lock stored that is not: a lock made by
+    /// hand cannot be made again from a registration on the next load.
     func persistWalletChangesetOutpointLocks(walletId: Data, locks: [OutpointLockChange]) throws {
         try onQueue {
             guard inChangeset else {
@@ -5459,13 +5458,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             case .found(let row): wallet = row
             }
             guard let networkRaw = (self.network ?? wallet.network)?.rawValue else {
-                SDKLogger.event(
-                    "persistence_outpoint_locks_without_network",
-                    category: .persistence,
-                    severity: .error,
-                    fields: ["wallet_reference": .reference(walletId)]
-                )
-                return
+                throw PlatformWalletError.walletOperation("No network to store the outpoint locks under")
             }
             var stored: [Data: PersistentLockedOutpoint] = [:]
             for row in try backgroundContext.fetch(FetchDescriptor<PersistentLockedOutpoint>(

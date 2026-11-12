@@ -15,6 +15,7 @@ use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::registered_collaterals;
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -316,11 +317,17 @@ pub fn apply_persisted_core_state(
         }
     }
 
+    // A masternode registration among the stored records locks its
+    // collateral too. A database from before locks were stored has no lock
+    // rows, and the history is not replayed below, so nothing later in the
+    // load could make these locks from it.
+    for collateral in registered_collaterals(&core.records) {
+        wallet_info.lock_outpoint(collateral);
+    }
+
     // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
+    // records, but they are not replayed into the accounts here. History
+    // re-warms on the next scan and is not a balance input.
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity

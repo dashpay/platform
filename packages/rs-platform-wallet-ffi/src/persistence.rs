@@ -1966,13 +1966,22 @@ impl FFIPersister {
                 format!("on_load_wallet_locked_outpoints_fn returned error code {rc}"),
             ));
         }
-        let mut outpoints = Vec::with_capacity(count);
-        if !outpoints_ptr.is_null() && count > 0 {
+        // Fail closed like the wallet list load: a count with no buffer is
+        // not an empty lock set, and reading it as one would hand every
+        // locked coin back to coin selection.
+        if outpoints_ptr.is_null() && count != 0 {
+            return Err(PersistenceError::backend(
+                "on_load_wallet_locked_outpoints_fn returned a count with no buffer",
+            ));
+        }
+        let outpoints: Vec<dashcore::OutPoint> = if count == 0 {
+            Vec::new()
+        } else {
             // SAFETY: the host guarantees `count` contiguous entries that stay
             // valid until the free callback below.
             let rows = unsafe { slice::from_raw_parts(outpoints_ptr, count) };
-            outpoints.extend(rows.iter().map(dashcore::OutPoint::from));
-        }
+            rows.iter().map(dashcore::OutPoint::from).collect()
+        };
         unsafe { free(self.callbacks.context, outpoints_ptr, count) };
         for outpoint in outpoints {
             wallet_info.lock_outpoint(outpoint);
@@ -15336,6 +15345,41 @@ mod outpoint_lock_tests {
             "the host's array is freed once"
         );
         drop(persister);
+    }
+
+    unsafe extern "C" fn load_a_count_with_no_buffer(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        out_outpoints: *mut *const OutPointFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        *out_outpoints = std::ptr::null();
+        *out_count = 1;
+        0
+    }
+
+    #[test]
+    fn should_fail_the_load_when_the_host_reports_locks_without_a_buffer() {
+        let wallet = key_wallet::Wallet::from_seed_bytes(
+            [0x42; 64],
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("seed wallet");
+        let mut info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0);
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                load_wallet_locked_outpoints: Some(load_a_count_with_no_buffer),
+                ..trio()
+            },
+        );
+
+        assert!(persister
+            .restore_locked_outpoints(&[1u8; 32], &mut info)
+            .is_err());
+        assert!(info.locked_outpoints().is_empty());
     }
 
     #[test]

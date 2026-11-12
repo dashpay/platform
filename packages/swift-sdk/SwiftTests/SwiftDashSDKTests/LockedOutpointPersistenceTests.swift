@@ -125,18 +125,18 @@ final class LockedOutpointPersistenceTests: XCTestCase {
     }
 
     /// With no network known on the handler or the wallet row there is
-    /// nowhere to file a lock: nothing is stored and the round still
-    /// succeeds, since the same round stores a block.
-    func testShouldStoreNoLockAndKeepTheRoundWhenNoNetworkIsKnown() throws {
+    /// nowhere to file a lock: the write refuses, so the round does not
+    /// report a lock stored that is not.
+    func testShouldRefuseALockWriteWhenNoNetworkIsKnown() throws {
         let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)
         context.insert(PersistentWallet(walletId: walletId))
         try context.save()
         let handler = PlatformWalletPersistenceHandler(modelContainer: container)
         handler.beginChangeset(walletId: walletId)
-        XCTAssertNoThrow(try handler.persistWalletChangesetOutpointLocks(
+        XCTAssertThrowsError(try handler.persistWalletChangesetOutpointLocks(
             walletId: walletId, locks: [.init(outpoint: outpoint(0x11, 0), locked: true)]))
-        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        _ = handler.endChangeset(walletId: walletId, success: false)
         XCTAssertTrue(try storedRows(container).isEmpty)
     }
 

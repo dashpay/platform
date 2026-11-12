@@ -10,8 +10,12 @@ use crate::common;
 use std::collections::BTreeMap;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::{Address, BlockHash, OutPoint, Transaction, TxIn, TxOut};
-use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
+use dashcore::{Address, BlockHash, OutPoint, PubkeyHash, Transaction, TxIn, TxOut};
+use key_wallet::account::{AccountType, StandardAccountType};
+use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
+use key_wallet::transaction_checking::{
+    BlockInfo, TransactionContext, TransactionType, WalletTransactionChecker,
+};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -300,6 +304,100 @@ fn should_not_restore_an_unlocked_outpoint() {
     assert_eq!(balance.locked(), 0);
     assert_eq!(balance.spendable(), COLLATERAL);
     assert_eq!(spendable_outpoints(&info), vec![collateral]);
+}
+
+/// The record of a ProRegTx naming `collateral`, as a transaction check
+/// stores it.
+fn registration_record(collateral: OutPoint, context: TransactionContext) -> TransactionRecord {
+    TransactionRecord::new(
+        Transaction::dummy_provider_registration(
+            collateral,
+            PubkeyHash::from_byte_array([0x71; 20]),
+            Vec::new(),
+            0,
+        ),
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        context,
+        TransactionType::ProviderRegistration,
+        TransactionDirection::Internal,
+        Vec::new(),
+        Vec::new(),
+        0,
+    )
+}
+
+/// A database from before locks were stored holds a registration and its
+/// collateral but no lock row: the load locks the collateral from the
+/// stored registration.
+#[test]
+fn should_lock_the_collateral_of_a_stored_registration_that_has_no_lock_row() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC7);
+    ensure_wallet_meta(&persister, &w);
+    let wallet = test_wallet();
+    let (collateral_address, spare_address) = two_addresses(&wallet);
+    let collateral_tx = payment(&collateral_address, COLLATERAL, 6);
+    let spare_tx = payment(&spare_address, SPARE, 7);
+    let collateral = OutPoint::new(collateral_tx.txid(), 0);
+    let block = BlockInfo::new(HEIGHT, BlockHash::all_zeros(), 1_700_000_000);
+
+    store_core(
+        &persister,
+        w,
+        CoreChangeSet {
+            records: vec![registration_record(
+                collateral,
+                TransactionContext::InBlock(block),
+            )],
+            new_utxos: vec![
+                coin(&collateral_tx, &collateral_address),
+                coin(&spare_tx, &spare_address),
+            ],
+            synced_height: Some(HEIGHT),
+            last_processed_height: Some(HEIGHT),
+            ..Default::default()
+        },
+    );
+    drop(persister);
+
+    let info = reload(&path, &w, &wallet);
+    assert!(info.is_outpoint_locked(&collateral));
+    let balance = WalletInfoInterface::balance(&info);
+    assert_eq!(balance.locked(), COLLATERAL);
+    assert_eq!(balance.spendable(), SPARE);
+}
+
+/// An unconfirmed ProRegTx is not a registration yet: the collateral it
+/// names stays spendable, as after a transaction check.
+#[test]
+fn should_not_lock_the_collateral_named_by_a_stored_unconfirmed_registration() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC8);
+    ensure_wallet_meta(&persister, &w);
+    let wallet = test_wallet();
+    let (collateral_address, _) = two_addresses(&wallet);
+    let collateral_tx = payment(&collateral_address, COLLATERAL, 8);
+    let collateral = OutPoint::new(collateral_tx.txid(), 0);
+
+    store_core(
+        &persister,
+        w,
+        CoreChangeSet {
+            records: vec![registration_record(collateral, TransactionContext::Mempool)],
+            new_utxos: vec![coin(&collateral_tx, &collateral_address)],
+            synced_height: Some(HEIGHT),
+            last_processed_height: Some(HEIGHT),
+            ..Default::default()
+        },
+    );
+    drop(persister);
+
+    let info = reload(&path, &w, &wallet);
+    assert!(!info.is_outpoint_locked(&collateral));
+    assert_eq!(WalletInfoInterface::balance(&info).spendable(), COLLATERAL);
 }
 
 #[test]

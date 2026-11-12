@@ -18,8 +18,9 @@
 //!   block or transaction that made it.
 //! - [`PlatformWallet::lock_outpoint`] and [`PlatformWallet::unlock_outpoint`],
 //!   which store the change themselves.
-//! - The pass over the masternodes a wallet already knows (below), whose
-//!   caller stores what it locked with [`persist_outpoint_locks`].
+//! - The pass over the masternodes a wallet already knows (below), run on
+//!   each wallet before it is published, whose caller stores what it locked
+//!   with [`persist_outpoint_locks`].
 //!
 //! An event still waiting in the adapter's channel when an outpoint is
 //! unlocked by hand is stored after the unlock, so the store keeps that
@@ -51,15 +52,19 @@
 //! when the wallet is registered, when a refresh learns the registration),
 //! and when a transaction check brings the coin in. A wallet that never holds
 //! the coin never lists it. A collateral already tracked is not locked again
-//! by a later refresh, so an unlock by hand lasts until the next load.
+//! by a later refresh, so an unlock by hand lasts until the next load. When
+//! the masternode stops being tracked its collateral stops being watched; a
+//! lock already made stays.
 //!
 //! [`ManagedWalletInfo::locked_outpoints`]: key_wallet::wallet::ManagedWalletInfo::locked_outpoints
 //! [`ManagedWalletInfo::lock_outpoint`]: key_wallet::wallet::ManagedWalletInfo::lock_outpoint
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::{OutPoint, Transaction, Txid};
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -85,6 +90,26 @@ pub(crate) fn registration_collateral(tx: &Transaction) -> Option<OutPoint> {
     ((named.vout as usize) < tx.output.len()).then(|| OutPoint::new(tx.txid(), named.vout))
 }
 
+/// The collaterals that the masternode registrations among `records` keep
+/// out of coin selection.
+///
+/// The same rule as a transaction check: a collateral a registration names
+/// counts only when its record is in a block, since an unconfirmed ProRegTx
+/// is not a registration yet; a collateral it creates, as its own output,
+/// from any record.
+pub fn registered_collaterals<'a>(
+    records: impl IntoIterator<Item = &'a TransactionRecord>,
+) -> BTreeSet<OutPoint> {
+    records
+        .into_iter()
+        .filter_map(|record| {
+            let collateral = registration_collateral(&record.transaction)?;
+            let creates_it = collateral.txid == record.txid;
+            (creates_it || record.is_confirmed()).then_some(collateral)
+        })
+        .collect()
+}
+
 /// The collateral of a registration known by its proTxHash and the outpoint
 /// its payload names, both as wire-order bytes, the way the tracked registry
 /// keeps them. A null txid names the ProRegTx's own output, and the ProRegTx's
@@ -98,21 +123,6 @@ pub(crate) fn named_collateral(pro_tx_hash: &[u8; 32], (txid, vout): ([u8; 32], 
     OutPoint::new(Txid::from_byte_array(txid), vout)
 }
 
-/// On load: lock, in every wallet `wallet_manager` holds, the collateral of
-/// each masternode registration in that wallet's transaction history, and
-/// start tracking the collaterals in `tracked` (see
-/// [`PlatformWalletInfo::track_collaterals`]). Returns the locks it added,
-/// by wallet, for the caller to store with [`persist_outpoint_locks`].
-pub(crate) async fn lock_known_masternode_collaterals(
-    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
-    tracked: &BTreeSet<OutPoint>,
-) -> BTreeMap<WalletId, Vec<OutPoint>> {
-    lock_in_every_wallet(wallet_manager, |info| {
-        info.lock_known_masternode_collaterals(tracked)
-    })
-    .await
-}
-
 /// Start tracking the collaterals in `tracked` in every wallet
 /// `wallet_manager` holds (see [`PlatformWalletInfo::track_collaterals`]).
 /// Returns the locks it added, by wallet, for the caller to store with
@@ -121,27 +131,36 @@ pub(crate) async fn track_masternode_collaterals(
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
     tracked: &BTreeSet<OutPoint>,
 ) -> BTreeMap<WalletId, Vec<OutPoint>> {
-    lock_in_every_wallet(wallet_manager, |info| info.track_collaterals(tracked)).await
-}
-
-/// Run `lock` on every wallet `wallet_manager` holds and collect the locks
-/// it reports adding, by wallet.
-async fn lock_in_every_wallet(
-    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
-    lock: impl Fn(&mut PlatformWalletInfo) -> Vec<OutPoint>,
-) -> BTreeMap<WalletId, Vec<OutPoint>> {
     let mut wm = wallet_manager.write().await;
     let wallet_ids: Vec<_> = wm.list_wallets().into_iter().copied().collect();
     let mut added = BTreeMap::new();
     for wallet_id in wallet_ids {
         if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
-            let locked = lock(info);
+            let locked = info.track_collaterals(tracked);
             if !locked.is_empty() {
                 added.insert(wallet_id, locked);
             }
         }
     }
     added
+}
+
+/// Stop watching `collateral` in every wallet `wallet_manager` holds: its
+/// masternode is no longer tracked, so a coin that arrives at it later is an
+/// ordinary coin. A lock already made stays until it is unlocked by hand.
+///
+/// Blocking: call it from a thread that is not running async tasks.
+pub(crate) fn untrack_masternode_collateral_blocking(
+    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    collateral: &OutPoint,
+) {
+    let mut wm = wallet_manager.blocking_write();
+    let wallet_ids: Vec<_> = wm.list_wallets().into_iter().copied().collect();
+    for wallet_id in wallet_ids {
+        if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+            info.tracked_collaterals.remove(collateral);
+        }
+    }
 }
 
 /// Store `locks`, the outpoints locked in each wallet outside a transaction
@@ -192,26 +211,19 @@ impl PlatformWalletInfo {
     }
 
     /// Lock the collateral of the masternode registrations in this wallet's
-    /// transaction history. Returns the locks it added.
+    /// transaction history (see [`registered_collaterals`] for which).
+    /// Returns the locks it added.
     ///
-    /// The same rule as a transaction check: a collateral a registration
-    /// names is locked only when its record is in a block, since an
-    /// unconfirmed ProRegTx is not a registration yet; a collateral it
-    /// creates, as its own output, from any record. The check that confirms
-    /// an unconfirmed registration locks the collateral it names.
+    /// The check that confirms an unconfirmed registration locks the
+    /// collateral it names.
     pub(crate) fn lock_registered_collaterals(&mut self) -> Vec<OutPoint> {
-        let collaterals: BTreeSet<OutPoint> = self
-            .core_wallet
-            .accounts
-            .all_accounts()
-            .iter()
-            .flat_map(|account| account.transactions().values())
-            .filter_map(|record| {
-                let collateral = registration_collateral(&record.transaction)?;
-                let creates_it = collateral.txid == record.txid;
-                (creates_it || record.is_confirmed()).then_some(collateral)
-            })
-            .collect();
+        let collaterals = registered_collaterals(
+            self.core_wallet
+                .accounts
+                .all_accounts()
+                .iter()
+                .flat_map(|account| account.transactions().values()),
+        );
         self.lock_and_publish(collaterals)
     }
 
@@ -311,8 +323,11 @@ impl PlatformWallet {
     /// the coin arrives locked.
     pub async fn locked_outpoints(&self) -> Result<Vec<OutPoint>, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
+        // A wallet removed and created again under the same id is another
+        // wallet: this handle neither reads nor changes its locks.
         let info = wm
             .get_wallet_info(&self.wallet_id())
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
         Ok(info
             .core_wallet
@@ -335,7 +350,8 @@ impl PlatformWallet {
     /// # Errors
     ///
     /// [`PlatformWalletError::WalletNotFound`] when the wallet is no longer
-    /// registered, or the store's error when persisting fails. After a store
+    /// registered (a wallet created again under the same id is another
+    /// wallet), or the store's error when persisting fails. After a store
     /// failure the wallet still holds the lock in memory, but it does not
     /// survive a restart.
     pub async fn lock_outpoint(&self, outpoint: OutPoint) -> Result<bool, PlatformWalletError> {
@@ -370,6 +386,7 @@ impl PlatformWallet {
         let mut wm = self.wallet_manager.write().await;
         let info = wm
             .get_wallet_info_mut(&self.wallet_id())
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
         let changed = if locked {
             info.core_wallet.lock_outpoint(outpoint)
@@ -394,7 +411,7 @@ impl PlatformWallet {
         if !persister.store_commits_inline() {
             persister
                 .flush()
-                .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+                .map_err(PlatformWalletError::from_flush_failure)?;
         }
         Ok(changed)
     }
@@ -659,19 +676,18 @@ mod tests {
     async fn should_lock_the_collateral_of_a_registration_restored_into_the_history() {
         let (manager, wallet_id, collateral) = wallet_with_restored_registration(block(2)).await;
 
+        let mut wm = manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
         assert_eq!(
-            lock_known_masternode_collaterals(&manager, &BTreeSet::new()).await,
-            BTreeMap::from([(wallet_id, vec![collateral])]),
+            info.lock_known_masternode_collaterals(&BTreeSet::new()),
+            vec![collateral],
             "the new lock is handed back for persistence"
         );
         assert!(
-            lock_known_masternode_collaterals(&manager, &BTreeSet::new())
-                .await
+            info.lock_known_masternode_collaterals(&BTreeSet::new())
                 .is_empty(),
             "a lock is added once"
         );
-        let wm = manager.read().await;
-        let info = wm.get_wallet_info(&wallet_id).expect("wallet");
         assert!(info.core_wallet.is_outpoint_locked(&collateral));
         assert_eq!(
             info.core_wallet.balance.locked(),
@@ -688,14 +704,12 @@ mod tests {
         let (manager, wallet_id, collateral) =
             wallet_with_restored_registration(TransactionContext::Mempool).await;
 
-        assert!(
-            lock_known_masternode_collaterals(&manager, &BTreeSet::new())
-                .await
-                .is_empty()
-        );
         {
-            let wm = manager.read().await;
-            let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+            let mut wm = manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet");
+            assert!(info
+                .lock_known_masternode_collaterals(&BTreeSet::new())
+                .is_empty());
             assert!(!info.core_wallet.is_outpoint_locked(&collateral));
             assert_eq!(
                 info.core_wallet.balance.spendable(),
@@ -816,6 +830,85 @@ mod tests {
             info.core_wallet.balance.spendable(),
             MASTERNODE_COLLATERAL_DUFFS + 5 * DASH
         );
+    }
+
+    /// A handle to a removed wallet does not reach the wallet created again
+    /// from the same seed: it neither lists nor changes that wallet's locks.
+    #[tokio::test]
+    async fn should_not_reach_the_locks_of_a_wallet_created_again_under_the_same_id() {
+        let persister = Arc::new(LockRecordingPersister::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            Arc::new(NoopTestEventHandler) as _,
+        ));
+        let seed = [0x3D; 64];
+        let removed = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create wallet");
+        manager
+            .remove_wallet(&removed.wallet_id())
+            .await
+            .expect("remove wallet");
+        let current = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create the wallet again");
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x51; 32]), 0);
+        assert!(current.lock_outpoint(outpoint).await.expect("lock"));
+
+        assert!(matches!(
+            removed.unlock_outpoint(outpoint).await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(matches!(
+            removed.locked_outpoints().await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert_eq!(
+            current.locked_outpoints().await.expect("locks"),
+            vec![outpoint]
+        );
+        assert_eq!(
+            persister.stored.lock().expect("stored locks").last(),
+            Some(&BTreeMap::from([(outpoint, true)])),
+            "the removed handle stored no unlock"
+        );
+    }
+
+    /// Once a masternode is no longer tracked its collateral is not watched:
+    /// a coin that arrives at it afterwards is an ordinary coin.
+    #[tokio::test]
+    async fn should_leave_a_coin_spendable_that_arrives_after_its_masternode_is_untracked() {
+        let (manager, wallet_id, incoming, collateral) = wallet_awaiting_a_collateral().await;
+        track_masternode_collaterals(&manager, &BTreeSet::from([collateral])).await;
+
+        let untracking = Arc::clone(&manager);
+        tokio::task::spawn_blocking(move || {
+            untrack_masternode_collateral_blocking(&untracking, &collateral)
+        })
+        .await
+        .expect("untrack");
+
+        let mut wm = manager.write().await;
+        let checked = wm
+            .check_transaction_in_all_wallets(&incoming, block(3), true, true)
+            .await;
+        assert!(checked.per_wallet_locked_outpoints.is_empty());
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+        assert_eq!(info.core_wallet.balance.locked(), 0);
     }
 
     /// Tracking a masternode whose collateral the wallet already holds locks
