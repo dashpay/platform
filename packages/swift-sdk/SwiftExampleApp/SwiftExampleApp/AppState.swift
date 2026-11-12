@@ -10,7 +10,7 @@ class AppState: ObservableObject {
     @Published var errorMessage = ""
 
     /// The quorum-key source the current SDK asks first for proof verification.
-    /// Tracks the adaptive provider's current routing choice after the saved
+    /// Tracks the source the adaptive provider asks first after the saved
     /// mode is applied. Drives the app's indicator;
     /// intentionally mirrors `SDK.quorumSource` (this one is the observable the
     /// UI binds to).
@@ -83,7 +83,7 @@ class AppState: ObservableObject {
 
     /// Which quorum source the user wants. Every change is applied to every
     /// SDK this object built (see `applyQuorumMode`); `quorumSource` reflects
-    /// the adaptive provider's current routing choice (SPV may not be ready
+    /// the source the adaptive provider asks first (SPV may not be ready
     /// yet).
     @Published var quorumMode: QuorumMode {
         didSet {
@@ -184,7 +184,7 @@ class AppState: ObservableObject {
     ///   fail until synced) rather than falling back to trusted.
     /// - `.trusted`: always the trusted HTTP quorum provider.
     ///
-    /// `quorumSource` tracks the provider's current routing choice, which may
+    /// `quorumSource` tracks the source the provider asks first, which may
     /// lag the requested mode while SPV isn't ready.
     private func applyQuorumMode() {
         for builtSdk in builtSdks.allObjects {

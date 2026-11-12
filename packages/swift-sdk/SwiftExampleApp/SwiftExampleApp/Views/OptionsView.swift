@@ -418,14 +418,14 @@ struct OptionsView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: SPV once its masternode list is synced, trusted before that and for any key SPV cannot serve; losing the SPV peers falls back to trusted. SPV: force SPV now (proofs fail closed whenever SPV is not synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
+                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: SPV once its masternode list is synced, trusted before that and for any key SPV cannot serve; losing the SPV peers falls back to trusted. SPV: force SPV now (proofs fail closed whenever SPV is not synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows the source asked first.")
 
                     HStack {
                         Text("Proof Quorum Source")
                         Spacer()
                         switch appState.quorumSource {
                         case .spv:
-                            Label("SPV (trustless)", systemImage: "checkmark.shield.fill")
+                            Label("SPV", systemImage: "checkmark.shield.fill")
                                 .foregroundColor(.green)
                                 .font(.caption.weight(.semibold))
                         case .trusted:
@@ -438,7 +438,7 @@ struct OptionsView: View {
                                 .font(.caption.weight(.semibold))
                         }
                     }
-                    .help("Which quorum public-key source the SDK asks first to verify Platform proofs. In Auto it switches to SPV once the masternode list has synced (start SPV sync from the Core tab); keys SPV cannot serve still come from the trusted service.")
+                    .help("Which quorum public-key source the SDK asks first to verify Platform proofs. In Auto it switches to SPV once the masternode list has synced (start SPV sync from the Sync tab); keys SPV cannot serve still come from the trusted service.")
 
                     HStack {
                         Text("Network Status")

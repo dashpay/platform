@@ -711,9 +711,10 @@ public struct SDKStatus: Codable {
   /// (caller-supplied or mock). It stays so after native code replaces the
   /// provider.
   public let mode: String
-  /// The source the SDK's current provider answers quorum lookups from now,
-  /// `"trusted"` or `"spv"`; an adaptive provider reports its live choice.
-  /// `nil` for a provider that does not say.
+  /// The source the SDK's current provider asks first for quorum keys now,
+  /// `"trusted"` or `"spv"`; an adaptive provider reports the source it would
+  /// ask first, and in Auto a key SPV cannot serve still comes from the
+  /// trusted service. `nil` for a provider that does not say.
   public let quorumSource: String?
   /// Quorums in the cache of the trusted provider the SDK was built with,
   /// whichever source answers; `0` without one.
