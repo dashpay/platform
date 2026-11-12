@@ -217,9 +217,12 @@ impl AccountViewingKeys {
         Ok(Self::from_full_viewing_key(fvk))
     }
 
-    /// An external-scope payment address at a uniformly random 11-byte
-    /// diversifier index drawn from the OS CSPRNG. Index 0 (the default
-    /// address) is redrawn, so the result is never the default address.
+    /// An external-scope payment address at a uniformly random diversifier
+    /// index below 2^87, drawn from the OS CSPRNG. Index 0 (the default
+    /// address) is redrawn, so the result is never the default address, and
+    /// so is an index of 2^87 or above: that half of the index space holds
+    /// only the addresses of DashPay contact requests
+    /// ([`Self::contact_address`]), so a fresh address is never taken for one.
     /// Every 11-byte Orchard diversifier index yields a valid address, so
     /// no other retry is needed. Writes no state: the scan finds notes to
     /// the returned address through the IVK, whatever its index.
@@ -232,13 +235,13 @@ impl AccountViewingKeys {
     }
 
     /// [`Self::fresh_address`] with the index drawn from `rng`, so tests can
-    /// script the index-0 redraw and a randomness failure.
+    /// script the redraws and a randomness failure.
     fn fresh_address_from<R: dpp::secp256k1::rand::TryRngCore>(
         &self,
         rng: &mut R,
     ) -> Result<PaymentAddress, PlatformWalletError> {
         let mut index = [0u8; 11];
-        while index == [0u8; 11] {
+        while index == [0u8; 11] || is_shielded_contact_index(&index) {
             rng.try_fill_bytes(&mut index).map_err(|_| {
                 PlatformWalletError::ShieldedKeyDerivation(
                     "shielded fresh address: randomness unavailable".to_string(),
@@ -298,9 +301,8 @@ impl AccountViewingKeys {
     /// account and for one below that range, such as the profile address.
     ///
     /// The index belongs to a contact only if [`Self::contact_address`] gives it for
-    /// one of this account's contact requests. [`Self::fresh_address`] draws from the
-    /// whole index space, so about half the addresses it returns lie in the range
-    /// too and match no request. A payment on a matching address is attributed to
+    /// one of this account's contact requests; [`Self::fresh_address`] never returns
+    /// an address in the range. A payment on a matching address is attributed to
     /// that contact, which is not proof of who paid: anyone who has learned the
     /// address can pay it.
     pub fn contact_index_of(
@@ -573,6 +575,40 @@ mod tests {
                 .to_raw_address_bytes(),
             "the address is the one at the redrawn index"
         );
+    }
+
+    /// A drawn index in the half of the index space kept for contact requests is
+    /// redrawn, so a fresh address is never read as a contact's.
+    #[test]
+    fn should_redraw_a_fresh_index_in_the_contact_range() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        // 2^87, the first index of the range, then its last, then the last below it.
+        let mut first = [0u8; 11];
+        first[10] = 0x80;
+        let mut below = [0xFFu8; 11];
+        below[10] = 0x7F;
+        let mut rng = ScriptedRng(vec![first, [0xFFu8; 11], below]);
+
+        let address = views.fresh_address_from(&mut rng).expect("fresh address");
+        assert!(rng.0.is_empty(), "all three draws were taken");
+        assert_eq!(
+            address.to_raw_address_bytes(),
+            views
+                .full_viewing_key
+                .address_at(zip32::DiversifierIndex::from(below), Scope::External)
+                .to_raw_address_bytes(),
+            "the address is the one at the first index drawn below the range"
+        );
+        assert_eq!(views.contact_index_of(&address), None);
+        assert!(views.is_own_recipient(&address.to_raw_address_bytes()));
+
+        // Nothing the OS randomness gives lands in the range either.
+        for _ in 0..64 {
+            let fresh = views.fresh_address().expect("fresh address");
+            assert_eq!(views.contact_index_of(&fresh), None);
+        }
     }
 
     /// A randomness failure is an error, not an address.
