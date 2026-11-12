@@ -44,6 +44,14 @@ impl ShieldedWithdrawalTransitionV0 {
             min_withdrawal_amount_with_core_fee(self.core_fee_per_byte, platform_version);
         let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
 
+        // In-place change to a shipped generation, inert: the two inline range checks moved
+        // unchanged into `validate_withdrawal_reserved_amount_range`, which the shielded
+        // withdrawal preflight shares. It tests the same comparisons in the same order (below the
+        // minimum first, then above the maximum) and returns the same errors built from the same
+        // reserved amount, minimum and maximum: `WithdrawalBelowMinAmountError` and
+        // `InvalidIdentityCreditWithdrawalTransitionAmountError`, as `BasicError`s. This
+        // generation is `validate_withdrawal_structure` 1, which protocol versions 14 and 15
+        // select.
         validate_withdrawal_reserved_amount_range(
             reserved_amount,
             minimum_reserved_amount,

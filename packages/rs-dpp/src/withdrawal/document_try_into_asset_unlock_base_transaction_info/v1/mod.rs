@@ -22,6 +22,13 @@ impl Document {
         let core_fee_per_byte: u32 =
             properties.get_integer(withdrawal::properties::CORE_FEE_PER_BYTE)?;
 
+        // In-place change to a shipped generation, inert: the inline fee arithmetic moved
+        // unchanged into `asset_unlock_core_fee_duffs`, which the shielded withdrawal preflight
+        // shares. It reads the same `max_core_fee_per_byte` limit and fails with the same
+        // message when it is absent, clamps the rate to it, multiplies by `ASSET_UNLOCK_TX_SIZE`
+        // with the same overflow check and message, and still runs before the credits are
+        // converted to duffs. This generation is `try_into_asset_unlock_base_transaction_info` 1,
+        // which protocol versions 14 and 15 select.
         let requested_fee = asset_unlock_core_fee_duffs(core_fee_per_byte, platform_version)?;
         let withdrawal_amount_duffs = convert_credits_to_duffs(withdrawal_amount)?;
         let output_script = ScriptBuf::from_bytes(output_script_bytes);

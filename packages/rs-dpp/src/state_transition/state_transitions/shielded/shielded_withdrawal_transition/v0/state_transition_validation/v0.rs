@@ -92,6 +92,16 @@ impl ShieldedWithdrawalTransitionV0 {
         }
 
         // core_fee_per_byte must be a non-zero Fibonacci number.
+        //
+        // In-place change to a shipped generation, inert: the inline check moved unchanged into
+        // `validate_core_fee_per_byte_is_non_zero_fibonacci`, which the shielded withdrawal
+        // preflight shares. It is the same predicate (`is_non_zero_fibonacci_number` of the rate
+        // as a `u64`), the same error (`InvalidCreditWithdrawalTransitionCoreFeeError` with the
+        // rate and `MIN_CORE_FEE_PER_BYTE`, as a `BasicError`) and the same place in the order of
+        // checks, after the pooling check and before the output script check. This generation is
+        // `validate_withdrawal_structure` 0, which protocol versions 1 to 13 select (the shielded
+        // withdrawal is active from 12), and `validate_structure_v1` runs it first, so versions
+        // 14 and 15 reach this line too.
         let result = validate_core_fee_per_byte_is_non_zero_fibonacci(self.core_fee_per_byte);
         if !result.is_valid() {
             return result;
