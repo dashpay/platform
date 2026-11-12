@@ -532,8 +532,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         .await
     }
 
-    /// Resolve funding, reporting its outpoint after a new lock is broadcast
-    /// or an existing lock passes its role checks, before the proof wait.
+    /// Resolve funding, reporting its outpoint once a new lock is admitted for
+    /// dispatch or an existing lock passes its role checks, before either the
+    /// network-acceptance wait or the proof wait.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn resolve_funding_observing_out_point<AS>(
         &self,
