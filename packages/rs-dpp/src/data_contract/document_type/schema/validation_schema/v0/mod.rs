@@ -5,12 +5,10 @@
 use super::*;
 
 impl ValidationSchema {
-    /// Generation 0 of the builder: [`Self::try_from_root`], with every `pattern` the schema
-    /// holds compiled as the builder compiled it to check it, for the native validator to
-    /// reuse.
-    pub(super) fn try_from_root_v0(
-        root: &Value,
-    ) -> Result<(Self, BTreeMap<String, regex::Regex>), DataContractError> {
+    /// Generation 0 of the builder: [`Self::try_from_root`]. It reads each `pattern`'s syntax
+    /// and compiles none: the native validator compiles a pattern the first time a value
+    /// reaches it.
+    pub(super) fn try_from_root_v0(root: &Value) -> Result<Self, DataContractError> {
         // The document validator converts the whole schema before it compiles it, so a value
         // JSON cannot hold anywhere, even one the validator would then ignore or drop as a
         // shadowed entry of a repeated key, leaves it nothing to compile
@@ -49,18 +47,24 @@ impl ValidationSchema {
                     .or_insert_with(|| Arc::clone(node));
             }
         }
-        Ok((
-            Self {
-                root: root_node,
-                references,
-            },
-            reached.patterns,
-        ))
+        Ok(Self {
+            root: root_node,
+            references,
+        })
     }
 }
 
+/// The refusal of `pattern`, which the JSON Schema validator does not compile: the builder's
+/// of one that does not parse, and registration's of one that parses but does not compile.
+pub(super) fn pattern_refusal(pattern: &str) -> DataContractError {
+    structure_error(format!(
+        "the JSON Schema validator compiles no `pattern` `{pattern}`, so it refuses every value \
+         reaching it"
+    ))
+}
+
 /// `error`, raised building the schema `reference` reaches, saying so.
-fn reached_through(error: DataContractError, reference: &str) -> DataContractError {
+pub(super) fn reached_through(error: DataContractError, reference: &str) -> DataContractError {
     match error {
         DataContractError::InvalidContractStructure(message) => {
             structure_error(format!("{message} (reached through `$ref` `{reference}`)"))
@@ -85,24 +89,6 @@ static URI_REFERENCE: Lazy<regex::Regex> = Lazy::new(|| {
 struct Reached {
     /// Every `$ref` met, with the reading of the schema it reaches, to build.
     pending: VecDeque<(String, Reading)>,
-    /// Every `pattern` met, compiled ([`validator_regex`]).
-    patterns: BTreeMap<String, regex::Regex>,
-}
-
-impl Reached {
-    /// Whether the JSON Schema validator compiles `pattern`, keeping it compiled.
-    fn compile_pattern(&mut self, pattern: &str) -> bool {
-        if self.patterns.contains_key(pattern) {
-            return true;
-        }
-        match validator_regex(pattern) {
-            Some(regex) => {
-                self.patterns.insert(pattern.to_string(), regex);
-                true
-            }
-            None => false,
-        }
-    }
 }
 
 /// How consensus reads a schema node, for the three keywords the module documentation says
@@ -727,12 +713,11 @@ fn build_node(
                     StringKeyword::MaxLength => string.max_length = Some(count(value, name)?),
                     StringKeyword::MaxBytes => string.max_bytes = Some(count(value, name)?),
                     StringKeyword::Pattern => {
+                        // Its syntax only: a pattern that does not parse is one the `regex`
+                        // crate never compiles
                         let pattern = text(value, name)?;
-                        if !reached.compile_pattern(pattern) {
-                            return Err(structure_error(format!(
-                                "the JSON Schema validator compiles no `{name}` `{pattern}`, so \
-                                 it refuses every value reaching it"
-                            )));
+                        if !validator_regex_parses(pattern) {
+                            return Err(pattern_refusal(pattern));
                         }
                         string.pattern = Some(pattern.to_string())
                     }

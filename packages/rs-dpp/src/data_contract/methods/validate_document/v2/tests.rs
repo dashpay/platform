@@ -6,12 +6,14 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
+use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::validator::LoadedValidationSchema;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::tests::fixtures::get_data_contract_fixture;
+use crate::ProtocolError;
 use platform_value::{platform_value, Value};
 use platform_version::version::PlatformVersion;
 
@@ -589,4 +591,363 @@ fn should_accept_an_ordinary_format_regex_value_at_both_protocol_versions() {
     let value = "^[a-z]+$";
     assert!(format_regex_errors(value, latest).is_empty());
     assert!(format_regex_errors(value, protocol_version_14).is_empty());
+}
+
+/// A pattern that parses but that the `regex` crate does not compile under its default size
+/// limit.
+const PATTERN_BEYOND_THE_SIZE_LIMIT: &str = "^\\p{L}{400}$";
+
+/// How many of `item`'s patterns its native validator has tried to compile: `None` when
+/// document validation has built no validator for it, or has refused its schema.
+fn attempted_patterns(contract: &DataContract) -> Option<usize> {
+    contract
+        .document_type_for_name("item")
+        .expect("expected the document type")
+        .json_schema_validator_ref()
+        .native(0)
+        .and_then(|slot| slot.get())
+        .and_then(|built| built.as_ref().ok())
+        .map(DocumentSchemaValidator::attempted_patterns)
+}
+
+/// `contract` stored in its compiled form and read back, as a node reads a contract it stores
+/// compiled.
+fn stored_and_read_back(contract: &DataContract) -> DataContract {
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
+
+    let latest = PlatformVersion::latest();
+    let bytes = contract
+        .serialize_to_storage_bytes(latest)
+        .expect("expected the contract to compile");
+    DataContract::versioned_deserialize_trusted(&bytes, false, latest)
+        .expect("expected the contract to read back")
+}
+
+/// Measuring a contract's compiled size builds its types' native validators, as storing it
+/// does, and compiles none of their patterns: a validator checks each pattern's syntax when it
+/// is built and compiles it when a document first reaches it. A pattern that parses but does
+/// not compile leaves the type stored with its validation schema.
+#[test]
+fn should_measure_the_compiled_size_without_compiling_a_pattern() {
+    let latest = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, latest.protocol_version).data_contract_owned();
+    // Parsed without full validation, as a contract is before a block registers it
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "pattern": "^[a-z]+$", "position": 0 },
+                    "code": {
+                        "type": "string",
+                        "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT,
+                        "position": 1,
+                    },
+                },
+                "additionalProperties": false,
+            }),
+            false,
+            &mut Vec::new(),
+            latest,
+        )
+        .expect("expected the document type to parse");
+
+    let mut operations = Vec::new();
+    assert!(contract
+        .validate_compiled_size(&mut operations, latest)
+        .expect("expected the compiled size to be measured")
+        .is_valid());
+    assert_eq!(attempted_patterns(&contract), Some(0));
+
+    let read_back = stored_and_read_back(&contract);
+    assert!(read_back
+        .document_type_validation_schema("item", latest)
+        .is_ok());
+}
+
+/// A type's documents are checked alike whether its native validator was kept from
+/// registration, which compiled every pattern, or built from the validation schema the type
+/// was stored with, or from a schema read without validation; the last two compile a pattern
+/// when a document first reaches it. On every path a pattern is compiled with its ECMA
+/// escapes rewritten: `\d` is an ASCII digit and `\cA` the control character U+0001.
+#[test]
+fn should_check_documents_alike_however_the_native_validator_was_built() {
+    let latest = PlatformVersion::latest();
+    let registered = item_contract(platform_value!({
+        "digit": { "type": "string", "maxLength": 1, "pattern": "^\\d$", "position": 0 },
+        "control": { "type": "string", "maxLength": 1, "pattern": "^\\cA$", "position": 1 },
+        "codes": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 3 },
+            "maxItems": 2,
+            "contains": { "type": "string", "pattern": "^c" },
+            "position": 2,
+        },
+    }));
+    assert_eq!(attempted_patterns(&registered), Some(3));
+    let read_back = stored_and_read_back(&registered);
+    let parsed = read_anew(&registered);
+
+    for contract in [&read_back, &parsed] {
+        assert!(document_errors(contract, platform_value!({ "digit": "3" }), latest).is_empty());
+        assert_eq!(attempted_patterns(contract), Some(1));
+    }
+
+    for (properties, accepted) in [
+        (platform_value!({ "digit": "3" }), true),
+        (platform_value!({ "digit": "\u{663}" }), false),
+        (platform_value!({ "control": "\u{1}" }), true),
+        (platform_value!({ "control": "A" }), false),
+        (platform_value!({ "codes": ["cat"] }), true),
+        (platform_value!({ "codes": ["dog"] }), false),
+        (platform_value!({}), true),
+    ] {
+        let expected = document_errors(&registered, properties.clone(), latest);
+        assert_eq!(expected.is_empty(), accepted, "{properties:?}");
+        assert_eq!(
+            document_errors(&read_back, properties.clone(), latest),
+            expected,
+            "{properties:?}"
+        );
+        assert_eq!(
+            document_errors(&parsed, properties.clone(), latest),
+            expected,
+            "{properties:?}"
+        );
+    }
+}
+
+/// The schema of an `item` with a string `title` whose `const` is an object holding
+/// `pattern`, and a `code` whose `$ref` reads that object as its schema. Through protocol
+/// version 14 no registration check reads a `const` value as a schema, so its pattern is
+/// compiled only when a document reaches `code`.
+fn pattern_in_a_const(pattern: &str) -> Value {
+    platform_value!({
+        "title": {
+            "type": "string",
+            "maxLength": 63,
+            "position": 0,
+            "const": { "type": "string", "maxLength": 63, "position": 1, "pattern": pattern },
+        },
+        "code": { "$ref": "#/properties/title/const", "position": 1 },
+    })
+}
+
+/// The schema of an `item` whose array `codes` has a `contains` reading, through `$ref`, an
+/// object held in `title`'s `const` that holds `pattern`.
+fn pattern_in_a_const_contains(pattern: &str) -> Value {
+    platform_value!({
+        "title": {
+            "type": "string",
+            "maxLength": 63,
+            "position": 0,
+            "const": { "type": "string", "pattern": pattern },
+        },
+        "codes": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 63 },
+            "maxItems": 3,
+            "contains": { "$ref": "#/properties/title/const" },
+            "position": 1,
+        },
+    })
+}
+
+/// An `item` contract registered at `platform_version` with `properties`, or the error
+/// registration refuses it with.
+fn item_contract_registered_at(
+    properties: Value,
+    platform_version: &PlatformVersion,
+) -> Result<DataContract, ProtocolError> {
+    let mut contract =
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
+    contract.set_document_schema(
+        "item",
+        platform_value!({
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": false,
+        }),
+        true,
+        &mut Vec::new(),
+        platform_version,
+    )?;
+    Ok(contract)
+}
+
+/// `contract` written in the format transitions carry at `written_at` and read back without
+/// validation at `read_at`, as a node reads a contract stored in that format.
+fn read_at(
+    contract: &DataContract,
+    written_at: &PlatformVersion,
+    read_at: &PlatformVersion,
+) -> DataContract {
+    use crate::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted,
+        PlatformSerializableWithPlatformVersion,
+    };
+    let bytes = contract
+        .serialize_to_bytes_with_platform_version(written_at)
+        .expect("expected the contract to serialize");
+    DataContract::versioned_deserialize_trusted(&bytes, false, read_at)
+        .expect("expected the contract to read back")
+}
+
+/// The keyword of the JSON Schema violation document validation refuses `properties` with,
+/// `None` when it accepts them.
+fn violated_keyword(
+    contract: &DataContract,
+    properties: Value,
+    platform_version: &PlatformVersion,
+) -> Option<String> {
+    match document_errors(contract, properties, platform_version).first() {
+        None => None,
+        Some(ConsensusError::BasicError(BasicError::JsonSchemaError(violation))) => {
+            Some(violation.keyword().to_string())
+        }
+        Some(other) => panic!("unexpected consensus error: {other:?}"),
+    }
+}
+
+/// Registration at protocol version 15 compiles every pattern of a type, a pattern only a
+/// `$ref` reaches included, and refuses one that does not compile.
+#[test]
+fn should_refuse_at_registration_a_pattern_that_does_not_compile() {
+    let error = item_contract_registered_at(
+        pattern_in_a_const(PATTERN_BEYOND_THE_SIZE_LIMIT),
+        PlatformVersion::latest(),
+    )
+    .expect_err("expected registration to refuse the pattern");
+    let message = error.to_string();
+    assert!(message.contains("compiles no `pattern`"), "{message}");
+    assert!(
+        message.contains("reached through `$ref` `#/properties/title/const`"),
+        "{message}"
+    );
+}
+
+/// A type registered through protocol version 14 can hold a pattern that parses but does not
+/// compile where no registration check read it, in a `const` object a `$ref` reaches. The JSON
+/// Schema validator compiled it only when a document reached it, and so does the native
+/// validator: a document that never reaches the pattern is accepted, and one that does is
+/// refused as protocol version 14 refuses it, read from the format transitions carry or from
+/// the compiled form a node stores.
+#[test]
+fn should_refuse_only_where_a_document_reaches_a_pattern_no_registration_compiled() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    for (properties, documents) in [
+        (
+            pattern_in_a_const(PATTERN_BEYOND_THE_SIZE_LIMIT),
+            vec![
+                (platform_value!({}), None),
+                (platform_value!({ "code": "abc" }), Some("format")),
+            ],
+        ),
+        (
+            pattern_in_a_const_contains(PATTERN_BEYOND_THE_SIZE_LIMIT),
+            vec![
+                (platform_value!({}), None),
+                (platform_value!({ "codes": ["abc"] }), Some("contains")),
+            ],
+        ),
+    ] {
+        let registered = item_contract_registered_at(properties, protocol_version_14)
+            .expect("expected protocol version 14 to register the type");
+        let at_14 = read_at(&registered, protocol_version_14, protocol_version_14);
+        let at_15 = read_at(&registered, protocol_version_14, latest);
+        let stored = stored_and_read_back(&at_15);
+        assert!(stored
+            .document_type_validation_schema("item", latest)
+            .is_ok());
+        for (document, keyword) in documents {
+            let keyword = keyword.map(str::to_string);
+            assert_eq!(
+                violated_keyword(&at_14, document.clone(), protocol_version_14),
+                keyword,
+                "{document:?} at protocol version 14"
+            );
+            assert_eq!(
+                violated_keyword(&at_15, document.clone(), latest),
+                keyword,
+                "{document:?}"
+            );
+            assert_eq!(
+                violated_keyword(&stored, document.clone(), latest),
+                keyword,
+                "{document:?} read back from the compiled form"
+            );
+        }
+    }
+}
+
+/// A `pattern` applies to strings alone, so a value that is not a string never reaches one.
+/// Through protocol version 14 the JSON Schema validator compiled the schema a `$ref` reaches
+/// before checking any value against it, and so refused every value reaching a schema holding
+/// a pattern that does not compile. From protocol version 15 a value that is not a string is
+/// checked against the rest of that schema alone: an integer element meets a `contains`
+/// whose schema holds nothing but such a pattern, where protocol version 14 found no match.
+#[test]
+fn should_match_a_contains_element_no_pattern_applies_to_where_protocol_version_14_did_not() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let registered = item_contract_registered_at(
+        platform_value!({
+            "title": {
+                "type": "string",
+                "maxLength": 63,
+                "position": 0,
+                "const": { "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT },
+            },
+            "numbers": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "maxItems": 3,
+                "contains": { "$ref": "#/properties/title/const" },
+                "position": 1,
+            },
+        }),
+        protocol_version_14,
+    )
+    .expect("expected protocol version 14 to register the type");
+    let at_14 = read_at(&registered, protocol_version_14, protocol_version_14);
+    let at_15 = read_at(&registered, protocol_version_14, latest);
+    let stored = stored_and_read_back(&at_15);
+
+    let document = platform_value!({ "numbers": [1] });
+    assert_eq!(
+        violated_keyword(&at_14, document.clone(), protocol_version_14).as_deref(),
+        Some("contains")
+    );
+    assert_eq!(violated_keyword(&at_15, document.clone(), latest), None);
+    assert_eq!(violated_keyword(&stored, document, latest), None);
+    assert_eq!(attempted_patterns(&at_15), Some(0));
+}
+
+/// A pattern that does not parse, in the same place, still leaves the type without a
+/// validation schema at protocol version 15: the builder reads every pattern's syntax, so
+/// every document of the type is refused, where protocol version 14 accepted one that never
+/// reached the pattern.
+#[test]
+fn should_refuse_every_document_of_a_type_holding_a_pattern_that_does_not_parse() {
+    let latest = PlatformVersion::latest();
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let registered = item_contract_registered_at(pattern_in_a_const("(?=a)"), protocol_version_14)
+        .expect("expected protocol version 14 to register the type");
+    let at_14 = read_at(&registered, protocol_version_14, protocol_version_14);
+    assert!(document_errors(&at_14, platform_value!({}), protocol_version_14).is_empty());
+
+    let at_15 = read_at(&registered, protocol_version_14, latest);
+    let errors = document_errors(&at_15, platform_value!({}), latest);
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message)
+            ))] if message.contains("compiles no `pattern`")
+        ),
+        "{errors:?}"
+    );
 }
