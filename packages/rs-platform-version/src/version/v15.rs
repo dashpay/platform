@@ -181,8 +181,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    escape or a percent escape, is refused here
 ///    (`DataContractMaxDepthExceedError` or `InvalidJsonSchemaRefError`), the
 ///    check now seeing the schema the validators walk; a `$ref` pointer holding
-///    none of those resolves and is measured as before. The parser is generation
-///    3 at both versions, and loading a stored contract runs no schema check.
+///    none of those resolves and is measured as before. It also holds an array
+///    to the maximum depth as it does a map, where generation 1 checked only
+///    maps, so a schema whose array nesting alone exceeds the maximum depth,
+///    such as a deeply nested `const` or `enum` value, is now refused at
+///    registration and update (`DataContractMaxDepthExceedError`). The parser
+///    is generation 3 at both versions, and loading a stored contract runs no
+///    schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0 and
 ///    `validate_max_depth` 1.
 ///
@@ -765,14 +770,26 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     events in the same transaction. Keep-history index references shrink from 44 to
 ///     42 bytes by targeting the primary pointer, lowering their reference-size estimates.
 ///
-/// 36. **Removing the contested resource votes of a masternode that left the list**:
+/// 36. **An insert writes no entry in an expired time range bucket**: a document's entries
+///     under a time range index with a `ttl` live in the buckets its timestamp falls in, and a
+///     bucket is dropped once it expires. An update already left a document out of a bucket
+///     that had expired; an insert did not, because a created document's timestamp is the
+///     block's. The winner of a contest is inserted when the contest ends, with the
+///     `$createdAt` it was submitted with, so its buckets may have expired by then.
+///     `add_indices_for_top_index_level_for_contract_operations` 3
+///     (`DRIVE_DOCUMENT_METHOD_VERSIONS_V5`) writes it no entry in a bucket that has expired
+///     at the block time, so an expired bucket is never written again after its drop. Its
+///     estimates keep every bucket, as generation 2's do. Protocol v14 keeps
+///     `add_indices_for_top_index_level_for_contract_operations` 2, which writes every bucket.
+///
+/// 37. **Removing the contested resource votes of a masternode that left the list**:
 ///     `remove_all_votes_given_by_identities` 1 (`DRIVE_VOTE_METHOD_VERSIONS_V4`, note 10)
 ///     removes every contested resource vote reference of the masternode, and deletes the
 ///     vote a reference points at while that vote is stored, once when two references point
 ///     at it. Generation 0 deletes at the path of every reference. Protocol v14 and earlier
 ///     keep generation 0.
 ///
-/// 37. **The contenders of one contest name one poll**: a contest is stored at the path of
+/// 38. **The contenders of one contest name one poll**: a contest is stored at the path of
 ///     its index keys, and its poll is named by an id hashed from its index values.
 ///     `canonical_contested_index_values` 1 (`CONTRACT_VERSIONS_V7`) writes every index
 ///     value of a contested create the one way its property's type keys it: an integer in
@@ -788,7 +805,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     contenders named. Protocol v14 keeps generation 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32)
+    drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32); document method versions v5: add_indices_for_top_index_level_for_contract_operations 3 writes no entry in an expired time range bucket (note 36)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: perform_events_on_first_block_of_protocol_change 3 migrates retained history after operator-payout reconciliation and other activation work (note 35); the yes/no poll's tally, record, clean-up and finish hook are Some(0) (note 10); verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock; consensus_params_update 2 installs the full evidence policy (note 16); update_core_info 1 records the chain locked height at which Core's V24 is first seen active (note 18); build_untied_withdrawal_transactions_from_documents 1 emits asset unlock payload version 2 once V24 is recorded as active (note 20); update_voter_identity 1 re-enables the voter key of the address a masternode returns to (note 22); update_masternode_list 2 and update_operator_identity 1 make operator payouts and the operator identities' TRANSFER keys follow Core's diffs (note 32)
