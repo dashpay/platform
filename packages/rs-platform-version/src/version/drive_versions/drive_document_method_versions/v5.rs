@@ -25,6 +25,14 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// * `estimation_costs.stateless_delete_of_non_tree_for_costs` is 1: a delete's estimate prices
 ///   each height of the climb with the layer GroveDB deletes in there, not the one above it.
 /// * Retained-history writers, readers and estimators use the per-type revision layout.
+///   `insert.add_document_for_contract_operations` is 2: a retained id cannot be recreated.
+/// * `delete.delete_document_for_contract_operations` is 1: deleting a history document
+///   removes its current pointer and indices and writes a lifecycle record. Its primary
+///   removal and removal estimate selectors are 1, describing the composite pointer.
+/// * `query.fetch_document_lifecycle` is `Some(0)`: reads the current document or its record.
+///   `delete.erase_document_for_contract_operations`, `add_estimation_costs_for_erase_document`
+///   and `add_estimation_costs_for_lifecycle_record` are `Some(0)`: bounded erasure removes
+///   retained revisions and prices the chunk and its lifecycle metadata.
 /// * `update.update_document_for_contract_operations` is 2: when an update names a new owner,
 ///   the references of the indexes it leaves unchanged are rewritten with that owner.
 /// * `update.update_document_for_contract_apply_and_add_to_operations` is 1: an update applied
@@ -39,7 +47,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         document_history_storage_layout: 1,
         query: DriveDocumentQueryMethodVersions {
-            fetch_document_lifecycle: Some(0),
+            fetch_document_lifecycle: Some(0), // changed: reads the current document or lifecycle record
             single_document_path_query: 1, // changed: a temporal lookup selects the latest retained revision
             fetch_document_history_query: 1,
             fetch_document_history: 1,
@@ -47,7 +55,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.query
         },
         insert: DriveDocumentInsertMethodVersions {
-            add_document_for_contract_operations: 2,
+            add_document_for_contract_operations: 2, // changed: refuses reusing a retained document id
             add_document_to_primary_storage: 1,
             add_reference_for_index_level_for_contract_operations: 1, // changed: a summable index's entries layer is described as references with sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
@@ -57,12 +65,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
-            add_estimation_costs_for_remove_document_to_primary_storage: 1,
-            remove_document_from_primary_storage: 1,
-            delete_document_for_contract_operations: 1,
-            erase_document_for_contract_operations: Some(0),
-            add_estimation_costs_for_erase_document: Some(0),
-            add_estimation_costs_for_lifecycle_record: Some(0),
+            add_estimation_costs_for_remove_document_to_primary_storage: 1, // changed: estimates removal of the composite current pointer
+            remove_document_from_primary_storage: 1, // changed: removes only the current history pointer
+            delete_document_for_contract_operations: 1, // changed: retains history and records deletion
+            erase_document_for_contract_operations: Some(0), // changed: erases one bounded chunk of retained revisions
+            add_estimation_costs_for_erase_document: Some(0), // changed: describes the retained revision layers for erasure
+            add_estimation_costs_for_lifecycle_record: Some(0), // changed: describes lifecycle metadata layers
             remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references, with sum items under a summable index
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },

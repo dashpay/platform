@@ -72,6 +72,11 @@ use super::{
 ///   `DataContractUpdate` (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018): a
 ///   data contract commits its owner beyond the transition that sets it up or changes it.
 ///
+/// - document delete `structure_validation` 2 admits a deletable keep-history type;
+///   `document_erase_transition_structure_validation` and
+///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
+///   erasable type and a deleted document, with its owner's authorization to begin.
+///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
