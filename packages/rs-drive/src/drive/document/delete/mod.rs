@@ -1112,6 +1112,7 @@ mod tests {
             .apply_drive_operations(
                 vec![DocumentOperation(DocumentOperationType::DeleteDocument {
                     document_id: tip.id(),
+                    deleter_id: None,
                     contract_info: DataContractInfo::BorrowedDataContract(&contract),
                     document_type_info: DocumentTypeInfo::DocumentTypeName("tip".to_string()),
                 })],
