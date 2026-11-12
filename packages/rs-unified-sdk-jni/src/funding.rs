@@ -667,7 +667,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// Mirrors Swift's `PlatformWalletManager.shieldedShield`
 /// (`PlatformWalletManagerShieldedSync.swift`): spends `amount` credits
 /// (1 DASH = 1e11) from the wallet's `payment_account` Platform-Payment
-/// addresses (auto-selected in ascending derivation order) into the
+/// addresses (auto-selected in lexicographic Platform-address order) into the
 /// wallet's own bound shielded pool (`shielded_account`). Unlike the
 /// transfer/unshield/withdraw spends — which move notes already inside the
 /// pool and need no host signer — the shield spends the *transparent*
