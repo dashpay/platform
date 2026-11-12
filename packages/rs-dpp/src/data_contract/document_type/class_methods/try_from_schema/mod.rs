@@ -771,7 +771,8 @@ pub(in crate::data_contract::document_type::class_methods) fn apply_property_ref
 /// document names (`contractId` and `documentType` written `"$self.<property>"`,
 /// `documentTypeRequirements`), on an identifier property. Every other declaration is
 /// version 0's, except that an operand of a reference expression naming its target that way
-/// is refused, where version 0 does not read those keys.
+/// is refused, which version 0 cannot read either (see
+/// [`dynamic_reference::declares_dynamic_target`]).
 fn apply_property_reference_v1(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: DocumentPropertyType,
@@ -2146,7 +2147,7 @@ pub(super) fn parse_doctype_reference(
         return Ok(None);
     };
     // Version 1 (protocol version 15) reads a dynamic target on an identifier property
-    // alone; version 0 does not read its keys at all
+    // alone; version 0 cannot read one at all
     if platform_version
         .dpp
         .contract_versions
