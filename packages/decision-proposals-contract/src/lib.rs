@@ -247,6 +247,15 @@ mod tests {
                     multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE
                 ),
                 "documentTypeRequirements": {
+                    // The contract's elected team may delete documents of the type, and
+                    // at any time: no window, or a rule for deleting past it
+                    "when": { "allOf": [
+                        { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+                        { "anyOf": [
+                            { "absent": "$moderatorAbilities.deleteWithin" },
+                            { "present": "$moderatorAbilities.deleteSettled" }
+                        ] }
+                    ] },
                     "properties": {
                         "body": {
                             "name": "$any",

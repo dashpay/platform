@@ -47,7 +47,8 @@ pub mod document_types {
             pub const TITLE: &str = "title";
             /// The id of the document saying what is being decided. Its document type is a
             /// moderated one holding a string or a byte array that a moderator's removal
-            /// takes away and that its author writes.
+            /// takes away and that its author writes, which its contract's elected team may
+            /// delete from at any time.
             pub const DESCRIPTION_ID: &str = "descriptionId";
             /// The id of the contract the description document lives in, one declaring
             /// elected moderation that does not protect its owner from the team.

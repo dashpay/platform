@@ -119,6 +119,14 @@ const TEXT: &str = "text";
 const KEPT_TEXT: &str = "keptText";
 /// One whose documents their owner deletes.
 const PLAIN_TEXT: &str = "plainText";
+/// One whose documents their owner deletes, and the elected team too.
+const DELETABLE_TEXT: &str = "deletableText";
+/// One moderators delete, which the contract leaves out of what its elected team may do.
+const UNGRANTED_TEXT: &str = "ungrantedText";
+/// One moderators delete for an hour after a document's last change, and nobody after.
+const WINDOWED_TEXT: &str = "windowedText";
+/// The same, with a rule for deleting a document past the hour.
+const SETTLED_TEXT: &str = "settledText";
 
 /// A document type holding a `text`, with `extra` merged into its schema.
 fn text_schema(extra: Value) -> Value {
@@ -131,7 +139,11 @@ fn text_schema(extra: Value) -> Value {
         "additionalProperties": false,
     });
     if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
-        schema_map.extend(extra_map);
+        for (key, value) in extra_map {
+            // A keyword given again replaces the one the base schema has
+            schema_map.retain(|(existing, _)| existing != &key);
+            schema_map.push((key, value));
+        }
     }
     schema
 }
@@ -178,20 +190,27 @@ fn description_host_moderated_by(
         get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
             .data_contract_owned();
     let owner_protected = moderators == HostModerators::ElectedProtectingItsOwner;
-    let moderators = if moderators != HostModerators::Owner {
+    let elects_a_team = moderators != HostModerators::Owner;
+    let moderators = if elects_a_team {
         ContractModerators::Elected(Box::new(ElectedModerators {
             join_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             vote_window: DEFAULT_ELECTION_WINDOW_SECONDS,
             challenge_cool_down: Some(1_209_600),
-            moderated_document_types: [TEXT, KEPT_TEXT]
-                .into_iter()
-                .map(|name| {
-                    (
-                        name.to_string(),
-                        BTreeSet::from([ModerationAbility::DeleteDocuments]),
-                    )
-                })
-                .collect(),
+            moderated_document_types: [
+                TEXT,
+                KEPT_TEXT,
+                DELETABLE_TEXT,
+                WINDOWED_TEXT,
+                SETTLED_TEXT,
+            ]
+            .into_iter()
+            .map(|name| {
+                (
+                    name.to_string(),
+                    BTreeSet::from([ModerationAbility::DeleteDocuments]),
+                )
+            })
+            .collect(),
             interim: InterimModerators::ContractOwner,
             election_delay: None,
             max_added_moderators: 0,
@@ -209,7 +228,7 @@ fn description_host_moderated_by(
         },
     )));
     // After the config: a type moderators delete from needs the contract to be moderated
-    for (name, schema) in [
+    let mut document_types = vec![
         (
             TEXT,
             text_schema(platform_value!({
@@ -225,7 +244,43 @@ fn description_host_moderated_by(
             })),
         ),
         (PLAIN_TEXT, text_schema(platform_value!({}))),
-    ] {
+        (
+            DELETABLE_TEXT,
+            text_schema(platform_value!({ "moderatorAbilities": { "delete": true } })),
+        ),
+        (
+            UNGRANTED_TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "moderatorAbilities": { "delete": true },
+            })),
+        ),
+        (
+            WINDOWED_TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "required": ["text", "$createdAt", "$updatedAt"],
+                "moderatorAbilities": { "delete": true, "deleteWithin": 3600 },
+            })),
+        ),
+    ];
+    // Who of a team approves the deletion of a settled document is an elected contract's
+    // to say
+    if elects_a_team {
+        document_types.push((
+            SETTLED_TEXT,
+            text_schema(platform_value!({
+                "canBeDeleted": false,
+                "required": ["text", "$createdAt", "$updatedAt"],
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteWithin": 3600,
+                    "deleteSettled": { "approvals": 1 },
+                },
+            })),
+        ));
+    }
+    for (name, schema) in document_types {
         contract
             .set_document_schema(name, schema, true, &mut vec![], platform_version)
             .expect("expected to add the document type");
@@ -1881,7 +1936,10 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     for (document_type_name, kind) in [
         (TEXT, DocumentReferenceKind::Moderated),
         (KEPT_TEXT, DocumentReferenceKind::Moderated),
+        (UNGRANTED_TEXT, DocumentReferenceKind::Moderated),
+        (WINDOWED_TEXT, DocumentReferenceKind::Moderated),
         (PLAIN_TEXT, DocumentReferenceKind::Deletable),
+        (DELETABLE_TEXT, DocumentReferenceKind::Deletable),
     ] {
         assert_eq!(
             elected
@@ -1899,6 +1957,10 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         (&elected, TEXT),
         (&elected, KEPT_TEXT),
         (&elected, PLAIN_TEXT),
+        (&elected, DELETABLE_TEXT),
+        (&elected, UNGRANTED_TEXT),
+        (&elected, WINDOWED_TEXT),
+        (&elected, SETTLED_TEXT),
         (&owner_moderated, TEXT),
         (&owner_protecting, TEXT),
     ] {
@@ -1952,7 +2014,26 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         "{error:?}"
     );
 
-    // A type whose documents their owner deletes is not a moderated one
+    // A type whose documents their owner deletes is not a moderated one, though the team
+    // may delete them too
+    let (deletable, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, DELETABLE_TEXT, text_of(&elected, DELETABLE_TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let error = process_refused(&platform, deletable, 20_000, platform_version);
+    assert!(
+        matches!(
+            error,
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeNotModeratedError(_))
+        ),
+        "{error:?}"
+    );
+    // and one the team does not moderate at all fails what is asked of the type first
     let (plain, _) = create_transition(
         &contract,
         &mut proposer,
@@ -1966,12 +2047,15 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     assert!(
         matches!(
             error,
-            ConsensusError::StateError(StateError::ReferencedDocumentTypeNotModeratedError(_))
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeRequirementNotMetError(_))
         ),
         "{error:?}"
     );
 
-    // A moderated text of a contract its owner moderates: the masternodes elect nobody there
+    // A moderated text of a contract its owner moderates: the masternodes elect nobody
+    // there, so no elected team is given deletion on the type. The description, checked
+    // before the contract it names, refuses it for that; the contract's own requirement
+    // would refuse it too
     let (unelected, _) = create_transition(
         &contract,
         &mut proposer,
@@ -1985,7 +2069,7 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
     assert!(
         matches!(
             error,
-            ConsensusError::StateError(StateError::ReferencedContractRequirementNotMetError(_))
+            ConsensusError::StateError(StateError::ReferencedDocumentTypeRequirementNotMetError(_))
         ),
         "{error:?}"
     );
@@ -2009,6 +2093,42 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         ),
         "{error:?}"
     );
+
+    // A moderated type the contract's elected team is given no deletion on: once a team is
+    // seated, nobody could remove the text. And one moderators delete only for an hour after
+    // its last change, with no rule for later: the text would outlast the hour for good
+    for unremovable in [UNGRANTED_TEXT, WINDOWED_TEXT] {
+        let (transition, _) = create_transition(
+            &contract,
+            &mut proposer,
+            multiple_choice_proposal::NAME,
+            asking(&elected, unremovable, text_of(&elected, unremovable)),
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let error = process_refused(&platform, transition, 20_000, platform_version);
+        assert!(
+            matches!(
+                error,
+                ConsensusError::StateError(
+                    StateError::ReferencedDocumentTypeRequirementNotMetError(_)
+                )
+            ),
+            "{unremovable}: {error:?}"
+        );
+    }
+    // while a window with a rule for deleting past it qualifies
+    let (settled, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        asking(&elected, SETTLED_TEXT, text_of(&elected, SETTLED_TEXT)),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, settled, 20_000, platform_version);
 
     // A text that is not there, and a type the contract does not have
     let (missing, _) = create_transition(

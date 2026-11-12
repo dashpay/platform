@@ -233,6 +233,28 @@
           "contractId": "$self.descriptionContractId",
           "documentType": "$self.descriptionDocumentType",
           "documentTypeRequirements": {
+            "when": {
+              "allOf": [
+                {
+                  "contains": [
+                    "$electedAbilities",
+                    {
+                      "const": "deleteDocuments"
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "absent": "$moderatorAbilities.deleteWithin"
+                    },
+                    {
+                      "present": "$moderatorAbilities.deleteSettled"
+                    }
+                  ]
+                }
+              ]
+            },
             "properties": {
               "body": {
                 "name": "$any",
@@ -292,7 +314,7 @@
             }
           }
         },
-        "description": "The document saying what is being decided: a document of a moderated type, holding text its author wrote that a moderator's removal takes away with it",
+        "description": "The document saying what is being decided: a document of a moderated type its contract's elected team may delete, at any time after it is written, holding text its author wrote that the removal takes away with it",
         "position": 1
       },
       "descriptionContractId": {

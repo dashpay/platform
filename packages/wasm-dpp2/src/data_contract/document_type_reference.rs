@@ -321,6 +321,12 @@ export type DocumentTypeRequirements = {
    * when every slot must be filled.
    */
   require?: string | DocumentTypeSlotRequirement;
+  /**
+   * What the named type must say of itself, whatever fills the slots: a
+   * condition that reads no `'$property'`. A type it does not hold for does
+   * not meet the requirements.
+   */
+  when?: DocumentTypeSlotCondition;
 };
 
 export type DocumentTypeRequirementSlot = {
@@ -359,7 +365,12 @@ export type DocumentTypeSlotConditionString =
  * condition, read against the referenced document type instead of a
  * document. `contains` looks into the type's
  * `moderatorAbilities.deleteKeepsFields` or `moderatorAbilities.changeFields`,
- * empty where the type declares none.
+ * empty where the type declares none, or into `'$electedAbilities'`, the
+ * abilities the type's contract gives its elected moderation team on the
+ * type (`'deleteDocuments'`, `'changeDocumentFields'`, ...), empty where it
+ * elects none or leaves the type out. `present` and `absent` test whether
+ * the type declares `moderatorAbilities.deleteWithin` or
+ * `moderatorAbilities.deleteSettled`.
  */
 export type DocumentTypeSlotCondition =
   | { equal: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
@@ -371,10 +382,13 @@ export type DocumentTypeSlotCondition =
         (
           | '$moderatorAbilities.deleteKeepsFields'
           | '$moderatorAbilities.changeFields'
+          | '$electedAbilities'
         ),
         '$property' | { const: string },
       ];
     }
+  | { present: '$moderatorAbilities.deleteWithin' | '$moderatorAbilities.deleteSettled' }
+  | { absent: '$moderatorAbilities.deleteWithin' | '$moderatorAbilities.deleteSettled' }
   | { not: DocumentTypeSlotCondition }
   | { anyOf: Array<DocumentTypeSlotCondition> }
   | { allOf: Array<DocumentTypeSlotCondition> }
@@ -1187,6 +1201,14 @@ fn document_type_requirements_to_js(
             &object,
             "require",
             &platform_value_to_object(&require.to_schema_value())?,
+            path,
+        )?;
+    }
+    if let Some(when) = &requirements.when {
+        set_field(
+            &object,
+            "when",
+            &platform_value_to_object(&when.to_schema_value())?,
             path,
         )?;
     }

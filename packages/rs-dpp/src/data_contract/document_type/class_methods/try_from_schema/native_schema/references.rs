@@ -31,18 +31,27 @@ const DYNAMIC_TARGET_KINDS: [&str; 2] = ["permanentDocument", "moderatedDocument
 
 /// The operands a slot's `when` reads as a string, and the two lists it looks into.
 const SLOT_CONDITION_STRINGS: [&str; 2] = ["$kind", "$property"];
-const SLOT_CONDITION_LISTS: [&str; 2] = [
+const SLOT_CONDITION_LISTS: [&str; 3] = [
     "$moderatorAbilities.deleteKeepsFields",
     "$moderatorAbilities.changeFields",
+    "$electedAbilities",
+];
+
+/// The settings of the referenced type a `present` or an `absent` tests.
+const SLOT_CONDITION_SETTINGS: [&str; 2] = [
+    "$moderatorAbilities.deleteWithin",
+    "$moderatorAbilities.deleteSettled",
 ];
 
 /// The keys of a condition of a slot's `when`, each the one key of its object.
-const SLOT_CONDITION_KEYS: [&str; 10] = [
+const SLOT_CONDITION_KEYS: [&str; 12] = [
     "equal",
     "notEqual",
     "in",
     "notIn",
     "contains",
+    "present",
+    "absent",
     "not",
     "anyOf",
     "allOf",
@@ -376,7 +385,7 @@ impl Checker<'_> {
     /// it uses are slots is the parser's to check.
     fn document_type_requirements(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
-        self.closed(map, &["properties", "require"])?;
+        self.closed(map, &["properties", "require", "when"])?;
         self.required(map, &["properties"])?;
         self.member(map, "properties", |c, properties| {
             let slots = c.object(properties)?;
@@ -394,7 +403,10 @@ impl Checker<'_> {
                 return c.word(require);
             }
             c.slot_combinator(require, true)
-        })
+        })?;
+        // A condition on the type as a whole: that it reads no property is the parser's
+        // to check
+        self.member(map, "when", |c, when| c.slot_condition(when))
     }
 
     /// One slot of `documentTypeRequirements.properties`.
@@ -509,6 +521,7 @@ impl Checker<'_> {
                         None => Ok(()),
                     }
                 }
+                "present" | "absent" => c.one_of_strings(operand, &SLOT_CONDITION_SETTINGS),
                 "ifThen" => c.tuple(operand, 2, 2, |c, _, item| c.slot_condition(item)),
                 "ifThenElse" => c.tuple(operand, 3, 3, |c, _, item| c.slot_condition(item)),
                 _ => Ok(()),

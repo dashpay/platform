@@ -1064,6 +1064,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       documentTypeRequirements?: {
         properties: Record<string, Record<string, unknown>>;
         require?: unknown;
+        when?: unknown;
       };
     };
 
@@ -1204,6 +1205,18 @@ describe('DataContract — refersTo declarations (v14)', () => {
           },
         ],
       };
+      // A condition on the type as a whole, beside the slots
+      const ofTheType = {
+        allOf: [
+          { contains: ['$electedAbilities', { const: 'deleteDocuments' }] },
+          {
+            anyOf: [
+              { absent: '$moderatorAbilities.deleteWithin' },
+              { present: '$moderatorAbilities.deleteSettled' },
+            ],
+          },
+        ],
+      };
       const eitherKind = structuredClone(namedSchemas);
       (eitherKind.note.properties.descriptionId as { refersTo: object }).refersTo = {
         // Given the other way round: reported permanent first
@@ -1211,6 +1224,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         contractId: '$self.descriptionContractId',
         documentType: '$self.descriptionDocumentType',
         documentTypeRequirements: {
+          when: ofTheType,
           properties: {
             body: { name: '$any', type: 'string', when },
             code: {
@@ -1228,6 +1242,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
 
       expect(descriptionId.type).to.deep.equal(['permanentDocument', 'moderatedDocument']);
       expect(descriptionId.documentTypeRequirements).to.deep.equal({
+        when: ofTheType,
         properties: {
           body: { name: '$any', type: 'string', when },
           code: {

@@ -176,6 +176,7 @@ does, hosted where moderators can remove it:
     "contractId": "$self.descriptionContractId",
     "documentType": "$self.descriptionDocumentType",
     "documentTypeRequirements": {
+      "when": <removable by the elected team>,
       "properties": {
         "body":      { "name": "$any", "type": "string", "when": <taken with the document> },
         "bodyBytes": { "name": "$any", "type": "array", "byteArray": true, "when": <taken with the document> }
@@ -193,7 +194,19 @@ does, hosted where moderators can remove it:
 }
 ```
 
-where `<taken with the document>` is
+where `<removable by the elected team>` is
+
+```json
+{ "allOf": [
+  { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+  { "anyOf": [
+    { "absent": "$moderatorAbilities.deleteWithin" },
+    { "present": "$moderatorAbilities.deleteSettled" }
+  ] }
+] }
+```
+
+and `<taken with the document>` is
 
 ```json
 { "allOf": [
@@ -213,6 +226,7 @@ refusing the write:
 | A contract that does not exist, or has no such document type | `ReferencedDocumentTypeNotFoundError` (40121) |
 | A private document type, whose documents are encrypted entries the chain never reads | `ReferencedDocumentTypePrivateError` (40150) |
 | An `indexOnly` document type, whose documents are index entries with none to find by its id | `ReferencedDocumentTypeIndexOnlyError` (40146) |
+| A type its contract's elected team may not delete from (the contract elects no team, or leaves the type out of the team's `deleteDocuments`), or one moderators delete only within a window (`deleteWithin`) with no rule for later (`deleteSettled`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
 | A moderated type with no string or byte array a removal takes away: every one is kept in the removal record (`deleteKeepsFields`) or is the moderators' to write (`changeFields`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
 | A document type whose documents their owner can delete, or that never leave state | `ReferencedDocumentTypeNotModeratedError` (40143) |
 | A document that is not there | `ReferencedEntityNotFoundError` (40120) |
@@ -232,15 +246,15 @@ What this does and does not give:
 - The team may moderate the contract's owner like anyone: a contract whose
   declaration protects its owner (`ownerProtected`) is refused, since a
   description the owner wrote there could not be removed.
-- Two things about the description's type are not checked, because nothing in
-  a reference can state them yet. The contract may leave the type out of the
-  abilities it gives its elected team (`deleteDocuments` on that type), so
-  that once a team is seated nobody can remove its documents. And the type
-  may let moderators delete only within a window after a document's last
-  change (`moderatorAbilities.deleteWithin`) without saying who may delete a
-  settled one, so a description becomes unremovable once the window has
-  passed. Either makes a description that satisfies every check and cannot be
-  taken down.
+- The team is given the deletion of the description's type, and a description
+  stays deletable. A contract that leaves the type out of the abilities it
+  gives its elected team (`deleteDocuments`) is refused, since once a team is
+  seated nobody could remove its documents. So is a type that lets moderators
+  delete only within a window after a document's last change
+  (`moderatorAbilities.deleteWithin`) without saying who may delete a settled
+  one (`deleteSettled`), since a description would outlast the window for
+  good. A settled document is deleted by a seated team alone, so within the
+  interim a description past its window waits for the first election.
 - The description's own edit rules are its document type's. A type that lets
   its author replace a document lets the author change the description after
   the two hours, and after choices were entered. The proposal's history keeps

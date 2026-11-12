@@ -295,6 +295,18 @@ describe('Decision Proposals Contract', () => {
         contractId: '$self.descriptionContractId',
         documentType: '$self.descriptionDocumentType',
         documentTypeRequirements: {
+          // The contract's elected team may delete documents of the type, at any time
+          when: {
+            allOf: [
+              { contains: ['$electedAbilities', { const: 'deleteDocuments' }] },
+              {
+                anyOf: [
+                  { absent: '$moderatorAbilities.deleteWithin' },
+                  { present: '$moderatorAbilities.deleteSettled' },
+                ],
+              },
+            ],
+          },
           properties: {
             body: { name: '$any', type: 'string', when: takenWithTheDocument },
             bodyBytes: {

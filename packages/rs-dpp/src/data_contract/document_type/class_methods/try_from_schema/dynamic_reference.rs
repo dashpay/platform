@@ -3,14 +3,16 @@
 //! version 1 of `apply_property_reference` reads (protocol version 15). See
 //! [`DynamicDocumentReference`].
 
+use crate::data_contract::config::moderation::ModerationAbility;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::{
     DocumentPropertyType, DocumentTypeRequirements, DynamicDocumentReference,
     DynamicDocumentReferenceKind, PropertyReference, ReferenceHolder, RequiredPropertySlot,
-    SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions, SlotPropertyName,
-    SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME, REFERRING_DOCUMENT_PREFIX,
-    SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND,
-    SLOT_CONDITION_PROPERTY,
+    SlotCondition, SlotConditionList, SlotConditionSetting, SlotConditionValue, SlotConditions,
+    SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue, ANY_PROPERTY_NAME,
+    REFERRING_DOCUMENT_PREFIX, SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS,
+    SLOT_CONDITION_DELETE_SETTLED, SLOT_CONDITION_DELETE_WITHIN, SLOT_CONDITION_ELECTED_ABILITIES,
+    SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
 };
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -58,6 +60,26 @@ struct SlotConditionLimits {
     /// `max_document_type_requirement_condition_text_length`.
     text_length: usize,
 }
+
+impl SlotConditionLimits {
+    fn of(platform_version: &PlatformVersion) -> Self {
+        let limits = &platform_version.system_limits;
+        Self {
+            nodes: usize::from(limits.max_document_type_requirement_condition_nodes),
+            text_length: usize::from(limits.max_document_type_requirement_condition_text_length),
+        }
+    }
+}
+
+/// The names of the abilities a contract may give its elected moderation team on a document
+/// type, what `$electedAbilities` lists.
+const ELECTED_ABILITY_NAMES: [ModerationAbility; 5] = [
+    ModerationAbility::DeleteDocuments,
+    ModerationAbility::Ban,
+    ModerationAbility::Suspend,
+    ModerationAbility::Warn,
+    ModerationAbility::ChangeDocumentFields,
+];
 
 fn refused(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
@@ -240,10 +262,11 @@ fn parse_document_type_requirements(
         .map_err(|_| refused("documentTypeRequirements must be an object".to_string()))?;
     if let Some(key) = requirements
         .keys()
-        .find(|key| !matches!(key.as_str(), "properties" | "require"))
+        .find(|key| !matches!(key.as_str(), "properties" | "require" | "when"))
     {
         return Err(refused(format!(
-            "documentTypeRequirements does not take {key}: it holds properties and require"
+            "documentTypeRequirements does not take {key}: it holds properties, require and \
+             when"
         )));
     }
     let slot_values = requirements
@@ -298,7 +321,34 @@ fn parse_document_type_requirements(
         .map(|value| parse_require(value, &slots))
         .transpose()?;
 
-    Ok(DocumentTypeRequirements { slots, require })
+    // What the type must say of itself, whatever fills the slots: the grammar of a slot's
+    // `when`, with no property in hand to read
+    let when = requirements
+        .get("when")
+        .map(|when| {
+            let mut nodes = 0;
+            let condition = parse_slot_condition(
+                when,
+                "documentTypeRequirements",
+                &mut nodes,
+                SlotConditionLimits::of(platform_version),
+            )?;
+            if condition.reads_the_property() {
+                return Err(refused(format!(
+                    "documentTypeRequirements when is judged for the document type as a \
+                     whole and reads no \"{SLOT_CONDITION_PROPERTY}\": a condition on a property \
+                     belongs on the slot the property fills"
+                )));
+            }
+            Ok(condition)
+        })
+        .transpose()?;
+
+    Ok(DocumentTypeRequirements {
+        slots,
+        require,
+        when,
+    })
 }
 
 fn parse_slot(
@@ -417,20 +467,13 @@ fn parse_slot(
     let when = slot
         .get("when")
         .map(|when| {
-            let limits = SlotConditionLimits {
-                nodes: usize::from(
-                    platform_version
-                        .system_limits
-                        .max_document_type_requirement_condition_nodes,
-                ),
-                text_length: usize::from(
-                    platform_version
-                        .system_limits
-                        .max_document_type_requirement_condition_text_length,
-                ),
-            };
             let mut nodes = 0;
-            parse_slot_condition(when, &at(), &mut nodes, limits)
+            parse_slot_condition(
+                when,
+                &at(),
+                &mut nodes,
+                SlotConditionLimits::of(platform_version),
+            )
         })
         .transpose()?;
 
@@ -530,7 +573,8 @@ fn parse_slot_condition(
         .ok_or_else(|| {
             refused(format!(
                 "{at} when, and every condition inside it, is an object of one key: equal, \
-                 notEqual, in, notIn, contains, not, anyOf, allOf, ifThen or ifThenElse"
+                 notEqual, in, notIn, contains, present, absent, not, anyOf, allOf, ifThen or \
+                 ifThenElse"
             ))
         })?;
     let Some((key, operand)) = condition.iter().next() else {
@@ -627,15 +671,37 @@ fn parse_slot_condition(
             let list = match pair[0].as_text() {
                 Some(SLOT_CONDITION_DELETE_KEEPS_FIELDS) => SlotConditionList::DeletionKeptFields,
                 Some(SLOT_CONDITION_CHANGE_FIELDS) => SlotConditionList::ModeratorChangeableFields,
+                Some(SLOT_CONDITION_ELECTED_ABILITIES) => SlotConditionList::ElectedAbilities,
                 _ => {
                     return Err(refused(format!(
-                        "{at} when contains looks into \"{SLOT_CONDITION_DELETE_KEEPS_FIELDS}\" \
-                         or \"{SLOT_CONDITION_CHANGE_FIELDS}\", got {}",
+                        "{at} when contains looks into \"{SLOT_CONDITION_DELETE_KEEPS_FIELDS}\", \
+                         \"{SLOT_CONDITION_CHANGE_FIELDS}\" or \
+                         \"{SLOT_CONDITION_ELECTED_ABILITIES}\", got {}",
                         pair[0]
                     )))
                 }
             };
             let needle = slot_condition_value(&pair[1], at, limits.text_length)?;
+            // The team's abilities are named, not properties: a constant that names one
+            if list == SlotConditionList::ElectedAbilities {
+                let names_an_ability = matches!(
+                    &needle,
+                    SlotConditionValue::Constant(name)
+                        if ELECTED_ABILITY_NAMES.iter().any(|ability| ability.as_str() == name)
+                );
+                if !names_an_ability {
+                    return Err(refused(format!(
+                        "{at} when contains looks in \"{SLOT_CONDITION_ELECTED_ABILITIES}\" for \
+                         a {{ \"const\": ... }} naming an ability: {}",
+                        ELECTED_ABILITY_NAMES
+                            .iter()
+                            .map(ModerationAbility::as_str)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
+                return Ok(SlotCondition::Contains(list, needle));
+            }
             if needle == SlotConditionValue::Kind {
                 return Err(refused(format!(
                     "{at} when contains looks for \"{SLOT_CONDITION_PROPERTY}\" or a {{ \"const\": \
@@ -692,9 +758,26 @@ fn parse_slot_condition(
             .map(SlotCondition::IfThen),
         "ifThenElse" => parse_slot_conditions(items(3..=3, "three conditions")?, at, nodes, limits)
             .map(SlotCondition::IfThenElse),
+        "present" | "absent" => {
+            let setting = match operand.as_text() {
+                Some(SLOT_CONDITION_DELETE_WITHIN) => SlotConditionSetting::DeleteWithin,
+                Some(SLOT_CONDITION_DELETE_SETTLED) => SlotConditionSetting::DeleteSettled,
+                _ => {
+                    return Err(refused(format!(
+                        "{at} when {key} tests \"{SLOT_CONDITION_DELETE_WITHIN}\" or \
+                         \"{SLOT_CONDITION_DELETE_SETTLED}\", got {operand}"
+                    )))
+                }
+            };
+            Ok(if key == "present" {
+                SlotCondition::Present(setting)
+            } else {
+                SlotCondition::Absent(setting)
+            })
+        }
         other => Err(refused(format!(
             "{at} when does not take {other}: a condition is equal, notEqual, in, notIn, \
-             contains, not, anyOf, allOf, ifThen or ifThenElse"
+             contains, present, absent, not, anyOf, allOf, ifThen or ifThenElse"
         ))),
     }
 }

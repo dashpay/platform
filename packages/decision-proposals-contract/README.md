@@ -65,8 +65,10 @@ The proposal holds no description of its own. It points at a document saying
 what is being decided, in another contract, so that the description can be
 taken down: the document type is a moderated one (its documents leave state
 only through a moderator's recorded removal) holding a string or a byte array
-that the removal takes away and that the document's author writes, and the
-contract is one whose moderators the masternodes elect.
+that the removal takes away and that the document's author writes, the
+contract is one whose moderators the masternodes elect and whose owner they
+may moderate, and it gives that team the deletion of the type's documents,
+at any time after they are written.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
