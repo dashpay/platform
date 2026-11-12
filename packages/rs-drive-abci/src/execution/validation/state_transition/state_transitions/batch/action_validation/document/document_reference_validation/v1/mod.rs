@@ -21,6 +21,7 @@ use dpp::data_contract::document_type::{
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::property_constraints::{
     referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
@@ -1302,13 +1303,25 @@ fn validate_reference_target_v1(
                         platform_version,
                     )?;
                 }
+                // What the named contract lets its elected team do on the type, which a
+                // requirement may ask for (`$electedAbilities`): nothing where the contract
+                // elects no team or leaves the type out of what the team moderates
+                let elected_abilities = referenced_contract
+                    .config()
+                    .moderation()
+                    .and_then(|moderation| moderation.moderators.elected())
+                    .and_then(|elected| elected.moderated_document_types.get(document_type_name));
                 let meets_requirements = dynamic.requirements.as_ref().is_none_or(|requirements| {
-                    requirements.met_by(referenced_document_type, |referring_property| {
-                        document_data
-                            .get(referring_property)
-                            .and_then(|name| name.as_text())
-                            .map(str::to_string)
-                    })
+                    requirements.met_by(
+                        referenced_document_type,
+                        elected_abilities,
+                        |referring_property| {
+                            document_data
+                                .get(referring_property)
+                                .and_then(|name| name.as_text())
+                                .map(str::to_string)
+                        },
+                    )
                 });
                 if !meets_requirements {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
