@@ -99,6 +99,15 @@ pub enum ModerationAbility {
 }
 
 impl ModerationAbility {
+    /// Every ability, for what lists or names them all. A test holds it to the variants.
+    pub const ALL: [ModerationAbility; 5] = [
+        ModerationAbility::DeleteDocuments,
+        ModerationAbility::Ban,
+        ModerationAbility::Suspend,
+        ModerationAbility::Warn,
+        ModerationAbility::ChangeDocumentFields,
+    ];
+
     /// The wire name of the ability
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -617,6 +626,24 @@ mod tests {
 
     fn set(ids: &[u8]) -> BTreeSet<Identifier> {
         ids.iter().map(|b| Identifier::from([*b; 32])).collect()
+    }
+
+    /// `ModerationAbility::ALL` names every variant, once. The match has no wildcard arm, so
+    /// a new variant does not compile here until it is given its place in `ALL`.
+    #[test]
+    fn should_list_every_ability() {
+        let place = |ability: &ModerationAbility| match ability {
+            ModerationAbility::DeleteDocuments => 0,
+            ModerationAbility::Ban => 1,
+            ModerationAbility::Suspend => 2,
+            ModerationAbility::Warn => 3,
+            ModerationAbility::ChangeDocumentFields => 4,
+        };
+        let places: Vec<usize> = ModerationAbility::ALL.iter().map(place).collect();
+        assert_eq!(
+            places,
+            (0..ModerationAbility::ALL.len()).collect::<Vec<_>>()
+        );
     }
 
     /// `post`, which moderators may delete, and `like`, which they may not

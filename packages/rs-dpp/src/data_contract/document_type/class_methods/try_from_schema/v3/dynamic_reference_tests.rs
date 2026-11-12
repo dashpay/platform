@@ -10,7 +10,9 @@ use super::reference_test_helpers::{
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
+use crate::data_contract::config::moderation::{
+    ContractModerationConfig, ContractModerators, ModerationAbility,
+};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -18,8 +20,9 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceKind, DocumentType,
     DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
-    RequiredPropertySlot, SlotCondition, SlotConditionList, SlotConditionValue, SlotConditions,
-    SlotPropertyName, SlotRequirement, SlotRequirementTerm, SlotValue,
+    RequiredPropertySlot, SlotCondition, SlotConditionList, SlotConditionSetting,
+    SlotConditionValue, SlotConditions, SlotPropertyName, SlotRequirement, SlotRequirementTerm,
+    SlotValue,
 };
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -147,7 +150,7 @@ fn post_meets(requirements_value: serde_json::Value, body_property: Option<&str>
     dynamic_reference(&parsed)
         .requirements
         .expect("requirements")
-        .met_by(post, |referring_property| {
+        .met_by(post, None, |referring_property| {
             assert_eq!(referring_property, "bodyProperty");
             body_property.map(str::to_string)
         })
@@ -266,6 +269,7 @@ fn should_parse_a_reference_naming_its_target_through_the_referring_document() {
                     SlotRequirementTerm::Slot("body".to_string()),
                     SlotRequirementTerm::Slot("bodyBytes".to_string()),
                 ])),
+                when: None,
             }),
         }
     );
@@ -782,7 +786,7 @@ fn should_hold_a_slot_to_its_byte_bound() {
         dynamic_reference(&parsed)
             .requirements
             .expect("requirements")
-            .met_by(post, |_| None)
+            .met_by(post, None, |_| None)
     };
     assert!(bounded_both_ways("code", 8));
     assert!(!bounded_both_ways("code", 7));
@@ -1145,7 +1149,11 @@ fn should_refuse_a_malformed_slot_condition() {
         json!({ "equal": ["$property", { "const": "a" }], "not": is_body() }),
         "is an object of one key",
     );
-    refused(json!({ "present": "$property" }), "does not take present");
+    refused(json!({ "present": "$property" }), "when present tests");
+    refused(
+        json!({ "startsWith": ["$property", { "const": "a" }] }),
+        "does not take startsWith",
+    );
     refused(
         json!({ "greaterThan": ["$property", { "const": "a" }] }),
         "does not take greaterThan",
@@ -1226,11 +1234,11 @@ fn should_refuse_a_malformed_slot_condition() {
     // `contains`
     refused(
         json!({ "contains": ["$property", "$property"] }),
-        "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
+        "contains looks into \"$moderatorAbilities.deleteKeepsFields\",",
     );
     refused(
         json!({ "contains": ["$moderatorAbilities.delete", "$property"] }),
-        "contains looks into \"$moderatorAbilities.deleteKeepsFields\" or",
+        "contains looks into \"$moderatorAbilities.deleteKeepsFields\",",
     );
     refused(
         json!({ "contains": ["$moderatorAbilities.changeFields", "$kind"] }),
@@ -1372,7 +1380,7 @@ fn should_ask_of_a_moderated_type_what_it_does_not_ask_of_a_permanent_one() {
         .expect("requirements")
     };
     let met = |name: serde_json::Value, post: &DocumentType| {
-        slot_requirements(name).met_by(post.as_ref(), |_| None)
+        slot_requirements(name).met_by(post.as_ref(), None, |_| None)
     };
 
     // Moderators delete posts, the removal record keeping `tags`, and they alone write
@@ -1984,4 +1992,174 @@ fn should_count_the_comparisons_judging_a_type_takes() {
         }
     } }));
     assert_eq!(comparisons, properties * (1 + 4) + (1 + 2));
+}
+
+/// The requirements may carry a `when` of their own, judged once for the named type as a
+/// whole: the grammar of a slot's `when` with no property to read, over what the type's
+/// contract lets its elected team do on it (`$electedAbilities`) and the settings the type
+/// declares (`present`, `absent`).
+#[test]
+fn should_parse_a_condition_on_the_type_as_a_whole() {
+    let removable = || {
+        json!({ "allOf": [
+            { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+            { "anyOf": [
+                { "absent": "$moderatorAbilities.deleteWithin" },
+                { "allOf": [
+                    { "present": "$moderatorAbilities.deleteSettled" },
+                    { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+                ] }
+            ] }
+        ] })
+    };
+    let with_when = |when: serde_json::Value| {
+        json!({
+            "when": when,
+            "properties": { "body": { "name": "$any", "type": "string" } }
+        })
+    };
+    let parsed = requirements(with_when(removable()));
+    assert_eq!(
+        parsed.when,
+        Some(SlotCondition::AllOf(SlotConditions::new(vec![
+            SlotCondition::Contains(
+                SlotConditionList::ElectedAbilities,
+                SlotConditionValue::Constant("deleteDocuments".to_string())
+            ),
+            SlotCondition::AnyOf(SlotConditions::new(vec![
+                SlotCondition::Absent(SlotConditionSetting::DeleteWithin),
+                SlotCondition::AllOf(SlotConditions::new(vec![
+                    SlotCondition::Present(SlotConditionSetting::DeleteSettled),
+                    SlotCondition::Absent(SlotConditionSetting::SettledApproversPredateDocument),
+                ])),
+            ])),
+        ])))
+    );
+    // Written back as declared, which parses to the same requirements
+    let written = parsed
+        .to_schema_value()
+        .try_into_validating_json()
+        .expect("the schema value converts to JSON");
+    assert_eq!(written, with_when(removable()));
+    assert_eq!(requirements(written), parsed);
+    // and it survives the platform serialization of its contract
+    let platform_version = PlatformVersion::latest();
+    let original = contract(note_contract(requiring(with_when(removable())))).expect("parses");
+    let bytes = original
+        .serialize_to_bytes_with_platform_version(platform_version)
+        .expect("the contract should serialize");
+    let recovered = DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
+        .expect("the contract should deserialize");
+    assert_eq!(dynamic_reference(&original), dynamic_reference(&recovered));
+
+    // The same facts are a slot's to read too, beside the property
+    requirements(json!({ "properties": { "body": {
+        "name": "$any",
+        "type": "string",
+        "when": { "ifThen": [
+            { "present": "$moderatorAbilities.deleteWithin" },
+            { "notEqual": ["$property", { "const": "title" }] }
+        ] }
+    } } }));
+
+    let refused = |when: serde_json::Value, fragment: &str| {
+        assert_refused_by_the_parser(note_contract(requiring(with_when(when))), fragment);
+    };
+    // No property is in hand for the type as a whole
+    refused(
+        json!({ "notEqual": ["$property", { "const": "title" }] }),
+        "is judged for the document type as a whole and reads no \"$property\"",
+    );
+    refused(
+        json!({ "anyOf": [
+            removable(),
+            { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
+        ] }),
+        "is judged for the document type as a whole and reads no \"$property\"",
+    );
+    // An ability is one a contract can give, named by a constant
+    refused(
+        json!({ "contains": ["$electedAbilities", { "const": "delete" }] }),
+        "for a { \"const\": ... } naming an ability: deleteDocuments, ban, suspend, warn, \
+         changeDocumentFields",
+    );
+    refused(
+        json!({ "contains": ["$electedAbilities", "$kind"] }),
+        "naming an ability",
+    );
+    // and a setting is one of those that say how long a document stays deletable
+    refused(
+        json!({ "absent": "$moderatorAbilities.delete" }),
+        "when absent tests \"$moderatorAbilities.deleteWithin\", \
+         \"$moderatorAbilities.deleteSettled\" or \
+         \"$moderatorAbilities.deleteSettled.approversPredateDocument\"",
+    );
+    refused(
+        json!({ "absent": "$moderatorAbilities.deleteSettled.approvals" }),
+        "when absent tests",
+    );
+    refused(
+        json!({ "present": ["$moderatorAbilities.deleteWithin"] }),
+        "when present tests",
+    );
+    // It is held to the limits of a slot's
+    let max_nodes = usize::from(
+        platform_version
+            .system_limits
+            .max_document_type_requirement_condition_nodes,
+    );
+    refused(
+        json!({ "anyOf": (0..max_nodes)
+            .map(|index| json!({ "notEqual": ["$kind", { "const": if index % 2 == 0 { "permanentDocument" } else { "moderatedDocument" } }] }))
+            .collect::<Vec<_>>() }),
+        &format!("documentTypeRequirements when is made of more than {max_nodes} conditions"),
+    );
+    refused(
+        json!({ "in": ["$kind", ["permanentDocument", "moderatedDocument"]], "extra": 1 }),
+        "is an object of one key",
+    );
+}
+
+/// A type meets a condition on it by what its contract and its own moderation say: the
+/// elected team's abilities come from the contract, the window and the settled deletion
+/// from the type. The judging counts the condition's nodes once.
+#[test]
+fn should_judge_the_named_type_by_its_moderation() {
+    let parsed = requirements(json!({
+        "when": { "allOf": [
+            { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+            { "absent": "$moderatorAbilities.deleteWithin" }
+        ] },
+        "properties": { "body": { "name": "$any", "type": "string" } }
+    }));
+    let deleting = BTreeSet::from([ModerationAbility::DeleteDocuments]);
+    let banning = BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Suspend]);
+    let met = |post: &DocumentType, abilities: Option<&BTreeSet<ModerationAbility>>| {
+        parsed.met_by(post.as_ref(), abilities, |_| None)
+    };
+
+    // Moderators delete posts, at any time
+    let durable = moderated_post(json!({
+        "canBeDeleted": false,
+        "moderatorAbilities": { "delete": true }
+    }));
+    assert!(met(&durable, Some(&deleting)));
+    // The contract elects no team, leaves the type out, or gives the team other abilities
+    assert!(!met(&durable, None));
+    assert!(!met(&durable, Some(&BTreeSet::new())));
+    assert!(!met(&durable, Some(&banning)));
+
+    // Moderators delete posts for an hour after their last change, and nobody after
+    let windowed = moderated_post(json!({
+        "canBeDeleted": false,
+        "required": ["$createdAt", "$updatedAt"],
+        "moderatorAbilities": { "delete": true, "deleteWithin": 3600 }
+    }));
+    assert!(windowed
+        .documents_can_be_deleted_by_moderators_for()
+        .is_some());
+    assert!(!met(&windowed, Some(&deleting)));
+
+    // Three string properties tried for the slot, and the three nodes of the condition
+    assert_eq!(parsed.comparisons(durable.as_ref()), 3 + 3);
 }
