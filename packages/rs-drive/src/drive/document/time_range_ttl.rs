@@ -91,9 +91,9 @@ pub(crate) fn live_time_range_entry_keys(
         .collect()
 }
 
-/// [`live_time_range_entry_keys`] for the insert walker's keys. A key that
-/// is only a size (the estimated cost path) always passes, so a dry run
-/// keeps every bucket and stays the upper bound.
+/// [`live_time_range_entry_keys`] for the insert walker's keys. The walker
+/// calls it only when the insert is applied: an estimate keeps every bucket
+/// and stays the upper bound. A key that is only a size always passes.
 pub(crate) fn live_time_range_index_keys<'a>(
     transform: &TimeRangeTransform,
     index_keys: Vec<DriveKeyInfo<'a>>,

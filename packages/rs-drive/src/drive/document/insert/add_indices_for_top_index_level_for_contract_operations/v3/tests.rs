@@ -16,7 +16,8 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::DataContractFactory;
-use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
@@ -149,6 +150,34 @@ fn delete_in_a_block(
             platform_version,
         )
         .map(|_| ())
+}
+
+/// Updates `document` at `block_time_ms`, or only estimates the update when
+/// `apply` is false.
+fn update_at(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    block_time_ms: u64,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> FeeResult {
+    drive
+        .update_document_for_contract(
+            document,
+            contract,
+            contract.document_type_for_name("post").expect("post"),
+            Some(OWNER),
+            BlockInfo {
+                time_ms: block_time_ms,
+                ..Default::default()
+            },
+            apply,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("the update")
 }
 
 /// The path of the bucket starting at `bucket_start_ms`, then `below` it.
@@ -360,4 +389,98 @@ fn should_delete_a_document_with_no_entry_in_a_standing_expired_bucket() {
         platform_version,
     )
     .expect("the delete of the other document");
+}
+
+/// An update is estimated as an insert of the new version, with the real
+/// document. Its execution removes the stored version's entry from an expired
+/// bucket the drain has not dropped yet, so the estimate keeps every bucket,
+/// as generation 2's does, and covers that removal.
+#[test]
+fn should_estimate_an_update_with_every_bucket_while_an_expired_one_stands() {
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup(2, platform_version);
+    let created_at = BUCKET_START_MS + 10 * MINUTE_MS;
+
+    // More groups than one write drops, the updated document's last.
+    let mut hashtags: Vec<String> = (0..48).map(|group| format!("a{group:02}")).collect();
+    hashtags.push("zz".to_string());
+    let mut stored = None;
+    for hashtag in &hashtags {
+        let document = post(1, created_at, hashtag);
+        insert_in_a_block(&drive, &contract, &document, created_at, platform_version)
+            .expect("an ordinary create");
+        stored = Some(document);
+    }
+    let mut changed = stored.expect("a document");
+    let stored_id = changed.id();
+    changed.set("hashtag", Value::Text("zy".to_string()));
+    changed.set_revision(Some(2));
+    let block_time_ms = BUCKET_START_MS + 6 * HOUR_MS;
+
+    let mut writes_every_bucket = platform_version.clone();
+    writes_every_bucket
+        .drive
+        .methods
+        .document
+        .insert
+        .add_indices_for_top_index_level_for_contract_operations = 2;
+    let estimated = update_at(
+        &drive,
+        &contract,
+        &changed,
+        block_time_ms,
+        false,
+        platform_version,
+    );
+    let estimated_by_generation_2 = update_at(
+        &drive,
+        &contract,
+        &changed,
+        block_time_ms,
+        false,
+        &writes_every_bucket,
+    );
+    assert_eq!(estimated.storage_fee, estimated_by_generation_2.storage_fee);
+    assert_eq!(
+        estimated.processing_fee,
+        estimated_by_generation_2.processing_fee
+    );
+
+    let actual = update_at(
+        &drive,
+        &contract,
+        &changed,
+        block_time_ms,
+        true,
+        platform_version,
+    );
+
+    // The bucket stood through the update's drain, and the update removed
+    // the stored version's entry from it.
+    assert!(exists(
+        &drive,
+        &bucket_path(&contract, BUCKET_START_MS, &[]),
+        platform_version
+    ));
+    assert!(!exists(
+        &drive,
+        &bucket_path(
+            &contract,
+            BUCKET_START_MS,
+            &[b"hashtag", b"zz", &[0], stored_id.as_slice()]
+        ),
+        platform_version
+    ));
+    assert!(
+        estimated.storage_fee >= actual.storage_fee,
+        "storage: estimated {} must cover actual {}",
+        estimated.storage_fee,
+        actual.storage_fee
+    );
+    assert!(
+        estimated.processing_fee >= actual.processing_fee,
+        "processing: estimated {} must cover actual {}",
+        estimated.processing_fee,
+        actual.processing_fee
+    );
 }

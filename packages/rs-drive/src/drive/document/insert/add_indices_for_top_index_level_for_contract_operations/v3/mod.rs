@@ -48,7 +48,9 @@ impl Drive {
     /// and a flat-dropped path must not be written again before its storage
     /// is reclaimed (see `time_range_ttl`).
     ///
-    /// An insert whose buckets are all live produces the operations v2 does.
+    /// An insert whose buckets are all live produces the operations v2 does,
+    /// and so does every estimate: the filter applies only when the insert
+    /// is applied.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_indices_for_top_index_level_for_contract_operations_v3(
         &self,
@@ -296,14 +298,17 @@ impl Drive {
                             .max_time_range_overlap_factor
                             .unwrap_or(1),
                     );
-                    // Writes never target an expired bucket. On the estimated
-                    // cost path the keys are sizes, which all pass: the dry run
-                    // stays the upper bound.
+                    // Writes never target an expired bucket. An estimate keeps
+                    // every bucket, as the removal walkers' estimates keep every
+                    // key: an update is estimated as this insert, with the real
+                    // document, and its execution still removes the stored
+                    // version's entries from an expired bucket the drain has not
+                    // dropped yet. The dry run stays the upper bound.
                     let bucket_keys = match sub_level.time_range() {
-                        Some(transform) => {
+                        Some(transform) if estimated_costs_only_with_layer_info.is_none() => {
                             live_time_range_index_keys(transform, bucket_keys, block_time_ms)
                         }
-                        None => bucket_keys,
+                        _ => bucket_keys,
                     };
                     (bucket_keys, any_fields_null)
                 }
