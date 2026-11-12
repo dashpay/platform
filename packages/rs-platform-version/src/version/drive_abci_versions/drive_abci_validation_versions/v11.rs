@@ -123,7 +123,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                 document_erase_transition_state_validation: Some(0), // a deleted document needs owner authorization to start erasure
                 advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 document_reference_validation: 1, // a consumed commitment keeps what its lookup read
-                document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away
+                document_create_transition_structure_validation: 2, // a decision proposal states its fund, a rule within the limits and an end date one to four weeks away; the poll a contested create names is compared with the expected one by what names the index
                 document_create_transition_state_validation: 3, // a non-contested create cannot take the values of a live contest its index values do not decide
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 3, // no DashPay bindings (DashPay v3 declares their checks); the token market contract's orders are written by the marketplace transitions only

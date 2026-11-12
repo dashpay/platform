@@ -2712,8 +2712,12 @@ mod tests {
                 .keys()
                 .map(|path| path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["encryptedAccountLabel", "encryptedPublicKey"],
-            "the stored DashPay v3 keeps both encryptedFor declarations"
+            vec![
+                "encryptedAccountLabel",
+                "encryptedPublicKey",
+                "encryptedShieldedAddress"
+            ],
+            "the stored DashPay v3 keeps its three encryptedFor declarations"
         );
         assert_eq!(
             encrypted,

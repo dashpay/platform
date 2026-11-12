@@ -344,21 +344,15 @@ extension SDK {
     // MARK: - Identity Queries
 
     /// Get an identity by ID
-    @MainActor
-    public func identityGet(identityId: String) async throws -> [String: Any] {
-        print("🔵 SDK.identityGet: Called with ID: \(identityId)")
-
-        guard let sdkHandle = handle else {
-            print("❌ SDK.identityGet: SDK handle is nil")
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func identityGet(identityId: String) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_identity_fetch(handle, identityId))
         }
-
-        print("🔵 SDK.identityGet: SDK handle exists: \(sdkHandle)")
-        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle and ID: \(identityId)")
-
-        // Make the FFI call directly and return the parsed JSON
-        let result = dash_sdk_identity_fetch(sdkHandle, identityId)
-        return try processJSONResult(result)
+        return try Self.parseJSONObject(json)
     }
 
     /// Get identity keys
@@ -1305,16 +1299,23 @@ extension SDK {
     // MARK: - DPNS Queries
 
     /// Get DPNS usernames for identity
-    @MainActor
-    public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the lookup blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> sending [[String: Any]] {
+        let json: String? = try await performBlockingQuery { handle in
+            let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
+            // No data and no error means no usernames.
+            if result.error == nil && result.data == nil {
+                return nil
+            }
+            return try Self.consumeStringResult(result)
         }
-
-        // Call native FFI function with identity ID as string
-        let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
-
-        return try processJSONArrayResult(result)
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
     /// Check DPNS name availability
@@ -2605,5 +2606,14 @@ extension SDK {
             throw SDKError.serializationError("Failed to parse JSON data")
         }
         return object
+    }
+
+    /// Parse a JSON array payload returned by a query.
+    fileprivate nonisolated static func parseJSONArray(_ json: String) throws -> sending [[String: Any]] {
+        guard let data = json.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SDKError.serializationError("Failed to parse JSON array")
+        }
+        return array
     }
 }
