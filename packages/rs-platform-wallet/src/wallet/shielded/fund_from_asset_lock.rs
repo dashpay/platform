@@ -394,8 +394,6 @@ impl PlatformWallet {
             other => other,
         };
 
-        let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
-
         // Encrypt the output under this wallet's OVK so the shielded sync can
         // recover the funding (recipient, value, memo) from chain data alone.
         // Prefer the bound account whose IVK recognizes the recipient address
