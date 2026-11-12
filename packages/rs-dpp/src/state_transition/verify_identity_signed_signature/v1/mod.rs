@@ -4,6 +4,7 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::StateTransition;
 use crate::{BlsModule, ProtocolError};
+use platform_version::version::PlatformVersion;
 
 impl StateTransition {
     /// Runs the checks of generation 0 and also refuses a signature they report does not
@@ -13,8 +14,9 @@ impl StateTransition {
         &self,
         public_key: &IdentityPublicKey,
         bls: &impl BlsModule,
+        platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        if self.identity_signed_signature_verdict_v0(public_key, bls)? {
+        if self.identity_signed_signature_verdict_v0(public_key, bls, platform_version)? {
             Ok(())
         } else {
             Err(ProtocolError::from(ConsensusError::SignatureError(

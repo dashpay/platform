@@ -3,6 +3,8 @@ use crate::consensus::signature::InvalidStateTransitionSignatureError;
 use crate::serialization::Signable;
 use crate::state_transition::StateTransitionWitnessSigned;
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 /// Result of witness validation, containing both the validation result and the operations performed.
 pub struct WitnessValidationResult {
@@ -46,45 +48,61 @@ pub trait StateTransitionWitnessValidation: StateTransitionWitnessSigned + Signa
     ///
     /// # Arguments
     /// * `signable_bytes` - The bytes that were signed (typically from `state_transition.signable_bytes()`)
+    /// * `platform_version` - Selects `verify_hash_signature` for P2PKH witnesses
     ///
     /// # Returns
-    /// * `WitnessValidationResult` - Contains validation result and operations performed
-    fn validate_witnesses(&self, signable_bytes: &[u8]) -> WitnessValidationResult {
+    /// * `Ok(WitnessValidationResult)` - Contains validation result and operations performed
+    /// * `Err(ProtocolError::UnknownVersionMismatch)` - This build does not know the selected
+    ///   `verify_hash_signature` version
+    fn validate_witnesses(
+        &self,
+        signable_bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<WitnessValidationResult, ProtocolError> {
         let inputs = self.inputs();
         let witnesses = self.witnesses();
 
         // Verify witness count matches input count before zipping
         if inputs.len() != witnesses.len() {
-            return WitnessValidationResult::new_with_error(
+            return Ok(WitnessValidationResult::new_with_error(
                 InvalidStateTransitionSignatureError::new(format!(
                     "Number of witnesses ({}) does not match number of inputs ({})",
                     witnesses.len(),
                     inputs.len()
                 ))
                 .into(),
-            );
+            ));
         }
 
         let mut total_operations = AddressWitnessVerificationOperations::new();
 
         // Validate each witness against its corresponding input address
         for (i, (address, witness)) in inputs.keys().zip(witnesses.iter()).enumerate() {
-            match address.verify_bytes_against_witness(witness, signable_bytes) {
+            match address.verify_bytes_against_witness(witness, signable_bytes, platform_version) {
                 Ok(operations) => {
                     total_operations.combine(&operations);
                 }
+                // A version this build does not know is an internal error, not a witness that
+                // does not verify. `verify_bytes_against_witness` returns it only from the
+                // `verify_hash_signature` dispatcher, and every protocol version selects a known
+                // `verify_hash_signature`, so no witness that maps to a consensus error below is
+                // turned into this one.
+                Err(e @ ProtocolError::UnknownVersionMismatch { .. }) => return Err(e),
                 Err(e) => {
-                    return WitnessValidationResult::new_with_error(
+                    return Ok(WitnessValidationResult::new_with_error(
                         InvalidStateTransitionSignatureError::new(format!(
                             "Witness {} verification failed: {}",
                             i, e
                         ))
                         .into(),
-                    );
+                    ));
                 }
             }
         }
 
-        WitnessValidationResult::new(SimpleConsensusValidationResult::new(), total_operations)
+        Ok(WitnessValidationResult::new(
+            SimpleConsensusValidationResult::new(),
+            total_operations,
+        ))
     }
 }

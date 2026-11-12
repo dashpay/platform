@@ -19,6 +19,7 @@ use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::secp256k1::{ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message};
 use dpp::serialization::PlatformMessageSignable;
 use dpp::util::ecdsa::verify_data_signature;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use vectors::{ECDSA_PUBLIC_KEY, TRANSFER_ECDSA_SIGNATURE, TRANSFER_HASH, TRANSFER_SIGNABLE};
 
@@ -76,7 +77,7 @@ fn should_preserve_witness_fee_operations_for_recovery_and_multisig_search() {
     };
     assert_eq!(
         address
-            .verify_bytes_against_witness(&witness, &data)
+            .verify_bytes_against_witness(&witness, &data, PlatformVersion::latest())
             .unwrap(),
         AddressWitnessVerificationOperations::for_p2pkh(data.len())
     );
@@ -95,12 +96,12 @@ fn should_preserve_witness_fee_operations_for_recovery_and_multisig_search() {
     };
     assert_eq!(
         address
-            .verify_bytes_against_witness(&witness, &data)
+            .verify_bytes_against_witness(&witness, &data, PlatformVersion::latest())
             .unwrap(),
         AddressWitnessVerificationOperations::for_p2sh_multisig(2, data.len())
     );
     assert!(address
-        .verify_bytes_against_witness(&witness, b"different message")
+        .verify_bytes_against_witness(&witness, b"different message", PlatformVersion::latest())
         .is_err());
 }
 
@@ -275,6 +276,48 @@ fn should_reject_high_s_verification_but_accept_high_s_recovery() {
     .unwrap();
 }
 
+/// A P2PKH witness is checked by recovering the key, which takes any S. Protocol version 14
+/// accepts the historical signature's high-S twin, for replay; from protocol version 15
+/// (`verify_hash_signature` 1) it is refused as a signature that does not verify. The low-S
+/// signature is accepted at both.
+#[test]
+fn should_refuse_a_high_s_p2pkh_witness_from_protocol_version_15() {
+    let (data, signature, public_key) = fixture();
+    let address = PlatformAddress::P2pkh(hash160::Hash::hash(&public_key).to_byte_array());
+    let witness = |signature: Vec<u8>| AddressWitness::P2pkh {
+        signature: signature.into(),
+    };
+    let last_without_the_check = PlatformVersion::get(14).unwrap();
+    let latest = PlatformVersion::latest();
+    for platform_version in [last_without_the_check, latest] {
+        assert_eq!(
+            address
+                .verify_bytes_against_witness(&witness(signature.clone()), &data, platform_version)
+                .unwrap(),
+            AddressWitnessVerificationOperations::for_p2pkh(data.len())
+        );
+    }
+    assert_eq!(
+        address
+            .verify_bytes_against_witness(&witness(high_s_twin()), &data, last_without_the_check)
+            .unwrap(),
+        AddressWitnessVerificationOperations::for_p2pkh(data.len())
+    );
+    match address
+        .verify_bytes_against_witness(&witness(high_s_twin()), &data, latest)
+        .unwrap_err()
+    {
+        ProtocolError::AddressWitnessError(message) => assert_eq!(
+            message,
+            format!(
+                "P2PKH signature verification failed: {}",
+                EcdsaError::VerifyFailed
+            )
+        ),
+        error => panic!("unexpected error: {error}"),
+    }
+}
+
 #[test]
 fn should_reject_a_high_s_signature_in_a_multisig_witness() {
     let (data, signature, public_key) = fixture();
@@ -287,10 +330,10 @@ fn should_reject_a_high_s_signature_in_a_multisig_witness() {
         redeem_script: script.clone().into(),
     };
     address
-        .verify_bytes_against_witness(&witness(signature), &data)
+        .verify_bytes_against_witness(&witness(signature), &data, PlatformVersion::latest())
         .unwrap();
     match address
-        .verify_bytes_against_witness(&witness(high_s_twin()), &data)
+        .verify_bytes_against_witness(&witness(high_s_twin()), &data, PlatformVersion::latest())
         .unwrap_err()
     {
         ProtocolError::AddressWitnessError(message) => {
@@ -319,7 +362,7 @@ fn should_charge_every_verification_a_refused_high_s_twin_takes_in_a_multisig_wi
     };
     assert_eq!(
         address
-            .verify_bytes_against_witness(&witness, &data)
+            .verify_bytes_against_witness(&witness, &data, PlatformVersion::latest())
             .unwrap(),
         AddressWitnessVerificationOperations::for_p2sh_multisig(3, data.len())
     );
@@ -367,7 +410,7 @@ fn should_preserve_multisig_malformed_signature_error() {
         redeem_script: script.into(),
     };
     let error = address
-        .verify_bytes_against_witness(&witness, &data)
+        .verify_bytes_against_witness(&witness, &data, PlatformVersion::latest())
         .unwrap_err();
     match error {
         ProtocolError::AddressWitnessError(message) => {
@@ -389,7 +432,7 @@ fn should_preserve_multisig_malformed_public_key_error() {
         redeem_script: script.into(),
     };
     let error = address
-        .verify_bytes_against_witness(&witness, &data)
+        .verify_bytes_against_witness(&witness, &data, PlatformVersion::latest())
         .unwrap_err();
     match error {
         ProtocolError::AddressWitnessError(message) => {
