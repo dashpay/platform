@@ -2720,3 +2720,128 @@ fn should_cover_distinct_storing_epoch_reads_in_a_minimal_document_erase_estimat
     );
     assert!(actual.storage_fee <= estimated.storage_fee);
 }
+
+#[test]
+fn should_retry_and_resume_the_lifecycle_after_rollback_and_reopening() {
+    let version = latest();
+    let owner = [74; 32];
+    let (mut drive, contract, id) = setup_history(chunk_size() + 1, owner);
+    let directory = drive
+        .temp_dir
+        .take()
+        .expect("the database must outlive Drive");
+    let document_type = document_type_of(&contract);
+    let query = DocumentHistoryDriveQuery {
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "person".into(),
+        document_id: id.to_buffer(),
+        filter: DocumentHistoryFilter::StartAtTime(0),
+        limit: Some(10),
+    };
+
+    for (step, (state, remaining)) in [
+        (DocumentHistoryState::Deleted, chunk_size() + 1),
+        (DocumentHistoryState::Erasing, 1),
+        (DocumentHistoryState::Absent, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let before = history_metadata(&drive, &contract, id);
+        let before_root = drive
+            .grove
+            .root_hash(None, &version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+        let block = BlockInfo::default_with_time(5_000 + step as u64 * 1_000);
+        let mut staged_root = None;
+        for commit in [false, true] {
+            let transaction = drive.grove.start_transaction();
+            let batch = if step == 0 {
+                drive
+                    .delete_document_for_contract_operations(
+                        id,
+                        &contract,
+                        document_type,
+                        &block,
+                        Some(owner.into()),
+                        None,
+                        &mut None,
+                        Some(&transaction),
+                        version,
+                    )
+                    .unwrap()
+            } else {
+                drive
+                    .erase_document_for_contract_operations(
+                        id,
+                        &contract,
+                        document_type,
+                        &block,
+                        &mut None,
+                        Some(&transaction),
+                        version,
+                    )
+                    .unwrap()
+            };
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&transaction),
+                    batch,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .unwrap();
+            let page = drive
+                .fetch_document_history(&query, document_type, Some(&transaction), version)
+                .unwrap();
+            let lifecycle = page.lifecycle.unwrap();
+            assert_eq!(lifecycle.state, state);
+            assert_eq!(lifecycle.remaining_revisions, remaining);
+            assert_eq!(history_metadata(&drive, &contract, id), before);
+            let root = drive
+                .grove
+                .root_hash(Some(&transaction), &version.drive.grove_version)
+                .unwrap()
+                .unwrap();
+            if commit {
+                assert_eq!(Some(root), staged_root, "retry must produce the same state");
+                drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .unwrap();
+            } else {
+                staged_root = Some(root);
+                drive.grove.rollback_transaction(&transaction).unwrap();
+                drop(transaction);
+                assert_eq!(
+                    drive
+                        .grove
+                        .root_hash(None, &version.drive.grove_version)
+                        .unwrap()
+                        .unwrap(),
+                    before_root
+                );
+                assert_eq!(history_metadata(&drive, &contract, id), before);
+            }
+        }
+        let config = drive.config.clone();
+        drop(drive);
+        (drive, _) = Drive::open(directory.path(), Some(config)).unwrap();
+        assert_eq!(
+            drive
+                .grove
+                .root_hash(None, &version.drive.grove_version)
+                .unwrap()
+                .unwrap(),
+            staged_root.unwrap()
+        );
+        let persisted = history_metadata(&drive, &contract, id);
+        assert_eq!(persisted.state, state);
+        assert_eq!(persisted.remaining_revisions, remaining);
+    }
+    assert!(record_of(&drive, &contract, id).is_none());
+    drop(drive);
+}
