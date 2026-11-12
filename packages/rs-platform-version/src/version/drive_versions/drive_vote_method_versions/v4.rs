@@ -10,7 +10,8 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// * `insert.register_identity_vote` 1 registers a resolved vote of either kind (v0 knows only
 ///   contested resource votes, which v1 still hands to it).
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
-///   that left the list.
+///   that left the list, and deletes a contested resource vote a reference points at while
+///   that vote is stored.
 /// * `cleanup.remove_vote_poll_end_date_query_operations` is `Some(0)`: the yes/no clean-up
 ///   removes finished polls from the end date index with it (`None`, not active, before).
 /// * every `yes_no` method is `Some(0)`: yes/no polls can be opened and voted on from this

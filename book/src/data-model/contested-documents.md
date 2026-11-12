@@ -58,6 +58,13 @@ but a poll is hashed from its values, and that hash keys the contest's prefunded
 date: two contenders writing the same identifier two ways would otherwise split one contest into
 two polls. Before 14 the values are taken as given.
 
+From protocol version 15 every index value is written one way, the way its property's type keys
+it: an integer in any integer form as the type's own integer, a date as a `u64`, an integer or a
+float of a float property as a float, bytes in any form as bytes, and `"\0"` as the empty string
+it shares a key with. That is the value a query of the contest returns. A masternode vote names
+its poll by the values it sends, unchanged, and is refused unless a prefunded balance is held
+under that poll, so a voter sends the values as the contest query returns them.
+
 ## Resolution 0: masternode vote
 
 The DPNS rule. The choices are a contender, abstain, or **lock**, which gives the value to nobody.

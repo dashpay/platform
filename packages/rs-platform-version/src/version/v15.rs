@@ -764,6 +764,28 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     history after the operator-payout reconciliation (note 32) and all other activation
 ///     events in the same transaction. Keep-history index references shrink from 44 to
 ///     42 bytes by targeting the primary pointer, lowering their reference-size estimates.
+///
+/// 36. **Removing the contested resource votes of a masternode that left the list**:
+///     `remove_all_votes_given_by_identities` 1 (`DRIVE_VOTE_METHOD_VERSIONS_V4`, note 10)
+///     removes every contested resource vote reference of the masternode, and deletes the
+///     vote a reference points at while that vote is stored, once when two references point
+///     at it. Generation 0 deletes at the path of every reference. Protocol v14 and earlier
+///     keep generation 0.
+///
+/// 37. **The contenders of one contest name one poll**: a contest is stored at the path of
+///     its index keys, and its poll is named by an id hashed from its index values.
+///     `canonical_contested_index_values` 1 (`CONTRACT_VERSIONS_V7`) writes every index
+///     value of a contested create the one way its property's type keys it: an integer in
+///     any integer form as the type's own integer, a date as a `u64`, an integer or a float
+///     of a float property as a float, bytes in any form as bytes (none as a missing
+///     value), `"\0"` as the empty string, and an identifier as generation 0 writes it. It
+///     is the value a query of the contest decodes from the key. Generation 0 writes only
+///     identifiers one way, so two contenders sending an integer as `U64(5)` and `U8(5)`
+///     name two polls of one contest. A masternode vote names its poll as sent, at every
+///     version, and is refused unless a prefunded balance is held under that poll
+///     (`PrefundedSpecializedBalanceNotFoundError`, 40401), so a voter sends the values as
+///     the contest query returns them. A contest opened earlier keeps the polls its
+///     contenders named. Protocol v14 keeps generation 0.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V10, // changed: calculate_fee 1 prices a refund at the storing epoch's rate (note 27); apply_contract_with_serialization 1 writes nothing for a contract whose format version 1 bytes match the stored one's (note 8); vote method versions v4: register_identity_vote 1 registers a yes/no vote, remove_all_votes_given_by_identities 1 also removes the yes/no votes of a masternode that left the list, every yes_no method and remove_vote_poll_end_date_query_operations Some(0) make yes/no polls active, add_vote_poll_end_date_query_operations 1 adds only the entry when the batch already queues the end date's tree with other storage flags, and verify methods v4 make the yes/no proof verifiers active (note 10) and verify_private_document_entries Some(0) a page of a private type's store (note 13); state transition method versions v5: document_create_transition 1 deletes a consumed document from what its lookup read (note 11); document method versions v5: insert_empty_private_document_store_operation Some(0) creates a private document type's store, and fetch_private_document_entries and prove_private_document_entries Some(0) read and prove a page of it (note 13); apply_drive_operations 2 resolves a batch's estimate, remove_reference_for_index_level_for_contract_operations 2, add_reference_for_index_level_for_contract_operations 1, stateless_delete_of_non_tree_for_costs 1 and for_total_system_credits_update 1 describe their layers as they are (note 14); create_initial_state_structure 5 adds the token marketplace escrow trees; calculate_total_tokens_balance 2 counts escrowed tokens; the escrow primitives; the identity balance, token balance, prefunded specialized balance and contract fee pot estimations (for_balances 1, for_token_balances 1, estimated_cost_for_prefunded_specialized_balance_update 2, add_estimation_costs_for_contract_fee_pot_update 1) keep a deeper layer description (note 17); fetch_core_fork_activation_height and store_core_fork_activation_height Some(0) keep the Core fork activations (note 18); document method versions v5: append_private_document_entries_operations Some(0) appends a private document create's entries (note 25); grove_version GROVE_V5 (note 26); verify methods v4: verify_proof_keep_serialized 1 verifies a document that may be contested (note 29); document method versions v5: single_document_path_query 1 selects the latest retained revision at or before a block time, and verify_proof_keep_serialized 1 verifies it (note 31); retained-history writers, readers, estimates and verifiers select the per-type revision layout (note 35); add_new_keys_to_masternode_identity 1 adds a masternode key whose hash the identity already holds a reference for (note 32)
