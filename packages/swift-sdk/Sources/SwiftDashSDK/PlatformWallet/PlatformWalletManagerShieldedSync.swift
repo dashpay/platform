@@ -595,8 +595,9 @@ extension PlatformWalletManager {
     /// id isn't known to the manager, or the CSPRNG fails.
     ///
     /// The host bech32m-encodes the result for display, as for
-    /// `shieldedDefaultAddress`. Synchronous and blocking; call it off
-    /// the main actor.
+    /// `shieldedDefaultAddress`. Synchronous and blocking on the main
+    /// actor, like every member of this class: the FFI call drives the Rust
+    /// runtime with `block_on` and returns once the address is derived.
     public func shieldedFreshAddress(
         walletId: Data,
         account: UInt32 = 0
@@ -649,7 +650,8 @@ extension PlatformWalletManager {
     /// is not a valid Orchard address, so a corrupt recipient never masks
     /// a real send. Throws when the manager is not configured, `walletId`
     /// is not 32 bytes, or the wallet id isn't known to the manager.
-    /// Synchronous and blocking; call it off the main actor.
+    /// Synchronous and blocking on the main actor, like every member of this
+    /// class: the FFI call drives the Rust runtime with `block_on`.
     public func isOwnShieldedAddress(
         walletId: Data,
         account: UInt32 = 0,
