@@ -9,6 +9,7 @@ use crate::platform::Document;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::DocumentV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -22,9 +23,13 @@ use dpp::secp256k1::rand::{Rng, RngCore, SeedableRng};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::state_transition::StateTransition;
 use platform_encryption::{
-    derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
+    derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
+    encrypt_shielded_address, COMPACT_XPUB_LEN, SHIELDED_ADDRESS_LEN,
 };
 use std::collections::BTreeMap;
+
+/// The `contactRequest` property that carries the sender's shielded payment address.
+const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 
 /// ECDH provider for contact request encryption
 ///
@@ -103,6 +108,36 @@ pub struct ContactRequestInput {
     pub account_label: Option<String>,
     /// Optional auto-accept proof (38-102 bytes) - not encrypted
     pub auto_accept_proof: Option<Vec<u8>>,
+    /// The sender's shielded payment address for this contact: 43 raw bytes, the address
+    /// the sender's wallet derives for this request alone. The SDK encrypts it as
+    /// `encryptedShieldedAddress`. `None` sends the request without one.
+    pub shielded_address: Option<[u8; SHIELDED_ADDRESS_LEN]>,
+}
+
+/// A contact request's `encryptedShieldedAddress`: `address` under the request's shared key
+/// and an IV drawn for this field alone.
+///
+/// Refused when the network's `contactRequest` type has no such property. It gains it with
+/// DashPay v3 at protocol version 15, and consensus refuses a request that carries it before
+/// then, so there the caller sends the request without an address.
+fn encrypted_shielded_address(
+    contact_request_document_type: DocumentTypeRef,
+    shared_key: &[u8; 32],
+    address: &[u8; SHIELDED_ADDRESS_LEN],
+    rng: &mut impl RngCore,
+) -> Result<Vec<u8>, Error> {
+    if !contact_request_document_type
+        .properties()
+        .contains_key(ENCRYPTED_SHIELDED_ADDRESS)
+    {
+        return Err(Error::Generic(format!(
+            "the DashPay contract of this network has no {ENCRYPTED_SHIELDED_ADDRESS} on \
+             contact requests; it is added at protocol version 15"
+        )));
+    }
+    let mut iv = [0u8; 16];
+    rng.fill_bytes(&mut iv);
+    Ok(encrypt_shielded_address(shared_key, &iv, address).to_vec())
 }
 
 /// Result of creating a contact request document
@@ -430,6 +465,19 @@ impl Sdk {
         let mut rng = StdRng::from_os_rng();
         let entropy = Bytes32::new(rng.random());
 
+        // Encrypt the shielded address if provided, under an IV of its own
+        let encrypted_shielded_address = input
+            .shielded_address
+            .map(|address| {
+                encrypted_shielded_address(
+                    contact_request_document_type,
+                    &shared_key,
+                    &address,
+                    &mut rng,
+                )
+            })
+            .transpose()?;
+
         // Generate document ID
         let sender_id = input.sender_identity.id().to_owned();
         let document_id = Document::generate_document_id_v0(
@@ -469,6 +517,12 @@ impl Sdk {
         }
         if let Some(proof) = input.auto_accept_proof {
             properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
+        }
+        if let Some(address) = encrypted_shielded_address {
+            properties.insert(
+                ENCRYPTED_SHIELDED_ADDRESS.to_string(),
+                Value::Bytes(address),
+            );
         }
 
         // Return the essential fields for the contact request, including the
@@ -636,8 +690,60 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::DataContract;
     use dpp::secp256k1;
     use dpp::secp256k1::rand::{self, RngCore};
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+    use platform_encryption::decrypt_shielded_address;
+
+    fn dashpay(platform_version: &PlatformVersion) -> DataContract {
+        load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+            .expect("the DashPay contract loads")
+    }
+
+    #[test]
+    fn should_encrypt_a_shielded_address_for_a_dashpay_v3_contact_request() {
+        let contract = dashpay(PlatformVersion::latest());
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest");
+        let shared_key = [7u8; 32];
+        let address = [3u8; SHIELDED_ADDRESS_LEN];
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let first = encrypted_shielded_address(contact_request, &shared_key, &address, &mut rng)
+            .expect("DashPay v3 carries the address");
+        let second = encrypted_shielded_address(contact_request, &shared_key, &address, &mut rng)
+            .expect("DashPay v3 carries the address");
+
+        // What the contract accepts for the property: an IV and three AES blocks.
+        assert_eq!(first.len(), 64);
+        assert_eq!(
+            decrypt_shielded_address(&shared_key, &first).expect("the field decrypts"),
+            address
+        );
+        // Each call draws its own IV, so the same address never encrypts the same way twice.
+        assert_ne!(first[..16], second[..16]);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn should_refuse_a_shielded_address_where_contact_requests_have_no_such_property() {
+        let contract = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        let contact_request = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest");
+        let mut rng = StdRng::seed_from_u64(1);
+
+        assert!(encrypted_shielded_address(
+            contact_request,
+            &[7u8; 32],
+            &[3u8; SHIELDED_ADDRESS_LEN],
+            &mut rng
+        )
+        .is_err());
+    }
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {

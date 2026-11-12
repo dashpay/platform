@@ -1120,6 +1120,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
+                shielded_address: None,
                 shared_secret,
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
