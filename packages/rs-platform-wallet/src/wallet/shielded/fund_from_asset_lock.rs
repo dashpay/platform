@@ -14,8 +14,8 @@
 //!    `AssetLockManager::resolve_funding_observing_out_point`.
 //!    The Orchard bundle commits to the locked outpoint, not to the lock
 //!    proof, so it is proved on the blocking pool as soon as the outpoint
-//!    is known (the lock is broadcast, or a resumed lock passes its
-//!    checks), while the InstantSend lock is awaited.
+//!    is known (the lock is ready for dispatch, or a resumed lock passes
+//!    its checks), while network acceptance and the InstantSend lock are awaited.
 //! 3. **Submit** — wrap the build-and-broadcast in
 //!    `submit_with_cl_height_retry`; each attempt wraps the proved bundle
 //!    with [`ProvedShieldFromAssetLockBundle::build_transition_with_signer`]
@@ -448,8 +448,8 @@ impl PlatformWallet {
         // The bundle commits to the locked outpoint and the shield amount
         // but not to the lock's proof (see `ProvedShieldFromAssetLockBundle`),
         // and both are known once the lock is committed to this call. So the
-        // proof starts then and runs while the resolver waits for the
-        // InstantSend lock.
+        // proof starts before dispatch awaits network acceptance (which may
+        // itself arrive with InstantSend), and overlaps both waits.
         // Its amount is read from the tracked row, as the lock proof does
         // not exist yet; Step 3 uses the proof only if it was made for the
         // resolved outpoint and amount. A proof nobody uses is detached: it
