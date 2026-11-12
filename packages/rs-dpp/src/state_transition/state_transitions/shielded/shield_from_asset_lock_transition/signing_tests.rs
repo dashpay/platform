@@ -297,8 +297,8 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
 
 #[tokio::test]
 async fn seed_pool_batch_fits_max_state_transition_size() {
-    // The pool-seeding batch size (MAX_ACTIONS_PER_BATCH = 6 in
-    // rs-platform-wallet's seed_pool.rs) is bounded by the 20 KiB
+    // The pool-seeding batch size (`max_shielded_actions_per_transition`,
+    // 6 today) is bounded by the 20 KiB
     // transaction-size limit, not the 16-action consensus cap: the Halo 2
     // proof grows ~2,681 bytes per action (measured: 2 actions → 8,294 B,
     // 6 → 19,018 B, 7 → 21,699 B — the last rejected by tenderdash's
@@ -337,6 +337,12 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
         "a 6-action seeding batch must fit max_state_transition_size: {} > {}",
         bytes.len(),
         max,
+    );
+
+    assert_eq!(
+        crate::shielded::max_shielded_actions_per_transition(platform_version),
+        6,
+        "the seeding batch is the helper's bound",
     );
 
     let v1 = extract_v1(st);
