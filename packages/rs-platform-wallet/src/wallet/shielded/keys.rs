@@ -212,6 +212,58 @@ impl AccountViewingKeys {
         })?;
         Ok(Self::from_full_viewing_key(fvk))
     }
+
+    /// An external-scope payment address at a uniformly random 11-byte
+    /// diversifier index drawn from the OS CSPRNG. Index 0 (the default
+    /// address) is redrawn, so the result is never the default address.
+    /// Every 11-byte Orchard diversifier index yields a valid address, so
+    /// no other retry is needed. Writes no state: the scan finds notes to
+    /// the returned address through the IVK, whatever its index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the OS CSPRNG fails.
+    pub fn fresh_address(&self) -> Result<PaymentAddress, PlatformWalletError> {
+        self.fresh_address_from(&mut dpp::secp256k1::rand::rngs::OsRng)
+    }
+
+    /// [`Self::fresh_address`] with the index drawn from `rng`, so tests can
+    /// script the index-0 redraw and a randomness failure.
+    fn fresh_address_from<R: dpp::secp256k1::rand::TryRngCore>(
+        &self,
+        rng: &mut R,
+    ) -> Result<PaymentAddress, PlatformWalletError> {
+        let mut index = [0u8; 11];
+        while index == [0u8; 11] {
+            rng.try_fill_bytes(&mut index).map_err(|_| {
+                PlatformWalletError::ShieldedKeyDerivation(
+                    "shielded fresh address: randomness unavailable".to_string(),
+                )
+            })?;
+        }
+        Ok(self
+            .full_viewing_key
+            .address_at(zip32::DiversifierIndex::from(index), Scope::External))
+    }
+
+    /// Whether a 43-byte raw Orchard `recipient` is one of this account's
+    /// own addresses, at any diversifier index. Orchard addresses are
+    /// diversified, so this can't be a fixed-address comparison; it tests
+    /// the recipient against the IVK via `diversifier_index`. A malformed
+    /// recipient (wrong length / off-curve) returns `false` (treated as
+    /// external) so a corrupt row can't silently mask a real send.
+    pub(crate) fn is_own_recipient(&self, recipient: &[u8]) -> bool {
+        let raw: [u8; 43] = match recipient.try_into() {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let Some(addr) =
+            Option::<PaymentAddress>::from(PaymentAddress::from_raw_address_bytes(&raw))
+        else {
+            return false;
+        };
+        self.incoming_viewing_key.diversifier_index(&addr).is_some()
+    }
 }
 
 #[cfg(test)]
@@ -404,6 +456,117 @@ mod tests {
         assert!(
             AccountViewingKeys::from_fvk_bytes(&[0xFFu8; 96]).is_err(),
             "non-canonical FVK bytes must be rejected"
+        );
+    }
+
+    /// G1.1 / G1.2: every call draws a new random diversifier index,
+    /// so two calls differ and neither is the index-0 default address.
+    #[test]
+    fn fresh_address_differs_per_call_and_never_equals_default() {
+        let seed = [0x42u8; 64];
+        let views = OrchardKeySet::from_seed(&seed, Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        let default_raw = views.default_address.to_raw_address_bytes();
+
+        let a = views
+            .fresh_address()
+            .expect("fresh address")
+            .to_raw_address_bytes();
+        let b = views
+            .fresh_address()
+            .expect("fresh address")
+            .to_raw_address_bytes();
+        assert_ne!(a, b, "two fresh addresses must differ");
+        assert_ne!(a, default_raw, "a fresh address must not be the default");
+        assert_ne!(b, default_raw, "a fresh address must not be the default");
+    }
+
+    /// A randomness source that hands out scripted 11-byte draws, then fails.
+    struct ScriptedRng(Vec<[u8; 11]>);
+
+    impl dpp::secp256k1::rand::TryRngCore for ScriptedRng {
+        type Error = &'static str;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Err("unused")
+        }
+
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Err("unused")
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            if self.0.is_empty() {
+                return Err("exhausted");
+            }
+            dst.copy_from_slice(&self.0.remove(0));
+            Ok(())
+        }
+    }
+
+    /// G1.2: a drawn index 0 is redrawn, and the next index is used.
+    #[test]
+    fn fresh_address_redraws_index_zero() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        let mut next = [0u8; 11];
+        next[0] = 7;
+        let mut rng = ScriptedRng(vec![[0u8; 11], next]);
+
+        let address = views.fresh_address_from(&mut rng).expect("fresh address");
+        assert!(rng.0.is_empty(), "both draws were taken");
+        assert_eq!(
+            address.to_raw_address_bytes(),
+            views
+                .full_viewing_key
+                .address_at(zip32::DiversifierIndex::from(next), Scope::External)
+                .to_raw_address_bytes(),
+            "the address is the one at the redrawn index"
+        );
+    }
+
+    /// A randomness failure is an error, not an address.
+    #[test]
+    fn fresh_address_reports_a_randomness_failure() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        assert!(matches!(
+            views.fresh_address_from(&mut ScriptedRng(vec![])),
+            Err(PlatformWalletError::ShieldedKeyDerivation(_))
+        ));
+        assert!(matches!(
+            views.fresh_address_from(&mut ScriptedRng(vec![[0u8; 11]])),
+            Err(PlatformWalletError::ShieldedKeyDerivation(_))
+        ));
+    }
+
+    /// G2.1 / G2.2: own for the default and fresh addresses of the same
+    /// account; not own for another seed's address or malformed bytes.
+    #[test]
+    fn is_own_recipient_recognises_default_and_fresh_only() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        let foreign = OrchardKeySet::from_seed(&[0x24u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+
+        assert!(views.is_own_recipient(&views.default_address.to_raw_address_bytes()));
+        let fresh = views.fresh_address().expect("fresh address");
+        assert!(views.is_own_recipient(&fresh.to_raw_address_bytes()));
+
+        let foreign_fresh = foreign.fresh_address().expect("fresh address");
+        assert!(!views.is_own_recipient(&foreign.default_address.to_raw_address_bytes()));
+        assert!(!views.is_own_recipient(&foreign_fresh.to_raw_address_bytes()));
+
+        let raw = fresh.to_raw_address_bytes();
+        assert!(!views.is_own_recipient(&raw[..42]), "42 bytes is malformed");
+        assert!(
+            !views.is_own_recipient(&[0xFFu8; 43]),
+            "off-curve pk_d is malformed"
         );
     }
 }
