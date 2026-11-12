@@ -117,6 +117,20 @@ mod tests {
         PlatformVersion::get(14).expect("expected protocol version 14")
     }
 
+    /// The most patterns a contract may hold, the same at every protocol version.
+    fn most() -> usize {
+        usize::from(
+            PlatformVersion::latest()
+                .system_limits
+                .max_contract_schema_patterns,
+        )
+    }
+
+    /// The fragment of the refusal of a contract holding more than [`most`] patterns.
+    fn too_many_message() -> String {
+        format!("at most {} patterns", most())
+    }
+
     /// A document type of `count` string properties, each with `pattern`.
     fn schema_with_patterns(count: usize, pattern: &str) -> Value {
         let properties: Vec<(Value, Value)> = (0..count)
@@ -204,7 +218,7 @@ mod tests {
 
         let over_the_limit = schemas(schema_with_patterns(most + 1, SMALL));
         let message = refusal_message(validate(&over_the_limit, None, platform_version));
-        assert!(message.contains("at most 64 patterns"), "{message}");
+        assert!(message.contains(&too_many_message()), "{message}");
     }
 
     #[test]
@@ -229,15 +243,15 @@ mod tests {
             Some(&schema_defs),
             platform_version,
         ));
-        assert!(message.contains("at most 64 patterns"), "{message}");
+        assert!(message.contains(&too_many_message()), "{message}");
     }
 
     #[test]
     fn should_refuse_too_many_patterns_without_compiling_one() {
         // None of these compiles, and the refusal is for their number
-        let document_schemas = schemas(schema_with_field_matches(65, "("));
+        let document_schemas = schemas(schema_with_field_matches(most() + 1, "("));
         let message = refusal_message(validate(&document_schemas, None, PlatformVersion::latest()));
-        assert!(message.contains("at most 64 patterns"), "{message}");
+        assert!(message.contains(&too_many_message()), "{message}");
     }
 
     #[test]
@@ -309,7 +323,7 @@ mod tests {
     #[test]
     fn should_refuse_nothing_in_consensus_before_protocol_version_15() {
         for document_schemas in [
-            schemas(schema_with_patterns(65, SMALL)),
+            schemas(schema_with_patterns(most() + 1, SMALL)),
             schemas(schema_with_patterns(1, LARGE)),
             schemas(schema_with_field_matches(1, "(")),
         ] {
@@ -320,11 +334,11 @@ mod tests {
     #[test]
     fn should_hold_the_mempool_to_the_bound_before_consensus_has_it() {
         let message = refusal_message(validate_for_mempool(
-            &schemas(schema_with_patterns(65, SMALL)),
+            &schemas(schema_with_patterns(most() + 1, SMALL)),
             None,
             before_the_rule(),
         ));
-        assert!(message.contains("at most 64 patterns"), "{message}");
+        assert!(message.contains(&too_many_message()), "{message}");
 
         let message = refusal_message(validate_for_mempool(
             &schemas(schema_with_field_matches(1, LARGE)),
@@ -337,7 +351,7 @@ mod tests {
         );
 
         assert!(validate_for_mempool(
-            &schemas(schema_with_patterns(64, SMALL)),
+            &schemas(schema_with_patterns(most(), SMALL)),
             None,
             before_the_rule()
         )
@@ -402,7 +416,7 @@ mod tests {
     fn should_count_a_pattern_in_the_defs_for_each_document_type() {
         // The schema check reads every definition for each type, referred to or not
         let platform_version = PlatformVersion::latest();
-        let schema_defs = definitions_with_patterns(16);
+        let schema_defs = definitions_with_patterns(most() / 4);
 
         let four_types = schemas_referring_to(4, "labels");
         assert!(validate(&four_types, Some(&schema_defs), platform_version).is_valid());
@@ -433,16 +447,16 @@ mod tests {
         let no_document_types = BTreeMap::new();
         assert!(validate(
             &no_document_types,
-            Some(&definitions_with_patterns(64)),
+            Some(&definitions_with_patterns(most())),
             platform_version
         )
         .is_valid());
         let message = refusal_message(validate(
             &no_document_types,
-            Some(&definitions_with_patterns(65)),
+            Some(&definitions_with_patterns(most() + 1)),
             platform_version,
         ));
-        assert!(message.contains("at most 64 patterns"), "{message}");
+        assert!(message.contains(&too_many_message()), "{message}");
     }
 
     /// One document type whose `count` properties are each a `$ref` to `definition`.
@@ -471,8 +485,8 @@ mod tests {
         // The JSON Schema validator compiles a definition once for each `$ref` to it; the
         // native one, once for the type
         let schema_defs = definitions_with_patterns(1);
-        let within = schema_referring_often_to(64, "labels");
-        let over = schema_referring_often_to(65, "labels");
+        let within = schema_referring_often_to(most(), "labels");
+        let over = schema_referring_often_to(most() + 1, "labels");
 
         assert!(validate_for_mempool(&within, Some(&schema_defs), before_the_rule()).is_valid());
         let message = refusal_message(validate_for_mempool(
@@ -573,7 +587,7 @@ mod tests {
                 ("plain".to_string(), platform_value!({ "type": "integer" })),
             ])
         };
-        let document_schemas = schema_referring_often_to(65, "plain");
+        let document_schemas = schema_referring_often_to(most() + 1, "plain");
 
         let message = refusal_message(validate_for_mempool(
             &document_schemas,

@@ -16,7 +16,7 @@ use crate::version::system_limits::SystemLimits;
 ///   `None` before. A `PrivateDocumentCreateFromShieldedPool` appends at most 16 entries
 ///   (`max_private_document_entries_per_transition`, `None` before).
 /// * Schema patterns: protocol version 15 is the first whose consensus reads
-///   `max_contract_schema_patterns` (64) and `max_schema_pattern_compiled_size` (128 KiB),
+///   `max_contract_schema_patterns` (32) and `max_schema_pattern_compiled_size` (128 KiB),
 ///   through `validate_schema_patterns` 0. The numbers are unchanged from the earlier tables,
 ///   which hold them for `check_tx` alone.
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {

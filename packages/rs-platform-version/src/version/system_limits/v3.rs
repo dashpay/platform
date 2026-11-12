@@ -16,7 +16,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_document_value_depth: Some(256),
     max_typed_array_items: 1024,
     max_index_property_name_bytes: 255,
-    max_contract_schema_patterns: 64,
+    max_contract_schema_patterns: 32,
     max_schema_pattern_compiled_size: 131_072,
     max_compiled_contract_size: None,
     max_private_document_entry_size: None,

@@ -803,7 +803,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///
 /// 38. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
 ///     `validate_schema_patterns` 0. Contract registration and update refuse a contract whose
-///     document schemas and `$defs` hold more than 64 patterns
+///     document schemas and `$defs` hold more than 32 patterns
 ///     (`max_contract_schema_patterns`: every string under a `pattern` key and every
 ///     `regexPattern` of a contested index, one in `$defs` counted once for each document
 ///     type), or a pattern that does not compile within 128 KiB
