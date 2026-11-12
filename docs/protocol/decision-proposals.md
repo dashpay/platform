@@ -152,10 +152,10 @@ rejected.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
-| `descriptionId` | identifier, required | The document saying what is being decided: a [reference whose target the proposal names](../../book/src/contract-keywords/refers-to-dynamic.md) |
-| `descriptionContractId` | identifier, required | The contract that document lives in: `refersTo` a `contract` with `contractRequirements: { "moderation": "elected", "ownerProtected": false }` |
-| `descriptionDocumentType` | string, 1 to 64 characters, required | That document's document type |
-| `url` | string, `format: uri`, 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
+| `descriptionId` | identifier | The document saying what is being decided, when the proposal points at one: a [reference whose target the proposal names](../../book/src/contract-keywords/refers-to-dynamic.md) |
+| `descriptionContractId` | identifier, given with `descriptionId` and only with it | The contract that document lives in: `refersTo` a `contract` with `contractRequirements: { "moderation": "elected", "ownerProtected": false }` |
+| `descriptionDocumentType` | string, 1 to 64 characters, given with `descriptionId` and only with it | That document's document type |
+| `url` | string, `format: uri`, 1 to 512 characters and at most 512 bytes, required when `descriptionId` is left out | Where what is being decided is described, for a proposal that points at no description document; where it is discussed, for one that does |
 | `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is `false` |
 
 Indexes: `byOwner` (`$ownerId`, `$createdAt`) and `byCreatedAt` (`$createdAt`),
@@ -165,8 +165,26 @@ neither unique.
 
 A proposal costs its storage and nothing else, so text held in it would be
 cheap to fill with anything and could never be taken down: the proposal is
-undeletable. It therefore holds no description. It points at a document that
-does, hosted where moderators can remove it:
+undeletable. It therefore holds no description. What is being decided is said
+in one of two places, or both:
+
+- **A description document**, hosted on Platform where an elected team can
+  remove it. The proposal names it with `descriptionId`,
+  `descriptionContractId` and `descriptionDocumentType`, and it is checked as
+  below.
+- **A url**, for a description hosted anywhere else. Nothing on chain reads or
+  moderates what it points at: whoever serves it can change or remove it, and
+  nobody else can. A proposal holds at most 512 bytes of it.
+
+Two `propertyConstraints` rules hold a proposal to that, on create and on
+every edit (`DocumentPropertyConstraintViolatedError`):
+
+| Rule | Condition | Refuses |
+| --- | --- | --- |
+| `describedByADocumentOrAUrl` | `{ "anyOf": [{ "present": "descriptionId" }, { "present": "url" }] }` | A proposal with neither |
+| `descriptionDocumentNamedWhole` | `{ "in": [{ "countPresent": ["descriptionId", "descriptionContractId", "descriptionDocumentType"] }, [0, 3]] }` | A description document named in part: an id with no contract or no type, or a contract or a type with no id |
+
+A proposal that points at a description document declares it this way:
 
 ```json
 "descriptionId": {
@@ -282,6 +300,9 @@ What this does and does not give:
   type's `position` order, that fills the `body` slot, then `bodyBytes`
   (see [the binding rule](../../book/src/contract-keywords/refers-to-dynamic.md#documenttyperequirements)).
 - `title` and `url` are still text of the proposal.
+- A proposal described at a `url` alone gets none of the above. What the url
+  serves is outside the chain: it can change after choices were entered, and
+  no moderator can take it down. A client shows it as an outside link.
 
 ### `choice`
 

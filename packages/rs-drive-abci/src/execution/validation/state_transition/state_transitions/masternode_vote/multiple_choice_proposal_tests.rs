@@ -2191,3 +2191,154 @@ async fn should_take_the_description_from_a_moderated_text_of_an_elected_contrac
         "{error:?}"
     );
 }
+
+/// What is being decided is said by a description document, at a url, or both: people
+/// either write it on Platform, where an elected team can take it down, or host it
+/// themselves. A proposal gives at least one, and names a description document whole.
+#[tokio::test]
+async fn should_take_the_description_from_a_document_a_url_or_both() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let mut proposer = writer(&mut platform, &mut rng);
+    let mut alice = writer(&mut platform, &mut rng);
+    let host = description_host(true, platform_version);
+    let description_id = describe(
+        &platform,
+        &host,
+        &mut proposer,
+        TEXT,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let url = || {
+        (
+            multiple_choice_proposal::properties::URL.to_string(),
+            Value::Text("https://example.org/proposals/mascot".to_string()),
+        )
+    };
+    let pointing_at_the_document =
+        || question_properties("Which mascot?", true, host.id(), TEXT, description_id);
+    let without = |mut properties: BTreeMap<String, Value>, left_out: &[&str]| {
+        for property in left_out {
+            properties.remove(*property);
+        }
+        properties
+    };
+    let description_document = [
+        multiple_choice_proposal::properties::DESCRIPTION_ID,
+        multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+        multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+    ];
+
+    // A url alone: the description is hosted elsewhere, and nothing on chain is checked
+    let mut at_a_url = without(pointing_at_the_document(), &description_document);
+    at_a_url.extend([url()]);
+    let (transition, url_only_id) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        at_a_url,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, transition, 20_000, platform_version);
+    let stored = stored_document(
+        &platform,
+        &contract,
+        multiple_choice_proposal::NAME,
+        url_only_id,
+    )
+    .expect("expected the proposal described at a url");
+    for property in description_document {
+        assert!(stored.get(property).is_none(), "{property}");
+    }
+    // and it takes choices like any other
+    enter(
+        &platform,
+        &contract,
+        &mut alice,
+        url_only_id,
+        "An owl",
+        30_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    // Both: the document is checked as ever, the url is where it is discussed
+    let mut both = pointing_at_the_document();
+    both.extend([url()]);
+    let (transition, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        both,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    process_valid(&platform, transition, 20_000, platform_version);
+
+    // Neither: a proposal says what is being decided somewhere
+    let refused_by = |error: ConsensusError, rule: &str| match &error {
+        ConsensusError::BasicError(BasicError::DocumentPropertyConstraintViolatedError(e)) => {
+            assert_eq!(e.constraint(), rule);
+        }
+        other => panic!("expected the rule {rule} to refuse it, got {other:?}"),
+    };
+    let (transition, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        without(pointing_at_the_document(), &description_document),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    refused_by(
+        process_refused(&platform, transition, 20_000, platform_version),
+        multiple_choice_proposal::rules::DESCRIBED_BY_A_DOCUMENT_OR_A_URL,
+    );
+
+    // A description document named in part, with a url or without: its id with no contract
+    // or no type, and a contract and a type with no id
+    for left_out in [
+        vec![multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID],
+        vec![multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE],
+        vec![multiple_choice_proposal::properties::DESCRIPTION_ID],
+        vec![
+            multiple_choice_proposal::properties::DESCRIPTION_CONTRACT_ID,
+            multiple_choice_proposal::properties::DESCRIPTION_DOCUMENT_TYPE,
+        ],
+    ] {
+        for with_a_url in [false, true] {
+            let mut properties = without(pointing_at_the_document(), &left_out);
+            if with_a_url {
+                properties.extend([url()]);
+            }
+            // With no id and no url, the first rule refuses it before this one is judged
+            let rule = if !with_a_url
+                && left_out.contains(&multiple_choice_proposal::properties::DESCRIPTION_ID)
+            {
+                multiple_choice_proposal::rules::DESCRIBED_BY_A_DOCUMENT_OR_A_URL
+            } else {
+                multiple_choice_proposal::rules::DESCRIPTION_DOCUMENT_NAMED_WHOLE
+            };
+            let (transition, _) = create_transition(
+                &contract,
+                &mut proposer,
+                multiple_choice_proposal::NAME,
+                properties,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+            refused_by(
+                process_refused(&platform, transition, 20_000, platform_version),
+                rule,
+            );
+        }
+    }
+}

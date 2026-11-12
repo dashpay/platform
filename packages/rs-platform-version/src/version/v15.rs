@@ -764,9 +764,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
 ///     moderated one a replace keeps, was removed on the record. A replace checks the
 ///     reference again when its value or a property it reads the target from changed.
-///     The decision proposals contract's `multipleChoiceProposal` type uses it for its
-///     description: a moderated document, of a contract declaring elected moderation, whose
-///     text a moderator's removal takes away. Protocol v14 and earlier keep
+///     The decision proposals contract's `multipleChoiceProposal` type uses it for a
+///     description hosted on Platform: a moderated document, of a contract declaring elected
+///     moderation, whose text a moderator's removal takes away (a proposal may give a url
+///     instead, or both). Protocol v14 and earlier keep
 ///     `apply_property_reference` 0, which does not read the keys, and
 ///     `document_reference_validation` 0, which no dynamic reference reaches.
 ///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
