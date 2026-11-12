@@ -7,8 +7,13 @@
 //!
 //! ## What the manager takes at construction
 //!
-//! `platform_wallet_manager_create_with_persistence_capabilities(...)`.
-//! The mnemonic resolver and signer are **SDK-level, per-call** handles
+//! `platform_wallet_manager_create_with_sdk(...)`: the SDK handle, the
+//! persistence vtable with its capabilities and extension, and the event
+//! vtable with its extension. When the SDK's context provider takes quorum
+//! keys from an SPV client, as the adaptive provider does, the manager
+//! serves them from its own SPV client for as long as it lives, and only one
+//! manager can serve an SDK. The mnemonic resolver and signer are
+//! **SDK-level, per-call** handles
 //! (see `mnemonic.rs` / `signer.rs`) — they are NOT wired into the
 //! manager, matching `PlatformWalletManager.swift`, which holds only a
 //! persistence handler + event handler.
@@ -68,7 +73,7 @@ use std::ptr;
 
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
-use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, FFINetwork, SDKHandle};
+use rs_sdk_ffi::{FFINetwork, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
@@ -85,8 +90,10 @@ struct ManagerBundle {
 
 /// Create a `PlatformWalletManager`.
 ///
-/// `sdk_handle` is the `SDKHandle` jlong from `SdkNative.createTrusted`;
-/// we resolve its inner `Sdk` pointer via `dash_sdk_get_inner_sdk_ptr`.
+/// `sdk_handle` is the `SDKHandle` jlong from `SdkNative.createTrusted` or
+/// `SdkNative.createAdaptive`, borrowed only for this call. A manager on an
+/// adaptive SDK serves it the quorum keys of its own SPV client; a second
+/// manager on that SDK, while the first lives, is refused.
 /// `persistence_bridge` / `event_bridge` are the Kotlin
 /// `NativePersistenceBridge` / `NativeWalletEventBridge` objects, held as
 /// `GlobalRef`s for the manager's lifetime.
@@ -106,13 +113,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             throw_sdk_exception(env, 1, "SDK handle is 0");
             return 0;
         }
-        // Resolve the inner Sdk pointer the manager stores.
-        let inner = unsafe { dash_sdk_get_inner_sdk_ptr(sdk_handle as *const SDKHandle) };
-        if inner.is_null() {
-            throw_sdk_exception(env, 1, "dash_sdk_get_inner_sdk_ptr returned NULL");
-            return 0;
-        }
-
         let Some(BridgePersistence {
             context: persistence_ctx,
             callbacks: persistence,
@@ -139,11 +139,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let event_extension: EventHandlerCallbacksExtension = build_event_extension();
 
         let mut manager_handle: Handle = 0;
-        // SAFETY: `inner` is a live Sdk pointer for the duration of this
-        // call; the manager clones the Sdk and reads both vtables by value.
+        // SAFETY: Kotlin keeps `sdk_handle` alive for the duration of this
+        // call; the manager clones the Sdk it holds and reads both vtables by
+        // value. The SDK's SPV slot is claimed before the contexts are taken,
+        // so every failure leaves them to the reclaim below.
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_create_with_extensions(
-                inner,
+            platform_wallet_ffi::platform_wallet_manager_create_with_sdk(
+                sdk_handle as *mut SDKHandle,
                 &persistence as *const PersistenceCallbacks,
                 &mut event_callbacks as *const EventHandlerCallbacks,
                 &persistence_capabilities as *const PersistenceCapabilitiesFFI,

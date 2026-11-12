@@ -8,9 +8,8 @@ package org.dashfoundation.dashsdk.ffi
  * [nativeCreate] takes the SDK handle plus the two Kotlin bridge objects
  * (persistence + event), builds the native persistence / event vtables
  * with boxed `GlobalRef` contexts, hands them — **with ownership** (the
- * vtables carry a `release_fn`) — to
- * `platform_wallet_manager_create_with_persistence_capabilities`, and
- * returns a boxed **bundle** pointer as a `jlong`. The native manager
+ * vtables carry a `release_fn`) — to `platform_wallet_manager_create_with_sdk`,
+ * and returns a boxed **bundle** pointer as a `jlong`. The native manager
  * frees each context box exactly once, when its last worker reference
  * drops; [nativeDestroy] shuts the manager down (bounded quiesce + join
  * of every callback-firing task) and a worker that straggles past it
@@ -26,9 +25,12 @@ package org.dashfoundation.dashsdk.ffi
 internal object WalletManagerNative {
 
     /**
-     * Create a manager.
+     * Create a manager. On an adaptive SDK the manager serves the SDK the
+     * quorum keys of its own SPV client for as long as it lives, and a
+     * second manager on that SDK is refused while the first lives.
      *
-     * @param sdkHandle the `SDKHandle` from [SdkNative.createTrusted].
+     * @param sdkHandle the `SDKHandle` from [SdkNative.createTrusted] or
+     *   [SdkNative.createAdaptive].
      * @param persistenceBridge the persistence callback receiver.
      * @param eventBridge the wallet-event / error receiver.
      * @return non-zero bundle handle, or 0 after a thrown exception.

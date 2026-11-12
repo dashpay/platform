@@ -32,6 +32,14 @@
   manager first. Pass `contextProvider: .trusted` to keep the trusted service alone, or
   `.spv` for proofs that must never be verified with its keys.
 
+- **kotlin-sdk:** `Sdk.create(config)` builds the adaptive context provider in Auto mode
+  instead of the trusted one, as the Swift SDK does; `Sdk.create(config,
+  Sdk.ContextProviderKind.TRUSTED)` keeps the trusted provider. `Sdk.setQuorumMode` and
+  `Sdk.quorumSource` change and read the quorum mode. A `PlatformWalletManager` built on
+  an adaptive SDK serves it the quorum keys of its own SPV client, and only one manager
+  serves an SDK: building a second on it while the first is open throws, so close the old
+  manager first.
+
 - **drive, dpp (Rust API):** `Drive::calculate_fee` is now a method and no longer takes
   `epochs_per_era` or `previous_fee_versions`:
   `drive.calculate_fee(base_operations, drive_operations, &epoch, platform_version)`.
