@@ -1,5 +1,6 @@
 use crate::error::ContextProviderError;
 use crate::{ContextProviderMode, QuorumKeySource, SpvSourceSlot};
+use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -29,6 +30,14 @@ pub fn platform_activation_height(network: Network) -> CoreBlockHeight {
         Network::Testnet => 1_090_319,
         Network::Devnet | Network::Regtest => 1,
     }
+}
+
+/// Whether `quorum_type` is `network`'s Platform quorum type, the only
+/// quorum type whose key may verify Platform proofs. A proof names its own
+/// quorum type, and a quorum of a lower-threshold type must never vouch for
+/// Platform state.
+pub fn is_platform_quorum_type(network: Network, quorum_type: u32) -> bool {
+    quorum_type == u32::from(u8::from(network.platform_type()))
 }
 
 /// Interface between the Sdk and state of the application.
@@ -126,7 +135,7 @@ pub trait ContextProvider: Send + Sync {
     /// inside the synchronous lookup, fetch a key that is newer than its cache.
     ///
     /// The arguments come from a response that has not been verified yet. The
-    /// key must come from the provider's own trusted source, never from the
+    /// key must come from a source the provider itself trusts, never from the
     /// arguments, and the work done must stay bounded whatever they are.
     ///
     /// # Returns

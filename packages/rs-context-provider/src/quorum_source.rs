@@ -7,8 +7,8 @@
 #[repr(u8)]
 pub enum ContextProviderMode {
     /// SPV first while its source is published and synced, with the trusted
-    /// provider serving any key SPV cannot; trusted whenever SPV is not
-    /// synced. A source that declares a network other than the provider's
+    /// provider serving any Platform quorum key SPV cannot; trusted whenever
+    /// SPV is not synced. A source that declares a network other than the provider's
     /// counts as not ready. Only as strong as the trusted provider, see
     /// [`AdaptiveContextProvider`](crate::AdaptiveContextProvider).
     Auto = 0,
@@ -33,7 +33,7 @@ impl TryFrom<u8> for ContextProviderMode {
     }
 }
 
-/// The source a provider answers quorum lookups from, see
+/// The source a provider asks first for quorum keys, see
 /// [`ContextProvider::quorum_source`](crate::ContextProvider::quorum_source).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]

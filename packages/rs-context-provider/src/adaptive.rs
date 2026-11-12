@@ -6,15 +6,14 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
-use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
 use crate::{
-    platform_activation_height, ContextProvider, ContextProviderError, ContextProviderMode,
-    ContractSource, QuorumKeyFuture, QuorumKeySource, SpvSourceSlot,
+    is_platform_quorum_type, platform_activation_height, ContextProvider, ContextProviderError,
+    ContextProviderMode, ContractSource, QuorumKeyFuture, QuorumKeySource, SpvSourceSlot,
 };
 
 /// Routes each quorum lookup to an SPV client or a trusted provider by
@@ -92,13 +91,14 @@ impl AdaptiveContextProvider {
             .expect("context-provider mode is only written from validated values")
     }
 
-    /// Whether `quorum_type` is this network's Platform quorum type, the
-    /// only type SPV serves keys for. The trusted provider looks quorums up
-    /// by hash alone, and quorum types that share a DKG interval share
-    /// quorum hashes, so a lookup SPV refused for its type must not be
-    /// handed to it: a lower-threshold quorum would vouch for Platform state.
-    fn is_platform_quorum(&self, quorum_type: u32) -> bool {
-        quorum_type == u32::from(u8::from(self.network.platform_type()))
+    /// Whether a key SPV cannot serve may be asked of the trusted provider:
+    /// only a Platform quorum's. SPV refuses every other quorum type, and the
+    /// trusted provider looks quorums up by hash alone, while quorum types
+    /// that share a DKG interval share quorum hashes: handing it a lookup SPV
+    /// refused for its type would let a lower-threshold quorum vouch for
+    /// Platform state.
+    fn may_fall_back(&self, quorum_type: u32) -> bool {
+        is_platform_quorum_type(self.network, quorum_type)
     }
 }
 
@@ -136,23 +136,36 @@ impl ContextProvider for AdaptiveContextProvider {
                     Ok(key) => return Ok(key),
                     Err(error) => error,
                 };
-                if !self.is_platform_quorum(quorum_type) {
+                if !self.may_fall_back(quorum_type) {
                     return Err(spv_error);
                 }
-                let trusted = self.trusted.get_quorum_public_key(
+                match self.trusted.get_quorum_public_key(
                     quorum_type,
                     quorum_hash,
                     core_chain_locked_height,
-                );
-                tracing::warn!(
-                    quorum_type,
-                    quorum_hash = %hex::encode(quorum_hash),
-                    core_chain_locked_height,
-                    %spv_error,
-                    trusted_error = trusted.as_ref().err().map(tracing::field::display),
-                    "SPV could not serve the quorum key; asked the trusted provider"
-                );
-                trusted.map_err(|_| spv_error)
+                ) {
+                    Ok(key) => {
+                        tracing::info!(
+                            quorum_type,
+                            quorum_hash = %hex::encode(quorum_hash),
+                            core_chain_locked_height,
+                            %spv_error,
+                            "SPV could not serve the quorum key; the trusted provider served it"
+                        );
+                        Ok(key)
+                    }
+                    Err(trusted_error) => {
+                        tracing::warn!(
+                            quorum_type,
+                            quorum_hash = %hex::encode(quorum_hash),
+                            core_chain_locked_height,
+                            %spv_error,
+                            %trusted_error,
+                            "neither SPV nor the trusted provider could serve the quorum key"
+                        );
+                        Err(spv_error)
+                    }
+                }
             }
         }
     }
@@ -182,7 +195,7 @@ impl ContextProvider for AdaptiveContextProvider {
             ContextProviderMode::Trusted => trusted_fetch(),
             ContextProviderMode::Spv => None,
             ContextProviderMode::Auto if !self.spv.is_ready(self.network) => trusted_fetch(),
-            ContextProviderMode::Auto if !self.is_platform_quorum(quorum_type) => None,
+            ContextProviderMode::Auto if !self.may_fall_back(quorum_type) => None,
             ContextProviderMode::Auto => {
                 let fetch = trusted_fetch()?;
                 let spv = Arc::clone(&self.spv);
@@ -195,38 +208,38 @@ impl ContextProvider for AdaptiveContextProvider {
                     let Ok(source) = spv.ready_source(network) else {
                         return fetched;
                     };
-                    let spv_answer = source.provider.get_quorum_public_key(
+                    let spv_error = match source.provider.get_quorum_public_key(
                         quorum_type,
                         quorum_hash,
                         core_chain_locked_height,
-                    );
-                    let trusted_answer = match &fetched {
-                        Ok(_) => "the trusted service does not list it".to_string(),
+                    ) {
+                        Ok(key) => return Ok(Some(key)),
+                        Err(error) => error,
+                    };
+                    let trusted_error = match &fetched {
+                        Ok(_) => "the trusted service does not list the quorum".to_string(),
                         Err(error) => error.to_string(),
                     };
-                    match spv_answer {
-                        Ok(key) => Ok(Some(key)),
-                        Err(
-                            spv_error @ (ContextProviderError::Generic(_)
-                            | ContextProviderError::InvalidQuorum(_)),
-                        ) => {
+                    match spv_error {
+                        ContextProviderError::Generic(_)
+                        | ContextProviderError::InvalidQuorum(_) => {
                             tracing::warn!(
                                 quorum_type,
                                 quorum_hash = %hex::encode(quorum_hash),
                                 core_chain_locked_height,
                                 %spv_error,
-                                trusted = %trusted_answer,
-                                "neither SPV nor the trusted provider holds the quorum"
+                                %trusted_error,
+                                "SPV does not hold the quorum and the trusted provider did not serve it"
                             );
                             Ok(None)
                         }
-                        Err(spv_error) => {
+                        spv_error => {
                             tracing::warn!(
                                 quorum_type,
                                 quorum_hash = %hex::encode(quorum_hash),
                                 core_chain_locked_height,
                                 %spv_error,
-                                trusted = %trusted_answer,
+                                %trusted_error,
                                 "SPV cannot judge the quorum and the trusted provider did not serve it"
                             );
                             Err(spv_error)
@@ -345,6 +358,10 @@ mod tests {
         );
         (adaptive, lease)
     }
+
+    /// LLMQ_50_60: a real quorum type that is not Platform's on testnet, and
+    /// needs fewer signers than Platform's.
+    const LLMQ_50_60: u32 = 1;
 
     fn fetch(adaptive: &AdaptiveContextProvider) -> Option<QuorumKeyFuture> {
         adaptive.fetch_quorum_public_key(platform_quorum_type(), [2; 32], 3)
@@ -509,16 +526,16 @@ mod tests {
     }
 
     /// SPV refuses every quorum type but the network's Platform type, so a
-    /// lower-threshold quorum can never vouch for Platform state. The
-    /// trusted service looks quorums up by hash alone, and quorum types that
-    /// share a DKG interval share quorum hashes: asking it would undo SPV's
-    /// refusal.
+    /// lower-threshold quorum such as LLMQ_50_60 can never vouch for
+    /// Platform state. The trusted service looks quorums up by hash alone,
+    /// and quorum types that share a DKG interval share quorum hashes:
+    /// asking it would undo SPV's refusal.
     #[test]
     fn should_not_fall_back_for_a_quorum_type_other_than_platforms() {
         let trusted = TestTrusted::new(true, TrustedFetch::Key);
         let spv = TestSpv::new(SpvAnswer::Fails(spv_wrong_type));
         let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
-        let other_type = platform_quorum_type() + 1;
+        let other_type = LLMQ_50_60;
 
         let lookup = adaptive.get_quorum_public_key(other_type, [2; 32], 3);
         assert!(
@@ -529,6 +546,31 @@ mod tests {
             .fetch_quorum_public_key(other_type, [2; 32], 3)
             .is_none());
         assert_eq!(trusted.lookups(), 0);
+    }
+
+    /// The quorum type decides only whether a lookup SPV refused may go on
+    /// to the trusted provider. While SPV is not synced, Auto is the trusted
+    /// provider alone, for every quorum type, as Trusted mode is.
+    #[tokio::test]
+    async fn should_leave_every_quorum_type_to_trusted_while_spv_is_not_ready() {
+        let trusted = TestTrusted::new(false, TrustedFetch::Key);
+        let spv = TestSpv::new(SpvAnswer::Fails(spv_wrong_type));
+        let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(false)));
+
+        let fetched = adaptive
+            .fetch_quorum_public_key(LLMQ_50_60, [2; 32], 3)
+            .expect("Auto without SPV fetches from trusted")
+            .await;
+        assert_eq!(
+            fetched.map_err(|error| error.to_string()),
+            Ok(Some([0x11; 48]))
+        );
+        assert_eq!(
+            adaptive
+                .get_quorum_public_key(LLMQ_50_60, [2; 32], 3)
+                .map_err(|error| error.to_string()),
+            Ok([0x11; 48])
+        );
     }
 
     /// Strict SPV never falls back: a key SPV cannot serve fails with SPV's
@@ -590,7 +632,7 @@ mod tests {
     #[tokio::test]
     async fn should_let_spv_decide_the_verdict_when_the_trusted_fetch_cannot_help() {
         type Verdict = fn(&Result<Option<[u8; 48]>, ContextProviderError>) -> bool;
-        let cases: [(TrustedFetch, SpvAnswer, Verdict); 7] = [
+        let cases: [(TrustedFetch, SpvAnswer, Verdict); 8] = [
             (
                 TrustedFetch::Key,
                 SpvAnswer::Fails(spv_miss),
@@ -604,6 +646,11 @@ mod tests {
             (
                 TrustedFetch::Unreachable,
                 SpvAnswer::Fails(spv_miss),
+                |fetched| matches!(fetched, Ok(None)),
+            ),
+            (
+                TrustedFetch::Unlisted,
+                SpvAnswer::Fails(spv_wrong_type),
                 |fetched| matches!(fetched, Ok(None)),
             ),
             (
@@ -648,14 +695,17 @@ mod tests {
 
             assert!(expected(&fetched), "{trusted_fetch:?}: {fetched:?}");
         }
+    }
 
+    /// A trusted provider that cannot fetch gives the SDK nothing to fetch in
+    /// Auto either, so the failed lookup's error, SPV's, decides the verdict.
+    #[test]
+    fn should_not_fetch_in_auto_when_trusted_cannot_fetch() {
         let trusted = TestTrusted::new(false, TrustedFetch::Cannot);
         let spv = TestSpv::new(SpvAnswer::Fails(spv_miss));
         let (adaptive, _lease) = auto_over(&trusted, &spv, &Arc::new(AtomicBool::new(true)));
-        assert!(
-            fetch(&adaptive).is_none(),
-            "a trusted provider that cannot fetch leaves SPV's error standing"
-        );
+
+        assert!(fetch(&adaptive).is_none());
     }
 
     /// SPV that stops being synced while a fetch is pending no longer has a

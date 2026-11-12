@@ -30,7 +30,7 @@ pub(crate) enum KeyFetchFailure {
 /// fetched once at most for each Core height it is named at. `max_fetches` bounds how many
 /// fetches there are: a response that needs more is refused with the verifier's error.
 ///
-/// What the provider's trusted source said decides the result:
+/// What the provider's source said decides the result:
 /// * the key: the result of the next verification;
 /// * the quorum is absent: the original, retryable error, so the node that named the
 ///   quorum is banned and the request moves on;
@@ -116,10 +116,11 @@ pub(crate) async fn verify_fetching_quorum_keys<T>(
                     quorum_type,
                     quorum_hash = %hex::encode(quorum_hash),
                     core_chain_locked_height,
-                    "proof names a quorum the trusted quorum source does not list"
+                    "proof names a quorum the provider's quorum source does not know"
                 );
-                // A fresh trusted answer supersedes the initial lookup's
-                // failure: the node named a quorum the source does not know.
+                // A fresh answer from the provider's source supersedes the
+                // initial lookup's failure: the node named a quorum that
+                // source does not know.
                 return Err(KeyFetchFailure::Decided(Box::new(Error::Proof(missing))));
             }
             Err(ContextProviderError::QuorumSourceUnavailable(reason)) => {
@@ -212,7 +213,9 @@ mod tests {
         GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
         WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
     };
-    use dash_context_provider::{AdaptiveContextProvider, ContextProviderError, QuorumKeyFuture};
+    use dash_context_provider::{
+        AdaptiveContextProvider, ContextProviderError, QuorumKeyFuture, QuorumKeySource,
+    };
     use dpp::block::extended_epoch_info::ExtendedEpochInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
@@ -983,13 +986,21 @@ mod tests {
             Network::Regtest,
         )
         .expect("a trusted provider of the same network");
+        let spv_client = Arc::new(SpvWithoutTheQuorum::default());
         let spv = adaptive
             .spv_source_slot()
             .expect("an SPV slot")
             .claim()
             .expect("an empty slot");
-        // A synced SPV client that does not hold the signing quorum.
-        spv.publish(Arc::new(CannotFetch), Arc::new(|| Ok(true)));
+        spv.publish(
+            Arc::clone(&spv_client) as Arc<dyn ContextProvider>,
+            Arc::new(|| Ok(true)),
+        );
+        assert_eq!(
+            adaptive.quorum_source(),
+            Some(QuorumKeySource::Spv),
+            "a synced SPV client is asked first"
+        );
         let provider = Counting::new(adaptive);
         let sdk = network_sdk(Arc::clone(&provider));
         let (request, response) = recorded_epoch_fetch();
@@ -999,6 +1010,11 @@ mod tests {
             .expect("the trusted key verifies the proof SPV cannot");
 
         assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(
+            spv_client.lookups.load(Ordering::SeqCst),
+            2,
+            "SPV is asked first, before and after the fetch"
+        );
         assert_eq!(
             provider.fetches.load(Ordering::SeqCst),
             1,
@@ -1011,6 +1027,47 @@ mod tests {
             ["/previous", "/quorums"],
             "the key comes from the trusted service"
         );
+    }
+
+    /// A synced SPV client that does not hold the quorum a proof names: it
+    /// answers every lookup with the error platform-wallet's SPV source
+    /// reports for a missing quorum, and counts them.
+    #[derive(Default)]
+    struct SpvWithoutTheQuorum {
+        lookups: AtomicUsize,
+    }
+
+    impl ContextProvider for SpvWithoutTheQuorum {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            self.lookups.fetch_add(1, Ordering::SeqCst);
+            Err(ContextProviderError::Generic(
+                "SPV error: quorum not found".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
     }
 
     /// A provider set while a verification fetches a missing quorum key does

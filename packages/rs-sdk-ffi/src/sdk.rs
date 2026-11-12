@@ -389,7 +389,8 @@ pub unsafe extern "C" fn dash_sdk_create_spv(config: *const DashSDKConfig) -> Da
 ///
 /// Auto asks a wallet manager's SPV client for quorum keys once one serves
 /// this SDK and has synced, and the trusted quorum service before that and
-/// for any key SPV cannot serve. See `dash_sdk_set_context_provider_mode`.
+/// for any Platform quorum key SPV cannot serve. See
+/// `dash_sdk_set_context_provider_mode`.
 ///
 /// # Safety
 /// `config` must be valid for the duration of the call.
@@ -704,9 +705,9 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
 
 /// Set the quorum mode of the SDK's current context provider: Auto, SPV or
 /// Trusted, see `ContextProviderMode`. Auto falls back to the trusted quorum
-/// service for any key SPV cannot serve, so it is only as strong as that
-/// service; SPV fails closed instead. Only a provider that switches between
-/// quorum sources has one, such as the adaptive provider
+/// service for any Platform quorum key SPV cannot serve, so it is only as
+/// strong as that service; SPV fails closed instead. Only a provider that
+/// switches between quorum sources has one, such as the adaptive provider
 /// `dash_sdk_create_adaptive` builds; any other refuses the change with
 /// `InvalidParameter`, including the adaptive provider's replacement.
 ///
