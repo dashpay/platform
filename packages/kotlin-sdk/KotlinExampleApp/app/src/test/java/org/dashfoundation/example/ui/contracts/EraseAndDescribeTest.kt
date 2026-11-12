@@ -27,11 +27,11 @@ class EraseAndDescribeTest {
 
     private fun lifecycle(state: DocumentLifecycleState, remaining: Long) = DocumentLifecycle(
         state = state,
-        remainingRevisions = remaining,
-        deletedAtMs = 1_700_000_000_001,
-        erasingStartedAtMs = if (state == DocumentLifecycleState.ERASING) 1_700_000_000_002 else 0,
-        erasingFromTimeMs = 1_700_000_000_000,
-        erasingFromRevision = 7,
+        remainingRevisions = remaining.toULong(),
+        deletedAtMs = 1_700_000_000_001uL,
+        erasingStartedAtMs = if (state == DocumentLifecycleState.ERASING) 1_700_000_000_002uL else 0uL,
+        erasingFromTimeMs = 1_700_000_000_000uL,
+        erasingFromRevision = 7uL,
     )
 
     @Test

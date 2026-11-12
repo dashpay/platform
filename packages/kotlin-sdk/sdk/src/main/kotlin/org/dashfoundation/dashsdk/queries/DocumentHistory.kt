@@ -46,41 +46,40 @@ enum class DocumentLifecycleState {
 
 /**
  * The `lifecycle` block of a [Documents.history] page. Times are epoch
- * milliseconds and are zero unless the state they describe has been reached.
+ * milliseconds. Deletion time is set only while DELETED or ERASING; erase
+ * times and the erase cursor are set only while ERASING. They are zero otherwise.
  */
 data class DocumentLifecycle(
     val state: DocumentLifecycleState,
     /** Exact count of revisions still retained; zero when absent. */
-    val remainingRevisions: Long,
-    val deletedAtMs: Long,
-    val erasingStartedAtMs: Long,
-    val erasingFromTimeMs: Long,
-    val erasingFromRevision: Long,
+    val remainingRevisions: ULong,
+    val deletedAtMs: ULong,
+    val erasingStartedAtMs: ULong,
+    val erasingFromTimeMs: ULong,
+    val erasingFromRevision: ULong,
 ) {
     companion object {
-        private val lenient = Json { ignoreUnknownKeys = true; isLenient = true }
-
         /**
          * Parse the lifecycle block out of a history page JSON object; null
          * when the block, its state, or any of its numbers is missing or
          * malformed, so a partial block is never read as zeros.
          */
         fun fromHistoryJson(historyJson: String): DocumentLifecycle? = try {
-            val root = lenient.parseToJsonElement(historyJson).jsonObject
+            val root = Json.parseToJsonElement(historyJson).jsonObject
             (root["lifecycle"] as? JsonObject)?.let(::fromLifecycleObject)
         } catch (_: Exception) {
             null
         }
 
         private fun fromLifecycleObject(obj: JsonObject): DocumentLifecycle? {
-            val state = obj["state"]?.jsonPrimitive?.content
+            val state = obj["state"]?.jsonPrimitive?.takeIf { it.isString }?.content
                 ?.let { name -> DocumentLifecycleState.entries.firstOrNull { it.name == name } }
                 ?: return null
             // Rust serializes these as unsigned integers: a JSON string or a
             // negative number is a malformed block, not a value to display.
-            fun number(key: String): Long? = obj[key]?.jsonPrimitive
+            fun number(key: String): ULong? = obj[key]?.jsonPrimitive
                 ?.takeUnless { it.isString }
-                ?.content?.toLongOrNull()?.takeIf { it >= 0 }
+                ?.content?.toULongOrNull()
             return DocumentLifecycle(
                 state = state,
                 remainingRevisions = number("remaining_revisions") ?: return null,
