@@ -52,11 +52,11 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                 let document_creation_token_cost_operations =
                     self.base().token_cost_operations(owner_id);
 
-                // In place in generation 0, which every table selects: only the protocol
-                // version 14 batch state validation sets consumed documents, and only for a
-                // create revealing a commitment through a `refersTo` lookup with a computed key
-                // declaring `consume`, which only that version's parser produces. Every earlier
-                // create has none and converts to exactly the operations it always did
+                // In place in generation 0: only the protocol version 14 batch state validation
+                // sets consumed documents, and only for a create revealing a commitment through a
+                // `refersTo` lookup with a computed key declaring `consume`, which only that
+                // version's parser produces. Every earlier create has none and converts to
+                // exactly the operations it always did
                 let consumed_documents = self.consumed_documents().to_vec();
 
                 // The values of the type's derived index properties (protocol version 14), which

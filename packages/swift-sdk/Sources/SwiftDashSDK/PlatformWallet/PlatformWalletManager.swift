@@ -1208,6 +1208,7 @@ public class PlatformWalletManager: ObservableObject {
         // network, matching the per-network manager design.
         try configure(
             sdkPointer: UnsafeRawPointer(innerSdkPtr),
+            sdkHandle: sdkHandle,
             modelContainer: modelContainer,
             network: sdk.network
         )
@@ -1218,6 +1219,20 @@ public class PlatformWalletManager: ObservableObject {
         sdkPointer: UnsafeRawPointer,
         modelContainer: ModelContainer? = nil,
         network: Network? = nil
+    ) throws {
+        try configure(
+            sdkPointer: sdkPointer,
+            sdkHandle: nil,
+            modelContainer: modelContainer,
+            network: network
+        )
+    }
+
+    private func configure(
+        sdkPointer: UnsafeRawPointer,
+        sdkHandle: OpaquePointer?,
+        modelContainer: ModelContainer?,
+        network: Network?
     ) throws {
         try ensureConfigurationAllowed()
         SDKLogger.event(
@@ -1262,15 +1277,27 @@ public class PlatformWalletManager: ObservableObject {
         var eventHandlerExtension = eventHandler.makeCallbacksExtension()
 
         do {
-            try platform_wallet_manager_create_with_extensions(
-                sdkPointer,
-                &persistence,
-                &eventHandlerCallbacks,
-                &declaredCapabilities,
-                &persistenceExtension,
-                &eventHandlerExtension,
-                &handle
-            ).check()
+            if let sdkHandle {
+                try platform_wallet_manager_create_with_sdk(
+                    sdkHandle,
+                    &persistence,
+                    &eventHandlerCallbacks,
+                    &declaredCapabilities,
+                    &persistenceExtension,
+                    &eventHandlerExtension,
+                    &handle
+                ).check()
+            } else {
+                try platform_wallet_manager_create_with_extensions(
+                    sdkPointer,
+                    &persistence,
+                    &eventHandlerCallbacks,
+                    &declaredCapabilities,
+                    &persistenceExtension,
+                    &eventHandlerExtension,
+                    &handle
+                ).check()
+            }
         } catch {
             // A failed create never took ownership of the retained callback
             // contexts (`makeCallbacks` pre-retains for the transfer), so
