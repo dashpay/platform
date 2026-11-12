@@ -1557,7 +1557,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
@@ -2304,7 +2304,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2481,7 +2481,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2651,7 +2651,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2862,7 +2862,7 @@ where
     let mut derived_identity_id = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_recorded_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3300,7 +3300,7 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// Returns the proved height of the recorded anchor set the anchor was chosen
 /// from too: the anchor was in the set at that height, so a set proved at or
 /// above it that lacks the anchor shows it pruned rather than newer.
-async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
+async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     anchor_cache: &RecordedAnchorCache,
@@ -3319,7 +3319,7 @@ async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     .await
 }
 
-/// [`extract_spends_and_anchor`]'s anchor-set sourcing, with the network fetch
+/// [`extract_spends_and_cached_anchor`]'s anchor-set sourcing, with the network fetch
 /// injected so the cache policy is testable without an SDK.
 ///
 /// 1. If the store lock is free and `anchor_cache` holds a set that is younger
@@ -3338,11 +3338,11 @@ async fn select_spends_with_anchor_cache<S, F, Fut>(
     anchor_cache: &RecordedAnchorCache,
     notes: &[ShieldedNote],
     fetch: F,
-) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError>
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError>
 where
     S: ShieldedStore,
     F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<HashSet<[u8; 32]>, PlatformWalletError>>,
+    Fut: std::future::Future<Output = Result<(HashSet<[u8; 32]>, u64), PlatformWalletError>>,
 {
     // `try_read`, not `read().await`: when a sync holds the store, waiting
     // here would serialize the lock wait in front of the fetch below, which
@@ -3351,7 +3351,7 @@ where
     let tree_size_before_fetch = match store.try_read() {
         Ok(guard) => match guard.tree_size() {
             Ok(tree_size) => {
-                if let Some(recorded) = anchor_cache.get(tree_size) {
+                if let Some((recorded, height)) = anchor_cache.get(tree_size) {
                     match select_recorded_spends(&*guard, notes, &recorded) {
                         Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {
                             debug!(
@@ -3359,7 +3359,9 @@ where
                                 "cached recorded-anchor set covers no checkpoint; refetching"
                             );
                         }
-                        selected => return selected,
+                        selected => {
+                            return selected.map(|(spends, anchor)| (spends, anchor, height))
+                        }
                     }
                 }
                 Some(tree_size)
@@ -3376,9 +3378,10 @@ where
     // round-trip doesn't serialize with other store users, and so the lock is
     // held only for the mutually-consistent depth/witness probe below.
     let fetch_started = FetchStamp::now();
-    let recorded = Arc::new(fetch().await?);
+    let (recorded, height) = fetch().await?;
+    let recorded = Arc::new(recorded);
     if let Some(tree_size) = tree_size_before_fetch {
-        anchor_cache.insert(Arc::clone(&recorded), fetch_started, tree_size);
+        anchor_cache.insert(Arc::clone(&recorded), fetch_started, tree_size, height);
     }
 
     // Hold a single read lock across the whole probe so the checkpoint depths
@@ -3387,7 +3390,33 @@ where
     // under us.
     let store = store.read().await;
     select_recorded_spends(&*store, notes, &recorded)
-        .map(|(spends, anchor)| (spends, anchor, metadata.height))
+        .map(|(spends, anchor)| (spends, anchor, height))
+}
+
+async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    notes: &[ShieldedNote],
+) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError> {
+    // Nothing selected — fail before the network round-trip.
+    if notes.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        ));
+    }
+
+    // Fetch the recorded anchor set OUTSIDE the store lock so the network
+    // round-trip doesn't serialize with other store users, and so the lock is
+    // held only for the mutually-consistent depth/witness probe below.
+    let (recorded, height) = fetch_recorded_anchor_set(sdk).await?;
+
+    // Hold a single read lock across the whole probe so the checkpoint depths
+    // and the per-note witnesses stay mutually consistent: a concurrent sync
+    // checkpointing mid-probe would otherwise shift the depth indices out from
+    // under us.
+    let store = store.read().await;
+    select_recorded_spends(&*store, notes, &recorded)
+        .map(|(spends, anchor)| (spends, anchor, height))
 }
 
 /// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
@@ -8296,16 +8325,12 @@ mod select_recorded_spends_tests {
     }
 
     /// A stand-in for the network fetch that counts how often it is called.
-    fn counting_fetch<'a>(
-        calls: &'a AtomicUsize,
+    async fn counting_fetch(
+        calls: &AtomicUsize,
         recorded: &HashSet<[u8; 32]>,
-    ) -> impl FnOnce() -> std::future::Ready<Result<HashSet<[u8; 32]>, PlatformWalletError>> + 'a
-    {
-        let recorded = recorded.clone();
-        move || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            std::future::ready(Ok(recorded))
-        }
+    ) -> Result<(HashSet<[u8; 32]>, u64), PlatformWalletError> {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok((recorded.clone(), 100))
     }
 
     async fn spend_anchor(
@@ -8315,14 +8340,14 @@ mod select_recorded_spends_tests {
         calls: &AtomicUsize,
         platform_set: &HashSet<[u8; 32]>,
     ) -> Result<[u8; 32], PlatformWalletError> {
-        select_spends_with_anchor_cache(
-            store,
-            cache,
-            std::slice::from_ref(note),
-            counting_fetch(calls, platform_set),
-        )
+        select_spends_with_anchor_cache(store, cache, std::slice::from_ref(note), || {
+            counting_fetch(calls, platform_set)
+        })
         .await
-        .map(|(_, anchor)| anchor.to_bytes())
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
     }
 
     async fn tree_size(store: &Arc<RwLock<FileBackedShieldedStore>>) -> u64 {
@@ -8383,6 +8408,7 @@ mod select_recorded_spends_tests {
             Arc::new(platform_set.clone()),
             FetchStamp::now(),
             tree_size(&store).await,
+            100,
         );
 
         let calls = AtomicUsize::new(0);
@@ -8393,6 +8419,35 @@ mod select_recorded_spends_tests {
         let _ = std::fs::remove_file(&path);
         assert_eq!(anchor, recorded_root);
         assert_eq!(calls.load(Ordering::SeqCst), 0, "no round trip on the send");
+    }
+
+    #[tokio::test]
+    async fn should_return_the_proved_height_of_the_selected_anchor_set() {
+        let (path, store, note, root) = mid_block_store("cache_proved_height");
+        let recorded: HashSet<[u8; 32]> = [root].into_iter().collect();
+        let cache = RecordedAnchorCache::new();
+        cache.insert(
+            Arc::new(recorded.clone()),
+            FetchStamp::now(),
+            tree_size(&store).await,
+            99,
+        );
+        let calls = AtomicUsize::new(0);
+        for expected in [99, 100] {
+            let (_, anchor, height) = select_spends_with_anchor_cache(
+                &store,
+                &cache,
+                std::slice::from_ref(&note),
+                || counting_fetch(&calls, &recorded),
+            )
+            .await
+            .expect("recorded checkpoint covers the note");
+            assert_eq!(anchor.to_bytes(), root);
+            assert_eq!(height, expected);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(expected == 100));
+            cache.invalidate();
+        }
+        let _ = std::fs::remove_file(&path);
     }
 
     /// A cached set that covers none of the wallet's checkpoints (e.g. served
@@ -8407,6 +8462,7 @@ mod select_recorded_spends_tests {
             Arc::new([[0xEE; 32]].into_iter().collect()),
             FetchStamp::now(),
             size,
+            100,
         );
         let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
 
@@ -8420,7 +8476,7 @@ mod select_recorded_spends_tests {
         let refreshed = cache
             .get(size)
             .expect("the fresh set replaced the stale one");
-        assert!(refreshed.contains(&recorded_root));
+        assert!(refreshed.0.contains(&recorded_root));
         spend_anchor(&store, &cache, &note, &calls, &platform_set)
             .await
             .expect("served from the refreshed cache");
@@ -8445,6 +8501,7 @@ mod select_recorded_spends_tests {
             Arc::new(platform_set.clone()),
             expired,
             tree_size(&store).await,
+            100,
         );
 
         let calls = AtomicUsize::new(0);
@@ -8478,6 +8535,7 @@ mod select_recorded_spends_tests {
             Arc::new([root_block1].into_iter().collect()),
             FetchStamp::now(),
             tree_size(&store).await,
+            100,
         );
 
         // A sync then appends block 2 and checkpoints on its boundary.
@@ -8521,6 +8579,7 @@ mod select_recorded_spends_tests {
             Arc::new([recorded_root, marker].into_iter().collect()),
             FetchStamp::now(),
             size,
+            100,
         );
         let platform_set: HashSet<[u8; 32]> = [recorded_root].into_iter().collect();
 
@@ -8533,7 +8592,7 @@ mod select_recorded_spends_tests {
                 // The "sync" finishes while the fetch is in flight.
                 drop(sync_guard);
                 calls.fetch_add(1, Ordering::SeqCst);
-                std::future::ready(Ok(platform_set))
+                std::future::ready(Ok((platform_set, 100)))
             }
         };
         // Bounded: waiting on the held write lock (instead of `try_read`)
@@ -8544,7 +8603,10 @@ mod select_recorded_spends_tests {
         )
         .await
         .expect("the cache check must not wait for the store lock")
-        .map(|(_, anchor)| anchor.to_bytes())
+        .map(|(_, anchor, height)| {
+            assert_eq!(height, 100);
+            anchor.to_bytes()
+        })
         .expect("the fresh set covers the note");
 
         let _ = std::fs::remove_file(&path);
@@ -8555,7 +8617,7 @@ mod select_recorded_spends_tests {
             "contended lock takes the fetch path"
         );
         assert!(
-            cache.get(size).expect("entry kept").contains(&marker),
+            cache.get(size).expect("entry kept").0.contains(&marker),
             "a fetch without a pre-fetch tree size must not replace the cached set"
         );
     }
@@ -8589,6 +8651,7 @@ mod select_recorded_spends_tests {
             Arc::new([recorded_root].into_iter().collect()),
             FetchStamp::now(),
             size,
+            100,
         );
 
         let sdk = Arc::new(dash_sdk::Sdk::new_mock());

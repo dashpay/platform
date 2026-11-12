@@ -86,6 +86,8 @@ struct CachedAnchorSet {
     fetch_started: FetchStamp,
     /// Local commitment-tree leaf count read before the request was sent.
     tree_size: u64,
+    /// Proved height of this exact set, retained for pending-spend recovery.
+    height: u64,
 }
 
 /// When a recorded-anchor request was sent, on two clocks.
@@ -154,17 +156,18 @@ impl RecordedAnchorCache {
 
     /// The cached set, if one is younger than the TTL and was fetched while
     /// the local tree had exactly `tree_size` leaves.
-    pub(crate) fn get(&self, tree_size: u64) -> Option<Arc<HashSet<[u8; 32]>>> {
+    pub(crate) fn get(&self, tree_size: u64) -> Option<(Arc<HashSet<[u8; 32]>>, u64)> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state
             .entry
             .as_ref()
             .filter(|e| e.tree_size == tree_size && e.fetch_started.is_younger_than(self.ttl))
-            .map(|e| Arc::clone(&e.anchors))
+            .map(|e| (Arc::clone(&e.anchors), e.height))
     }
 
     /// Record a freshly fetched set. `fetch_started` is when its request was
-    /// sent and `tree_size` the local tree's leaf count read before that.
+    /// sent, `tree_size` the local tree's leaf count read before that, and
+    /// `height` the proved height of this set.
     /// Concurrent fetches resolve to the one sent last, and a fetch sent
     /// before the last [`invalidate`](Self::invalidate) is dropped.
     pub(crate) fn insert(
@@ -172,6 +175,7 @@ impl RecordedAnchorCache {
         anchors: Arc<HashSet<[u8; 32]>>,
         fetch_started: FetchStamp,
         tree_size: u64,
+        height: u64,
     ) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let sent = fetch_started.monotonic;
@@ -187,6 +191,7 @@ impl RecordedAnchorCache {
             anchors,
             fetch_started,
             tree_size,
+            height,
         });
     }
 
@@ -212,10 +217,10 @@ impl RecordedAnchorCache {
 /// credit shielded pool.
 pub(crate) async fn fetch_recorded_anchor_set(
     sdk: &dash_sdk::Sdk,
-) -> Result<HashSet<[u8; 32]>, dash_sdk::Error> {
-    let dash_sdk::query_types::ShieldedAnchors(anchors) =
-        dash_sdk::query_types::ShieldedAnchors::fetch_current(sdk).await?;
-    Ok(anchors.into_iter().collect())
+) -> Result<(HashSet<[u8; 32]>, u64), dash_sdk::Error> {
+    let (dash_sdk::query_types::ShieldedAnchors(anchors), metadata) =
+        dash_sdk::query_types::ShieldedAnchors::fetch_current_with_metadata(sdk).await?;
+    Ok((anchors.into_iter().collect(), metadata.height))
 }
 
 #[cfg(test)]
@@ -231,16 +236,17 @@ mod tests {
         let cache = RecordedAnchorCache::new();
         assert!(cache.get(10).is_none(), "an empty cache has nothing");
 
-        cache.insert(set(&[1, 2]), FetchStamp::now(), 10);
+        cache.insert(set(&[1, 2]), FetchStamp::now(), 10, 100);
 
         let hit = cache.get(10).expect("fresh set for the pinned tree size");
-        assert!(hit.contains(&[1; 32]) && hit.contains(&[2; 32]));
+        assert!(hit.0.contains(&[1; 32]) && hit.0.contains(&[2; 32]));
+        assert_eq!(hit.1, 100, "the set retains its own proved height");
     }
 
     #[test]
     fn should_miss_when_the_tree_grew_since_the_fetch() {
         let cache = RecordedAnchorCache::new();
-        cache.insert(set(&[1]), FetchStamp::now(), 10);
+        cache.insert(set(&[1]), FetchStamp::now(), 10, 100);
 
         assert!(
             cache.get(11).is_none(),
@@ -251,7 +257,7 @@ mod tests {
     #[test]
     fn should_expire_after_the_ttl() {
         let cache = RecordedAnchorCache::with_ttl(Duration::from_secs(30));
-        cache.insert(set(&[1]), FetchStamp::ago(Duration::from_secs(31)), 10);
+        cache.insert(set(&[1]), FetchStamp::ago(Duration::from_secs(31)), 10, 100);
 
         assert!(cache.get(10).is_none(), "never used past the TTL");
     }
@@ -266,7 +272,7 @@ mod tests {
             monotonic: Instant::now(),
             wall: SystemTime::now() - Duration::from_secs(3 * 60 * 60),
         };
-        cache.insert(set(&[1]), slept, 10);
+        cache.insert(set(&[1]), slept, 10, 100);
 
         assert!(cache.get(10).is_none(), "hours of wall time have passed");
     }
@@ -280,7 +286,7 @@ mod tests {
             monotonic: Instant::now(),
             wall: SystemTime::now() + Duration::from_secs(60 * 60),
         };
-        cache.insert(set(&[1]), future_wall, 10);
+        cache.insert(set(&[1]), future_wall, 10, 100);
 
         assert!(cache.get(10).is_none());
     }
@@ -288,7 +294,7 @@ mod tests {
     #[test]
     fn should_never_hit_with_a_zero_ttl() {
         let cache = RecordedAnchorCache::with_ttl(Duration::ZERO);
-        cache.insert(set(&[1]), FetchStamp::now(), 10);
+        cache.insert(set(&[1]), FetchStamp::now(), 10, 100);
 
         assert!(cache.get(10).is_none());
     }
@@ -299,19 +305,19 @@ mod tests {
         let now = FetchStamp::now();
         let earlier = FetchStamp::ago(Duration::from_secs(1));
 
-        cache.insert(set(&[2]), now, 10);
+        cache.insert(set(&[2]), now, 10, 100);
         // A slower request sent earlier completes afterwards: it must not
         // overwrite the newer snapshot.
-        cache.insert(set(&[1]), earlier, 10);
+        cache.insert(set(&[1]), earlier, 10, 100);
 
         let hit = cache.get(10).expect("newer set retained");
-        assert!(hit.contains(&[2; 32]) && !hit.contains(&[1; 32]));
+        assert!(hit.0.contains(&[2; 32]) && !hit.0.contains(&[1; 32]));
     }
 
     #[test]
     fn should_drop_the_set_on_invalidate() {
         let cache = RecordedAnchorCache::new();
-        cache.insert(set(&[1]), FetchStamp::now(), 10);
+        cache.insert(set(&[1]), FetchStamp::now(), 10, 100);
 
         cache.invalidate();
 
@@ -335,11 +341,11 @@ mod tests {
         let in_flight = FetchStamp::now();
 
         cache.invalidate();
-        cache.insert(set(&[1]), in_flight, 10);
+        cache.insert(set(&[1]), in_flight, 10, 100);
         assert!(cache.get(10).is_none(), "stale in-flight fetch dropped");
 
         std::thread::sleep(Duration::from_millis(1));
-        cache.insert(set(&[2]), FetchStamp::now(), 10);
+        cache.insert(set(&[2]), FetchStamp::now(), 10, 100);
         assert!(cache.get(10).is_some(), "a fetch sent afterwards is kept");
     }
 }
