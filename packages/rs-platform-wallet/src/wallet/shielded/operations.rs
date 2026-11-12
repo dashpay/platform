@@ -26,8 +26,9 @@ use super::activity_recorder::{
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_plan_holds, ensure_positive_amount,
-    ensure_withdrawal_amount_in_range, select_notes_for_denomination, select_notes_with_fee,
-    ShieldedFeeKind, ShieldedSpendAmount, ShieldedSpendKind, ShieldedSpendPlan, SPEND_MIN_ACTIONS,
+    ensure_spend_kind_active, ensure_withdrawal_amount_in_range, select_notes_for_denomination,
+    select_notes_with_fee, ShieldedFeeKind, ShieldedSpendAmount, ShieldedSpendKind,
+    ShieldedSpendPlan, SPEND_MIN_ACTIONS,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
@@ -3719,8 +3720,10 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     expected_plan: Option<&[u8; 32]>,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<ShieldedNote>, u64, u64, NoteReservation<S>), PlatformWalletError> {
-    // All amount-based spends reject zero before waiting on a concurrent sync's store lock.
+    // All amount-based spends reject zero before waiting on a concurrent sync's store lock, and
+    // a transition their protocol version does not activate.
     ensure_positive_amount(amount)?;
+    ensure_spend_kind_active(kind, platform_version)?;
     reserve_notes_matching(
         store,
         id,
@@ -9082,6 +9085,39 @@ mod spend_plan_tests {
         reservation.cancel().await;
     }
 
+    /// A spend reserves nothing for a transition its protocol version does not activate: an
+    /// identity top-up from the pool is refused at 13 and reserves its notes at 14.
+    #[tokio::test]
+    async fn should_refuse_a_spend_of_a_transition_not_active_at_its_version_and_reserve_nothing() {
+        let store = store_with(&[note(0, NOTE)]).await;
+        let reserve_at = |version| {
+            let store = store.clone();
+            async move {
+                reserve_unspent_notes(
+                    &store,
+                    ID,
+                    NOTE / 2,
+                    ShieldedSpendKind::IdentityTopUp,
+                    None,
+                    PlatformVersion::get(version).expect("a version"),
+                )
+                .await
+            }
+        };
+
+        let refused = reserve_at(13).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::ShieldedBuildError(_))),
+            "an identity top-up is not active at protocol 13, got {:?}",
+            refused.map(|(selected, ..)| selected.len())
+        );
+        assert_eq!(unspent(&store).await, 1, "nothing reserved at 13");
+
+        let (_, _, _, reservation) = reserve_at(14).await.expect("active at protocol 14");
+        assert_eq!(unspent(&store).await, 0, "the note is reserved at 14");
+        reservation.cancel().await;
+    }
+
     /// A note added or spent after the plan moves the selection: the spend is refused and
     /// no note is left reserved.
     #[tokio::test]
@@ -9363,9 +9399,36 @@ mod spend_plan_tests {
         assert_eq!(unspent(&store).await, 4, "nothing reserved");
     }
 
+    /// The protocol version a `kind` spend starts at in these fixtures: 13, or 14 for an
+    /// identity top-up, which activates there ([`ensure_spend_kind_active`]).
+    fn start_version(kind: ShieldedSpendKind) -> u32 {
+        match kind {
+            ShieldedSpendKind::IdentityTopUp => 14,
+            _ => 13,
+        }
+    }
+
+    /// The fee of a `kind` plan made at its start version moves with the network's newest
+    /// version, except for an identity top-up, whose fee is the same from 14 to the newest:
+    /// the spend is refused there on the version moving alone, with the plan's own fee.
+    fn assert_fee_moved_with_version(
+        kind: ShieldedSpendKind,
+        fee_at_newest: Credits,
+        planned_fee: Credits,
+        context: &str,
+    ) {
+        match kind {
+            ShieldedSpendKind::IdentityTopUp => assert_eq!(
+                fee_at_newest, planned_fee,
+                "the fee holds from 14 ({context})"
+            ),
+            _ => assert_ne!(fee_at_newest, planned_fee, "the fee moved ({context})"),
+        }
+    }
+
     /// A spend whose version check is the only thing in its way: one real note in a real
-    /// tree, a plan made at protocol version 13, and a mocked anchor fetch whose answer
-    /// moves the SDK to the newest version.
+    /// tree, a plan made at the kind's start version ([`start_version`]), and a mocked anchor
+    /// fetch whose answer moves the SDK to the newest version.
     struct VersionMovesDuringAnchorFetch {
         sdk: Arc<dash_sdk::Sdk>,
         store: Arc<RwLock<crate::wallet::shielded::file_store::FileBackedShieldedStore>>,
@@ -9384,7 +9447,8 @@ mod spend_plan_tests {
             Self::serving_with(kind, served, false).await
         }
 
-        /// [`Self::serving`] for an SDK whose operation version is pinned to v13
+        /// [`Self::serving`] for an SDK whose operation version is pinned to the kind's start
+        /// version
         /// (`SdkBuilder::with_version`): it still learns the verified network version from
         /// the answers, but never moves its own.
         async fn serving_pinned(kind: ShieldedSpendKind, served: u32) -> Self {
@@ -9404,16 +9468,20 @@ mod spend_plan_tests {
             store.save_note(ID, &owned).expect("a note");
             let store = Arc::new(RwLock::new(store));
 
-            let v13 = PlatformVersion::get(13).expect("v13");
+            let start = PlatformVersion::get(start_version(kind)).expect("the start version");
             let builder = dash_sdk::SdkBuilder::new_mock();
             let mut sdk = if pinned {
-                builder.with_version(v13)
+                builder.with_version(start)
             } else {
-                builder.with_initial_version(v13)
+                builder.with_initial_version(start)
             }
             .build()
             .expect("a mock SDK");
-            assert_eq!(sdk.protocol_version_number(), 13, "the spend starts at v13");
+            assert_eq!(
+                sdk.protocol_version_number(),
+                start.protocol_version,
+                "the spend starts at its start version"
+            );
             sdk.mock().set_response_protocol_version(served);
             sdk.mock()
                 .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![anchor])))
@@ -9579,7 +9647,7 @@ mod spend_plan_tests {
                 )
                 .await
                 .expect("plans at the new version");
-                assert_ne!(fresh.fee, case.plan.fee, "the fee moved ({kind:?})");
+                assert_fee_moved_with_version(kind, fresh.fee, case.plan.fee, &format!("{kind:?}"));
                 match (planned, &refused) {
                     (
                         true,
@@ -9594,7 +9662,7 @@ mod spend_plan_tests {
                     ),
                     (false, Err(PlatformWalletError::ShieldedBuildError(message))) => {
                         assert!(
-                            message.contains("13")
+                            message.contains(&start_version(kind).to_string())
                                 && message.contains(
                                     &PlatformVersion::latest().protocol_version.to_string()
                                 ),
@@ -9691,7 +9759,7 @@ mod spend_plan_tests {
                 },
                 ShieldedSpendKind::IdentityTopUp,
             ] {
-                let case = VersionMovesDuringAnchorFetch::serving(kind, 13).await;
+                let case = VersionMovesDuringAnchorFetch::serving(kind, start_version(kind)).await;
                 let prover = VersionMovingProver {
                     when,
                     sdk: case.sdk.clone(),
@@ -9742,9 +9810,11 @@ mod spend_plan_tests {
                 )
                 .await
                 .expect("plans at the new version");
-                assert_ne!(
-                    fresh.fee, case.plan.fee,
-                    "the fee moved ({when:?} {kind:?})"
+                assert_fee_moved_with_version(
+                    kind,
+                    fresh.fee,
+                    case.plan.fee,
+                    &format!("{when:?} {kind:?}"),
                 );
                 match &refused {
                     Err(PlatformWalletError::ShieldedPlanChanged {
@@ -9781,7 +9851,7 @@ mod spend_plan_tests {
         }
     }
 
-    /// What a pinned v13 SDK's spend leaves behind when it is refused as a changed plan priced
+    /// What a pinned SDK's spend leaves behind when it is refused as a changed plan priced
     /// at the newest network version: the note released, no activity row, no recovery record.
     async fn assert_pinned_spend_refused(
         case: &VersionMovesDuringAnchorFetch,
@@ -9793,14 +9863,14 @@ mod spend_plan_tests {
         assert_eq!(info.verified_version, Some(network), "{kind:?}");
         assert_eq!(
             case.sdk.protocol_version_number(),
-            13,
+            start_version(kind),
             "the pin held ({kind:?})"
         );
         let at_network = kind
             .fee_kind()
             .compute(SPEND_MIN_ACTIONS, PlatformVersion::latest())
             .expect("the fee at the network version");
-        assert_ne!(at_network, case.plan.fee, "the fee moved ({kind:?})");
+        assert_fee_moved_with_version(kind, at_network, case.plan.fee, &format!("{kind:?}"));
         match refused {
             Err(PlatformWalletError::ShieldedPlanChanged {
                 fresh_fee,
@@ -9841,14 +9911,15 @@ mod spend_plan_tests {
         ShieldedSpendKind::IdentityTopUp,
     ];
 
-    /// The SDK is pinned to v13 and has verified an answer of the newest network version: its
-    /// operation version stays v13, so only the verified network version shows the plan was
+    /// The SDK is pinned to the kind's start version and has verified an answer of the newest
+    /// network version: its operation version stays put, so only the verified network version shows the plan was
     /// priced at a version the network no longer applies. Every spend kind is refused before
     /// it builds.
     #[tokio::test]
     async fn should_refuse_a_pinned_sdk_spend_whose_verified_network_version_differs() {
         for kind in EVERY_SPEND_KIND {
-            let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, 13).await;
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
             // The plan was made before the SDK verified anything newer.
             case.sdk
                 .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
@@ -9867,7 +9938,8 @@ mod spend_plan_tests {
         let key: &'static crate::wallet::shielded::prover::CachedOrchardProver =
             Box::leak(Box::default());
         for kind in EVERY_SPEND_KIND {
-            let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, 13).await;
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
             let prover = VersionMovingProver {
                 when: LearnsVersion::VerifiedNetworkWhileProving,
                 sdk: case.sdk.clone(),

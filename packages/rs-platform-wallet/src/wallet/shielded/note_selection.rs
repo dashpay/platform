@@ -6,6 +6,7 @@
 
 use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
+use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
@@ -15,7 +16,12 @@ use dpp::shielded::{
     compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
     is_allowed_identity_create_denomination, max_shielded_actions_per_transition,
 };
-use dpp::version::PlatformVersion;
+use dpp::state_transition::StateTransitionType;
+use dpp::version::feature_initial_protocol_versions::{
+    IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+    SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+};
+use dpp::version::{PlatformVersion, ProtocolVersion};
 use dpp::withdrawal::preflight_shielded_withdrawal;
 use dpp::ProtocolError;
 use sha2::{Digest, Sha256};
@@ -326,6 +332,30 @@ impl ShieldedSpendKind {
         }
     }
 
+    /// The state transition the spend executes as, and the protocol version it activates at:
+    /// the activation DPP's `StateTransition::active_version_range` and Drive-ABCI's
+    /// `is_allowed` gate enforce.
+    fn activation(self) -> (StateTransitionType, ProtocolVersion) {
+        match self {
+            ShieldedSpendKind::Transfer => (
+                StateTransitionType::ShieldedTransfer,
+                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            ),
+            ShieldedSpendKind::Unshield => (
+                StateTransitionType::Unshield,
+                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            ),
+            ShieldedSpendKind::Withdrawal { .. } => (
+                StateTransitionType::ShieldedWithdrawal,
+                SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            ),
+            ShieldedSpendKind::IdentityTopUp => (
+                StateTransitionType::IdentityTopUpFromShieldedPool,
+                IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+            ),
+        }
+    }
+
     fn tag(self) -> u8 {
         match self {
             ShieldedSpendKind::Transfer => 0,
@@ -463,6 +493,8 @@ impl ShieldedSpendPlan {
 /// their fee ([`sweep_amount`]); the plan selects exactly those notes. A withdrawal sweep is
 /// capped at the largest withdrawal the protocol accepts.
 ///
+/// The spend's transition must be active at `platform_version` ([`ensure_spend_kind_active`]).
+///
 /// A withdrawal must pass DPP's shared preflight ([`ensure_withdrawal_amount_in_range`]): a rate
 /// that cannot execute is refused, and an amount outside the protocol bounds is
 /// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. The plan's `recipient_amount` is
@@ -473,6 +505,7 @@ pub fn plan_spend(
     amount: ShieldedSpendAmount,
     platform_version: &PlatformVersion,
 ) -> Result<ShieldedSpendPlan, PlatformWalletError> {
+    ensure_spend_kind_active(kind, platform_version)?;
     let fee_kind = kind.fee_kind();
     let amount = match amount {
         ShieldedSpendAmount::Exact(amount) => amount,
@@ -528,6 +561,27 @@ pub(crate) fn ensure_plan_holds(
             fresh_fee: fee,
             fresh_note_count: nullifiers.len(),
         });
+    }
+    Ok(())
+}
+
+/// Refuse a `kind` spend whose transition is not active at `platform_version`: consensus rejects
+/// it there, so no plan or spend may be made for it. Store-free, so callers can run it before
+/// reserving any note.
+pub(crate) fn ensure_spend_kind_active(
+    kind: ShieldedSpendKind,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let (transition, active_from) = kind.activation();
+    if platform_version.protocol_version < active_from {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            StateTransitionNotActiveError::new(
+                transition.to_string(),
+                platform_version.protocol_version,
+                active_from,
+            )
+            .to_string(),
+        ));
     }
     Ok(())
 }
@@ -1645,5 +1699,51 @@ mod tests {
             v13,
         )
         .expect("protocol 13 has no cap");
+    }
+
+    /// `IdentityTopUpFromShieldedPool` activates at protocol version 14: a plan made at 13 could
+    /// not execute on the version it quotes, so it is refused there and accepted from 14.
+    #[test]
+    fn should_refuse_an_identity_top_up_plan_before_the_version_that_activates_it() {
+        let notes = [test_note(NOTE, 0)];
+        let plan_at = |version| {
+            plan_spend(
+                &notes,
+                ShieldedSpendKind::IdentityTopUp,
+                ShieldedSpendAmount::Exact(NOTE / 2),
+                PlatformVersion::get(version).expect("protocol version"),
+            )
+        };
+
+        assert!(
+            matches!(plan_at(13), Err(PlatformWalletError::ShieldedBuildError(_))),
+            "an identity top-up is not active at protocol 13"
+        );
+        plan_at(14).expect("an identity top-up is active at protocol 14");
+    }
+
+    /// The other shielded kinds activate with the shielded pool, at protocol version 12.
+    #[test]
+    fn should_refuse_a_shielded_spend_plan_only_before_the_shielded_pool_activates() {
+        let notes = [test_note(NOTE, 0)];
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            withdrawal(1),
+        ] {
+            let plan_at = |version| {
+                plan_spend(
+                    &notes,
+                    kind,
+                    ShieldedSpendAmount::Exact(NOTE / 2),
+                    PlatformVersion::get(version).expect("protocol version"),
+                )
+            };
+            assert!(
+                matches!(plan_at(11), Err(PlatformWalletError::ShieldedBuildError(_))),
+                "{kind:?} is not active at protocol 11"
+            );
+            plan_at(12).unwrap_or_else(|e| panic!("{kind:?} is active at protocol 12: {e}"));
+        }
     }
 }
