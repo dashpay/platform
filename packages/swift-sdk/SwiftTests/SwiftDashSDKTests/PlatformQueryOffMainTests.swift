@@ -46,6 +46,11 @@ final class PlatformQueryOffMainTests: XCTestCase {
     XCTAssertTrue(released, "the parked query was not released by the main actor")
   }
 
+  private struct MainHoldError: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+  }
+
   /// `identityGet` and `dpnsGetUsername` make their FFI call without the
   /// main actor: the main thread is held for the whole of both calls, and
   /// each still returns (with the mock's missing-expectation error) before it
@@ -63,10 +68,15 @@ final class PlatformQueryOffMainTests: XCTestCase {
         holdTimedOut.withLock { $0 = true }
       }
     }
-    await withCheckedContinuation { continuation in
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       DispatchQueue.global().async {
-        mainHeld.wait()
-        continuation.resume()
+        if mainHeld.wait(timeout: .now() + 5) == .timedOut {
+          releaseMain.signal()
+          continuation.resume(
+            throwing: MainHoldError(message: "the main queue never ran the hold"))
+        } else {
+          continuation.resume()
+        }
       }
     }
 
