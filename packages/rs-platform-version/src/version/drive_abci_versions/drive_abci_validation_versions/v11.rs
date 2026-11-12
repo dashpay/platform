@@ -51,10 +51,8 @@ use super::{
 ///   document would take the unique index entry the contest awards. Only such a type pays the
 ///   lookup, so a DPNS domain create costs what it did.
 /// - `document_reference_validation` 1: v0, but the `refersTo` lookup of a reference declaring
-///   `consume` reads the commitment it finds with its stored element's storage flags
-///   (`query_documents_with_flags`) and keeps that read in the `ConsumedDocument`, so the create
-///   conversion 1 deletes the commitment from it without reading it again. Any other lookup reads
-///   as v0's does.
+///   `consume` keeps the commitment it finds in the `ConsumedDocument`, so the create conversion 1
+///   deletes the commitment from it without reading it again. Every lookup reads as v0's does.
 /// - the contract user moderation `transform_into_action`, 1 rather than 0: a moderator's
 ///   document field change reads the stored document with its stored element's storage flags
 ///   (`query_documents_with_flags`), and the action carries the owner they name, so that the
@@ -71,6 +69,11 @@ use super::{
 ///   carries a budget or an expiry is refused, unpaid, on a `DataContractCreate` and on a
 ///   `DataContractUpdate` (`PublicKeyWithLimitsCannotSignDataContractTransitionError`, 20018): a
 ///   data contract commits its owner beyond the transition that sets it up or changes it.
+///
+/// - document delete `structure_validation` 2 admits a deletable keep-history type;
+///   `document_erase_transition_structure_validation` and
+///   `document_erase_transition_state_validation` are `Some(0)`: an erase must name an
+///   erasable type and a deleted document, with its owner's authorization to begin.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =

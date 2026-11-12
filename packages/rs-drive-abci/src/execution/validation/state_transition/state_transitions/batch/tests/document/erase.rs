@@ -533,7 +533,7 @@ async fn should_reject_a_second_delete_of_the_same_document() {
     );
 }
 
-/// The nonce-derived id cannot be reused while retained revisions survive.
+/// Reusing the deleted id fails id derivation before lifecycle state is read.
 #[tokio::test]
 async fn should_reject_a_create_over_a_deleted_documents_id() {
     let mut fixture = Fixture::new("note").await;
@@ -975,9 +975,8 @@ async fn should_persist_the_nonce_bump_on_a_refused_erase() {
     );
 }
 
-/// A delete and a create of the same id in one block: the create sees the
-/// delete's reservation through the block transaction and is refused, so an id
-/// cannot be recycled while its revisions are retained.
+/// Reusing an id within one block fails id derivation before lifecycle state is read,
+/// even when the document has just been deleted.
 #[tokio::test]
 async fn should_reject_a_create_that_follows_a_delete_of_the_same_id_in_one_block() {
     let mut fixture = Fixture::new("note").await;

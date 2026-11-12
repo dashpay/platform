@@ -6,7 +6,8 @@ pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
-    /// Maximum retained revisions removed by one erase; absent before lifecycle activation.
+    /// Maximum retained revisions removed by one erase, read by
+    /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
     pub max_document_revisions_erased_per_transition: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,

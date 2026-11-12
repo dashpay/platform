@@ -12,7 +12,10 @@ use crate::version::drive_versions::drive_verify_method_versions::{
 /// `single_document.verify_proof_keep_serialized` is 1: a document that may be contested is
 /// verified, and so is a document outside a contest at a block time in a type that keeps
 /// history, including time-and-revision keys in the composite layout, where generation 0
-/// refused every timed query. Everything else matches
+/// refused every timed query. Both timed paths authenticate the lifecycle record and apply
+/// deletion and erasure visibility. `single_document.verify_proof` is 1 too: a returned
+/// document's id and required revision must match its authenticated path and key.
+/// Everything else matches
 /// `DRIVE_VERIFY_METHOD_VERSIONS_V3`, except the retained-history and cursor verifiers
 /// selecting generation 1 for the per-type revision layout.
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V4: DriveVerifyMethodVersions = DriveVerifyMethodVersions {

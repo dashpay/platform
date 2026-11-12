@@ -1635,8 +1635,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
     })
 }
 
-/// Pre-load locally-stored data contracts into the SDK's trusted context
-/// provider so proof verification resolves them without a network fetch —
+/// Pre-load locally-stored data contracts into the SDK's context provider so
+/// proof verification resolves them without a network fetch —
 /// the JNI bridge over `dash_sdk_add_known_contracts` (Swift
 /// `SDK.loadKnownContracts`, called at SDK init from
 /// `AppState.loadKnownContractsIntoSDK`).
@@ -1647,12 +1647,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
 ///   expects — i.e. `DataContractEntity.binarySerialization`, NOT the JSON),
 ///   in the SAME order as `contract_ids`.
 ///
-/// Trusted-provider config keyed off the SDK handle (like
+/// Provider config keyed off the SDK handle (like
 /// `dataContractFetchWithSerialization`), not a per-query fetch. The FFI
 /// splits the ids CSV itself and rejects an id/contract count mismatch, so
 /// this must pass exactly one `byte[]` per id. Returns nothing on success
-/// (throws on error): a missing trusted provider, a malformed contract, or a
-/// count mismatch all surface as a thrown `DashSDKException`.
+/// (throws on error): a malformed contract or a count mismatch surfaces as a
+/// thrown `DashSDKException`. A provider that keeps no contracts ignores them.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_addKnownContracts(
     mut env: JNIEnv,

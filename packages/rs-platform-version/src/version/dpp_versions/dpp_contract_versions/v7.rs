@@ -5,6 +5,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 };
 
 /// Introduced in protocol version 15. Differs from v6 in:
+/// - `try_from_schema`, 4 rather than 3: parses `canBeErased` and admits deletable
+///   keep-history types, while preserving generation 3's non-lifecycle parsing;
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
@@ -16,6 +18,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `check_document_type_schema`, 1 rather than 0: a schema is checked at registration
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;
+/// - `validate_max_depth`, 2 rather than 1: the depth and cycle check resolves `$ref`
+///   pointers by RFC 6901, as the native validator does;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
 ///   and the native validator;
 /// - `parse_private_document`, `Some(0)` rather than `None`: the `private` keyword declares a
@@ -36,8 +40,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
     methods: DataContractMethodVersions {
         // changed: the document type's native validator checks the schema in place of the
-        // `jsonschema` crate, reaching the same verdicts but for one rule of its own: in a
-        // `uniqueItems` list, `0.0` and `-0.0` are one value however long the list
+        // `jsonschema` crate: uniqueItems treats signed zeros as one value, and a
+        // format:regex value is checked for syntax rather than compilation
         validate_document: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },
@@ -59,6 +63,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             // changed: also reads a reference whose target the referring document names
             apply_property_reference: Some(1),
+            // changed: the depth and cycle check reads a `$ref` pointer as the validator does
+            validate_max_depth: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

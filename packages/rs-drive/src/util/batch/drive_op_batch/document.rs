@@ -12,6 +12,7 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_event::DocumentEvent;
@@ -240,9 +241,8 @@ fn force_delete_consumed_document_operations(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     match consumed_document.read {
-        Some(read) => drive.force_delete_read_document_for_contract_operations(
-            read.document,
-            read.storage_flags,
+        Some(document) => drive.force_delete_read_document_for_contract_operations(
+            document,
             contract,
             document_type,
             previous_batch_operations,
@@ -847,6 +847,11 @@ impl DocumentOperationType<'_> {
                 )?;
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
 
                 let mut operations = drive
                     .delete_document_for_contract_operations_without_ttl_drain(
@@ -861,7 +866,7 @@ impl DocumentOperationType<'_> {
                         platform_version,
                     )?;
                 // Protocols through 14 return only the delete's operations.
-                // Lifecycle deletes also retain the contract fetch they bill.
+                // Generation 1 deletes retain the contract fetch they bill.
                 if platform_version
                     .drive
                     .methods
