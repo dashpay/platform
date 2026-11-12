@@ -476,14 +476,21 @@ fn should_refuse_lifecycle_metadata_that_disagrees_with_retained_history() {
             ),
             fixture.entry_row(3),
         ];
+        let error = fixture
+            .decode(
+                &fixture.query(DocumentHistoryFilter::StartAtTime(0), Some(10)),
+                rows,
+            )
+            .expect_err(reason);
+        let expected = if reason == "entry after delete" || reason == "entry revision after delete"
+        {
+            "retained revision is newer than its deletion record"
+        } else {
+            "lifecycle record disagrees with its retained history"
+        };
         assert!(
-            fixture
-                .decode(
-                    &fixture.query(DocumentHistoryFilter::StartAtTime(0), Some(10)),
-                    rows
-                )
-                .is_err(),
-            "{reason}"
+            matches!(error, Error::Drive(DriveError::CorruptedDocumentPath(message)) if message == expected),
+            "{reason}: {error:?}"
         );
     }
 }
