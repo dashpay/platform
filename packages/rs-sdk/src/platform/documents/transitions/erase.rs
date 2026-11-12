@@ -309,8 +309,8 @@ impl Sdk {
     ///
     /// Deliberately named apart from the erase and delete calls: the answer
     /// describes committed state at the moment of the read, not the outcome of
-    /// any particular transition. Another erase, or a re-create of the same id,
-    /// may land between a transition and this read. `None` means the queried
+    /// any particular transition. A later erase may commit between a transition
+    /// and this read. `None` means the queried
     /// storage/proof generation does not authenticate lifecycle metadata; it
     /// must not be interpreted as an authenticated absent state.
     pub async fn document_current_lifecycle(
