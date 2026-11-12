@@ -877,6 +877,16 @@ struct DeleteDocumentView: View {
 /// the local row only once the lifecycle reports the document absent.
 struct EraseDocumentView: View {
     let document: PersistentDocument
+    private let documentIdText: String
+    private let documentTypeName: String
+    private let contractIdBase58: String
+
+    init(document: PersistentDocument) {
+        self.document = document
+        self.documentIdText = document.documentId
+        self.documentTypeName = document.documentType
+        self.contractIdBase58 = document.contractIdBase58
+    }
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -901,8 +911,8 @@ struct EraseDocumentView: View {
         NavigationStack {
             Form {
                 Section {
-                    DetailRow(label: "Document ID", value: document.documentId)
-                    DetailRow(label: "Type", value: document.documentType)
+                    DetailRow(label: "Document ID", value: documentIdText)
+                    DetailRow(label: "Type", value: documentTypeName)
                     if let lifecycle {
                         DetailRow(label: "Lifecycle", value: lifecycle.state.rawValue)
                         DetailRow(label: "Revisions retained", value: String(lifecycle.remainingRevisions))
