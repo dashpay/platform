@@ -61,7 +61,8 @@ impl DataContract {
     /// versions check documents with compiles what a `$ref` names once for each `$ref`. That
     /// validator resolves a `$ref` through the `$id`s of a schema, so there a contract holding
     /// a pattern is refused with a `$ref` that is not `#/$defs/` and a definition's name, or
-    /// an `$id` that is not a plain name.
+    /// an `$id` that is not a plain name. It also compiles each key of a `patternProperties`,
+    /// wherever the document meta-schema leaves a schema unchecked, so that is refused there.
     ///
     /// A schema declaring `format: regex` is refused at every protocol version: each value of
     /// such a property is compiled as a pattern when a document is checked, under no bound a
@@ -657,5 +658,56 @@ mod tests {
             validate_for_mempool(&into_a_definition, Some(&schema_defs), before_the_rule())
                 .is_valid()
         );
+    }
+
+    #[test]
+    fn should_keep_pattern_properties_out_of_the_mempool_before_the_rule() {
+        // The document meta-schema leaves a `contains` unchecked, and the JSON Schema
+        // validator compiles each key of a `patternProperties` it meets there
+        let keys = Value::Map(vec![(Value::Text(LARGE.to_string()), platform_value!({}))]);
+        let document_schemas = schemas(platform_value!({
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "byteArray": true,
+                    "maxItems": 2,
+                    "contains": { "patternProperties": keys },
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+        }));
+
+        let message = refusal_message(validate_for_mempool(
+            &document_schemas,
+            None,
+            before_the_rule(),
+        ));
+        assert!(message.contains("`patternProperties`"), "{message}");
+        // A block of that protocol version accepts what it accepted
+        assert!(validate(&document_schemas, None, before_the_rule()).is_valid());
+
+        // The validation schema of protocol version 15 refuses the keyword itself, and a
+        // property may be named after it
+        let property_of_that_name = schemas(platform_value!({
+            "type": "object",
+            "properties": {
+                "patternProperties": {
+                    "type": "object",
+                    "properties": {
+                        "label": { "type": "string", "maxLength": 63, "position": 0 },
+                    },
+                    "additionalProperties": false,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+        }));
+        for document_schemas in [&document_schemas, &property_of_that_name] {
+            let platform_version = PlatformVersion::latest();
+            assert!(validate_for_mempool(document_schemas, None, platform_version).is_valid());
+            assert!(validate(document_schemas, None, platform_version).is_valid());
+        }
     }
 }

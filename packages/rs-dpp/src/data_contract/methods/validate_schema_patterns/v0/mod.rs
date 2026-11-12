@@ -16,6 +16,7 @@ const PATTERN: &str = "pattern";
 const REGEX_PATTERN: &str = "regexPattern";
 const REFERENCE: &str = "$ref";
 const IDENTIFIER: &str = "$id";
+const PATTERN_PROPERTIES: &str = "patternProperties";
 const FORMAT: &str = "format";
 const REGEX_FORMAT: &str = "regex";
 
@@ -60,7 +61,8 @@ pub(super) enum DefinitionsCount {
     /// the JSON Schema validator compiles what a `$ref` names when a document first reaches
     /// that `$ref`, and keeps it there. It resolves a `$ref` through the `$id`s of a schema
     /// before its pointer, so a contract holding a pattern is refused with a `$ref` or an
-    /// `$id` this count cannot follow.
+    /// `$id` this count cannot follow. It also compiles each key of a `patternProperties`,
+    /// which the validation schema that replaces it refuses, so that is refused too.
     OncePerReference,
 }
 
@@ -82,6 +84,7 @@ struct Found<'a> {
     /// Holds a `$ref` that is no plain pointer into `$defs`, or an `$id` that is no plain
     /// name: the JSON Schema validator may resolve a `$ref` elsewhere than its pointer names.
     moves_a_reference: bool,
+    holds_pattern_properties: bool,
     declares_regex_format: bool,
 }
 
@@ -95,6 +98,11 @@ impl<'a> Found<'a> {
             match value {
                 Value::Map(entries) => {
                     for (key, inner) in entries {
+                        if key.as_text() == Some(PATTERN_PROPERTIES)
+                            && matches!(inner, Value::Map(keys) if !keys.is_empty())
+                        {
+                            found.holds_pattern_properties = true;
+                        }
                         if let (Some(key), Value::Text(text)) = (key.as_text(), inner) {
                             match key {
                                 PATTERN => found.patterns.push((Compiler::DocumentValidator, text)),
@@ -259,6 +267,14 @@ impl DataContract {
                 .iter()
                 .chain(definitions.definitions.values())
         };
+        if definitions_count == DefinitionsCount::OncePerReference
+            && schemas().any(|found| found.holds_pattern_properties)
+        {
+            return refusal(format!(
+                "a schema holding `{PATTERN_PROPERTIES}` is not accepted: the JSON Schema \
+                 validator compiles each of its keys as a pattern, which is not counted"
+            ));
+        }
         if definitions_count == DefinitionsCount::OncePerReference
             && count > 0
             && schemas().any(|found| found.moves_a_reference)
