@@ -266,6 +266,15 @@ What this does and does not give:
   document is deleted by a seated team alone, so within the interim a
   description past its window waits for the first election, and a rule taking
   several approvals takes that many members of the team.
+- All of this is what the host declares, checked when the proposal is written.
+  The team that is seated is the masternodes' to elect and changes afterwards,
+  and the reference does not read it. Two things about a seated team can keep
+  a description in place:
+  - A seated team does not moderate its own leader or active members. A
+    description one of them wrote, or whose author takes a seat later, cannot
+    be removed while the author holds the seat.
+  - A seated team acts only for a reason its charter lists, and a charter may
+    list none. Such a team removes nothing until another is elected.
 - The description's own edit rules are its document type's. A type that lets
   its author replace a document lets the author change the description after
   the two hours, and after choices were entered. The proposal's history keeps
