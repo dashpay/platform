@@ -7,7 +7,7 @@
 //! is also why only the secp/BLS families are supported here — Ed25519
 //! platform-node keys derive hardened and would need the seed.
 
-use dashcore::hashes::{hash160, Hash};
+use dashcore::hashes::hash160;
 
 /// Upper bound on one candidates query. Far above any realistic provider
 /// pool, and small enough that `count` can never drive an allocation

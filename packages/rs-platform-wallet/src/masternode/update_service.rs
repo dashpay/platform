@@ -35,15 +35,16 @@ use dashcore::sml::masternode_list_entry::net_info::{
 use dashcore::sml::masternode_list_entry::{
     EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
 };
-use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dashcore::{Address as DashAddress, Network, PlatformNodeId, Transaction, Txid};
 use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
-use std::future::Future;
+use std::future::{Future, Ready};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use zeroize::Zeroizing;
 
+use super::list::MasternodeListSummary;
 use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -325,9 +326,10 @@ pub struct UpdateServiceValues {
 /// Every other preflight is unchanged: the entry must still exist, the
 /// operator secret must match ITS operator key (after a rotation confirms,
 /// that is the new wallet key), and the payout rule reads the ProRegTx's
-/// `operatorReward`. The v3 extended-net-info guard also still applies —
-/// naturally passing post-reset, since a reset entry no longer advertises
-/// an endpoint map.
+/// `operatorReward`. The payload version follows Dash Core v24's rules
+/// (see [`prepare_update_service_placeholder_from_values`]); an entry whose
+/// version-3 address map still lists addresses is refused, which a reset
+/// entry never is.
 pub async fn execute_masternode_update_service_with_values<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
@@ -362,22 +364,20 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-    let summaries = spv
-        .masternode_list_summaries()
+    let entries = spv
+        .masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
-    let entry = summaries
-        .iter()
-        .find(|entry| entry.pro_tx_hash == pro_tx_hash)
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidParameter(format!(
-                "masternode {} is not in the masternode list",
-                display_hex(&pro_tx_hash)
-            ))
-        })?;
+    let (entry, list_shows_v24) = update_service_target(&entries, &pro_tx_hash)?;
 
-    verify_operator_secret(&entry.operator_public_key, &operator_secret)?;
-    validate_update_service_values(wallet.network(), entry, &values, &summaries)?;
+    verify_operator_secret(entry.operator_public_key.as_ref(), &operator_secret)?;
+
+    let summaries: Vec<MasternodeListSummary> = entries
+        .iter()
+        .map(MasternodeListSummary::from_entry)
+        .collect();
+    let summary = MasternodeListSummary::from_entry(entry);
+    validate_update_service_values(wallet.network(), &summary, &values, &summaries)?;
 
     let operator_reward = fetch_operator_reward(wallet, &pro_tx_hash).await?;
     let script_payout = resolve_operator_payout_script(
@@ -386,8 +386,21 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
         wallet.network(),
     )?;
 
-    let placeholder =
-        prepare_update_service_placeholder_from_values(entry, &values, script_payout)?;
+    let placeholder = update_service_placeholder(
+        list_shows_v24,
+        |v24_active| {
+            prepare_update_service_placeholder_from_values(
+                entry,
+                v24_active,
+                &values,
+                script_payout.clone(),
+            )
+        },
+        // As in `prepare_masternode_update_service`: the pinned dash-spv
+        // exposes no coinbase, so the list alone tells whether V24 is active.
+        None::<Ready<_>>,
+    )
+    .await?;
 
     build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
 }
@@ -396,74 +409,127 @@ pub async fn prepare_masternode_update_service_with_values<S: TransactionSigner 
 /// evonode/regular gating as the entry-copy path: `mn_type` set explicitly
 /// so the serializer cannot silently drop the platform triplet, all three
 /// platform values required for an evonode and forbidden for a regular
-/// masternode — and the same v3 extended-net-info refusal, which a
-/// post-reset entry passes naturally.
+/// masternode.
+///
+/// The version follows the same Dash Core v24 rules as
+/// [`prepare_update_service_placeholder`], with the values standing in for
+/// the entry's reset service fields:
+/// - an entry whose version-3 address map still lists addresses is refused:
+///   the values name one address, so they would replace the whole map. A
+///   registrar update never leaves such an entry behind (it empties the
+///   map), so this is not a reactivation;
+/// - a version-3 entry with an emptied map is re-asserted at version 3,
+///   with the map built from the values;
+/// - a legacy evonode is written at version 3 once V24 is active
+///   (`v24_active`), as Core then refuses an evonode update below it;
+/// - any other legacy entry stays at version 2.
 pub(crate) fn prepare_update_service_placeholder_from_values(
-    entry: &MasternodeListSummary,
+    entry: &MasternodeListEntry,
+    v24_active: bool,
     values: &UpdateServiceValues,
     script_payout: ScriptBuf,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
-    if entry.has_extended_net_info {
-        return Err(PlatformWalletError::InvalidParameter(
-            "this masternode advertises v3 extended network info; a version-2 update-service \
-             payload would replace its whole endpoint map with a single address, so it \
-             cannot be re-asserted from this wallet yet"
-                .to_string(),
-        ));
-    }
+    let entry_is_v3 = match &entry.service_address {
+        MasternodeNetInfo::Extended(net_info) if !net_info.purposes.is_empty() => {
+            return Err(PlatformWalletError::InvalidParameter(
+                "this masternode still advertises a version-3 address map; the supplied values \
+                 name a single address and would replace the whole map, so use the plain \
+                 update-service (unban) path, which re-asserts the map as it is"
+                    .to_string(),
+            ));
+        }
+        MasternodeNetInfo::Extended(_) => true,
+        MasternodeNetInfo::Legacy(_) => false,
+    };
     let service: SocketAddr = values.service_address.parse().map_err(|e| {
         PlatformWalletError::InvalidParameter(format!(
             "service address is not a valid ip:port: {e}"
         ))
     })?;
-    let (ip_address, port) = service_payload_fields(service);
 
-    let (mn_type, platform_node_id, platform_p2p_port, platform_http_port) = if entry.is_evonode {
-        let (Some(node_id), Some(p2p), Some(http)) = (
-            values.platform_node_id,
-            values.platform_p2p_port,
-            values.platform_http_port,
-        ) else {
-            return Err(PlatformWalletError::InvalidParameter(
-                "an evonode payload requires the platform node id, P2P port and HTTP port"
-                    .to_string(),
-            ));
-        };
-        (
-            Some(ProviderMasternodeType::HighPerformance as u16),
-            Some(PlatformNodeId::from_byte_array(node_id)),
-            Some(p2p),
-            Some(http),
-        )
-    } else {
-        if values.platform_node_id.is_some()
-            || values.platform_p2p_port.is_some()
-            || values.platform_http_port.is_some()
-        {
-            return Err(PlatformWalletError::InvalidParameter(
-                "platform values were given, but this masternode is not an evonode".to_string(),
-            ));
+    let (mn_type, platform) = match &entry.mn_type {
+        EntryMasternodeType::HighPerformance { .. } => {
+            let (Some(node_id), Some(p2p), Some(http)) = (
+                values.platform_node_id,
+                values.platform_p2p_port,
+                values.platform_http_port,
+            ) else {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "an evonode payload requires the platform node id, P2P port and HTTP port"
+                        .to_string(),
+                ));
+            };
+            (
+                ProviderMasternodeType::HighPerformance,
+                Some((PlatformNodeId::from_byte_array(node_id), p2p, http)),
+            )
         }
-        (
-            Some(ProviderMasternodeType::Regular as u16),
-            None,
-            None,
-            None,
-        )
+        EntryMasternodeType::Regular => {
+            if values.platform_node_id.is_some()
+                || values.platform_p2p_port.is_some()
+                || values.platform_http_port.is_some()
+            {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "platform values were given, but this masternode is not an evonode".to_string(),
+                ));
+            }
+            (ProviderMasternodeType::Regular, None)
+        }
     };
 
-    Ok(ProviderUpdateServicePayload::new(
-        mn_type,
-        Txid::from_byte_array(entry.pro_tx_hash),
-        ip_address,
-        port,
+    // The version and the address form are chosen together, as in
+    // `prepare_update_service_placeholder`.
+    let (version, service_address, scalar_platform_ports) = match platform {
+        Some((_, p2p, http)) if entry_is_v3 || v24_active => {
+            let net_info = legacy_evonode_net_info(service, p2p, http);
+            require_core_accepts_converted_net_info(&net_info)?;
+            (
+                ProTxVersion::ExtAddr,
+                MasternodeNetInfo::Extended(net_info),
+                None,
+            )
+        }
+        Some((_, p2p, http)) => (
+            ProTxVersion::BasicBLS,
+            MasternodeNetInfo::Legacy(service),
+            Some((p2p, http)),
+        ),
+        None if entry_is_v3 => {
+            let net_info = ExtNetInfo {
+                // The only ExtNetInfo version Core defines.
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![service_entry(service.ip(), service.port())],
+                )],
+            };
+            require_core_accepts_converted_net_info(&net_info)?;
+            (
+                ProTxVersion::ExtAddr,
+                MasternodeNetInfo::Extended(net_info),
+                None,
+            )
+        }
+        None => (
+            ProTxVersion::BasicBLS,
+            MasternodeNetInfo::Legacy(service),
+            None,
+        ),
+    };
+    let (scalar_p2p_port, scalar_http_port) = scalar_platform_ports.unzip();
+
+    Ok(ProviderUpdateServicePayload {
+        version: version as u16,
+        mn_type: Some(mn_type as u16),
+        pro_tx_hash: Txid::from_byte_array(entry.pro_reg_tx_hash.to_byte_array()),
+        service_address,
         script_payout,
-        InputsHash::all_zeros(),
-        platform_node_id,
-        platform_p2p_port,
-        platform_http_port,
-        BLSSignature::from([0u8; 96]),
-    ))
+        inputs_hash: InputsHash::all_zeros(),
+        platform_node_id: platform.map(|(node_id, _, _)| node_id),
+        platform_p2p_port: scalar_p2p_port,
+        platform_http_port: scalar_http_port,
+        payload_sig: BLSSignature::from([0u8; 96]),
+    })
 }
 
 /// Mainnet consensus constants from Core's chainparams. The port rules
@@ -497,6 +563,12 @@ fn ipv4_is_routable(ip: Ipv4Addr) -> bool {
 /// `CheckProUpServTx`'s uniqueness pass. The entry-copy (unban) path needs
 /// none of this: it re-asserts the entry's own live values, which the
 /// network already accepted.
+///
+/// The version-2 rules are applied whichever version the payload is built
+/// at. They are at least as strict as the version-3 address map's, apart
+/// from the ports Core refuses only there, which
+/// [`prepare_update_service_placeholder_from_values`] checks on the map it
+/// builds. So values accepted before V24 stay accepted after it.
 ///
 /// Presence gating of the platform triplet (all three for an evonode, none
 /// for a regular masternode) stays with the placeholder builder; this
@@ -796,9 +868,6 @@ pub(crate) fn verify_operator_secret(
     }
     Ok(())
 }
-
-/// The Platform P2P port Core requires of a mainnet evonode before version 3.
-const MAINNET_PLATFORM_P2P_PORT: u16 = 26656;
 
 /// The placeholder payload for the builder: every field final except the two
 /// selection-dependent ones (`inputs_hash`, `payload_sig`), which are zeroed
@@ -1181,7 +1250,7 @@ pub(crate) fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::list::test_support::{evonode_entry, masternode_entry};
+    use super::super::list::test_support::{evonode, evonode_entry, masternode, masternode_entry};
     use super::super::list::MasternodeListSummary;
     use super::super::record::core_v24_vectors::{decode, EVO_PRO_UP_SERV_TX};
     use super::*;
@@ -2310,32 +2379,64 @@ mod tests {
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
-    #[test]
-    fn placeholder_refuses_an_entry_without_a_plain_service_address() {
-        let mut entry = operator_entry(0x33, false);
-        entry.service_address = None;
-        let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect_err("no service address to re-assert");
-        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    /// A legacy entry as a registrar update leaves it: Core resets the
+    /// address to `0.0.0.0:0`.
+    fn reset_legacy_entry(seed: u8, evo: bool) -> MasternodeListEntry {
+        MasternodeListEntry {
+            service_address: MasternodeNetInfo::Legacy(
+                "0.0.0.0:0".parse().expect("socket address"),
+            ),
+            ..operator_entry(seed, evo)
+        }
     }
 
-    /// Stage two of a rotation supplies values explicitly — the entry's own
-    /// service state was reset by the registrar update, so nothing is copied.
-    #[test]
-    fn values_placeholder_builds_from_supplied_values_not_the_entry() {
-        let mut entry = operator_entry(0x66, true);
-        // Post-registrar-reset shape: no service address on the entry.
-        entry.service_address = None;
-        let values = UpdateServiceValues {
-            service_address: "203.0.113.66:9999".to_string(),
+    /// A version-3 entry as a registrar update leaves it: an address map
+    /// with no addresses.
+    fn reset_v3_entry(seed: u8, evo: bool) -> MasternodeListEntry {
+        MasternodeListEntry {
+            version: 3,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![],
+            }),
+            ..operator_entry(seed, evo)
+        }
+    }
+
+    fn evonode_values() -> UpdateServiceValues {
+        UpdateServiceValues {
+            service_address: "34.214.48.66:19999".to_string(),
             platform_node_id: Some([0x77; 20]),
             platform_p2p_port: Some(26656),
-            platform_http_port: Some(443),
-        };
-        let payload =
-            prepare_update_service_placeholder_from_values(&entry, &values, ScriptBuf::new())
-                .expect("values placeholder");
-        assert_eq!(payload.port, 9999);
+            platform_http_port: Some(1443),
+        }
+    }
+
+    fn service(ip: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: ip.to_vec(),
+            port,
+        }
+    }
+
+    /// Stage two of a rotation supplies values explicitly: the entry's own
+    /// service state was reset by the registrar update, so nothing is copied.
+    #[test]
+    fn should_build_a_version_2_evonode_payload_from_values_before_v24() {
+        let entry = reset_legacy_entry(0x66, true);
+        let payload = prepare_update_service_placeholder_from_values(
+            &entry,
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect("values placeholder");
+        assert_eq!(payload.version, ProTxVersion::BasicBLS as u16);
+        assert_eq!(
+            payload.service_address,
+            MasternodeNetInfo::Legacy("34.214.48.66:19999".parse().expect("socket address"))
+        );
         assert_eq!(
             payload.mn_type,
             Some(ProviderMasternodeType::HighPerformance as u16)
@@ -2345,44 +2446,154 @@ mod tests {
             Some(PlatformNodeId::from_byte_array([0x77; 20]))
         );
         assert_eq!(payload.platform_p2p_port, Some(26656));
-        assert_eq!(payload.platform_http_port, Some(443));
+        assert_eq!(payload.platform_http_port, Some(1443));
+    }
 
+    /// Once V24 is active Core refuses an evonode update below version 3,
+    /// for a reset legacy entry and a reset version-3 entry alike.
+    #[test]
+    fn should_build_a_version_3_evonode_payload_from_values_after_v24() {
+        let expected = MasternodeNetInfo::Extended(ExtNetInfo {
+            version: 1,
+            purposes: vec![
+                (
+                    NetInfoPurpose::CoreP2P,
+                    vec![service([34, 214, 48, 66], 19999)],
+                ),
+                (
+                    NetInfoPurpose::PlatformP2P,
+                    vec![service([34, 214, 48, 66], 26656)],
+                ),
+                (
+                    NetInfoPurpose::PlatformHttps,
+                    vec![service([34, 214, 48, 66], 1443)],
+                ),
+            ],
+        });
+        for (entry, v24_active) in [
+            (reset_legacy_entry(0x66, true), true),
+            (reset_v3_entry(0x66, true), true),
+            // A version-3 entry proves V24 whatever the caller's view says.
+            (reset_v3_entry(0x66, true), false),
+        ] {
+            let payload = prepare_update_service_placeholder_from_values(
+                &entry,
+                v24_active,
+                &evonode_values(),
+                ScriptBuf::new(),
+            )
+            .expect("values placeholder");
+            assert_eq!(payload.version, ProTxVersion::ExtAddr as u16);
+            assert_eq!(payload.service_address, expected);
+            assert_eq!(
+                payload.platform_node_id,
+                Some(PlatformNodeId::from_byte_array([0x77; 20]))
+            );
+            assert_eq!(payload.platform_p2p_port, None);
+            assert_eq!(payload.platform_http_port, None);
+            // The version and the address form agree, so it encodes.
+            base_payload_bytes(&payload);
+        }
+    }
+
+    #[test]
+    fn should_keep_a_regular_masternode_at_its_entry_version_when_built_from_values() {
+        let values = plain_values("34.214.48.67:19999");
+        for v24_active in [false, true] {
+            let payload = prepare_update_service_placeholder_from_values(
+                &reset_legacy_entry(0x67, false),
+                v24_active,
+                &values,
+                ScriptBuf::new(),
+            )
+            .expect("regular values placeholder");
+            assert_eq!(payload.version, ProTxVersion::BasicBLS as u16);
+            assert_eq!(
+                payload.service_address,
+                MasternodeNetInfo::Legacy("34.214.48.67:19999".parse().expect("socket address"))
+            );
+            assert_eq!(
+                payload.mn_type,
+                Some(ProviderMasternodeType::Regular as u16)
+            );
+            assert_eq!(payload.platform_node_id, None);
+        }
+
+        let payload = prepare_update_service_placeholder_from_values(
+            &reset_v3_entry(0x67, false),
+            true,
+            &values,
+            ScriptBuf::new(),
+        )
+        .expect("regular version-3 values placeholder");
+        assert_eq!(payload.version, ProTxVersion::ExtAddr as u16);
+        assert_eq!(
+            payload.service_address,
+            MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![service([34, 214, 48, 67], 19999)],
+                )],
+            })
+        );
+        base_payload_bytes(&payload);
+    }
+
+    #[test]
+    fn should_refuse_values_that_do_not_fit_the_masternode_type() {
         let incomplete = UpdateServiceValues {
             platform_p2p_port: None,
-            ..values.clone()
+            ..evonode_values()
         };
-        let err =
-            prepare_update_service_placeholder_from_values(&entry, &incomplete, ScriptBuf::new())
-                .expect_err("an evonode needs the full platform triplet");
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x66, true),
+            false,
+            &incomplete,
+            ScriptBuf::new(),
+        )
+        .expect_err("an evonode needs the full platform triplet");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
 
-        let mut regular = operator_entry(0x67, false);
-        regular.service_address = None;
-        let err =
-            prepare_update_service_placeholder_from_values(&regular, &values, ScriptBuf::new())
-                .expect_err("platform values on a regular masternode are refused");
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x67, false),
+            false,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect_err("platform values on a regular masternode are refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
 
-        let plain = UpdateServiceValues {
-            service_address: "203.0.113.67:9999".to_string(),
-            platform_node_id: None,
-            platform_p2p_port: None,
-            platform_http_port: None,
+    /// The values name one address; an address map that still lists
+    /// addresses would lose the rest.
+    #[test]
+    fn should_refuse_values_for_an_entry_whose_address_map_lists_addresses() {
+        let err = prepare_update_service_placeholder_from_values(
+            &core_v3_evonode_entry(),
+            true,
+            &evonode_values(),
+            ScriptBuf::new(),
+        )
+        .expect_err("a live version-3 entry is refused");
+        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
+    }
+
+    /// A port Core v24 refuses in a version-3 address map is refused before
+    /// anything is built.
+    #[test]
+    fn should_refuse_values_core_v24_refuses_in_a_version_3_address_map() {
+        let values = UpdateServiceValues {
+            platform_http_port: Some(80),
+            ..evonode_values()
         };
-        let payload =
-            prepare_update_service_placeholder_from_values(&regular, &plain, ScriptBuf::new())
-                .expect("regular values placeholder");
-        assert_eq!(
-            payload.mn_type,
-            Some(ProviderMasternodeType::Regular as u16)
-        );
-        assert_eq!(payload.platform_node_id, None);
-
-        let mut extended = operator_entry(0x68, true);
-        extended.has_extended_net_info = true;
-        let err =
-            prepare_update_service_placeholder_from_values(&extended, &values, ScriptBuf::new())
-                .expect_err("a live extended entry is still refused");
+        let err = prepare_update_service_placeholder_from_values(
+            &reset_legacy_entry(0x66, true),
+            true,
+            &values,
+            ScriptBuf::new(),
+        )
+        .expect_err("port 80 is refused in a version-3 address map");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
@@ -2400,7 +2611,7 @@ mod tests {
     /// mainnet-port rule in both directions.
     #[test]
     fn values_validation_enforces_core_service_rules() {
-        let entry = operator_entry(0x66, false);
+        let entry = MasternodeListSummary::from_entry(&operator_entry(0x66, false));
         let summaries = vec![entry.clone(), masternode(0x22)];
         let check = |network, service: &str| {
             validate_update_service_values(network, &entry, &plain_values(service), &summaries)
@@ -2450,7 +2661,7 @@ mod tests {
     /// mainnet Core P2P port.
     #[test]
     fn values_validation_enforces_platform_field_rules() {
-        let entry = operator_entry(0x66, true);
+        let entry = MasternodeListSummary::from_entry(&operator_entry(0x66, true));
         let summaries = vec![entry.clone()];
         let values = |service: &str, node: [u8; 20], p2p: u16, http: u16| UpdateServiceValues {
             service_address: service.to_string(),
@@ -2534,7 +2745,7 @@ mod tests {
     /// values are excluded.
     #[test]
     fn values_validation_enforces_network_wide_uniqueness() {
-        let mut entry = operator_entry(0x66, true);
+        let mut entry = MasternodeListSummary::from_entry(&operator_entry(0x66, true));
         let own: SocketAddr = "34.214.48.70:19999".parse().expect("socket address");
         entry.service_address = Some(own);
         entry.service_addresses = vec![own];
@@ -2624,8 +2835,14 @@ mod tests {
         );
 
         let entry = operator_entry(0x44, true);
-        let placeholder = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
-            .expect("placeholder");
+        let placeholder = prepare_update_service_placeholder(
+            &entry,
+            Network::Testnet,
+            false,
+            Some(26656),
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
         let prepared =
             build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
                 .await

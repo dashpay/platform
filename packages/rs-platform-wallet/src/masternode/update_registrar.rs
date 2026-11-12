@@ -22,10 +22,11 @@ use dashcore::blockdata::transaction::special_transaction::provider_update_regis
 use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
-use dashcore::bls_sig_utils::BLSPublicKey;
-use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{Message, Secp256k1, SecretKey};
+use dashcore::bls_sig_utils::{BLSPublicKey, BlsScheme};
+use dashcore::hashes::hash160;
 use dashcore::{Address as DashAddress, Network, PubkeyHash, Txid};
+use dpp::secp256k1::ecdsa::RecoverableSignature;
+use dpp::secp256k1::{Message, SecretKey};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
@@ -192,9 +193,9 @@ pub(crate) fn assemble_update_registrar_placeholder(
         })?;
 
     // Rotating the operator key erases the entry's service values, and
-    // stage two re-asserts a single address — which would downgrade a v3
-    // extended-net-info entry's endpoint map. Fail closed, exactly like the
-    // unban path. A voting-only update touches no service state.
+    // stage two re-asserts a single address per service, which cannot
+    // restore a v3 extended-net-info entry's endpoint map. Fail closed. A
+    // voting-only update touches no service state.
     if params.new_operator_key_index.is_some() && entry.has_extended_net_info {
         return Err(PlatformWalletError::InvalidParameter(
             "this masternode advertises v3 extended network info; rotating its operator key \
@@ -410,13 +411,12 @@ pub(crate) fn verify_owner_secret(
     expected_owner_key_hash: &PubkeyHash,
     owner: &OwnerSecret,
 ) -> Result<(), PlatformWalletError> {
-    let secp = Secp256k1::new();
-    let mut secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
+    let mut secret = SecretKey::from_secret_bytes(*owner.secret).map_err(|_| {
         PlatformWalletError::InvalidParameter(
             "the owner key is not a valid secp256k1 private key".to_string(),
         )
     })?;
-    let public = secret.public_key(&secp);
+    let public = secret.public_key();
     // `SecretKey` is `Copy` with no erasing destructor — scrub this local
     // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
     // caller's bytes) as soon as the public key is out, on every path.
@@ -540,25 +540,22 @@ pub(crate) fn normalize_operator_key_to_basic(
     bytes: &[u8; 48],
     is_legacy: bool,
 ) -> Result<[u8; 48], PlatformWalletError> {
-    use dashcore::blsful::{Bls12381G2Impl, PublicKey as BlsPubKey, SerializationFormat};
-    let format = if is_legacy {
-        SerializationFormat::Legacy
+    let scheme = if is_legacy {
+        BlsScheme::Legacy
     } else {
-        SerializationFormat::Modern
+        BlsScheme::Modern
     };
-    let key = BlsPubKey::<Bls12381G2Impl>::from_bytes_with_mode(bytes, format).map_err(|_| {
-        PlatformWalletError::InvalidParameter(
-            "the masternode's current operator key could not be parsed in the entry's BLS \
-             serialization"
-                .to_string(),
-        )
-    })?;
-    if !is_legacy {
-        return Ok(*bytes);
-    }
-    key.to_bytes().as_slice().try_into().map_err(|_| {
-        PlatformWalletError::KeyDerivation("reserialized operator key is not 48 bytes".to_string())
-    })
+    BLSPublicKey::from(*bytes)
+        .as_scheme(scheme)
+        .reencode(BlsScheme::Modern)
+        .map(|key| *key.as_ref())
+        .map_err(|_| {
+            PlatformWalletError::InvalidParameter(
+                "the masternode's current operator key could not be parsed in the entry's BLS \
+                 serialization"
+                    .to_string(),
+            )
+        })
 }
 
 /// Compact recoverable ECDSA over `base_payload_hash`, in Core's
@@ -570,22 +567,21 @@ pub(crate) fn owner_compact_signature(
     payload: &ProviderUpdateRegistrarPayload,
     owner: &OwnerSecret,
 ) -> Result<Vec<u8>, PlatformWalletError> {
-    let secp = Secp256k1::new();
-    let mut secret = SecretKey::from_byte_array(&owner.secret).map_err(|_| {
+    let mut secret = SecretKey::from_secret_bytes(*owner.secret).map_err(|_| {
         PlatformWalletError::InvalidParameter(
             "the owner key is not a valid secp256k1 private key".to_string(),
         )
     })?;
     let digest = payload.base_payload_hash().to_byte_array();
     let message = Message::from_digest(digest);
-    let recoverable = secp.sign_ecdsa_recoverable(&message, &secret);
+    let recoverable = RecoverableSignature::sign_ecdsa_recoverable(message, &secret);
     // `SecretKey` is `Copy` with no erasing destructor — scrub this local
     // scalar (the `Zeroizing` on `OwnerSecret.secret` covers only the
     // caller's bytes) as soon as the signature is made.
     secret.non_secure_erase();
     let (recovery_id, compact) = recoverable.serialize_compact();
     let mut signature = Vec::with_capacity(65);
-    signature.push(27 + i32::from(recovery_id) as u8 + if owner.compressed { 4 } else { 0 });
+    signature.push(27 + u8::from(recovery_id) + if owner.compressed { 4 } else { 0 });
     signature.extend_from_slice(&compact);
     Ok(signature)
 }
@@ -639,8 +635,9 @@ mod tests {
     use crate::broadcaster::BroadcastError;
     use crate::test_support::funded_wallet_manager;
     use dashcore::hash_types::InputsHash;
-    use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
     use dashcore::Transaction;
+    use dpp::secp256k1::ecdsa::RecoveryId;
     use key_wallet::account::StandardAccountType;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
@@ -657,9 +654,8 @@ mod tests {
     }
 
     fn owner_key_hash() -> PubkeyHash {
-        let secp = Secp256k1::new();
-        let secret = SecretKey::from_byte_array(&OWNER_SECRET).expect("valid scalar");
-        let public = secret.public_key(&secp);
+        let secret = SecretKey::from_secret_bytes(OWNER_SECRET).expect("valid scalar");
+        let public = secret.public_key();
         PubkeyHash::from_byte_array(hash160::Hash::hash(&public.serialize()).to_byte_array())
     }
 
@@ -719,6 +715,7 @@ mod tests {
             )
             .expect("inputs hash"),
             payload_sig: Vec::new(),
+            payouts: None,
         };
         assert_eq!(
             format!("{:x}", payload.base_payload_hash()),
@@ -740,6 +737,7 @@ mod tests {
             script_payout: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([5u8; 20])),
             inputs_hash: InputsHash::all_zeros(),
             payload_sig: Vec::new(),
+            payouts: None,
         };
         let signature = owner_compact_signature(&payload, &owner()).expect("signs");
         assert_eq!(signature.len(), 65);
@@ -751,13 +749,12 @@ mod tests {
 
         // Recover and compare against the owner key id — the check Core's
         // CheckHashSig performs on validation.
-        let secp = Secp256k1::new();
         let recovery_id =
             RecoveryId::try_from(i32::from(signature[0] - 27 - 4)).expect("recovery id");
         let recoverable =
             RecoverableSignature::from_compact(&signature[1..], recovery_id).expect("compact body");
         let digest = Message::from_digest(payload.base_payload_hash().to_byte_array());
-        let recovered = secp.recover_ecdsa(&digest, &recoverable).expect("recovers");
+        let recovered = recoverable.recover_ecdsa(digest).expect("recovers");
         assert_eq!(
             hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
             owner_key_hash().to_byte_array(),
@@ -848,7 +845,9 @@ mod tests {
                 txid: Txid::all_zeros(),
                 vout: 0,
             },
-            service_address: "10.0.0.17:9999".parse().expect("socket address"),
+            service_address: MasternodeNetInfo::Legacy(
+                "10.0.0.17:9999".parse().expect("socket address"),
+            ),
             owner_key_hash: owner_key_hash(),
             operator_public_key: BLSPublicKey::from([0x11; 48]),
             voting_key_hash: PubkeyHash::from_byte_array([0x11; 20]),
@@ -859,6 +858,8 @@ mod tests {
             platform_node_id: None,
             platform_p2p_port: None,
             platform_http_port: None,
+            payouts: None,
+            shared_collateral: None,
         }
     }
 
@@ -880,9 +881,8 @@ mod tests {
             hash160::Hash::hash(&derived_voting.public_key_bytes).to_byte_array();
 
         let summaries = vec![masternode(0x11), masternode(0x22)];
-        // The mock-SDK fixture reports mainnet, so the payout address must
-        // be a mainnet one — `wallet.network()` gates it.
-        let payout_address = DashAddress::dummy(Network::Mainnet, 3);
+        // `wallet.network()` gates the payout address.
+        let payout_address = DashAddress::dummy(wallet.network(), 3);
         let params = MasternodeUpdateRegistrarParams {
             pro_tx_hash: [0x11; 32],
             new_operator_key_index: Some(0),
@@ -981,14 +981,13 @@ mod tests {
 
             // The owner signature recovers to the owner key id over the
             // finished payload hash — Core's CheckHashSig check.
-            let secp = Secp256k1::new();
             let recovery_id =
                 RecoveryId::try_from(i32::from(payload.payload_sig[0] - 27 - 4)).expect("recid");
             let recoverable =
                 RecoverableSignature::from_compact(&payload.payload_sig[1..], recovery_id)
                     .expect("compact body");
             let digest = Message::from_digest(payload.base_payload_hash().to_byte_array());
-            let recovered = secp.recover_ecdsa(&digest, &recoverable).expect("recovers");
+            let recovered = recoverable.recover_ecdsa(digest).expect("recovers");
             assert_eq!(
                 hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
                 owner_key_hash().to_byte_array()
@@ -1012,7 +1011,7 @@ mod tests {
             pro_tx_hash: [0x11; 32],
             new_operator_key_index: Some(window),
             new_voting_key_index: None,
-            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+            payout_address: DashAddress::dummy(wallet.network(), 3).to_string(),
         };
         let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
 
@@ -1045,7 +1044,7 @@ mod tests {
             pro_tx_hash: [0x11; 32],
             new_operator_key_index: Some(0),
             new_voting_key_index: Some(voting_window),
-            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+            payout_address: DashAddress::dummy(wallet.network(), 3).to_string(),
         };
         let err = assemble_update_registrar_placeholder(
             &wallet,
@@ -1078,7 +1077,7 @@ mod tests {
             pro_tx_hash: [0x11; 32],
             new_operator_key_index: Some(0),
             new_voting_key_index: Some(0),
-            payout_address: DashAddress::dummy(Network::Mainnet, 3).to_string(),
+            payout_address: DashAddress::dummy(wallet.network(), 3).to_string(),
         };
         let collateral = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAB; 20]));
 
@@ -1167,14 +1166,13 @@ mod tests {
         assert_eq!(payload.payload_sig.len(), 65);
 
         // The owner signature recovers over the finished payload hash.
-        let secp = Secp256k1::new();
         let recovery_id =
             RecoveryId::try_from(i32::from(payload.payload_sig[0] - 27 - 4)).expect("recid");
         let recoverable =
             RecoverableSignature::from_compact(&payload.payload_sig[1..], recovery_id)
                 .expect("compact body");
         let digest = Message::from_digest(payload.base_payload_hash().to_byte_array());
-        let recovered = secp.recover_ecdsa(&digest, &recoverable).expect("recovers");
+        let recovered = recoverable.recover_ecdsa(digest).expect("recovers");
         assert_eq!(
             hash160::Hash::hash(&recovered.serialize()).to_byte_array(),
             owner_key_hash().to_byte_array()
@@ -1186,29 +1184,17 @@ mod tests {
 mod review_tests {
     use super::super::locator::bls_public_keys;
     use super::*;
-    use dashcore::secp256k1::PublicKey as SecpPublicKey;
+    use dpp::secp256k1::PublicKey as SecpPublicKey;
 
-    /// Consensus accepts only P2PKH / P2SH payouts (`bad-protx-payee`): a
-    /// witness-program address must be refused before funding.
+    /// Consensus accepts only P2PKH / P2SH payouts (`bad-protx-payee`). A
+    /// Dash address is always one of the two, so the script check is what
+    /// refuses anything else, a witness program included.
     #[test]
-    fn witness_payout_addresses_are_refused() {
-        let secp = Secp256k1::new();
-        let secret = SecretKey::from_byte_array(&[7u8; 32]).expect("valid scalar");
-        let public = dashcore::PublicKey::new(SecpPublicKey::from_secret_key(&secp, &secret));
-        let witness = DashAddress::p2wpkh(&public, Network::Testnet).expect("p2wpkh address");
-
-        let err = resolve_owner_payout_script(&witness.to_string(), Network::Testnet)
+    fn should_refuse_a_payout_script_that_is_not_p2pkh_or_p2sh() {
+        let mut witness_program = vec![0x00, 0x14];
+        witness_program.extend_from_slice(&[7u8; 20]);
+        let err = require_standard_payout_script(&ScriptBuf::from(witness_program))
             .expect_err("a witness payout must be refused");
-        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
-
-        // The operator-payout resolver in the update-service path applies
-        // the same restriction to a non-empty payout.
-        let err = super::super::update_service::resolve_operator_payout_script(
-            500,
-            Some(&witness.to_string()),
-            Network::Testnet,
-        )
-        .expect_err("a witness operator payout must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
 
         // P2SH remains accepted.
@@ -1319,9 +1305,8 @@ mod review_tests {
     /// serializations.
     #[test]
     fn p2pk_collateral_reuse_is_refused() {
-        let secp = Secp256k1::new();
-        let secret = SecretKey::from_byte_array(&[7u8; 32]).expect("valid scalar");
-        let inner = SecpPublicKey::from_secret_key(&secp, &secret);
+        let secret = SecretKey::from_secret_bytes([7u8; 32]).expect("valid scalar");
+        let inner = SecpPublicKey::from_secret_key(&secret);
         let compressed = dashcore::PublicKey::new(inner);
         let uncompressed = dashcore::PublicKey::new_uncompressed(inner);
         let payout = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x33; 20]));

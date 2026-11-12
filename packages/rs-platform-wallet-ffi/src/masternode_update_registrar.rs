@@ -22,7 +22,6 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
 
-use dashcore::hashes::Hash;
 use platform_wallet::masternode::{
     execute_masternode_update_registrar, execute_masternode_update_service_with_values,
     parse_secret_for_role, prepare_masternode_update_registrar,
