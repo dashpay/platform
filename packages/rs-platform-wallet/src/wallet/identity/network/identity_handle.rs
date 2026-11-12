@@ -536,6 +536,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// the source rendered after process restart.
     pub(crate) dpns_sync_progress:
         Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
+    /// The platform wallet's shielded viewing keys and seed-proven identity accounts,
+    /// from which the address a contact request carries is derived
+    /// ([`Self::contact_shielded_address`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) contact_shielded_addresses: crate::wallet::shielded::ContactShieldedAddresses,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -565,6 +570,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             document_erase_gate: Arc::clone(&self.document_erase_gate),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: self.contact_shielded_addresses.clone(),
         }
     }
 }
