@@ -20,8 +20,8 @@ describe('Tenderdash image migration', () => {
   const getMigrations = getConfigFileMigrationsFactory(null, defaults);
   const migrateConfigFile = migrateConfigFileFactory(getMigrations);
 
-  it('should use the Tenderdash 2.0.0-dev.1 image for new configurations', () => {
-    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.1');
+  it('should use the Tenderdash 2.0.0-dev.2 image for new configurations', () => {
+    expect(base.get('platform.drive.tenderdash.docker.image')).to.equal('dashpay/tenderdash:2.0.0-dev.2');
   });
 
   for (const fromVersion of ['4.2.0-dev.1', '4.2.0-beta.3', '5.0.0-rc.3', '5.0.3']) {
@@ -40,7 +40,7 @@ describe('Tenderdash image migration', () => {
 
       for (const name of ['mainnet', 'testnet']) {
         expect(migrated.configs[name].platform.drive.tenderdash.docker.image)
-          .to.equal('dashpay/tenderdash:2.0.0-dev.1');
+          .to.equal('dashpay/tenderdash:2.0.0-dev.2');
       }
       expect(migrated.configs.withoutPlatform).to.deep.equal({});
       expect(migrated.configs.withoutDocker).to.deep.equal({
