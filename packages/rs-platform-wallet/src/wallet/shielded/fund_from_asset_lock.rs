@@ -42,7 +42,7 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer, OrchardProver};
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{compute_minimum_shielded_fee, max_shield_from_asset_lock_actions};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -443,6 +443,14 @@ impl PlatformWallet {
         // residual to the (sole) `None` bucket; the preflight will
         // change in lockstep with the DPP-side multi-output bundle
         // builder.
+        //
+        // The batch is sized for the lock's own proof first: the lock is built, and its
+        // proof known, only after the funding resolved, and an InstantSend proof of a funding
+        // transaction with many inputs leaves room for fewer actions than the ChainLock
+        // proof the batch size was chosen for. The fee follows the actions the transition
+        // carries.
+        let dummy_outputs = dummy_outputs_fitting_proof(dummy_outputs, &proof, self.sdk.version());
+        let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         let asset_lock_value_credits =
             lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
         // `pool_fee = compute_minimum_shielded_fee(2) + asset_lock_base_cost` — the SAME flat fee
@@ -955,6 +963,20 @@ where
     })
 }
 
+/// The `dummy_outputs` fillers a `ShieldFromAssetLock` carrying `proof` can have, so that the
+/// transition fits `max_state_transition_size`: an InstantSend proof embeds its whole funding
+/// transaction, which takes room from the Orchard actions. Fewer fillers shrink the batch
+/// and its fee together ([`shield_from_asset_lock_num_actions`]); a lock too large for any
+/// batch keeps the 2 actions of a single output, and the ChainLock fallback takes it from there.
+fn dummy_outputs_fitting_proof(
+    dummy_outputs: usize,
+    proof: &AssetLockProof,
+    platform_version: &dpp::version::PlatformVersion,
+) -> usize {
+    let max_actions = usize::from(max_shield_from_asset_lock_actions(platform_version, proof));
+    dummy_outputs.min(max_actions.saturating_sub(1))
+}
+
 /// Pre-flight check for the recipient list.
 ///
 /// Today: non-empty, exactly one recipient whose `Credits` value is
@@ -1054,6 +1076,58 @@ mod tests {
     use crate::wallet::asset_lock::{AssetLockOperationContext, AssetLockOperationRegistration};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+
+    /// A seeding batch is sized for the lock's own proof: an InstantSend proof of a funding
+    /// transaction with many inputs leaves room for fewer actions, a ChainLock proof for the
+    /// full batch, and a lock too large for any batch keeps a single output.
+    #[test]
+    fn should_size_the_batch_for_the_asset_lock_proof_it_carries() {
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use dpp::tests::fixtures::{
+            instant_asset_lock_is_lock_fixture,
+            instant_asset_lock_proof_transaction_fixture_with_inputs,
+        };
+        use dpp::version::PlatformVersion;
+
+        let version = PlatformVersion::latest();
+        let full_batch = 5;
+        let instant = |inputs: u32| {
+            let mut transaction =
+                instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, inputs);
+            for input in &mut transaction.input {
+                input.script_sig = dashcore::ScriptBuf::from_bytes(vec![0x30; 107]);
+            }
+            let mut lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+            lock.inputs = transaction
+                .input
+                .iter()
+                .map(|i| i.previous_output)
+                .collect();
+            AssetLockProof::Instant(InstantAssetLockProof::new(lock, transaction, 0))
+        };
+        let chain = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::from([11u8; 36]),
+        });
+
+        assert_eq!(dummy_outputs_fitting_proof(full_batch, &chain, version), 5);
+        assert_eq!(
+            dummy_outputs_fitting_proof(full_batch, &instant(1), version),
+            5
+        );
+        assert_eq!(
+            dummy_outputs_fitting_proof(full_batch, &instant(7), version),
+            4,
+            "a 7-input lock does not fit 6 actions"
+        );
+        assert_eq!(dummy_outputs_fitting_proof(2, &instant(7), version), 2);
+        assert_eq!(
+            dummy_outputs_fitting_proof(full_batch, &instant(100), version),
+            0,
+            "no batch fits a 100-input InstantSend proof"
+        );
+        assert_eq!(dummy_outputs_fitting_proof(0, &instant(1), version), 0);
+    }
 
     // The preflight is a pure length/cardinality check; the
     // recipient type is irrelevant for what we're testing. Using

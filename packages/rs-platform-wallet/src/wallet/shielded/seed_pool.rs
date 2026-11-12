@@ -44,7 +44,8 @@ use crate::PlatformWalletError;
 /// (`system_limits.max_state_transition_size`, mirrored by tenderdash's
 /// `mempool.max-tx-bytes = 20480`) and not by the consensus action cap, because the Halo 2
 /// proof grows with the action count. See [`max_shielded_actions_per_transition`] for the
-/// measured sizes.
+/// measured sizes. A lock whose InstantSend proof is large (many funding inputs) carries a
+/// smaller batch, sized once its proof is known (`shielded_fund_from_asset_lock`).
 fn max_actions_per_batch(platform_version: &PlatformVersion) -> u64 {
     u64::from(max_shielded_actions_per_transition(platform_version))
 }

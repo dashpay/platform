@@ -1,3 +1,4 @@
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use platform_version::version::PlatformVersion;
 
 /// Bytes the Halo 2 proof and the action itself add to a serialized shielded transition for each
@@ -28,6 +29,35 @@ pub fn max_shielded_actions_per_transition(platform_version: &PlatformVersion) -
         .max_state_transition_size
         .saturating_sub(SHIELDED_TRANSITION_FIXED_WIRE_SIZE)
         / SHIELDED_ACTION_WIRE_SIZE;
+    u16::try_from(fitting)
+        .unwrap_or(u16::MAX)
+        .min(limits.max_shielded_transition_actions)
+}
+
+/// The most Orchard actions a `ShieldFromAssetLock` carrying `asset_lock_proof` can have on
+/// `platform_version`, when the transition has to fit `max_state_transition_size`.
+///
+/// [`max_shielded_actions_per_transition`] assumes the fixed part of a transition that carries
+/// a ChainLock proof, which names only an outpoint and a height. An InstantSend proof embeds the
+/// whole funding transaction and its InstantLock instead, about 184 bytes per funding input
+/// (measured on built transitions: 6 actions are 19,420 B with 1 input, 20,528 B with 7, over
+/// the 20,480 B limit), so a lock with many inputs fits fewer actions. The bound adds the proof's
+/// own serialized length to the fixed part, so it holds for any proof; it counts the ChainLock
+/// proof already inside [`SHIELDED_TRANSITION_FIXED_WIRE_SIZE`] twice, a few dozen bytes.
+///
+/// It can be below the 2 actions a shielded transition has at least: the lock then does not
+/// fit an InstantSend proof at all and only a ChainLock proof can consume it.
+pub fn max_shield_from_asset_lock_actions(
+    platform_version: &PlatformVersion,
+    asset_lock_proof: &AssetLockProof,
+) -> u16 {
+    let limits = &platform_version.system_limits;
+    let proof_size = asset_lock_proof
+        .serialized_len_in_state_transition()
+        .map_or(u64::MAX, |len| len as u64);
+    let fixed = SHIELDED_TRANSITION_FIXED_WIRE_SIZE.saturating_add(proof_size);
+    let fitting =
+        limits.max_state_transition_size.saturating_sub(fixed) / SHIELDED_ACTION_WIRE_SIZE;
     u16::try_from(fitting)
         .unwrap_or(u16::MAX)
         .min(limits.max_shielded_transition_actions)
