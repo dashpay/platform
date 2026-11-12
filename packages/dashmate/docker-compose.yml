@@ -132,8 +132,6 @@ services:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
     # Longer than Tenderdash's 30s --shutdown-timeout, so cleanup can finish before SIGKILL.
-    # TODO: no effect until the image's docker-entrypoint.sh waits for tenderdash after
-    #  forwarding SIGTERM; it exits at once and tenderdash is killed with it.
     stop_grace_period: 40s
     profiles:
       - platform
