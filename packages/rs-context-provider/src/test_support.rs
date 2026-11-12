@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -14,6 +15,7 @@ struct TestQuorums {
     name: &'static str,
     key_byte: u8,
     fail: bool,
+    network: Option<Network>,
 }
 
 impl ContextProvider for TestQuorums {
@@ -66,6 +68,10 @@ impl ContextProvider for TestQuorums {
             self.name
         )))
     }
+
+    fn network(&self) -> Option<Network> {
+        self.network
+    }
 }
 
 /// A contract source whose reads fail with a recognisable message.
@@ -99,6 +105,21 @@ pub(super) fn quorums(name: &'static str, key_byte: u8) -> Arc<dyn ContextProvid
         name,
         key_byte,
         fail: false,
+        network: None,
+    })
+}
+
+/// Like [`quorums`], serving the quorums of `network` only.
+pub(super) fn network_quorums(
+    name: &'static str,
+    key_byte: u8,
+    network: Network,
+) -> Arc<dyn ContextProvider> {
+    Arc::new(TestQuorums {
+        name,
+        key_byte,
+        fail: false,
+        network: Some(network),
     })
 }
 
@@ -107,6 +128,7 @@ pub(super) fn failing_quorums(name: &'static str) -> Arc<dyn ContextProvider> {
         name,
         key_byte: 0,
         fail: true,
+        network: None,
     })
 }
 

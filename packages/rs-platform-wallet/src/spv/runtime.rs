@@ -183,21 +183,38 @@ impl SpvRuntime {
     }
 
     /// Start SPV sync.
+    ///
+    /// Fails with [`PlatformWalletError::InvalidParameter`] for a `config`
+    /// whose network is not the wallet manager's.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        self.ensure_startable().await?;
+        self.ensure_startable(&config).await?;
         let shutdown = self.shutdown.lock().await;
         self.start_locked(config, &shutdown).await
     }
 
     /// The checks a start runs before it queues for the `shutdown` lock: not
-    /// already running, and nothing left unjoined by an earlier start or
-    /// stop (fail fast instead of queueing behind a stop that is still
-    /// joining).
-    async fn ensure_startable(&self) -> Result<(), PlatformWalletError> {
+    /// already running, nothing left unjoined by an earlier start or stop
+    /// (fail fast instead of queueing behind a stop that is still joining),
+    /// and a `config` for the wallet manager's network.
+    ///
+    /// The wallet manager's network is its SDK's, which the manager's SPV
+    /// quorum source serves keys for. A client of another network would sync
+    /// that chain, and its quorums would vouch for the SDK's proofs. Checked
+    /// last, so a start on a running client is refused before it could wait
+    /// for the wallet manager behind that client's sync.
+    async fn ensure_startable(&self, config: &ClientConfig) -> Result<(), PlatformWalletError> {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
         }
-        self.ensure_no_live_run_loop()
+        self.ensure_no_live_run_loop()?;
+        let network = self.wallet_manager.read().await.network();
+        if config.network != network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the SPV client is configured for {:?}, but the wallet manager is on {:?}",
+                config.network, network
+            )));
+        }
+        Ok(())
     }
 
     /// Start SPV sync and publish its run loop as one operation under the
@@ -228,6 +245,9 @@ impl SpvRuntime {
     /// lock and `Ok(false)` is returned, so no run loop ever runs for an
     /// unowned client. A stop that does not complete is logged, not returned:
     /// the caller has no owner left to retry it through.
+    ///
+    /// Like [`start`](Self::start), it refuses a `config` for another network
+    /// than the wallet manager's before any of this.
     pub async fn start_and_spawn<F>(
         self: &Arc<Self>,
         config: ClientConfig,
@@ -236,7 +256,7 @@ impl SpvRuntime {
     where
         F: FnOnce() -> bool + Send,
     {
-        self.ensure_startable().await?;
+        self.ensure_startable(&config).await?;
         let mut shutdown = self.shutdown.lock().await;
         if self.owner_released() {
             return Ok(false);
@@ -1138,7 +1158,7 @@ mod tests {
         });
         *runtime.task.lock().expect("spv task mutex poisoned") = Some(parked);
 
-        let result = runtime.start(ClientConfig::default()).await;
+        let result = runtime.start(ClientConfig::testnet()).await;
 
         assert!(
             is_retryable(&result),
@@ -1184,7 +1204,7 @@ mod tests {
         .await
         .expect("the stop should take the run-loop handle promptly");
 
-        let result = runtime.start(ClientConfig::default()).await;
+        let result = runtime.start(ClientConfig::testnet()).await;
 
         assert!(
             matches!(result, Err(PlatformWalletError::SpvError(_))),
@@ -1291,7 +1311,7 @@ mod tests {
         runtime.finish_startup(Ok(())).await.unwrap();
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async {}));
         assert!(matches!(
-            runtime.start(ClientConfig::default()).await,
+            runtime.start(ClientConfig::testnet()).await,
             Err(PlatformWalletError::SpvAlreadyRunning)
         ));
         let retained = runtime.is_started();
@@ -1722,6 +1742,63 @@ mod tests {
         runtime.stop().await.unwrap();
     }
 
+    /// The manager publishes its SPV quorum source for its SDK's network,
+    /// and that source reads this runtime's client. A client started for
+    /// another network would sync that chain, and its Platform quorums would
+    /// vouch for the SDK's proofs. Both starts refuse such a config before
+    /// they open the store or build a client.
+    #[tokio::test]
+    async fn should_refuse_to_start_a_client_for_another_network_than_its_wallets() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        let mainnet = ClientConfig::mainnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true);
+
+        let refused = runtime.start(mainnet.clone()).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
+            "{refused:?}"
+        );
+        let refused = runtime
+            .start_and_spawn(mainnet, || {
+                panic!("publish must not run for a client that was never built")
+            })
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
+            "{refused:?}"
+        );
+
+        assert!(!runtime.is_started());
+        assert_eq!(
+            std::fs::read_dir(storage.path()).unwrap().count(),
+            0,
+            "the store must not be opened for another network's client"
+        );
+    }
+
+    /// The network check comes after the running-client check: a start on a
+    /// running client is refused as already running without waiting for the
+    /// wallet manager, which that client's sync may be writing to.
+    #[tokio::test]
+    async fn should_refuse_a_start_on_a_running_client_before_reading_the_wallet_manager() {
+        let (runtime, _storage) = offline_runtime().await;
+        let held = runtime.wallet_manager.write().await;
+
+        let refused = tokio::time::timeout(
+            Duration::from_secs(5),
+            runtime.start(ClientConfig::mainnet()),
+        )
+        .await;
+        drop(held);
+        assert!(
+            matches!(refused, Ok(Err(PlatformWalletError::SpvAlreadyRunning))),
+            "{refused:?}"
+        );
+        runtime.stop().await.expect("stop the offline client");
+    }
+
     /// `start_and_spawn` whose owner is already gone when it takes the lock
     /// (its teardown's stop ran ahead of the start) opens no store at all:
     /// nothing is created in the data directory, `publish` never runs.
@@ -1889,7 +1966,7 @@ mod tests {
             is_retryable(&result),
             "an incomplete upstream stop must time out as retryable, got {result:?}"
         );
-        assert!(is_retryable(&runtime.start(ClientConfig::default()).await));
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             is_retryable(&runtime.clear_storage().await),
             "storage must not be cleared under a pending upstream stop"
@@ -1935,7 +2012,7 @@ mod tests {
         started.await.unwrap();
         stopping.abort();
         let _ = stopping.await;
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), runtime.stop())
                 .await
@@ -2049,7 +2126,7 @@ mod tests {
         started.await.unwrap();
         clearing.abort();
         let _ = clearing.await;
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), runtime.clear_storage())
                 .await
@@ -2160,7 +2237,7 @@ mod tests {
             needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
         );
-        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.start(ClientConfig::testnet()).await));
         assert!(needs_restart(&runtime.clear_storage().await));
         runtime.spawn_run_loop();
         assert!(
@@ -2201,7 +2278,7 @@ mod tests {
             .await;
         assert!(needs_restart(&failed));
         assert!(needs_restart(&runtime.stop().await));
-        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.start(ClientConfig::testnet()).await));
         assert!(needs_restart(&runtime.clear_storage().await));
     }
 

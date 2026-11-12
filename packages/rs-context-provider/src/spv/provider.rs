@@ -40,11 +40,10 @@ impl ContextProvider for SpvContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        self.spv.ready_source()?.provider.get_quorum_public_key(
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height,
-        )
+        self.spv
+            .ready_source(self.network)?
+            .provider
+            .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {

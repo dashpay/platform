@@ -61,12 +61,17 @@ pub struct SpvQuorumSource {
 impl SpvQuorumSource {
     /// Create a new SPV quorum source.
     ///
+    /// Only the wallet manager builds one, with its own runtime and its SDK's
+    /// network: the only network that runtime starts a client for, and the
+    /// network the source reports, so a provider of another network refuses
+    /// to read it.
+    ///
     /// # Arguments
     ///
     /// * `spv` - Shared reference to the SPV runtime, obtained from
     ///   [`PlatformWalletManager::spv_arc`](crate::manager::PlatformWalletManager::spv_arc).
     /// * `network` - The Dash network (mainnet, testnet, devnet, etc.).
-    pub fn new(spv: Arc<SpvRuntime>, network: Network) -> Self {
+    pub(crate) fn new(spv: Arc<SpvRuntime>, network: Network) -> Self {
         Self { spv, network }
     }
 
@@ -164,6 +169,10 @@ impl ContextProvider for SpvQuorumSource {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(platform_activation_height(self.network))
+    }
+
+    fn network(&self) -> Option<Network> {
+        Some(self.network)
     }
 
     fn get_data_contract(

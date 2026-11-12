@@ -79,7 +79,7 @@ impl AdaptiveContextProvider {
         match self.mode() {
             ContextProviderMode::Trusted => QuorumKeySource::Trusted,
             ContextProviderMode::Spv => QuorumKeySource::Spv,
-            ContextProviderMode::Auto if self.spv.is_ready() => QuorumKeySource::Spv,
+            ContextProviderMode::Auto if self.spv.is_ready(self.network) => QuorumKeySource::Spv,
             ContextProviderMode::Auto => QuorumKeySource::Trusted,
         }
     }
@@ -98,12 +98,12 @@ impl ContextProvider for AdaptiveContextProvider {
                 quorum_hash,
                 core_chain_locked_height,
             ),
-            ContextProviderMode::Spv => self.spv.ready_source()?.provider.get_quorum_public_key(
-                quorum_type,
-                quorum_hash,
-                core_chain_locked_height,
-            ),
-            ContextProviderMode::Auto => match self.spv.ready_source() {
+            ContextProviderMode::Spv => self
+                .spv
+                .ready_source(self.network)?
+                .provider
+                .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height),
+            ContextProviderMode::Auto => match self.spv.ready_source(self.network) {
                 Ok(source) => source.provider.get_quorum_public_key(
                     quorum_type,
                     quorum_hash,
@@ -198,7 +198,8 @@ mod tests {
 
     use super::AdaptiveContextProvider;
     use crate::test_support::{
-        failing_quorums, is_unavailable, publish, quorum_key, quorums, slot_of, TestContracts,
+        failing_quorums, is_unavailable, network_quorums, publish, quorum_key, quorums, slot_of,
+        TestContracts,
     };
     use crate::{ContextProvider, ContextProviderError, ContextProviderMode, QuorumKeySource};
     use crate::{SpvContextProvider, SpvSourceSlot};
@@ -383,6 +384,45 @@ mod tests {
         let _adaptive_lease = failing_readiness(&slot_of(&adaptive));
         assert!(is_unavailable(quorum_key(&fixed)));
         assert!(is_unavailable(quorum_key(&adaptive)));
+    }
+
+    /// The SPV client published into a provider's slot must serve that
+    /// provider's network. One serving another network would have its
+    /// Platform quorums vouch for this network's proofs, so strict SPV fails
+    /// closed without blaming the node, and Auto treats it as not ready and
+    /// answers from the trusted provider. A client that serves the same
+    /// network, or does not say, is used.
+    #[test]
+    fn should_not_use_a_published_spv_client_of_another_network() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        let adaptive = adaptive();
+        let _fixed_lease = publish(
+            &slot_of(&fixed),
+            network_quorums("mainnet spv", 0x33, Network::Mainnet),
+            true,
+        );
+        let _adaptive_lease = publish(
+            &slot_of(&adaptive),
+            network_quorums("mainnet spv", 0x33, Network::Mainnet),
+            true,
+        );
+
+        assert!(is_unavailable(quorum_key(&fixed)));
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
+        assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Spv)
+            .expect("the adaptive provider has a mode");
+        assert!(is_unavailable(quorum_key(&adaptive)));
+
+        for source in [
+            network_quorums("testnet spv", 0x22, Network::Testnet),
+            quorums("spv", 0x22),
+        ] {
+            let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+            let _lease = publish(&slot_of(&fixed), source, true);
+            assert_eq!(quorum_key(&fixed).unwrap(), [0x22; 48]);
+        }
     }
 
     /// A quorum source that states requirements and records the verified

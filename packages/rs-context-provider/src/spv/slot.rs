@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 use arc_swap::ArcSwapOption;
+use dpp::dashcore::Network;
 
 use crate::{ContextProvider, ContextProviderError};
 
@@ -83,12 +84,18 @@ impl SpvSourceSlot {
         });
     }
 
-    /// The published source, if it is synced.
+    /// The published source, if it is synced and serves `network`, the
+    /// network of the provider reading the slot. A source that declares
+    /// another network is not usable: its quorums would vouch for another
+    /// chain's proofs. One that declares none is used.
     ///
     /// Every "no usable source" outcome, an unknown readiness included, is
     /// [`ContextProviderError::QuorumSourceUnavailable`]: it is this side's
     /// state, so the SDK must not ban the node whose proof it could not check.
-    pub(crate) fn ready_source(&self) -> Result<SpvContextSource, ContextProviderError> {
+    pub(crate) fn ready_source(
+        &self,
+        network: Network,
+    ) -> Result<SpvContextSource, ContextProviderError> {
         let source = self
             .claim
             .load_full()
@@ -98,6 +105,13 @@ impl SpvSourceSlot {
                     "SPV context source is not active".to_string(),
                 )
             })?;
+        if let Some(source_network) = source.provider.network() {
+            if source_network != network {
+                return Err(ContextProviderError::QuorumSourceUnavailable(format!(
+                    "the published SPV context source serves {source_network:?}, not {network:?}"
+                )));
+            }
+        }
         match (source.is_ready)() {
             Ok(true) => Ok(source),
             Ok(false) => Err(ContextProviderError::QuorumSourceUnavailable(
@@ -109,8 +123,9 @@ impl SpvSourceSlot {
         }
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
-        self.ready_source().is_ok()
+    /// Whether [`Self::ready_source`] has a source for `network`.
+    pub(crate) fn is_ready(&self, network: Network) -> bool {
+        self.ready_source(network).is_ok()
     }
 }
 
@@ -142,6 +157,8 @@ impl Drop for SpvSourceLease {
 mod tests {
     use std::sync::Arc;
 
+    use dpp::dashcore::Network;
+
     use super::SpvSourceSlot;
     use crate::test_support::{publish, quorums};
 
@@ -154,7 +171,7 @@ mod tests {
         drop(lease);
         let _replacement = publish(&slot, quorums("other", 0x33), true);
         assert_eq!(
-            slot.ready_source()
+            slot.ready_source(Network::Testnet)
                 .unwrap()
                 .provider
                 .get_quorum_public_key(1, [2; 32], 3)
