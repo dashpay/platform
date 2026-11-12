@@ -361,15 +361,47 @@ mod tests {
             assert!(!result.error.is_null());
             unsafe {
                 let error = &*result.error;
-                assert_eq!(error.code, DashSDKErrorCode::InternalError);
+                assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
                 assert!(CStr::from_ptr(error.message)
                     .to_str()
                     .unwrap()
-                    .starts_with("Internal error: Invalid contract ID:"));
+                    .starts_with("Invalid parameter: Invalid contract ID:"));
                 crate::dash_sdk_error_free(result.error);
             }
         }
 
+        destroy_mock_sdk_handle(sdk_handle);
+    }
+
+    #[test]
+    fn should_classify_a_malformed_history_document_id_as_invalid_parameter() {
+        let sdk_handle = create_mock_sdk_handle();
+        let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
+        let document_type = CString::new("note").unwrap();
+        let document_id = CString::new("not-base58-0OIl").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch_history(
+                sdk_handle,
+                contract_id.as_ptr(),
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+                DashSDKDocumentHistoryFilter::HistoryStartAtTime as c_uint,
+                0,
+                0,
+                1,
+            )
+        };
+        assert!(!result.error.is_null());
+        unsafe {
+            let error = &*result.error;
+            assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+            assert!(CStr::from_ptr(error.message)
+                .to_str()
+                .unwrap()
+                .starts_with("Invalid parameter: Invalid document ID:"));
+            crate::dash_sdk_error_free(result.error);
+        }
         destroy_mock_sdk_handle(sdk_handle);
     }
 

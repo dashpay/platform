@@ -100,19 +100,19 @@ final class PlatformQueryOffMainTests: XCTestCase {
     }
   }
 
-    @MainActor
-    func testDocumentHistoryPreservesNativeErrors() async throws {
-        let sdk = try SDK(mockVectorsDirectory: nil)
-        do {
-            _ = try await sdk.documentGetHistory(
-                dataContractId: "not-base58-0OIl",
-                documentType: "note",
-                documentId: "not-base58-0OIl")
-            XCTFail("documentGetHistory should refuse a malformed id")
-        } catch SDKError.internalError(let message) {
-            XCTAssertTrue(message.contains("Invalid contract ID"))
-        } catch {
-            XCTFail("expected the native SDKError.internalError, got \(error)")
-        }
+  @MainActor
+  func testDocumentHistoryPreservesNativeErrors() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    do {
+      _ = try await sdk.documentGetHistory(
+        dataContractId: "not-base58-0OIl",
+        documentType: "note",
+        documentId: "not-base58-0OIl")
+      XCTFail("documentGetHistory should refuse a malformed id")
+    } catch SDKError.invalidParameter(let message) {
+      XCTAssertTrue(message.contains("Invalid contract ID"))
+    } catch {
+      XCTFail("expected the native SDKError.invalidParameter, got \(error)")
     }
+  }
 }
