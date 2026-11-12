@@ -50,16 +50,18 @@ recipient's identity decryption public key.
 
 From protocol version 15 a contact request may also carry the optional
 `encryptedShieldedAddress`: the sender's shielded payment address for this
-contact, encrypted with the same shared secret. It is exactly 64 bytes:
+contact, encrypted with the same shared secret. Wallets write it in 64 bytes:
 
 - 16 bytes: AES-CBC initialization vector, drawn at random for this field
 - 48 bytes: AES-CBC ciphertext of the 43-byte address (an 11-byte diversifier
   followed by a 32-byte transmission key)
 
-The contract accepts 64 or 80 bytes, the two lengths in its range that are an
-IV plus whole blocks. Wallets write 64 and keep 80 for a later encoding. A
-sender gives each contact a different address, so a payment that arrives on
-one is attributed to that contact.
+That is the current encoding, not the only length the contract accepts: it
+takes 64 or 80 bytes, the two lengths in its range that are an IV plus whole
+blocks, and wallets keep 80 for a later encoding. A reader that cannot decode
+a value ignores it instead of refusing the contact request. A sender gives
+each contact a different address, so a payment that arrives on one is
+attributed to that contact.
 
 From protocol version 15 the DashPay contract (v3) states these checks in its
 schema, and a contact request that fails one is refused (and the fee charged):
