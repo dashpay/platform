@@ -99,4 +99,19 @@ final class PlatformQueryOffMainTests: XCTestCase {
       XCTFail("expected SDKError.invalidParameter, got \(error)")
     }
   }
+  @MainActor
+  func testDocumentHistoryPreservesInvalidParameterErrors() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    do {
+      _ = try await sdk.documentGetHistory(
+        dataContractId: "not-base58-0OIl",
+        documentType: "note",
+        documentId: "not-base58-0OIl")
+      XCTFail("documentGetHistory should refuse a malformed id")
+    } catch SDKError.invalidParameter {
+    } catch {
+      XCTFail("expected SDKError.invalidParameter, got \(error)")
+    }
+  }
+
 }

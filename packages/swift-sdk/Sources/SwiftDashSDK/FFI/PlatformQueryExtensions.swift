@@ -715,29 +715,26 @@ extension SDK {
     /// entries per page; `limit` nil takes the default. Needs the protocol-15
     /// history layout: a page served from the earlier layout has no lifecycle
     /// block and the FFI refuses it.
-    public func documentGetHistory(
+    public nonisolated func documentGetHistory(
         dataContractId: String,
         documentType: String,
         documentId: String,
         filter: DocumentHistoryFilter = .startAtTime(ms: 0),
         limit: UInt32? = nil
-    ) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_document_fetch_history(
+                handle,
+                dataContractId,
+                documentType,
+                documentId,
+                filter.ffiValue,
+                filter.timeMs,
+                filter.revisionValue,
+                limit ?? 0
+            ))
         }
-
-        let result = dash_sdk_document_fetch_history(
-            handle,
-            dataContractId,
-            documentType,
-            documentId,
-            filter.ffiValue,
-            filter.timeMs,
-            filter.revisionValue,
-            limit ?? 0
-        )
-
-        return try processJSONResult(result)
+        return try Self.parseJSONObject(json)
     }
 
     /// List documents
