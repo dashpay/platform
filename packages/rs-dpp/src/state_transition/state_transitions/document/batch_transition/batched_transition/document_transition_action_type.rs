@@ -50,6 +50,7 @@ impl TryFrom<&str> for DocumentTransitionActionType {
             "indexOnlyDelete" | "index_only_delete" => {
                 Ok(DocumentTransitionActionType::IndexOnlyDelete)
             }
+            // Naming the appended kind does not admit it; released protocol bounds reject it.
             "erase" => Ok(DocumentTransitionActionType::Erase),
             action_type => Err(ProtocolError::Generic(format!(
                 "unknown action type {action_type}"
