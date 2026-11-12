@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
@@ -24,6 +25,7 @@ import org.junit.rules.TemporaryFolder
  * `AppStateQuorumModeTests.testShouldRestoreTheSavedQuorumModeOnLaunch`. No
  * SDK is built, so nothing native is touched.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppStateQuorumModeTest {
 
     @get:Rule
