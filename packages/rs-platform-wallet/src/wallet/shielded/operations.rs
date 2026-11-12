@@ -3731,12 +3731,17 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     .await
 }
 
-/// Refuse a spend, before anything is built, saved or broadcast, when the SDK's protocol
-/// version is no longer `platform_version`, the one the spend captured to select its notes
-/// and check its plan: the anchor fetch that precedes the build can teach the SDK a newer
-/// one, and the fee shown and confirmed was priced at the old. With `expected_plan` the
-/// refusal is [`PlatformWalletError::ShieldedPlanChanged`] carrying the fee at the new
-/// version for the same notes; without one, a build error naming both versions.
+/// Refuse a spend, before anything is built, saved or broadcast, when the protocol version
+/// the network applies is no longer `platform_version`, the one the spend captured to select
+/// its notes and check its plan: the SDK's own version moved (the anchor fetch that precedes
+/// the build can teach it a newer one), or the SDK's last verified network observation differs
+/// from it. The two are not the same: a version pinned with `SdkBuilder::with_version` never
+/// moves, while verified answers still advance the observation, and the network then applies
+/// its fee at its own version whatever the SDK builds at. The pin is never overridden; the
+/// spend is refused instead. With `expected_plan` the refusal is
+/// [`PlatformWalletError::ShieldedPlanChanged`] carrying the fee at the version the network
+/// applies for the same notes; without one, a build error naming both versions. A network
+/// version this SDK has no tables for is a build error either way: it cannot be priced.
 fn ensure_version_unchanged(
     sdk: &Arc<dash_sdk::Sdk>,
     platform_version: &PlatformVersion,
@@ -3745,22 +3750,51 @@ fn ensure_version_unchanged(
     expected_plan: Option<&[u8; 32]>,
 ) -> Result<(), PlatformWalletError> {
     let current = sdk.version();
-    if current.protocol_version == platform_version.protocol_version {
+    let network = sdk.protocol_version_info().verified_version;
+    let captured = platform_version.protocol_version;
+    if current.protocol_version == captured && !matches!(network, Some(n) if n != captured) {
         return Ok(());
     }
+    // What the network applies: its verified version when the SDK has one, else the SDK's.
+    let applied_version = match network {
+        Some(n) => PlatformVersion::get(n).map_err(|_| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "the network runs protocol version {n}, which this SDK does not support, so                  the spend built at protocol version {captured} is not priced"
+            ))
+        })?,
+        None => current,
+    };
     if expected_plan.is_none() {
         return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "the protocol version moved from {} to {} while the spend was prepared",
-            platform_version.protocol_version, current.protocol_version
+            "the protocol version moved from {captured} to {} while the spend was prepared",
+            applied_version.protocol_version
         )));
     }
     let fresh_fee = fee_kind
-        .compute(note_count.max(SPEND_MIN_ACTIONS), current)
+        .compute(note_count.max(SPEND_MIN_ACTIONS), applied_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
     Err(PlatformWalletError::ShieldedPlanChanged {
         fresh_fee,
         fresh_note_count: note_count,
     })
+}
+
+/// Refuse to plan a spend, whose fee is priced at the SDK's version, when the SDK has verified
+/// a different network version: the network would apply its fee at its own, and the SDK's
+/// version is a pin that is not overridden here. Plan again once the SDK builds at the version
+/// the network runs.
+fn ensure_plan_version_matches_network(
+    sdk: &Arc<dash_sdk::Sdk>,
+) -> Result<(), PlatformWalletError> {
+    let version = sdk.version().protocol_version;
+    match sdk.protocol_version_info().verified_version {
+        Some(network) if network != version => Err(PlatformWalletError::ShieldedBuildError(
+            format!(
+                "the SDK builds at protocol version {version} but the network runs {network},                  so a spend would be priced at a version the network does not apply"
+            ),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// Refuse, before it is broadcast, a built spend whose fee is not `selected_fee`, the fee its
@@ -3845,6 +3879,7 @@ pub async fn plan_spend<S: ShieldedStore>(
     kind: ShieldedSpendKind,
     amount: ShieldedSpendAmount,
 ) -> Result<ShieldedSpendPlan, PlatformWalletError> {
+    ensure_plan_version_matches_network(sdk)?;
     let unspent = store
         .read()
         .await
@@ -9001,6 +9036,17 @@ mod spend_plan_tests {
         /// The mocked answers report protocol version `served`, so one at the SDK's own
         /// version teaches it nothing until [`Self::move_version_now`].
         async fn serving(kind: ShieldedSpendKind, served: u32) -> Self {
+            Self::serving_with(kind, served, false).await
+        }
+
+        /// [`Self::serving`] for an SDK whose operation version is pinned to v13
+        /// (`SdkBuilder::with_version`): it still learns the verified network version from
+        /// the answers, but never moves its own.
+        async fn serving_pinned(kind: ShieldedSpendKind, served: u32) -> Self {
+            Self::serving_with(kind, served, true).await
+        }
+
+        async fn serving_with(kind: ShieldedSpendKind, served: u32, pinned: bool) -> Self {
             use crate::wallet::shielded::file_store::FileBackedShieldedStore;
             use dash_sdk::query_types::{NoParamQuery, ShieldedAnchors};
 
@@ -9013,10 +9059,15 @@ mod spend_plan_tests {
             store.save_note(ID, &owned).expect("a note");
             let store = Arc::new(RwLock::new(store));
 
-            let mut sdk = dash_sdk::SdkBuilder::new_mock()
-                .with_initial_version(PlatformVersion::get(13).expect("v13"))
-                .build()
-                .expect("a mock SDK");
+            let v13 = PlatformVersion::get(13).expect("v13");
+            let builder = dash_sdk::SdkBuilder::new_mock();
+            let mut sdk = if pinned {
+                builder.with_version(v13)
+            } else {
+                builder.with_initial_version(v13)
+            }
+            .build()
+            .expect("a mock SDK");
             assert_eq!(sdk.protocol_version_number(), 13, "the spend starts at v13");
             sdk.mock().set_response_protocol_version(served);
             sdk.mock()
@@ -9230,6 +9281,9 @@ mod spend_plan_tests {
         WhileProving,
         /// While the spend waits for the store to record its activity row.
         WhileRecordingActivity,
+        /// While the proof is made, a pinned SDK verifies an answer of the newest network
+        /// version: its own version never moves, only the verified network version does.
+        VerifiedNetworkWhileProving,
     }
 
     /// The real prover, which first does what `when` asks of the world.
@@ -9253,6 +9307,10 @@ mod spend_plan_tests {
                 LearnsVersion::WhileProving => {
                     VersionMovesDuringAnchorFetch::move_version_now(&self.sdk)
                 }
+                LearnsVersion::VerifiedNetworkWhileProving => self
+                    .sdk
+                    .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                    .expect("a mock SDK"),
                 // The store stays locked from here, so the spend parks at the write that
                 // records its activity row.
                 LearnsVersion::WhileRecordingActivity => {
@@ -9298,7 +9356,9 @@ mod spend_plan_tests {
                 };
                 let mut spend = Box::pin(case.run_with(kind, Some(&case.plan.digest), &prover));
                 let refused = match when {
-                    LearnsVersion::WhileProving => spend.await,
+                    LearnsVersion::WhileProving | LearnsVersion::VerifiedNetworkWhileProving => {
+                        spend.await
+                    }
                     LearnsVersion::WhileRecordingActivity => {
                         // Poll until the spend parks on the held store lock.
                         loop {
@@ -9373,6 +9433,177 @@ mod spend_plan_tests {
                 drop(guard);
                 let _ = std::fs::remove_file(&case.path);
             }
+        }
+    }
+
+    /// What a pinned v13 SDK's spend leaves behind when it is refused as a changed plan priced
+    /// at the newest network version: the note released, no activity row, no recovery record.
+    async fn assert_pinned_spend_refused(
+        case: &VersionMovesDuringAnchorFetch,
+        kind: ShieldedSpendKind,
+        refused: Result<(), PlatformWalletError>,
+    ) {
+        let network = PlatformVersion::latest().protocol_version;
+        let info = case.sdk.protocol_version_info();
+        assert_eq!(info.verified_version, Some(network), "{kind:?}");
+        assert_eq!(
+            case.sdk.protocol_version_number(),
+            13,
+            "the pin held ({kind:?})"
+        );
+        let at_network = kind
+            .fee_kind()
+            .compute(SPEND_MIN_ACTIONS, PlatformVersion::latest())
+            .expect("the fee at the network version");
+        assert_ne!(at_network, case.plan.fee, "the fee moved ({kind:?})");
+        match refused {
+            Err(PlatformWalletError::ShieldedPlanChanged {
+                fresh_fee,
+                fresh_note_count,
+            }) => assert_eq!(
+                (fresh_fee, fresh_note_count),
+                (at_network, 1),
+                "priced at the network version ({kind:?})"
+            ),
+            other => panic!("{kind:?}: got {other:?}"),
+        }
+        let guard = case.store.read().await;
+        assert_eq!(
+            guard.get_unspent_notes(ID).expect("notes").len(),
+            1,
+            "the note is released ({kind:?})"
+        );
+        assert!(
+            guard
+                .get_activity(ID, 0, 10)
+                .expect("activity")
+                .iter()
+                .all(|row| row.status != ShieldedActivityStatus::Pending),
+            "no activity row reads in flight ({kind:?})"
+        );
+        assert!(
+            guard.pending_redrives(ID).expect("records").is_empty(),
+            "no recovery record ({kind:?})"
+        );
+    }
+
+    const EVERY_SPEND_KIND: [ShieldedSpendKind; 4] = [
+        ShieldedSpendKind::Transfer,
+        ShieldedSpendKind::Unshield,
+        ShieldedSpendKind::Withdrawal {
+            core_fee_per_byte: 1,
+        },
+        ShieldedSpendKind::IdentityTopUp,
+    ];
+
+    /// The SDK is pinned to v13 and has verified an answer of the newest network version: its
+    /// operation version stays v13, so only the verified network version shows the plan was
+    /// priced at a version the network no longer applies. Every spend kind is refused before
+    /// it builds.
+    #[tokio::test]
+    async fn should_refuse_a_pinned_sdk_spend_whose_verified_network_version_differs() {
+        for kind in EVERY_SPEND_KIND {
+            let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, 13).await;
+            // The plan was made before the SDK verified anything newer.
+            case.sdk
+                .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                .expect("a mock SDK");
+
+            let refused = case.run(kind, Some(&case.plan.digest)).await;
+
+            assert_pinned_spend_refused(&case, kind, refused).await;
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// The same, learned after the check at the anchor passed: while the spend is proved.
+    #[tokio::test]
+    async fn should_refuse_a_pinned_sdk_spend_when_the_network_version_is_verified_while_proving() {
+        let key: &'static crate::wallet::shielded::prover::CachedOrchardProver =
+            Box::leak(Box::default());
+        for kind in EVERY_SPEND_KIND {
+            let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, 13).await;
+            let prover = VersionMovingProver {
+                when: LearnsVersion::VerifiedNetworkWhileProving,
+                sdk: case.sdk.clone(),
+                store: case.store.clone(),
+                held: std::sync::Mutex::new(None),
+                key,
+            };
+
+            let refused = case.run_with(kind, Some(&case.plan.digest), &prover).await;
+
+            assert_pinned_spend_refused(&case, kind, refused).await;
+            let _ = std::fs::remove_file(&case.path);
+        }
+    }
+
+    /// A pinned SDK that already verified a different network version plans nothing: the fee
+    /// would be priced at a version the network does not apply, and the pin is not overridden.
+    #[tokio::test]
+    async fn should_refuse_to_plan_with_a_pinned_sdk_whose_verified_network_version_differs() {
+        let network = PlatformVersion::latest().protocol_version;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+
+        let planned = plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        )
+        .await;
+
+        assert!(
+            matches!(&planned, Err(PlatformWalletError::ShieldedBuildError(message))
+                if message.contains("13") && message.contains(&network.to_string())),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// The network runs a protocol version this SDK has no tables for: the spend cannot be
+    /// priced at it, so it is refused as a build error, planned or not.
+    #[tokio::test]
+    async fn should_refuse_a_spend_when_the_verified_network_version_is_unsupported() {
+        let unsupported = PlatformVersion::latest().protocol_version + 1;
+        for planned in [true, false] {
+            let case =
+                VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13)
+                    .await;
+            case.sdk
+                .mock_verified_protocol_version(unsupported)
+                .expect("a mock SDK");
+
+            let refused = case
+                .run(
+                    ShieldedSpendKind::Unshield,
+                    planned.then_some(&case.plan.digest),
+                )
+                .await;
+
+            assert!(
+                matches!(&refused, Err(PlatformWalletError::ShieldedBuildError(message))
+                    if message.contains(&unsupported.to_string())
+                        && message.contains("does not support")),
+                "planned={planned}: got {refused:?}"
+            );
+            assert_eq!(
+                case.store
+                    .read()
+                    .await
+                    .get_unspent_notes(ID)
+                    .expect("notes")
+                    .len(),
+                1,
+                "the note is released"
+            );
+            let _ = std::fs::remove_file(&case.path);
         }
     }
 }
