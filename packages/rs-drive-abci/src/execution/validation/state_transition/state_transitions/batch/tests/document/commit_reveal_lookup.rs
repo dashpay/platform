@@ -839,6 +839,11 @@ mod commit_reveal_lookup_tests {
     /// create: the processing fee, the storage fee and the refund of the consumed commitment's
     /// storage to its owner. At 15 the create deletes the commitment from what its lookup read,
     /// so it pays one read of it fewer than at 14; the storage fee and the refund are the same.
+    ///
+    /// The contested create still costs more at 15 than at 14. The decision proposals contract,
+    /// registered at genesis from 15, holds contests of its own (the choices of a multiple
+    /// choice proposal), so the tree of contracts holding contests has one entry more, and a
+    /// write below it pays for the larger tree: 50_100 credits here.
     #[tokio::test]
     async fn should_pin_the_fees_of_a_consume_through_a_plain_and_a_contested_create() {
         // A fee of a reveal: processing, storage, and the refund to the commitment's owner
@@ -900,7 +905,7 @@ mod commit_reveal_lookup_tests {
                 (
                     15,
                     (1_766_860, 9_720_000, 15_181_239),
-                    (3_478_880, 75_411_000, 15_181_239)
+                    (3_528_980, 75_411_000, 15_181_239)
                 ),
             ]
         );
