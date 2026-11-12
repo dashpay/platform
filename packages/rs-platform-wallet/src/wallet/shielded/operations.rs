@@ -1597,6 +1597,13 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     let result = async {
         let (spends, anchor, anchor_height) =
             extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        ensure_version_unchanged(
+            sdk,
+            platform_version,
+            ShieldedSpendKind::IdentityTopUp.fee_kind(),
+            selected_notes.len(),
+            expected_plan,
+        )?;
         let anchor_bytes = anchor.to_bytes();
 
         let (state_transition, fee_used) = build_identity_top_up_from_shielded_pool_transition(
@@ -2367,6 +2374,13 @@ pub async fn unshield_with_plan<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor, anchor_height) =
             extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        ensure_version_unchanged(
+            sdk,
+            platform_version,
+            ShieldedSpendKind::Unshield.fee_kind(),
+            selected_notes.len(),
+            expected_plan,
+        )?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2568,6 +2582,13 @@ pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor, anchor_height) =
             extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        ensure_version_unchanged(
+            sdk,
+            platform_version,
+            ShieldedSpendKind::Transfer.fee_kind(),
+            selected_notes.len(),
+            expected_plan,
+        )?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -2770,6 +2791,13 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor, anchor_height) =
             extract_spends_and_recorded_anchor(sdk, store, &selected_notes).await?;
+        ensure_version_unchanged(
+            sdk,
+            platform_version,
+            ShieldedSpendKind::Withdrawal.fee_kind(),
+            selected_notes.len(),
+            expected_plan,
+        )?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3662,6 +3690,38 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
         platform_version,
     )
     .await
+}
+
+/// Refuse a spend, before anything is built, saved or broadcast, when the SDK's protocol
+/// version is no longer `platform_version`, the one the spend captured to select its notes
+/// and check its plan: the anchor fetch that precedes the build can teach the SDK a newer
+/// one, and the fee shown and confirmed was priced at the old. With `expected_plan` the
+/// refusal is [`PlatformWalletError::ShieldedPlanChanged`] carrying the fee at the new
+/// version for the same notes; without one, a build error naming both versions.
+fn ensure_version_unchanged(
+    sdk: &Arc<dash_sdk::Sdk>,
+    platform_version: &PlatformVersion,
+    fee_kind: ShieldedFeeKind,
+    note_count: usize,
+    expected_plan: Option<&[u8; 32]>,
+) -> Result<(), PlatformWalletError> {
+    let current = sdk.version();
+    if current.protocol_version == platform_version.protocol_version {
+        return Ok(());
+    }
+    if expected_plan.is_none() {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "the protocol version moved from {} to {} while the spend was prepared",
+            platform_version.protocol_version, current.protocol_version
+        )));
+    }
+    let fresh_fee = fee_kind
+        .compute(note_count.max(SPEND_MIN_ACTIONS), current)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    Err(PlatformWalletError::ShieldedPlanChanged {
+        fresh_fee,
+        fresh_note_count: note_count,
+    })
 }
 
 /// Refuse, before it is broadcast, a built spend whose fee is not `selected_fee`, the fee its
@@ -8159,7 +8219,7 @@ mod select_recorded_spends_tests {
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
 
     /// Unique temp path for a test tree (no `tempfile` dev-dep).
-    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+    pub(super) fn temp_tree_path(tag: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -8183,7 +8243,7 @@ mod select_recorded_spends_tests {
     /// it, and `cmx` is the note's real extracted commitment so that appending
     /// `cmx` as the leaf at `position` makes `witness(position, d).root(cmx)`
     /// reproduce the tree's anchor at depth `d`.
-    fn real_note(position: u64) -> ShieldedNote {
+    pub(super) fn real_note(position: u64) -> ShieldedNote {
         let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
             .expect("ZIP-32 derivation from a fixed seed");
         let recipient = keys.default_address;
@@ -8776,5 +8836,202 @@ mod spend_plan_tests {
             "got {moved:?}"
         );
         assert_eq!(unspent(&store).await, 4, "nothing reserved");
+    }
+
+    /// A spend whose version check is the only thing in its way: one real note in a real
+    /// tree, a plan made at protocol version 13, and a mocked anchor fetch whose answer
+    /// moves the SDK to the newest version.
+    struct VersionMovesDuringAnchorFetch {
+        sdk: Arc<dash_sdk::Sdk>,
+        store: Arc<RwLock<crate::wallet::shielded::file_store::FileBackedShieldedStore>>,
+        plan: ShieldedSpendPlan,
+        path: std::path::PathBuf,
+    }
+
+    impl VersionMovesDuringAnchorFetch {
+        async fn new(kind: ShieldedSpendKind) -> Self {
+            use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+            use dash_sdk::query_types::{NoParamQuery, ShieldedAnchors};
+
+            let path = select_recorded_spends_tests::temp_tree_path("version_moves");
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("a store");
+            let mut owned = select_recorded_spends_tests::real_note(0);
+            owned.value = 10 * NOTE;
+            store.append_commitment(&owned.cmx, true).expect("a leaf");
+            store.checkpoint_tree(1).expect("a checkpoint");
+            let anchor = store.tree_anchor().expect("an anchor");
+            store.save_note(ID, &owned).expect("a note");
+            let store = Arc::new(RwLock::new(store));
+
+            let mut sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_initial_version(PlatformVersion::get(13).expect("v13"))
+                .build()
+                .expect("a mock SDK");
+            assert_eq!(sdk.protocol_version_number(), 13, "the spend starts at v13");
+            sdk.mock()
+                .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![anchor])))
+                .await
+                .expect("the anchor answer");
+            let sdk = Arc::new(sdk);
+            let plan = plan_spend(
+                &sdk,
+                &store,
+                WALLET_ID,
+                0,
+                kind,
+                ShieldedSpendAmount::Exact(NOTE),
+            )
+            .await
+            .expect("plans");
+            Self {
+                sdk,
+                store,
+                plan,
+                path,
+            }
+        }
+
+        async fn run(
+            &self,
+            kind: ShieldedSpendKind,
+            expected_plan: Option<&[u8; 32]>,
+        ) -> Result<(), PlatformWalletError> {
+            let keys = OrchardKeySet::from_seed(&[0x42; 64], Network::Testnet, 0).expect("keys");
+            let (sdk, store) = (&self.sdk, &self.store);
+            match kind {
+                ShieldedSpendKind::Transfer => {
+                    transfer_with_plan(
+                        sdk,
+                        store,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &keys.default_address,
+                        NOTE,
+                        [0; 36],
+                        &UnreachableProver,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::Unshield => {
+                    unshield_with_plan(
+                        sdk,
+                        store,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &PlatformAddress::P2pkh([9; 20]),
+                        NOTE,
+                        &UnreachableProver,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::Withdrawal => {
+                    withdraw_with_plan(
+                        sdk,
+                        store,
+                        None,
+                        WALLET_ID,
+                        &keys,
+                        0,
+                        &dashcore::Address::dummy(Network::Testnet, 1),
+                        NOTE,
+                        1,
+                        &UnreachableProver,
+                        expected_plan,
+                    )
+                    .await
+                }
+                ShieldedSpendKind::IdentityTopUp => identity_top_up_from_pool_with_plan(
+                    sdk,
+                    store,
+                    None,
+                    WALLET_ID,
+                    &keys,
+                    0,
+                    Identifier::new([5; 32]),
+                    NOTE,
+                    &UnreachableProver,
+                    expected_plan,
+                )
+                .await
+                .map(|_| ()),
+            }
+        }
+    }
+
+    /// The network's protocol version advances while the spend fetches the recorded anchors
+    /// (the SDK learns it from that answer): every spend kind refuses before it builds, saves
+    /// activity or broadcasts, as a changed plan priced at the new version when it had a plan
+    /// and as a build error when it had none, and leaves its note unreserved.
+    #[tokio::test]
+    async fn should_refuse_a_spend_when_the_protocol_version_moved_during_the_anchor_fetch() {
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            for planned in [true, false] {
+                let case = VersionMovesDuringAnchorFetch::new(kind).await;
+                let refused = case.run(kind, planned.then_some(&case.plan.digest)).await;
+
+                assert_eq!(
+                    case.sdk.protocol_version_number(),
+                    PlatformVersion::latest().protocol_version,
+                    "the anchor fetch moved the version ({kind:?})"
+                );
+                let fresh = plan_spend(
+                    &case.sdk,
+                    &case.store,
+                    WALLET_ID,
+                    0,
+                    kind,
+                    ShieldedSpendAmount::Exact(NOTE),
+                )
+                .await
+                .expect("plans at the new version");
+                assert_ne!(fresh.fee, case.plan.fee, "the fee moved ({kind:?})");
+                match (planned, &refused) {
+                    (
+                        true,
+                        Err(PlatformWalletError::ShieldedPlanChanged {
+                            fresh_fee,
+                            fresh_note_count,
+                        }),
+                    ) => assert_eq!(
+                        (*fresh_fee, *fresh_note_count),
+                        (fresh.fee, fresh.note_count()),
+                        "{kind:?}"
+                    ),
+                    (false, Err(PlatformWalletError::ShieldedBuildError(message))) => {
+                        assert!(
+                            message.contains("13")
+                                && message.contains(
+                                    &PlatformVersion::latest().protocol_version.to_string()
+                                ),
+                            "the build error names both versions: {message}"
+                        )
+                    }
+                    _ => panic!("{kind:?} planned={planned}: got {refused:?}"),
+                }
+                let guard = case.store.read().await;
+                assert_eq!(
+                    guard.get_unspent_notes(ID).expect("notes").len(),
+                    1,
+                    "the note is released ({kind:?})"
+                );
+                assert!(
+                    guard.get_activity_ids(ID).expect("activity").is_empty(),
+                    "no activity row ({kind:?})"
+                );
+                drop(guard);
+                let _ = std::fs::remove_file(&case.path);
+            }
+        }
     }
 }

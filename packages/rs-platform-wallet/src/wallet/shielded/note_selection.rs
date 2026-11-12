@@ -65,7 +65,7 @@ pub enum ShieldedFeeKind {
 
 impl ShieldedFeeKind {
     /// Compute the flat shielded fee for `num_actions` under this transition's formula.
-    fn compute(
+    pub(super) fn compute(
         self,
         num_actions: usize,
         platform_version: &PlatformVersion,
