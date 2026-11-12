@@ -79,9 +79,12 @@ pub use reference_where::{
     WhereOrdering, WhereOrderingBound,
 };
 pub use slot_condition::{
-    SlotCondition, SlotConditionList, SlotConditionSubject, SlotConditionValue, SlotConditions,
-    MAX_SLOT_CONDITION_DECODE_DEPTH, SLOT_CONDITION_CHANGE_FIELDS,
-    SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
+    SlotCondition, SlotConditionList, SlotConditionSetting, SlotConditionSubject,
+    SlotConditionValue, SlotConditions, MAX_SLOT_CONDITION_DECODE_DEPTH,
+    SLOT_CONDITION_CHANGE_FIELDS, SLOT_CONDITION_DELETE_KEEPS_FIELDS,
+    SLOT_CONDITION_DELETE_SETTLED, SLOT_CONDITION_DELETE_WITHIN, SLOT_CONDITION_ELECTED_ABILITIES,
+    SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
+    SLOT_CONDITION_SETTLED_APPROVERS_PREDATE_DOCUMENT,
 };
 
 #[cfg(test)]

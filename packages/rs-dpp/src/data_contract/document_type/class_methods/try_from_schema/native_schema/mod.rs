@@ -28,7 +28,8 @@
 //!
 //! [`check_validation_schema`] then requires the type to have a typed validation schema,
 //! which documents of every type registered from protocol version 15 are checked against
-//! natively.
+//! natively, and every `pattern` it holds to compile under the `regex` crate's default size
+//! limit, one only a `$ref` reaches included.
 //!
 //! [`JsonSchemaError`]: crate::consensus::basic::json_schema_error::JsonSchemaError
 
@@ -191,8 +192,9 @@ pub(super) fn check_document_type_schema(
 }
 
 /// Requires the type whose expanded schema is `schema`, with the contract's expanded
-/// `$defs`, to have a typed validation schema, refusing one it does not represent. Returns the
-/// native validator built of it, which the type keeps.
+/// `$defs`, to have a typed validation schema, refusing one it does not represent, and every
+/// pattern it holds to compile. Returns the native validator built of it, with its patterns
+/// compiled, which the type keeps.
 pub(super) fn check_validation_schema(
     schema: &Value,
     schema_defs: Option<&BTreeMap<String, Value>>,
@@ -203,14 +205,22 @@ pub(super) fn check_validation_schema(
         schema_defs.map(|defs| Value::from(defs.clone())),
         platform_version,
     )?;
-    // Document validation refuses the documents of a type whose validator does not build, a
-    // cycle of references that consumes nothing included: registration refuses the type
-    DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(|error| match error {
+    let refusal = |error| match error {
         ProtocolError::DataContractError(refusal) => {
             consensus_or_protocol_data_contract_error(refusal)
         }
         error => error,
-    })
+    };
+    // Document validation refuses the documents of a type whose validator does not build, a
+    // cycle of references that consumes nothing included: registration refuses the type
+    let validator =
+        DocumentSchemaValidator::try_from_root(&root, platform_version).map_err(refusal)?;
+    // The validator compiles a pattern the first time a value reaches it, and refuses a value
+    // reaching one that does not compile: registration refuses the type instead. The schema
+    // checks above compiled the patterns they read; this reaches the rest, one only a `$ref`
+    // into a value they do not read as a schema reaches
+    validator.compile_patterns().map_err(refusal)?;
+    Ok(validator)
 }
 
 /// A check of one value of a document schema, knowing where the value is.

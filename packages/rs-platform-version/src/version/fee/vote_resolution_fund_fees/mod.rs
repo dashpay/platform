@@ -34,6 +34,13 @@ pub struct VoteResolutionFundFees {
     /// yes/no poll; what is left when the poll ends is released as processing fees. Decision
     /// proposals exist from protocol version 15; earlier schedules carry 0, unread.
     pub decision_proposal_fund_required_amount: u64,
+    /// The amount added to the processing fee of a batch for each multiple choice proposal it
+    /// creates (a `multipleChoiceProposal` create on the decision proposals contract). Such a
+    /// proposal opens no poll of its own, so it prefunds no votes: the amount goes to the
+    /// processing fee pools with the rest of the batch's processing fee, paid by whoever
+    /// pays its gas. Multiple choice proposals exist from protocol version 15; earlier
+    /// schedules carry 0, which charges nothing.
+    pub multiple_choice_proposal_processing_fee: u64,
 }
 
 /// The vote resolution fund fees exactly as every pre-1.4 release serialized them inside
@@ -65,6 +72,7 @@ impl From<VoteResolutionFundFeesFieldsBeforeVersion4> for VoteResolutionFundFees
             contested_document_contenders_per_fund_doubling: 0,
             // Pre-4.2 tables predate decision proposals (protocol version 15)
             decision_proposal_fund_required_amount: 0,
+            multiple_choice_proposal_processing_fee: 0,
         }
     }
 }
@@ -85,6 +93,7 @@ mod tests {
             contested_document_contenders_before_fund_doubling: 5,
             contested_document_contenders_per_fund_doubling: 6,
             decision_proposal_fund_required_amount: 7,
+            multiple_choice_proposal_processing_fee: 8,
         };
 
         let version2 = VoteResolutionFundFees {
@@ -95,6 +104,7 @@ mod tests {
             contested_document_contenders_before_fund_doubling: 5,
             contested_document_contenders_per_fund_doubling: 6,
             decision_proposal_fund_required_amount: 7,
+            multiple_choice_proposal_processing_fee: 8,
         };
 
         // This assertion will check if all fields are considered in the equality comparison

@@ -37,6 +37,7 @@
 //! carry a `when` ([`SlotCondition`]) telling the two apart, so that it asks of a moderated
 //! type what it does not ask of a permanent one.
 
+use crate::data_contract::config::moderation::ModerationAbility;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
@@ -170,6 +171,10 @@ pub struct DocumentTypeRequirements {
     pub slots: BTreeMap<String, RequiredPropertySlot>,
     /// Which slots must be filled (`require`); `None` means every one of them.
     pub require: Option<SlotRequirement>,
+    /// What the referenced type must say of itself, whatever fills the slots (`when`): a
+    /// [`SlotCondition`] that reads no `$property`. A type it does not hold for does not
+    /// meet the requirements. `None` asks nothing.
+    pub when: Option<SlotCondition>,
 }
 
 /// One slot of a [`DocumentTypeRequirements`].
@@ -419,6 +424,9 @@ impl DocumentTypeRequirements {
         if let Some(require) = &self.require {
             members.push(("require", require.to_schema_value()));
         }
+        if let Some(when) = &self.when {
+            members.push(("when", when.to_schema_value()));
+        }
         schema_object(members)
     }
 
@@ -438,10 +446,15 @@ impl DocumentTypeRequirements {
     /// the slot's description, and one more for each node of the slot's `when`
     /// ([`SlotCondition::node_count`]), whether or not the description admits it: the
     /// count depends on the declaration and the size of the type alone, not on what the
-    /// type's properties are. The search for an assignment that follows is over at most
+    /// type's properties are. The requirements' own `when`, judged once for the type, adds
+    /// its nodes. The search for an assignment that follows is over at most
     /// `max_document_type_requirement_slots` slots and is not counted.
     pub fn comparisons(&self, document_type: DocumentTypeRef) -> u64 {
         let properties = document_type.properties().len() as u64;
+        let of_the_type = self
+            .when
+            .as_ref()
+            .map_or(0, |when| when.node_count() as u64);
         self.slots
             .values()
             .map(|slot| {
@@ -456,7 +469,7 @@ impl DocumentTypeRequirements {
                     .saturating_add(1);
                 tried.saturating_mul(per_property)
             })
-            .fold(0u64, u64::saturating_add)
+            .fold(of_the_type, u64::saturating_add)
     }
 
     /// Whether `document_type` meets the requirements.
@@ -475,15 +488,48 @@ impl DocumentTypeRequirements {
     /// candidates between them than slots, so with the number of slots held to
     /// `max_document_type_requirement_slots` the search stays small whatever the type
     /// declares.
+    ///
+    /// `elected_abilities` are the abilities the type's contract gives its elected
+    /// moderation team on the type (`ElectedModerators::moderated_document_types`), `None`
+    /// when the contract elects no team or leaves the type out: what `$electedAbilities`
+    /// reads. The requirements' own `when` is judged first, for the type as a whole.
     pub fn met_by(
         &self,
         document_type: DocumentTypeRef,
+        elected_abilities: Option<&BTreeSet<ModerationAbility>>,
         name_from_property: impl Fn(&str) -> Option<String>,
     ) -> bool {
         let properties = document_type.properties();
         let kind = document_type.document_reference_kind();
         let deletion_kept_fields = document_type.moderator_deletion_kept_fields();
         let moderator_changeable_fields = document_type.moderator_changeable_fields();
+        let elected_abilities: BTreeSet<String> = elected_abilities
+            .into_iter()
+            .flatten()
+            .map(|ability| ability.as_str().to_string())
+            .collect();
+        let settled_deletion = document_type.moderator_settled_deletion();
+        // The type as a whole: no property is in hand, and its condition reads none
+        let of_the_type = SlotConditionSubject {
+            kind,
+            property_name: "",
+            deletion_kept_fields,
+            moderator_changeable_fields,
+            elected_abilities: &elected_abilities,
+            deletion_window: document_type
+                .documents_can_be_deleted_by_moderators_for()
+                .is_some(),
+            settled_deletion: settled_deletion.is_some(),
+            settled_approvers_predate_document: settled_deletion
+                .is_some_and(|rule| rule.approvers_predate_document),
+        };
+        if self
+            .when
+            .as_ref()
+            .is_some_and(|when| !when.holds(&of_the_type))
+        {
+            return false;
+        }
         let slots: Vec<(&str, &RequiredPropertySlot, Vec<&str>)> = self
             .slots
             .iter()
@@ -492,10 +538,8 @@ impl DocumentTypeRequirements {
                     slot.admits(property)
                         && slot.when.as_ref().is_none_or(|when| {
                             when.holds(&SlotConditionSubject {
-                                kind,
                                 property_name: name,
-                                deletion_kept_fields,
-                                moderator_changeable_fields,
+                                ..of_the_type
                             })
                         })
                 };
