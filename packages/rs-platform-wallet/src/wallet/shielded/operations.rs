@@ -3809,21 +3809,28 @@ fn recovery_context_holds(
             .is_ok_and(|fee| fee == context.planned_fee)
 }
 
-/// Refuse to plan a spend, whose fee is priced at the SDK's version, when the SDK has verified
-/// a different network version: the network would apply its fee at its own, and the SDK's
-/// version is a pin that is not overridden here. Plan again once the SDK builds at the version
-/// the network runs.
+/// Refuse to plan a spend, whose fee is priced at the `captured` version, when the SDK has
+/// verified a different network version or builds at another one now: the network would apply
+/// its fee at its own, and the SDK's version is a pin that is not overridden here. Plan again
+/// once the SDK builds at the version the network runs.
 fn ensure_plan_version_matches_network(
     sdk: &Arc<dash_sdk::Sdk>,
+    captured: &PlatformVersion,
 ) -> Result<(), PlatformWalletError> {
-    let version = sdk.version().protocol_version;
-    match sdk.protocol_version_info().verified_version {
-        Some(network) if network != version => Err(PlatformWalletError::ShieldedBuildError(
-            format!(
-                "the SDK builds at protocol version {version} but the network runs {network},                  so a spend would be priced at a version the network does not apply"
-            ),
-        )),
-        _ => Ok(()),
+    let version = captured.protocol_version;
+    let network = sdk
+        .protocol_version_info()
+        .verified_version
+        .filter(|network| *network != version)
+        .or_else(|| {
+            (sdk.version().protocol_version != version).then(|| sdk.version().protocol_version)
+        });
+    match network {
+        Some(network) => Err(PlatformWalletError::ShieldedBuildError(format!(
+            "the SDK builds at protocol version {version} but the network runs {network}, \
+             so a spend would be priced at a version the network does not apply"
+        ))),
+        None => Ok(()),
     }
 }
 
@@ -3920,13 +3927,18 @@ pub async fn plan_spend<S: ShieldedStore>(
     kind: ShieldedSpendKind,
     amount: ShieldedSpendAmount,
 ) -> Result<ShieldedSpendPlan, PlatformWalletError> {
-    ensure_plan_version_matches_network(sdk)?;
+    // The pricing version is captured once; the store read is an await, during which another
+    // task can verify a different network version, so it is checked again right before the
+    // notes are planned at it.
+    let version = sdk.version();
+    ensure_plan_version_matches_network(sdk, version)?;
     let unspent = store
         .read()
         .await
         .get_unspent_notes(SubwalletId::new(wallet_id, account))
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    super::note_selection::plan_spend(&unspent, kind, amount, sdk.version())
+    ensure_plan_version_matches_network(sdk, version)?;
+    super::note_selection::plan_spend(&unspent, kind, amount, version)
 }
 
 /// Select and reserve, in one write-locked critical section, notes covering
@@ -9976,6 +9988,48 @@ mod spend_plan_tests {
         )
         .await;
 
+        assert!(
+            matches!(&planned, Err(PlatformWalletError::ShieldedBuildError(message))
+                if message.contains("13") && message.contains(&network.to_string())),
+            "got {planned:?}"
+        );
+        let _ = std::fs::remove_file(&case.path);
+    }
+
+    /// The network version another task verifies while the plan's store read is suspended is
+    /// not planned around: the plan would price a fee at the pinned version that the network
+    /// does not apply, which the host would display and confirm but could never use.
+    #[tokio::test]
+    async fn should_refuse_to_plan_when_the_network_version_is_verified_during_the_store_read() {
+        use std::task::{Context, Poll, Waker};
+
+        let network = PlatformVersion::latest().protocol_version;
+        let case =
+            VersionMovesDuringAnchorFetch::serving_pinned(ShieldedSpendKind::Unshield, 13).await;
+        // Hold the store so that the planner suspends at its read.
+        let held = case.store.write().await;
+        let mut planning = Box::pin(plan_spend(
+            &case.sdk,
+            &case.store,
+            WALLET_ID,
+            0,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendAmount::Exact(NOTE),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            planning.as_mut().poll(&mut cx).is_pending(),
+            "planning waits for the store"
+        );
+        // Another task verifies a newer protocol version meanwhile.
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+        drop(held);
+
+        let Poll::Ready(planned) = planning.as_mut().poll(&mut cx) else {
+            panic!("planning finishes once the store is free");
+        };
         assert!(
             matches!(&planned, Err(PlatformWalletError::ShieldedBuildError(message))
                 if message.contains("13") && message.contains(&network.to_string())),
