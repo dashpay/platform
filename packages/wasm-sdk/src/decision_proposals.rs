@@ -2,6 +2,11 @@
 //! masternodes. Thin bindings over `dash_sdk::platform::decision_proposals`: a proposal is a
 //! `proposal` document of the decision proposals system contract, created and edited like any
 //! document, and its poll is named by the proposal's id.
+//!
+//! A question with more than two answers is a multiple choice proposal: see
+//! [`multiple_choice`].
+
+pub mod multiple_choice;
 
 use crate::error::WasmSdkError;
 use crate::queries::utils::{documents_map, documents_page_of};
