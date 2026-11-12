@@ -99,7 +99,8 @@ impl ShieldedMemo {
     }
 
     /// A payment reference as text, when it is valid UTF-8 once its zero padding is
-    /// removed. A reference that is not, a hash for example, is shown in hexadecimal.
+    /// removed. `None` for a reference that is not, a hash for example: a caller that
+    /// shows such a reference renders its 32 bytes in hexadecimal.
     pub fn payment_ref_text(reference: &[u8; MEMO_PAYLOAD_SIZE]) -> Option<&str> {
         let end = reference.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
         std::str::from_utf8(&reference[..end])

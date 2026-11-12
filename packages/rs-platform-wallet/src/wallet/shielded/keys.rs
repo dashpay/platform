@@ -274,10 +274,13 @@ impl AccountViewingKeys {
     /// request's unique key (`owner_id`, `to_user_id`, `account_reference`) hashes to
     /// under this account's full viewing key ([`shielded_contact_index`]).
     ///
-    /// The same request always gives the same address, and two requests never share
-    /// one, on every device holding the seed and with nothing stored. `owner_id` is
-    /// the identity that sends the request and owns this account, and
-    /// `account_reference` the value the request publishes.
+    /// The same request always gives the same address on every device holding the
+    /// seed, with no allocation stored. Two requests share an address only if their
+    /// 87-bit indices collide, which is negligible but not impossible: before sending
+    /// a request the caller compares its index with those already given to other
+    /// contacts and, on a match, sends it under another `account_reference` (see
+    /// [`shielded_contact_index`]). `owner_id` is the identity that sends the request
+    /// and owns this account, and `account_reference` the value the request publishes.
     pub fn contact_address(
         &self,
         owner_id: &[u8; 32],

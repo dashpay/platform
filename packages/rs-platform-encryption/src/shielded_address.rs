@@ -7,9 +7,11 @@
 //! allocated or stored. Its diversifier index is a keyed hash of the contact request's
 //! unique key (`$ownerId`, `toUserId`, `accountReference`), under a key derived from
 //! the account's full viewing key. Two devices restored from one seed derive the same
-//! address for the same request and never the same address for two requests, with no
-//! state to keep in step or to lose. A counter cannot give that: two devices would
-//! hand the same index to different contacts.
+//! address for the same request, with no state to keep in step or to lose. Two
+//! requests get the same address only if their indices collide in the 87 bits the
+//! hash leaves free, which is negligible, and the sender checks for it before sending
+//! (see [`shielded_contact_index`]). A counter cannot give that: two devices would
+//! hand the same index to different contacts as a matter of course.
 //!
 //! This module holds what needs no shielded pool types: the index and the encoding of
 //! `encryptedShieldedAddress`. The wallet turns an index into an address with the
