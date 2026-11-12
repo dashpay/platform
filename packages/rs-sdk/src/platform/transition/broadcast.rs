@@ -1087,7 +1087,7 @@ mod tests {
     /// family the classifier reports as affected state cannot use the strict
     /// wait: its own valid proof would come back as an error.
     #[test]
-    fn affected_state_wait_accepts_what_the_strict_wait_refuses() {
+    fn should_accept_affected_state_while_the_strict_wait_refuses_it() {
         use std::collections::BTreeMap;
 
         let erased = || {
@@ -1101,10 +1101,11 @@ mod tests {
             .expect_err("the strict wait must refuse an erase's own outcome");
         assert!(matches!(err, Error::ExecutionNotProved(_)));
 
-        assert_eq!(
-            accept_affected_state(StateTransitionProofOutcome::affected_state(erased())),
-            erased(),
-            "the affected-state wait must return the erase's observation unchanged"
-        );
+        let result = accept_affected_state(StateTransitionProofOutcome::affected_state(erased()));
+        let StateTransitionProofResult::VerifiedDocuments(documents) = result else {
+            panic!("the affected-state wait must return the document observation");
+        };
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents.get(&Identifier::from([9u8; 32])), Some(&None));
     }
 }
