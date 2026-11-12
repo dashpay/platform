@@ -1,4 +1,5 @@
-//! The known-contract cache both context providers keep.
+//! The rule of the known-contract caches the local resolver and the verified
+//! provider keep.
 
 use std::collections::HashMap;
 use std::sync::Arc;

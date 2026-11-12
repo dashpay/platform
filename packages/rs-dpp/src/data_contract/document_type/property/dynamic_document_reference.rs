@@ -31,10 +31,18 @@
 //! of the declared kind, that it meets the `documentTypeRequirements`, and that the document
 //! exists. A type's deletion and moderation settings never change, so a target of the
 //! declared kind keeps it; the requirements are judged whenever the reference is checked.
+//!
+//! `type` may list both kinds, `["permanentDocument", "moderatedDocument"]`: the named type
+//! is then either, and the reference is checked as one of the kind the type is. A slot may
+//! carry a `when` ([`SlotCondition`]) telling the two apart, so that it asks of a moderated
+//! type what it does not ask of a permanent one.
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyType, DocumentReferenceKind,
+    DocumentProperty, DocumentPropertyType, DocumentReferenceKind, SlotCondition,
+    SlotConditionSubject,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -63,13 +71,39 @@ pub enum DynamicDocumentReferenceKind {
     /// `moderatedDocument`: the documents leave state only through a moderator's recorded
     /// removal.
     Moderated,
+    /// `["permanentDocument", "moderatedDocument"]`: either of the two, whichever the named
+    /// type is.
+    PermanentOrModerated,
 }
 
-impl From<DynamicDocumentReferenceKind> for DocumentReferenceKind {
-    fn from(kind: DynamicDocumentReferenceKind) -> Self {
-        match kind {
-            DynamicDocumentReferenceKind::Permanent => DocumentReferenceKind::Permanent,
-            DynamicDocumentReferenceKind::Moderated => DocumentReferenceKind::Moderated,
+impl DynamicDocumentReferenceKind {
+    /// The `refersTo` `type` the kind is written with: one name, or the two of a list.
+    pub const fn wire_names(self) -> &'static [&'static str] {
+        match self {
+            DynamicDocumentReferenceKind::Permanent => &["permanentDocument"],
+            DynamicDocumentReferenceKind::Moderated => &["moderatedDocument"],
+            DynamicDocumentReferenceKind::PermanentOrModerated => {
+                &["permanentDocument", "moderatedDocument"]
+            }
+        }
+    }
+
+    /// The kind of reference a document pointing into a type of kind `actual` is checked
+    /// as. A declaration of one kind is that kind whatever the type is, so a type of
+    /// another is refused as it is for a reference naming its target in the schema. A
+    /// declaration of either kind is a moderated reference into a moderated type and a
+    /// permanent one into any other, which refuses a type whose documents can be deleted.
+    pub const fn checked_as(self, actual: DocumentReferenceKind) -> DocumentReferenceKind {
+        match (self, actual) {
+            (DynamicDocumentReferenceKind::Permanent, _) => DocumentReferenceKind::Permanent,
+            (DynamicDocumentReferenceKind::Moderated, _) => DocumentReferenceKind::Moderated,
+            (
+                DynamicDocumentReferenceKind::PermanentOrModerated,
+                DocumentReferenceKind::Moderated,
+            ) => DocumentReferenceKind::Moderated,
+            (DynamicDocumentReferenceKind::PermanentOrModerated, _) => {
+                DocumentReferenceKind::Permanent
+            }
         }
     }
 }
@@ -103,9 +137,10 @@ impl DynamicDocumentReference {
         format!("{REFERRING_DOCUMENT_PREFIX}{}", self.document_type_property)
     }
 
-    /// The `refersTo` `type` the declaration is written with.
-    pub fn wire_name(&self) -> &'static str {
-        DocumentReferenceKind::from(self.kind).wire_name()
+    /// The `refersTo` `type` the declaration is written with: one name, or the two of a
+    /// list.
+    pub fn wire_names(&self) -> &'static [&'static str] {
+        self.kind.wire_names()
     }
 
     /// The properties of the declaring type the target is read from: the contract id, the
@@ -151,6 +186,9 @@ pub struct RequiredPropertySlot {
     /// The other slots this one must be filled by a different property than
     /// (`distinctFrom`). The relation is symmetric: naming it on one side is enough.
     pub distinct_from: BTreeSet<String>,
+    /// What the referenced type must say of the property (`when`): a property the condition
+    /// does not hold for does not fill the slot. `None` asks nothing.
+    pub when: Option<SlotCondition>,
 }
 
 /// Which property of the referenced type may fill a slot.
@@ -298,8 +336,8 @@ impl SlotRequirement {
 
 impl RequiredPropertySlot {
     /// The slot as a contract schema declares it: `name`, `type`, `byteArray` on a byte
-    /// array, and `maxBytes` and `distinctFrom` (always a list) when it has them. What the
-    /// parser reads back to this slot.
+    /// array, and `maxBytes`, `distinctFrom` (always a list) and `when` when it has them.
+    /// What the parser reads back to this slot.
     pub fn to_schema_value(&self) -> Value {
         let name = match &self.name {
             SlotPropertyName::Any => Value::Text(ANY_PROPERTY_NAME.to_string()),
@@ -321,12 +359,15 @@ impl RequiredPropertySlot {
         if !self.distinct_from.is_empty() {
             members.push(("distinctFrom", schema_names(&self.distinct_from)));
         }
+        if let Some(when) = &self.when {
+            members.push(("when", when.to_schema_value()));
+        }
         schema_object(members)
     }
 
     /// Whether `property`, a top-level property of the referenced type, matches the slot's
-    /// description, its name aside. A transient property is never stored, so it fills
-    /// nothing.
+    /// description, its name and its `when` aside. A transient property is never stored, so
+    /// it fills nothing.
     pub fn admits(&self, property: &DocumentProperty) -> bool {
         if property.transient {
             return false;
@@ -389,12 +430,42 @@ impl DocumentTypeRequirements {
         })
     }
 
+    /// How many comparisons judging `document_type` against the requirements takes, at
+    /// most: what a write that checks the reference is billed for, before it is judged.
+    ///
+    /// Each slot tries every top-level property of the type when it takes any property
+    /// (`"$any"`), and one when it names it. Trying a property is one comparison of it with
+    /// the slot's description, and one more for each node of the slot's `when`
+    /// ([`SlotCondition::node_count`]), whether or not the description admits it: the
+    /// count depends on the declaration and the size of the type alone, not on what the
+    /// type's properties are. The search for an assignment that follows is over at most
+    /// `max_document_type_requirement_slots` slots and is not counted.
+    pub fn comparisons(&self, document_type: DocumentTypeRef) -> u64 {
+        let properties = document_type.properties().len() as u64;
+        self.slots
+            .values()
+            .map(|slot| {
+                let tried = match slot.name {
+                    SlotPropertyName::Any => properties,
+                    SlotPropertyName::Named(_) | SlotPropertyName::FromProperty(_) => 1,
+                };
+                let per_property = slot
+                    .when
+                    .as_ref()
+                    .map_or(0, |when| when.node_count() as u64)
+                    .saturating_add(1);
+                tried.saturating_mul(per_property)
+            })
+            .fold(0u64, u64::saturating_add)
+    }
+
     /// Whether `document_type` meets the requirements.
     ///
-    /// A slot is filled by one top-level property of the type that its description admits:
-    /// any such property for `"$any"`, the named one for a literal name, and for a name read
-    /// from the referring document the property `name_from_property` gives for that
-    /// referring property (`None` when the document leaves it out, which fills nothing).
+    /// A slot is filled by one top-level property of the type that its description admits
+    /// and its `when` holds for: any such property for `"$any"`, the named one for a
+    /// literal name, and for a name read from the referring document the property
+    /// `name_from_property` gives for that referring property (`None` when the document
+    /// leaves it out, which fills nothing).
     /// Slots that are `distinctFrom` each other are filled by different properties. The
     /// requirements are met when some choice of properties fills a set of slots `require`
     /// holds for, which is every slot when there is no `require`.
@@ -410,21 +481,35 @@ impl DocumentTypeRequirements {
         name_from_property: impl Fn(&str) -> Option<String>,
     ) -> bool {
         let properties = document_type.properties();
+        let kind = document_type.document_reference_kind();
+        let deletion_kept_fields = document_type.moderator_deletion_kept_fields();
+        let moderator_changeable_fields = document_type.moderator_changeable_fields();
         let slots: Vec<(&str, &RequiredPropertySlot, Vec<&str>)> = self
             .slots
             .iter()
             .map(|(slot_name, slot)| {
+                let fills = |name: &str, property: &DocumentProperty| {
+                    slot.admits(property)
+                        && slot.when.as_ref().is_none_or(|when| {
+                            when.holds(&SlotConditionSubject {
+                                kind,
+                                property_name: name,
+                                deletion_kept_fields,
+                                moderator_changeable_fields,
+                            })
+                        })
+                };
                 let named = |name: &str| {
                     properties
                         .get_key_value(name)
-                        .filter(|(_, property)| slot.admits(property))
+                        .filter(|(name, property)| fills(name, property))
                         .map(|(name, _)| vec![name.as_str()])
                         .unwrap_or_default()
                 };
                 let candidates = match &slot.name {
                     SlotPropertyName::Any => properties
                         .iter()
-                        .filter(|(_, property)| slot.admits(property))
+                        .filter(|(name, property)| fills(name, property))
                         .map(|(name, _)| name.as_str())
                         .collect(),
                     SlotPropertyName::Named(name) => named(name),

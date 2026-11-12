@@ -3,15 +3,20 @@
 //! protocol version 15): the document says which contract and which document type its value points into, so
 //! everything about the target is checked when the document is written. The target here is
 //! `post`, a type whose documents only the contract's moderators remove, each removal leaving
-//! a record.
+//! a record. A reference may also admit a type of either kind, permanent or moderated, and
+//! ask of a property filling a slot what the type says of it (`when`).
 
 use super::*;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::DocumentReferenceKind;
 
 const NOTE: &str = "note";
 const BYTES_NOTE: &str = "bytesNote";
 const NAMED_NOTE: &str = "namedNote";
 const PLAIN: &str = "plain";
+const EITHER_NOTE: &str = "eitherNote";
+const KEPT_POST: &str = "keptPost";
+const ARTICLE: &str = "article";
 const PERMANENT_NOTE: &str = "permanentNote";
 const TALLY: &str = "tally";
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
@@ -38,12 +43,17 @@ fn identifier_property(position: u64) -> Value {
 /// A note describing itself with a moderated document of a type it names, which must meet
 /// `requirements`. `textProperty` is there for a slot to read its property name from.
 fn note_schema(requirements: Value) -> Value {
+    note_schema_of(platform_value!("moderatedDocument"), requirements)
+}
+
+/// The same, describing itself with a document of the kind, or of the kinds, `kind` lists.
+fn note_schema_of(kind: Value, requirements: Value) -> Value {
     let mut description_id = identifier_property(0);
     description_id
         .insert(
             "refersTo".to_string(),
             platform_value!({
-                "type": "moderatedDocument",
+                "type": kind,
                 "contractId": "$self.descriptionContractId",
                 "documentType": "$self.descriptionDocumentType",
                 "documentTypeRequirements": requirements,
@@ -503,4 +513,344 @@ async fn should_follow_a_dynamic_reference_into_another_contract() {
     note.set("body", "an edit".into());
     let edit = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
     assert_success(&setup.process(&edit, &transaction));
+}
+
+/// A string a removal takes with the document and its author writes, when the type is a
+/// moderated one; any string of a permanent type.
+fn text_removed_with_the_document() -> Value {
+    platform_value!({
+        "properties": {
+            "body": {
+                "name": "$any",
+                "type": "string",
+                "when": {
+                    "ifThen": [
+                        { "equal": ["$kind", { "const": "moderatedDocument" }] },
+                        { "allOf": [
+                            { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+                            { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } },
+                        ] },
+                    ],
+                },
+            },
+        },
+    })
+}
+
+/// A reference listing both kinds admits a permanent type and a moderated one, and is
+/// checked as the kind the named type is: a moderated type is held to the slot's `when`,
+/// which asks that a removal take the text, a permanent one is not, and a type whose
+/// documents their owner deletes is refused as it is for a permanent reference. Into a
+/// moderated type it is kept as a moderated reference is, once the post is removed.
+#[tokio::test]
+async fn should_check_a_reference_of_either_kind_as_the_kind_the_named_type_is() {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({ "canBeDeleted": false })),
+            );
+            // A moderated type whose removal record keeps the text
+            add_document_type(
+                contract,
+                KEPT_POST,
+                post_schema_with(platform_value!({
+                    "canBeDeleted": false,
+                    "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text"] },
+                })),
+            );
+            // A permanent type: nobody deletes or changes an article
+            add_document_type(
+                contract,
+                ARTICLE,
+                platform_value!({
+                    "type": "object",
+                    "canBeDeleted": false,
+                    "documentsMutable": false,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "required": ["text"],
+                    "additionalProperties": false,
+                }),
+            );
+            add_document_type(contract, PLAIN, plain_schema());
+            add_document_type(
+                contract,
+                EITHER_NOTE,
+                note_schema_of(
+                    platform_value!(["permanentDocument", "moderatedDocument"]),
+                    text_removed_with_the_document(),
+                ),
+            );
+            add_document_type(contract, NOTE, note_schema(text_or_bytes()));
+        },
+    )
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract_id = setup.contract.id();
+    for (document_type_name, kind) in [
+        (POST, DocumentReferenceKind::Moderated),
+        (KEPT_POST, DocumentReferenceKind::Moderated),
+        (ARTICLE, DocumentReferenceKind::Permanent),
+        (PLAIN, DocumentReferenceKind::Deletable),
+    ] {
+        assert_eq!(
+            setup
+                .contract
+                .document_type_for_name(document_type_name)
+                .expect("expected the type")
+                .document_reference_kind(),
+            kind,
+            "{document_type_name}"
+        );
+    }
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (kept_post, create_kept_post) = setup.create_document_of_type(&setup.user, KEPT_POST).await;
+    assert_success(&setup.process(&create_kept_post, &transaction));
+    let (article, create_article) = setup.create_document_of_type(&setup.user, ARTICLE).await;
+    assert_success(&setup.process(&create_article, &transaction));
+    let (plain, create_plain) = setup.create_document_of_type(&setup.user, PLAIN).await;
+    assert_success(&setup.process(&create_plain, &transaction));
+
+    // A moderated type whose text a removal takes
+    let (mut note, names_a_post) = create_with(
+        &setup,
+        &setup.stranger,
+        EITHER_NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&names_a_post, &transaction));
+    // A moderated type whose removal record keeps its one string: nothing fills the slot
+    let (_, names_kept_text) = create_with(
+        &setup,
+        &setup.stranger,
+        EITHER_NOTE,
+        note_naming(contract_id, KEPT_POST, kept_post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&names_kept_text, &transaction),
+        REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET,
+    );
+    // which a reference that asks only for text accepts
+    let (_, asks_for_text) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, KEPT_POST, kept_post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&asks_for_text, &transaction));
+
+    // A permanent type, which a moderated reference refuses and the condition asks
+    // nothing of
+    let (_, names_an_article) = create_with(
+        &setup,
+        &setup.stranger,
+        EITHER_NOTE,
+        note_naming(contract_id, ARTICLE, article.id()),
+    )
+    .await;
+    assert_success(&setup.process(&names_an_article, &transaction));
+    let (_, moderated_only) = create_with(
+        &setup,
+        &setup.stranger,
+        NOTE,
+        note_naming(contract_id, ARTICLE, article.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&moderated_only, &transaction),
+        REFERENCED_DOCUMENT_TYPE_NOT_MODERATED,
+    );
+
+    // A type whose documents their owner deletes is neither
+    let (_, names_a_deletable) = create_with(
+        &setup,
+        &setup.stranger,
+        EITHER_NOTE,
+        note_naming(contract_id, PLAIN, plain.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&names_a_deletable, &transaction),
+        REFERENCED_DOCUMENT_TYPE_DELETABLE,
+    );
+    // and a document that is not there is missing, of either kind
+    for document_type_name in [POST, ARTICLE] {
+        let (_, no_document) = create_with(
+            &setup,
+            &setup.stranger,
+            EITHER_NOTE,
+            note_naming(contract_id, document_type_name, Identifier::random()),
+        )
+        .await;
+        assert_paid_with_code(
+            &setup.process(&no_document, &transaction),
+            REFERENCED_ENTITY_NOT_FOUND,
+        );
+    }
+
+    // Into a moderated type the reference is a moderated one: the note outlives the
+    // post's removal, and no new note names the removed post
+    let remove = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    assert_success(&setup.process(&remove, &transaction));
+    note.set("body", "an edit".into());
+    let edit = replacement(&setup.stranger, &setup.contract, EITHER_NOTE, &mut note).await;
+    assert_success(&setup.process(&edit, &transaction));
+    let (_, names_removed) = create_with(
+        &setup,
+        &setup.stranger,
+        EITHER_NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_paid_with_code(
+        &setup.process(&names_removed, &transaction),
+        REFERENCED_ENTITY_NOT_FOUND,
+    );
+    // A replace pointing the note at the article checks it again, as a permanent reference
+    note.set("descriptionDocumentType", ARTICLE.into());
+    note.set("descriptionId", id_value(article.id()));
+    let repoint = replacement(&setup.stranger, &setup.contract, EITHER_NOTE, &mut note).await;
+    assert_success(&setup.process(&repoint, &transaction));
+}
+
+/// The processing fee a write was charged, accepted or refused.
+fn processing_fee(execution: &StateTransitionExecutionResult) -> u64 {
+    match execution {
+        StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
+            fee_result.processing_fee
+        }
+        StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => {
+            actual_fees.processing_fee
+        }
+        other => panic!("expected a paid execution, got {other:?}"),
+    }
+}
+
+/// Judging the named type against the requirements is billed by the comparisons it may
+/// take, before it is judged: a slot's `when` adds its nodes for each property the slot
+/// tries, and a write refused because the type does not meet the requirements pays for
+/// the judging like one that is accepted.
+#[tokio::test]
+async fn should_bill_the_comparisons_judging_the_named_type_takes() {
+    const MEASURED: &str = "measuredNote";
+    let any_text = |when: Option<Value>| {
+        let mut slot = platform_value!({ "name": "$any", "type": "string" });
+        if let Some(when) = when {
+            slot.insert("when".to_string(), when)
+                .expect("expected to set the condition");
+        }
+        platform_value!({ "properties": { "body": slot } })
+    };
+    // The seven nodes of "a removal takes the text", and the same with two more
+    let seven = || {
+        text_removed_with_the_document()
+            .get("properties")
+            .expect("expected properties")
+            .expect("expected properties")
+            .get("body")
+            .expect("expected the slot")
+            .expect("expected the slot")
+            .get("when")
+            .expect("expected the condition")
+            .expect("expected the condition")
+            .clone()
+    };
+    let nine = || {
+        platform_value!({ "allOf": [
+            seven(),
+            { "notEqual": ["$property", { "const": "never" }] },
+        ] })
+    };
+    let per_comparison = PlatformVersion::latest()
+        .fee_version
+        .document_reference
+        .requirement_credits_per_comparison;
+    assert_eq!(per_comparison, 100);
+
+    // Each write is measured on a platform of its own, built the same way every time but
+    // for the `when` of the one slot of the note it writes: the note type has the same
+    // name and the same place in the contract, so two writes differ by the judging alone
+    let mut fee_of = Vec::new();
+    for (when, target_type) in [
+        (None, POST),
+        (Some(seven()), POST),
+        (Some(nine()), POST),
+        (Some(seven()), KEPT_POST),
+        (Some(nine()), KEPT_POST),
+    ] {
+        let setup = Setup::new_at_with(
+            Some(moderators_without_lists()),
+            PlatformVersion::latest(),
+            |contract| {
+                add_document_type(
+                    contract,
+                    POST,
+                    post_schema_with(platform_value!({ "canBeDeleted": false })),
+                );
+                add_document_type(
+                    contract,
+                    KEPT_POST,
+                    post_schema_with(platform_value!({
+                        "canBeDeleted": false,
+                        "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["text"] },
+                    })),
+                );
+                add_document_type(
+                    contract,
+                    MEASURED,
+                    note_schema_of(platform_value!("moderatedDocument"), any_text(when)),
+                );
+            },
+        )
+        .await;
+        // A post has one property, so a slot taking any property tries one
+        assert_eq!(
+            setup
+                .contract
+                .document_type_for_name(target_type)
+                .expect("expected the type")
+                .properties()
+                .len(),
+            1
+        );
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let (target, create_target) = setup
+            .create_document_of_type(&setup.user, target_type)
+            .await;
+        assert_success(&setup.process(&create_target, &transaction));
+        let (_, create) = create_with(
+            &setup,
+            &setup.stranger,
+            MEASURED,
+            note_naming(setup.contract.id(), target_type, target.id()),
+        )
+        .await;
+        let execution = setup.process(&create, &transaction);
+        if target_type == POST {
+            assert_success(&execution);
+        } else {
+            assert_paid_with_code(&execution, REFERENCED_DOCUMENT_TYPE_REQUIREMENT_NOT_MET);
+        }
+        fee_of.push(processing_fee(&execution));
+    }
+    let [none, seven_accepted, nine_accepted, seven_refused, nine_refused] = fee_of[..] else {
+        panic!("expected five fees");
+    };
+
+    // One property tried: 1 comparison, 1 + 7 and 1 + 9
+    assert_eq!(seven_accepted - none, 7 * per_comparison);
+    assert_eq!(nine_accepted - seven_accepted, 2 * per_comparison);
+    // and a refused write pays for the judging that refused it
+    assert_eq!(nine_refused - seven_refused, 2 * per_comparison);
 }

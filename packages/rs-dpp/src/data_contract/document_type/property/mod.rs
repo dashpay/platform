@@ -48,6 +48,7 @@ pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 pub mod reference_where;
+pub mod slot_condition;
 
 pub use dynamic_document_reference::{
     DocumentTypeRequirements, DynamicDocumentReference, DynamicDocumentReferenceKind,
@@ -76,6 +77,11 @@ pub use reference_where::{
     where_list_elements, where_lists_elements_read, where_lists_equal, WhereBoundRead,
     WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
+};
+pub use slot_condition::{
+    SlotCondition, SlotConditionList, SlotConditionSubject, SlotConditionValue, SlotConditions,
+    MAX_SLOT_CONDITION_DECODE_DEPTH, SLOT_CONDITION_CHANGE_FIELDS,
+    SLOT_CONDITION_DELETE_KEEPS_FIELDS, SLOT_CONDITION_KIND, SLOT_CONDITION_PROPERTY,
 };
 
 #[cfg(test)]
@@ -1767,6 +1773,7 @@ impl std::fmt::Display for DocumentPropertyReferenceTarget {
                 match reference.kind {
                     DynamicDocumentReferenceKind::Permanent => "permanent",
                     DynamicDocumentReferenceKind::Moderated => "moderated",
+                    DynamicDocumentReferenceKind::PermanentOrModerated => "permanent or moderated",
                 },
                 reference.contract_id_property,
                 reference.document_type_property
@@ -11395,9 +11402,10 @@ mod tests {
                     "deletableDocument"
                 }
                 DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
-                // The `type` it is declared with, permanent or moderated
+                // The `type` it is declared with, permanent or moderated (the first of
+                // the two when it lists both)
                 DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
-                    reference.wire_name()
+                    reference.wire_names()[0]
                 }
                 // Not a `type`: the schema declares them under their own keys
                 DocumentPropertyReferenceTarget::ListElement(_) => "listElement",
