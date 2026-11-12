@@ -328,6 +328,7 @@ pub(crate) fn observed_spend_event(
         balance: key_wallet::WalletCoreBalance::default(),
         account_balances: std::collections::BTreeMap::new(),
         addresses_derived: Vec::new(),
+        locked_outpoints: Vec::new(),
     }
 }
 

@@ -3200,6 +3200,7 @@ mod sent_payment_verdict_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         }
     }
 
@@ -3373,6 +3374,7 @@ mod sent_payment_verdict_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
 
         let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
@@ -3453,6 +3455,7 @@ mod sent_payment_verdict_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         };
         assert!(sent_payment_evidence(&event).is_empty());
     }
@@ -3704,6 +3707,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         }
     }
 
@@ -3714,6 +3718,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         }
     }
 
@@ -4027,6 +4032,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
         let cs = build_core_changeset(&test_manager(), &event).await;
 
@@ -4091,6 +4097,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
         let cs = build_core_changeset(&test_manager(), &event).await;
 
@@ -4153,6 +4160,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
         merged.merge(build_core_changeset(&manager, &confirmation).await);
 
@@ -4565,6 +4573,7 @@ mod contact_watch_only_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
         let cs = build_core_changeset(&manager, &lone_event).await;
 
@@ -6306,6 +6315,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         }
     }
 
@@ -7471,6 +7481,7 @@ mod tests {
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
                 addresses_derived: vec![],
+                locked_outpoints: vec![],
             })
             .expect("send event");
 
@@ -7604,6 +7615,7 @@ mod tests {
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
                 addresses_derived: vec![],
+                locked_outpoints: vec![],
             })
             .expect("send reconstruction event");
         let observed = obs_rx.recv().await.expect("reconstruction store");
@@ -7875,6 +7887,7 @@ mod tests {
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
                 addresses_derived: vec![],
+                locked_outpoints: vec![],
             })
             .expect("send block event");
         let observed = obs_rx.recv().await.expect("first batch stored");
@@ -9068,6 +9081,7 @@ mod utxo_credit_verdict_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
 
         let cs = build_core_changeset(&manager, &event(wallet_id)).await;
@@ -9161,6 +9175,7 @@ mod utxo_credit_verdict_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
             addresses_derived: vec![],
+            locked_outpoints: vec![],
         };
         let cs = build_core_changeset(&manager, &event).await;
         assert_eq!(
