@@ -101,6 +101,23 @@ pub struct SystemLimits {
     /// (protocol version 15), the only version that parses such a reference, and never
     /// reached before.
     pub max_document_type_requirement_slots: u16,
+    /// Maximum number of conditions the `when` of one `documentTypeRequirements` slot may be
+    /// made of, `anyOf`, `allOf`, `not`, `ifThen` and `ifThenElse` counted with the
+    /// comparisons under them, and each string an `in` or a `notIn` lists counted too. Every write that checks the reference judges the condition
+    /// against each property of the referenced document type that could fill the slot. It
+    /// also bounds how deep conditions nest, which a decoder holds to
+    /// `MAX_SLOT_CONDITION_DECODE_DEPTH` (a test keeps this limit within it). Refused on
+    /// every parse. Read by `apply_property_reference` 1 (protocol version 15), the only
+    /// version that parses such a reference, and never reached before.
+    pub max_document_type_requirement_condition_nodes: u16,
+    /// Maximum number of characters of a string the `when` of a `documentTypeRequirements`
+    /// slot is written with: a `{ "const": ... }` and each string an `in` or a `notIn`
+    /// lists. They are compared with property names and property paths, which are no
+    /// longer. With `max_document_type_requirement_condition_nodes`, which counts each
+    /// listed string, it bounds what one `when` adds to a stored contract. Refused on
+    /// every parse and by the native schema check. Read by `apply_property_reference` 1
+    /// and `check_document_type_schema` 1 (protocol version 15) only.
+    pub max_document_type_requirement_condition_text_length: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
     /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one

@@ -1175,7 +1175,9 @@ fn validate_reference_target_v1(
                         document_type_name: &named_document_type,
                         property_agreement: &no_agreement,
                         where_conditions: &no_conditions,
-                        kind: dynamic.kind.into(),
+                        // Settled below, once the named type is known: a declaration
+                        // listing both kinds is of the kind the type is
+                        kind: dynamic.kind.checked_as(DocumentReferenceKind::Permanent),
                         lookup: None,
                         in_list: None,
                     })
@@ -1281,7 +1283,18 @@ fn validate_reference_target_v1(
             // entries Drive refuses to fetch by id (the read below would fail the block's
             // processing of the transition instead of refusing it, paid), and it has the
             // properties the reference's `documentTypeRequirements` ask for. A slot naming
-            // its property through the referring document reads the name there
+            // its property through the referring document reads the name there, and a
+            // slot's `when` is judged against what the type says of each property that
+            // could fill it
+            let kind = match reference_target.as_dynamic_document_reference() {
+                // The kind it declares or, declaring both, a moderated reference into a
+                // moderated type and a permanent one into any other, which the kind check
+                // below refuses for a type whose documents can be deleted
+                Some(dynamic) => dynamic
+                    .kind
+                    .checked_as(referenced_document_type.document_reference_kind()),
+                None => kind,
+            };
             if let Some(dynamic) = reference_target.as_dynamic_document_reference() {
                 if referenced_document_type.is_private() {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -1302,6 +1315,17 @@ fn validate_reference_target_v1(
                         )
                         .into(),
                     ));
+                }
+                // Judging the type reads nothing from state, but its work grows with the
+                // type's properties, the slots and their `when` conditions, and a document
+                // may hold many such references: billed by the comparisons it may take,
+                // before it is judged, so a write refused below pays for it too
+                if let Some(requirements) = &dynamic.requirements {
+                    bill_requirement_comparisons(
+                        requirements.comparisons(referenced_document_type),
+                        execution_context,
+                        platform_version,
+                    )?;
                 }
                 let meets_requirements = dynamic.requirements.as_ref().is_none_or(|requirements| {
                     requirements.met_by(referenced_document_type, |referring_property| {
@@ -2154,6 +2178,37 @@ fn bill_where_list_elements(
         })
         .ok_or(Error::Execution(ExecutionError::Overflow(
             "where list comparison fee overflow",
+        )))?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(credits),
+    ));
+    Ok(())
+}
+
+/// Bills `comparisons`, what judging a document type against the
+/// `documentTypeRequirements` of a reference naming its target through the
+/// referring document may take (`DocumentTypeRequirements::comparisons`):
+/// `requirement_credits_per_comparison` each, of the fee schedule's document
+/// reference group. The count is bounded by the slots a declaration may hold,
+/// the nodes of a `when` and the properties of a type, so the product never
+/// nears overflow; an overflow is still an error rather than a wrapped bill.
+fn bill_requirement_comparisons(
+    comparisons: u64,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if comparisons == 0 {
+        return Ok(());
+    }
+    let credits = comparisons
+        .checked_mul(
+            platform_version
+                .fee_version
+                .document_reference
+                .requirement_credits_per_comparison,
+        )
+        .ok_or(Error::Execution(ExecutionError::Overflow(
+            "document type requirement comparison fee overflow",
         )))?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
         FeeResult::new_from_processing_fee(credits),

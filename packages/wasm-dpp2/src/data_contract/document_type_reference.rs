@@ -280,9 +280,13 @@ export type DocumentPropertyReferenceTarget =
        * as `$old` is the stored one in a rule) when it is written, where
        * consensus checks that both exist, that the type is of this kind and
        * that it meets `documentTypeRequirements` (code 40153 when it does
-       * not).
+       * not). A list of both kinds admits a type of either: the reference is
+       * then checked as one of the kind the named type is.
        */
-      type: 'permanentDocument' | 'moderatedDocument';
+      type:
+        | 'permanentDocument'
+        | 'moderatedDocument'
+        | ['permanentDocument', 'moderatedDocument'];
       /**
        * `$self.` followed by the top-level identifier property of the
        * referring document holding the id of the contract the referenced
@@ -333,7 +337,55 @@ export type DocumentTypeRequirementSlot = {
   maxBytes?: number;
   /** The other slots this one is filled by a different property than. */
   distinctFrom?: Array<string>;
+  /**
+   * What the referenced type must say of the property: one the condition
+   * does not hold for does not fill the slot.
+   */
+  when?: DocumentTypeSlotCondition;
 };
+
+/**
+ * A string a slot's `when` compares: `'$kind'`, the kind of the referenced
+ * document type (`'permanentDocument'` or `'moderatedDocument'`), `'$property'`,
+ * the name of the property tried for the slot, or a constant.
+ */
+export type DocumentTypeSlotConditionString =
+  | '$kind'
+  | '$property'
+  | { const: string };
+
+/**
+ * A condition of a slot's `when`, in the forms of a `propertyConstraints`
+ * condition, read against the referenced document type instead of a
+ * document. `contains` looks into the type's
+ * `moderatorAbilities.deleteKeepsFields` or `moderatorAbilities.changeFields`,
+ * empty where the type declares none.
+ */
+export type DocumentTypeSlotCondition =
+  | { equal: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { notEqual: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { in: ['$kind' | '$property', Array<string>] }
+  | { notIn: ['$kind' | '$property', Array<string>] }
+  | {
+      contains: [
+        (
+          | '$moderatorAbilities.deleteKeepsFields'
+          | '$moderatorAbilities.changeFields'
+        ),
+        '$property' | { const: string },
+      ];
+    }
+  | { not: DocumentTypeSlotCondition }
+  | { anyOf: Array<DocumentTypeSlotCondition> }
+  | { allOf: Array<DocumentTypeSlotCondition> }
+  | { ifThen: [DocumentTypeSlotCondition, DocumentTypeSlotCondition] }
+  | {
+      ifThenElse: [
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+      ];
+    };
 
 export type DocumentTypeSlotRequirement =
   | { anyOf: Array<string | { allOf: Array<string> }> }
@@ -897,15 +949,32 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
-        // Permanent or moderated, as declared
-        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference.wire_name(),
+        // Permanent or moderated, as declared; both are listed below when it admits either
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference
+            .wire_names()
+            .first()
+            .copied()
+            .unwrap_or("permanentDocument"),
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
                 "the reference expression declared at '{path}' has no single target kind"
             )));
         }
     };
-    set_field(object, "type", &JsValue::from_str(kind), path)?;
+    let declared_type: JsValue = match target {
+        DocumentPropertyReferenceTarget::DynamicDocument(reference)
+            if reference.wire_names().len() > 1 =>
+        {
+            reference
+                .wire_names()
+                .iter()
+                .map(|name| JsValue::from_str(name))
+                .collect::<Array>()
+                .into()
+        }
+        _ => JsValue::from_str(kind),
+    };
+    set_field(object, "type", &declared_type, path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
