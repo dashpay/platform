@@ -39,7 +39,10 @@ final class AppStateQuorumModeTests: XCTestCase {
         XCTAssertEqual(built.quorumSource, .spv)
     }
 
-    func testShouldApplyTheQuorumModeToEverySdkItBuilt() throws {
+    /// Setting `quorumMode` alone applies it to every SDK AppState built and
+    /// refreshes the indicator: Options binds its picker straight to it, and
+    /// no view passes the change on.
+    func testShouldApplyAModeChangeToEverySdkItBuilt() throws {
         let restore = isolateSettings()
         defer { restore() }
         let appState = AppState()
@@ -47,11 +50,13 @@ final class AppStateQuorumModeTests: XCTestCase {
 
         let first = try appState.makeSdk(for: .regtest)
         let second = try appState.makeSdk(for: .regtest)
+        appState.sdk = first
         XCTAssertEqual(second.quorumSource, .trusted, "Auto without SPV asks the trusted service")
 
         appState.quorumMode = .spv
-        appState.applyQuorumMode()
+
         XCTAssertEqual(first.quorumSource, .spv)
         XCTAssertEqual(second.quorumSource, .spv)
+        XCTAssertEqual(appState.quorumSource, .spv, "the indicator follows the published SDK")
     }
 }

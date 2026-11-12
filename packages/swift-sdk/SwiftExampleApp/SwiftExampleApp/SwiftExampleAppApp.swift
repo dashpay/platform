@@ -186,17 +186,13 @@ struct SwiftExampleAppApp: App {
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Refresh adaptive-provider policy and the active-source
-                // indicator as SPV readiness changes.
+                // Refresh the active-source indicator as SPV readiness
+                // changes.
                 .background {
                     QuorumSourceRefresh(
                         walletManager: walletManager,
                         platformState: platformState
                     )
-                }
-                // Apply the Quorum Source picker to every SDK the app built.
-                .onChange(of: platformState.quorumMode) { _, _ in
-                    platformState.applyQuorumMode()
                 }
         }
     }
@@ -425,7 +421,7 @@ struct SwiftExampleAppApp: App {
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
-                platformState.applyQuorumMode()
+                platformState.refreshQuorumSource()
                 let restoredCount = walletManager.wallets.count
                 if restoredCount > 0 {
                     SDKLogger.log(
@@ -557,11 +553,11 @@ struct SwiftExampleAppApp: App {
     }
 }
 
-/// Leaf that applies the quorum mode again whenever SPV readiness may have
-/// changed, so the adaptive provider's policy and the active-source
-/// indicator follow it. Readiness needs SPV running as well as synced, and a
-/// failed sync loop stops SPV without changing its progress, so both are
-/// observed.
+/// Leaf that refreshes the active-source indicator whenever SPV readiness may
+/// have changed. The adaptive provider follows readiness by itself; only the
+/// indicator has to be read again. Readiness needs SPV running as well as
+/// synced, and a failed sync loop stops SPV without changing its progress, so
+/// both are observed.
 ///
 /// The scene does not observe the wallet manager, so an `.onChange` on its
 /// content would re-read these values only when one of the scene's own
@@ -574,10 +570,10 @@ private struct QuorumSourceRefresh: View {
     var body: some View {
         Color.clear
             .onChange(of: walletManager.spvProgress) { _, _ in
-                platformState.applyQuorumMode()
+                platformState.refreshQuorumSource()
             }
             .onChange(of: walletManager.spvIsRunning) { _, _ in
-                platformState.applyQuorumMode()
+                platformState.refreshQuorumSource()
             }
     }
 }

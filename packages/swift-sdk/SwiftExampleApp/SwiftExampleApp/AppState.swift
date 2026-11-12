@@ -80,12 +80,14 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Which quorum source the user wants. Applied live on change (see
-    /// `applyQuorumMode`); `quorumSource` reflects the adaptive provider's
-    /// current routing choice (SPV may not be ready yet).
+    /// Which quorum source the user wants. Every change is applied to every
+    /// SDK this object built (see `applyQuorumMode`); `quorumSource` reflects
+    /// the adaptive provider's current routing choice (SPV may not be ready
+    /// yet).
     @Published var quorumMode: QuorumMode {
         didSet {
             UserDefaults.standard.set(quorumMode.rawValue, forKey: "quorumMode")
+            applyQuorumMode()
         }
     }
 
@@ -169,10 +171,9 @@ class AppState: ObservableObject {
 
     /// Apply the current policy to the adaptive provider of every SDK
     /// `makeSdk` built that is still alive, the wallet managers' background
-    /// SDKs included, so none keeps a mode the user has left. Call when
-    /// `quorumMode` changes and when SPV progress or running state changes, so
-    /// the active-source indicator follows Auto as SPV becomes ready or stops
-    /// being ready.
+    /// SDKs included, so none keeps a mode the user has left, then refresh
+    /// the active-source indicator. Runs on every `quorumMode` change;
+    /// `makeSdk` applies the mode to an SDK it builds.
     ///
     /// - `.auto`: SPV while it runs with the header + masternode lists fully
     ///   synced, trusted otherwise.
@@ -183,8 +184,7 @@ class AppState: ObservableObject {
     ///
     /// `quorumSource` tracks the provider's current routing choice, which may
     /// lag the requested mode while SPV isn't ready.
-    @MainActor
-    func applyQuorumMode() {
+    private func applyQuorumMode() {
         for builtSdk in builtSdks.allObjects {
             do {
                 try builtSdk.setQuorumMode(sdkQuorumMode)
@@ -192,6 +192,14 @@ class AppState: ObservableObject {
                 NSLog("⚠️ AppState: failed to apply quorum mode: \(error.localizedDescription)")
             }
         }
+        refreshQuorumSource()
+    }
+
+    /// Read the published SDK's current quorum source into `quorumSource`.
+    /// In Auto the adaptive provider follows SPV readiness by itself, so when
+    /// SPV progress or running state changes only the indicator needs
+    /// refreshing, not the mode.
+    func refreshQuorumSource() {
         guard let sdk else { return }
         // Called on every SPV progress tick. Assigning an unchanged value
         // still publishes, and every view observing this object, the root
@@ -309,7 +317,6 @@ class AppState: ObservableObject {
         // `initializeSDK`). Non-fatal: the SDK still ratchets from metadata
         // if this fails.
         refreshProtocolVersion(for: sdk)
-        applyQuorumMode()
     }
 
     private var sdkQuorumMode: SDK.QuorumMode {
