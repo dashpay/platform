@@ -48,6 +48,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
                 // So we stop the miner first, as there's a chance that MNs will get banned
                 // if the miner is still running when stopping them
                 new Listr(configGroup.reverse().map((config) => ({
+                  title: `Stop ${config.getName()} node`,
                   task: () => stopNodeTask(config),
                 })))
               ),

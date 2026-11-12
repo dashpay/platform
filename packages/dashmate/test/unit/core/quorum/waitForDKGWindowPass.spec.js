@@ -1,5 +1,7 @@
 import waitForDKGWindowPass, {
   CHECK_INTERVAL_MS,
+  MAX_FAILED_POLLS,
+  MAX_UNREADABLE_POLLS,
 } from '../../../../src/core/quorum/waitForDKGWindowPass.js';
 import { SAFE_STOP_CONFIRMATION_DELAY_MS } from '../../../../src/core/quorum/checkMasternodeSafeToStop.js';
 import getCoreRpcMock from '../../../../src/test/mock/getCoreRpcMock.js';
@@ -12,6 +14,28 @@ const CORE_24_1 = 240100;
 // this length land between polls, so state a test changes afterwards is
 // read by the next poll.
 const NEXT_POLL_MS = CHECK_INTERVAL_MS + SAFE_STOP_CONFIRMATION_DELAY_MS + 1;
+
+/**
+ * A Core RPC client that, while `core.down` is set, rejects every call the
+ * way a restarting Core does.
+ */
+function getRestartableCoreRpcMock(sinon, core) {
+  const running = getCoreRpcMock(sinon, core);
+  const guard = (method) => sinon.stub().callsFake(async (...args) => {
+    if (core.down) {
+      throw new Error('connect ECONNREFUSED');
+    }
+
+    return running[method](...args);
+  });
+
+  return {
+    getNetworkInfo: guard('getNetworkInfo'),
+    getBlockchainInfo: guard('getBlockchainInfo'),
+    getBlockHash: guard('getBlockHash'),
+    quorum: guard('quorum'),
+  };
+}
 
 function track(promise) {
   const state = { resolved: false, error: undefined };
@@ -170,7 +194,9 @@ describe('waitForDKGWindowPass', () => {
     expect(waiting.resolved).to.be.true();
   });
 
-  it('should keep waiting while Core reports a session dashmate cannot read', async function it() {
+  it('should give up when Core keeps reporting DKG data dashmate cannot read', async function it() {
+    // An unknown quorum type does not go away while dashmate and Core stay
+    // as they are, so waiting for it would never end.
     const rpcClient = getCoreRpcMock(this.sinon, {
       version: CORE_23,
       height: 1000,
@@ -183,7 +209,208 @@ describe('waitForDKGWindowPass', () => {
     const waiting = track(waitForDKGWindowPass(rpcClient));
     await clock.tickAsync(CHECK_INTERVAL_MS * 10);
 
-    await expectStillPolling(waiting, rpcClient);
+    expect(waiting.error.message).to.include('dashmate cannot read Core\'s DKG data')
+      .and.include('llmq_future_unknown');
+    expect(waiting.error.blocker).to.include({ reason: 'unreadable' });
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.callCount(MAX_UNREADABLE_POLLS);
+  });
+
+  it('should count only unreadable polls in a row, starting again after a readable one', async function it() {
+    const unreadable = { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: {} };
+    const blocked = { active_dkgs: 1, next_dkg: 20, upcoming_dkgs: [] };
+    const core = {
+      version: CORE_24_1, height: 1000, dkgInfo: unreadable, dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1) - 1);
+    core.dkgInfo = blocked;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    core.dkgInfo = unreadable;
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1));
+
+    expect(waiting.error).to.be.undefined();
+    expect(waiting.resolved).to.be.false();
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.callCount(MAX_UNREADABLE_POLLS * 2 - 1);
+  });
+
+  it('should keep waiting through a single read dashmate cannot make sense of', async function it() {
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: {} },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    expect(waiting.resolved).to.be.false();
+
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: [] };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should report what it waits for, a DKG it saw announced included', async function it() {
+    const progressCallback = this.sinon.stub();
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    waitForDKGWindowPass(rpcClient, { progressCallback });
+    await clock.tickAsync(1);
+
+    core.height = start;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    const announced = {
+      reason: 'upcoming', llmqType: 'llmq_100_67', from: start - 6, until: start + 10,
+    };
+    expect(progressCallback.firstCall.args[0]).to.deep.include({ type: 'blocked', height: start - 1 });
+    expect(progressCallback.firstCall.args[0].blockers).to.have.lengthOf(1);
+    expect(progressCallback.firstCall.args[0].blockers[0]).to.include(announced);
+    expect(progressCallback.lastCall.args[0]).to.deep.include({ type: 'blocked', height: start });
+    expect(progressCallback.lastCall.args[0].blockers).to.have.lengthOf(1);
+    expect(progressCallback.lastCall.args[0].blockers[0]).to.include(announced);
+    // The remembered DKG blocks the start block whatever a confirmation finds.
+    expect(progressCallback).to.not.have.been.calledWithMatch({ type: 'confirming' });
+  });
+
+  it('should keep a DKG it saw announced alongside Core\'s record of it', async function it() {
+    const progressCallback = this.sinon.stub();
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    waitForDKGWindowPass(rpcClient, { progressCallback });
+    await clock.tickAsync(1);
+
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 22, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+    };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    // The formatter lists the two as one DKG.
+    expect(progressCallback.lastCall.args[0].blockers.map(({ reason }) => reason).sort())
+      .to.deep.equal(['session', 'upcoming']);
+  });
+
+  it('should report when Core\'s state changed while reading it', async function it() {
+    const progressCallback = this.sinon.stub();
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 1, next_dkg: 20, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+    };
+    core.beforeDkgInfo = () => { core.height += 1; };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    waitForDKGWindowPass(rpcClient, { progressCallback });
+    await clock.tickAsync(1);
+
+    expect(progressCallback).to.have.been.calledOnceWith({ type: 'unsettled', height: null });
+  });
+
+  it('should ride out Core restarting and judge by the version it comes back as', async function it() {
+    // Core 24.0 needs 15 s to confirm a safe result; Core 24.1 does not.
+    const progressCallback = this.sinon.stub();
+    const core = {
+      version: CORE_24_0,
+      height: 1005,
+      dkgInfo: { active_dkgs: 1, next_dkg: 19, upcoming_dkgs: [] },
+      dkgStatus: {
+        session: [{ llmqType: 'llmq_test_platform', quorumIndex: 0, status: { quorumHeight: 1000 } }],
+      },
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient, { progressCallback }));
+    await clock.tickAsync(1);
+
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS * 2);
+
+    expect(waiting.error).to.be.undefined();
+    expect(progressCallback).to.have.been.calledWithMatch({
+      type: 'rpc-error', failedPolls: 2, maxFailedPolls: MAX_FAILED_POLLS,
+    });
+
+    core.down = false;
+    core.version = CORE_24_1;
+    core.height = 1010;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 14, upcoming_dkgs: [] };
+    await clock.tickAsync(CHECK_INTERVAL_MS + 1);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should count only failed RPC calls in a row, starting again after one that works', async function it() {
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 1, next_dkg: 20, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+      down: true,
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_FAILED_POLLS - 1) - 1);
+    core.down = false;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_FAILED_POLLS - 1));
+
+    expect(waiting.error).to.be.undefined();
+    expect(waiting.resolved).to.be.false();
+  });
+
+  it('should give up, leaving the node running, after too many failed RPC calls in a row', async function it() {
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+      down: true,
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_FAILED_POLLS + 1));
+
+    expect(waiting.error.message).to.equal(`Core did not answer ${MAX_FAILED_POLLS} checks in a row, `
+      + 'so the node was not stopped:\nconnect ECONNREFUSED');
+    expect(rpcClient.getNetworkInfo).to.have.callCount(MAX_FAILED_POLLS);
   });
 
   it('should stop waiting on Core 24.0 when active_dkgs counts only finished sessions', async function it() {
@@ -541,6 +768,85 @@ describe('waitForDKGWindowPass', () => {
     expect(waiting.resolved).to.be.true();
   });
 
+  it('should keep blocking a DKG it saw announced after Core restarts and forgets the session', async function it() {
+    // Core keeps its session records in memory. Restarted mid-session it
+    // reports no session, no announcement and no count for the running DKG.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 1,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 1, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 1, next_dkg: 22, upcoming_dkgs: [] };
+    core.dkgStatus = {
+      session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+    };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    core.height = start + 3;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 21, upcoming_dkgs: [] };
+    core.dkgStatus = { session: [] };
+    await expectStillPolling(waiting, rpcClient);
+  });
+
+  it('should treat a Core version it cannot read as a failed check', async function it() {
+    // Whether Core's session count applies depends on the version.
+    const progressCallback = this.sinon.stub();
+    const core = {
+      version: undefined,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: [] },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient, { progressCallback }));
+    await clock.tickAsync(1);
+
+    expect(waiting.resolved).to.be.false();
+    expect(progressCallback).to.have.been.calledWithMatch({ type: 'rpc-error', failedPolls: 1 });
+    expect(rpcClient.quorum).to.not.have.been.called();
+
+    core.version = CORE_24_1;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should count only unreadable polls in a row, starting again after an interrupted one', async function it() {
+    const core = {
+      version: CORE_24_1,
+      height: 1000,
+      dkgInfo: { active_dkgs: 0, next_dkg: 20, upcoming_dkgs: {} },
+      dkgStatus: { session: [] },
+      down: false,
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1) - 1);
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    core.down = false;
+    await clock.tickAsync(CHECK_INTERVAL_MS * (MAX_UNREADABLE_POLLS - 1));
+
+    expect(waiting.error).to.be.undefined();
+    expect(waiting.resolved).to.be.false();
+  });
+
   it('should forget DKGs announced without this node when a reorg replaces their chain', async function it() {
     // On the replacing branch the work block differs, so this node may be a
     // member after all.
@@ -610,6 +916,41 @@ describe('waitForDKGWindowPass', () => {
     await clock.tickAsync(NEXT_POLL_MS * 2);
 
     expect(waiting.resolved).to.be.true();
+  });
+
+  it('should keep what a check announced when Core restarts during its confirmation', async function it() {
+    // The first check announces a member DKG for later and is confirmed 15 s
+    // on; Core restarts in between and comes back without the announcement.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_0,
+      height: start - 7,
+      dkgInfo: {
+        active_dkgs: 0,
+        next_dkg: 7,
+        upcoming_dkgs: [{
+          llmqType: 4, quorumIndex: 0, quorumHeight: start, blocksUntilStart: 7, known: true, isMember: true,
+        }],
+      },
+      dkgStatus: { session: [] },
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.down = true;
+    await clock.tickAsync(SAFE_STOP_CONFIRMATION_DELAY_MS);
+
+    // Back after the DKG started, as Core 24.1 that has not worked out its
+    // proTxHash yet: nothing it reports shows the DKG.
+    core.down = false;
+    core.version = CORE_24_1;
+    core.height = start + 2;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 22 };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    await expectStillPolling(waiting, rpcClient);
   });
 
   it('should keep blocking a DKG it saw announced when Core restarts into initial block download', async function it() {
@@ -757,6 +1098,39 @@ describe('waitForDKGWindowPass', () => {
     const waiting = track(waitForDKGWindowPass(rpcClient));
     await clock.tickAsync(1);
 
+    core.height = start + 4;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 20 };
+    core.dkgStatus = { session: [] };
+    await expectStillPolling(waiting, rpcClient);
+
+    core.height = start + 10;
+    core.dkgInfo = { active_dkgs: 0, next_dkg: 14 };
+    await clock.tickAsync(NEXT_POLL_MS);
+
+    expect(waiting.resolved).to.be.true();
+  });
+
+  it('should keep blocking a running session through failed calls and a Core restart', async function it() {
+    // Waiting starts after the session's announcement is gone; a failed call
+    // and a restart later, Core reports nothing of the session.
+    const start = 24 * 5000;
+    const core = {
+      version: CORE_24_1,
+      height: start + 3,
+      dkgInfo: { active_dkgs: 1, next_dkg: 21 },
+      dkgStatus: {
+        session: [{ llmqType: 'llmq_100_67', quorumIndex: 0, status: { quorumHeight: start } }],
+      },
+    };
+    const rpcClient = getRestartableCoreRpcMock(this.sinon, core);
+
+    const waiting = track(waitForDKGWindowPass(rpcClient));
+    await clock.tickAsync(1);
+
+    core.down = true;
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+
+    core.down = false;
     core.height = start + 4;
     core.dkgInfo = { active_dkgs: 0, next_dkg: 20 };
     core.dkgStatus = { session: [] };

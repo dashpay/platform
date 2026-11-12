@@ -118,6 +118,65 @@ export function getBlockersAt(blockers, height) {
   return blockers.filter((blocker) => isBlockedAt(blocker, height));
 }
 
+/**
+ * Core 24.1+ reports how many sessions this node is in, not which. When the
+ * running sessions dashmate knows of at `height`, recorded or remembered
+ * from their announcement, account for that count, the count tells nothing
+ * more about what to wait for or how long. Only for display and estimates:
+ * the count still blocks.
+ *
+ * @param {DkgStopBlocker[]} blockers
+ * @param {number} height
+ * @return {DkgStopBlocker[]}
+ */
+export function withoutRecordedSessionCount(blockers, height) {
+  const runningSessions = new Set(getBlockersAt(blockers, height)
+    .map((blocker) => {
+      const start = blocker.reason === 'upcoming'
+        ? blocker.from + MIN_BLOCKS_BEFORE_DKG
+        : blocker.from;
+
+      return ['session', 'new-round', 'upcoming'].includes(blocker.reason) && start <= height
+        ? `${blocker.llmqType}:${blocker.quorumIndex}:${start}`
+        : null;
+    })
+    .filter((key) => key !== null));
+  const recordedSessions = runningSessions.size;
+
+  return blockers.filter((blocker) => blocker.reason !== 'active-count'
+    || blocker.count > recordedSessions);
+}
+
+/**
+ * The first height at or above `height` that no blocker covers, or `null`
+ * when a blocker with no known end stands in the way. It is a lower bound:
+ * Core announces membership of a DKG only 8 blocks before its cycle starts,
+ * so a DKG not announced yet can push it further out.
+ *
+ * @param {DkgStopBlocker[]} blockers
+ * @param {number} height
+ * @return {number|null}
+ */
+export function getEarliestSafeHeight(blockers, height) {
+  const relevant = withoutRecordedSessionCount(blockers, height);
+
+  let candidate = height;
+
+  for (;;) {
+    const covering = getBlockersAt(relevant, candidate);
+
+    if (covering.length === 0) {
+      return candidate;
+    }
+
+    if (covering.some(({ until }) => until === null)) {
+      return null;
+    }
+
+    candidate = Math.max(...covering.map(({ until }) => until));
+  }
+}
+
 function isCount(value) {
   return Number.isInteger(value) && value >= 0;
 }
