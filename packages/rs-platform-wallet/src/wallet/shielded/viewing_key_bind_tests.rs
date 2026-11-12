@@ -2056,36 +2056,6 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
 }
 
 #[tokio::test]
-async fn should_refuse_tip_preparation_cleared_after_its_bind() {
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_clear_during_prepare").await;
-    let (reached, resume) = super::tips::test_hooks::pause_after_bind(&wallet);
-    let preparing = {
-        let wallet = wallet.clone();
-        let coordinator = Arc::clone(&coordinator);
-        tokio::spawn(async move {
-            wallet
-                .prepare_shielded_identity_address(&seed, &id, &coordinator)
-                .await
-        })
-    };
-    reached.await.unwrap();
-    let address = wallet
-        .shielded_default_address(crate::shielded_identity_account_index(2).unwrap())
-        .await
-        .unwrap();
-    coordinator.clear().await.unwrap();
-    resume.send(()).unwrap();
-    assert!(matches!(
-        preparing.await.unwrap(),
-        Err(crate::PlatformWalletError::ShieldedNotBound)
-    ));
-    assert!(wallet
-        .check_tip_address_publication(&id, &address)
-        .await
-        .is_err());
-}
-
-#[tokio::test]
 async fn should_refuse_shielded_identity_creation_at_an_occupied_slot_before_deriving_or_spending()
 {
     let (wallet, _, occupant, coordinator) = tip_race_fixture("tips_occupied_creation").await;
@@ -2359,6 +2329,107 @@ mod tip_lifecycle_tests {
             )
             .await
             .unwrap()
+    }
+
+    async fn assert_preparation_precedes_host_deletion(clear: bool) {
+        use dpp::identity::{Identity, IdentityV0};
+        use dpp::prelude::Identifier;
+
+        let (_dir, manager, wallet, coordinator) = fixture().await;
+        let identity_id = Identifier::from([0x66; 32]);
+        wallet
+            .wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id: identity_id,
+                    public_keys: seed_master_key(&SEED, 2),
+                    balance: 0,
+                    revision: 0,
+                }),
+                2,
+                wallet.wallet_id(),
+                wallet.persister(),
+            )
+            .unwrap();
+        let (reached, resume) = super::super::tips::test_hooks::pause_after_bind(&wallet);
+        let preparing = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move {
+                wallet
+                    .prepare_shielded_identity_address(&SEED, &identity_id, &coordinator)
+                    .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(10), reached)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            manager.persister.durability_events.lock().unwrap().last(),
+            Some(&"store")
+        );
+        let mut deleting = {
+            let manager = Arc::clone(&manager);
+            let wallet_id = wallet.wallet_id();
+            tokio::spawn(async move {
+                if clear {
+                    manager.clear_shielded().await.unwrap();
+                } else {
+                    manager.remove_wallet(&wallet_id).await.unwrap();
+                }
+                manager.persister.stored.lock().unwrap().clear();
+                manager
+                    .persister
+                    .durability_events
+                    .lock()
+                    .unwrap()
+                    .push("host deletion");
+            })
+        };
+        let early = tokio::time::timeout(Duration::from_millis(500), &mut deleting).await;
+        resume.send(()).unwrap();
+        let address = preparing.await.unwrap().unwrap();
+        assert!(early.is_err(), "teardown must wait for the post-bind flush");
+        deleting.await.unwrap();
+        let events = manager.persister.durability_events.lock().unwrap().clone();
+        assert_eq!(&events[events.len() - 2..], &["flush", "host deletion"]);
+        assert!(manager.persister.captured_viewing_keys().is_empty());
+        if clear {
+            assert!(wallet
+                .check_tip_address_publication(&identity_id, &address)
+                .await
+                .is_err());
+        } else {
+            let current = add_wallet(&manager).await;
+            assert_eq!(current.wallet_id(), wallet.wallet_id());
+            let after_create = manager.persister.durability_events.lock().unwrap().len();
+            assert!(matches!(
+                wallet
+                    .prepare_shielded_identity_address(&SEED, &identity_id, &coordinator)
+                    .await,
+                Err(crate::PlatformWalletError::WalletNotFound(_))
+            ));
+            assert_eq!(
+                manager.persister.durability_events.lock().unwrap().len(),
+                after_create
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_finish_tip_preparation_persistence_before_clear_and_host_deletion() {
+        assert_preparation_precedes_host_deletion(true).await;
+    }
+
+    #[tokio::test]
+    async fn should_finish_tip_preparation_persistence_before_removal_and_host_deletion() {
+        assert_preparation_precedes_host_deletion(false).await;
     }
 
     struct PausedProver {

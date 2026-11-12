@@ -251,6 +251,11 @@ pub struct NetworkShieldedCoordinator {
     /// other way round.
     lifecycle: tokio::sync::Mutex<()>,
 
+    /// Preparation calls bind (which takes `lifecycle`) and then flushes the
+    /// host's viewing keys. Clear must wait for both without re-entering that
+    /// mutex. Lock order: `preparation` → `lifecycle` → `store`.
+    preparation: RwLock<()>,
+
     /// Wallets whose per-subwallet store state has been successfully
     /// hydrated from the host's persisted snapshot this session
     /// (`restore_for_wallet` completed without error after the
@@ -420,6 +425,7 @@ impl NetworkShieldedCoordinator {
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
+            preparation: RwLock::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
@@ -677,6 +683,10 @@ impl NetworkShieldedCoordinator {
             wallet_id,
             _lifecycle: self.lifecycle.lock().await,
         }
+    }
+
+    pub(crate) async fn preparation_guard(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
+        self.preparation.read().await
     }
 
     /// [`register_wallet`](Self::register_wallet)'s body, with the
@@ -1222,6 +1232,7 @@ impl NetworkShieldedCoordinator {
     /// stays populated, and the next cold resync would gate-skip every
     /// re-downloaded position against the stale `tree_size`.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
+        let _preparation = self.preparation.write().await;
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
         // already registered would otherwise restore its pre-Clear

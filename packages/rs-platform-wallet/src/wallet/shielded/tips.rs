@@ -131,6 +131,12 @@ impl PlatformWallet {
                 "The supplied seed does not belong to this wallet".to_string(),
             ));
         }
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
         // Held until the address is returned, so the identity cannot move to
         // another slot between the check below and the bind of the account
         // that slot selects. Publication rechecks it (see
@@ -142,6 +148,7 @@ impl PlatformWallet {
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
+        let _preparation = coordinator.preparation_guard().await;
         let clear_generation = coordinator.clear_generation();
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
@@ -152,6 +159,8 @@ impl PlatformWallet {
         accounts.push(account);
         self.bind_shielded_locked(seed, &accounts, coordinator)
             .await?;
+        #[cfg(test)]
+        test_hooks::after_bind(self).await;
         self.persister()
             .flush()
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
@@ -159,8 +168,6 @@ impl PlatformWallet {
             .shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        #[cfg(test)]
-        test_hooks::after_bind(self).await;
         if coordinator.clear_generation() != clear_generation {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
