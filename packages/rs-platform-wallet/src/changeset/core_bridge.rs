@@ -1631,33 +1631,25 @@ async fn instant_lock_changeset(
     cs
 }
 
-/// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
-/// for atomic persistence, carrying every outpoint lock the wallet's
-/// transaction checks queued since the last one.
-///
-/// No `WalletEvent` carries a lock: a ProRegTx locks its collateral even
-/// when the transaction is otherwise irrelevant and emits nothing. The locks
-/// ride whichever event of the wallet comes next, which for a block is at
-/// the latest the `SyncHeightAdvanced` watermark that certifies it.
-async fn build_core_changeset(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    event: &WalletEvent,
-) -> CoreChangeSet {
-    let mut cs = project_core_event(wallet_manager, event).await;
-    let queued = {
-        let guard = wallet_manager.read().await;
-        guard
-            .get_wallet_info(&event.wallet_id())
-            .map(PlatformWalletInfo::take_queued_outpoint_locks)
-            .unwrap_or_default()
-    };
-    cs.outpoint_locks
-        .extend(queued.into_iter().map(|outpoint| (outpoint, true)));
-    cs
+/// The outpoints an event reports locked, as the lock delta a persister
+/// stores: each one locked.
+fn newly_locked(locked_outpoints: &[OutPoint]) -> BTreeMap<OutPoint, bool> {
+    locked_outpoints
+        .iter()
+        .map(|outpoint| (*outpoint, true))
+        .collect()
 }
 
-/// The [`CoreChangeSet`] one [`WalletEvent`] describes.
-async fn project_core_event(
+/// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
+/// for atomic persistence.
+///
+/// The outpoints a transaction check locked (the collateral of a masternode
+/// registration, see `wallet::outpoint_locks`) arrive on the
+/// `TransactionDetected` or `BlockProcessed` event of the check that locked
+/// them, so a lock is stored in the changeset of the block or transaction
+/// that made it. A lock alone is enough for upstream to emit
+/// `BlockProcessed`.
+async fn build_core_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
@@ -1668,6 +1660,7 @@ async fn project_core_event(
             wallet_id,
             record,
             addresses_derived,
+            locked_outpoints,
             ..
         } => {
             // Live mempool matching emits ONE event per matched
@@ -1746,6 +1739,7 @@ async fn project_core_event(
                 addresses_marked_used,
                 account_highest_used,
                 utxo_credit_verdicts,
+                outpoint_locks: newly_locked(locked_outpoints),
                 ..CoreChangeSet::default()
             }
         }
@@ -1762,9 +1756,13 @@ async fn project_core_event(
             updated,
             matured,
             addresses_derived,
+            locked_outpoints,
             ..
         } => {
-            let mut cs = CoreChangeSet::default();
+            let mut cs = CoreChangeSet {
+                outpoint_locks: newly_locked(locked_outpoints),
+                ..CoreChangeSet::default()
+            };
             // Inserted records bring fresh UTXOs and may consume previous ones.
             for r in inserted {
                 cs.new_utxos.extend(derive_new_utxos(r));
@@ -4498,7 +4496,6 @@ mod contact_watch_only_projection_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         }
@@ -5718,7 +5715,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         manager
             .write()
@@ -5772,7 +5768,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5839,7 +5834,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5921,7 +5915,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         info.core_wallet.update_synced_height(synced_height);
         let manager = test_manager();
@@ -6152,7 +6145,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         successor.rewind_barrier.inherit(retired);
         assert!(
@@ -9095,7 +9087,6 @@ mod utxo_credit_verdict_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9194,7 +9185,6 @@ mod utxo_credit_verdict_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9225,67 +9215,105 @@ mod utxo_credit_verdict_tests {
 
 #[cfg(test)]
 mod outpoint_lock_projection_tests {
-    //! A ProRegTx locks its collateral without emitting any `WalletEvent`,
-    //! so the lock rides the wallet's next projected changeset.
+    //! A block whose ProRegTx locks a collateral reaches the persister with
+    //! that lock, through the `BlockProcessed` event upstream emits for it.
+
+    use std::collections::BTreeSet;
+
+    use dashcore::Block;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet_manager::WalletInterface;
+    use tokio::sync::broadcast::Receiver;
 
     use super::*;
-    use crate::test_support::{masternode_registration, wallet_manager_with_registered_collateral};
-    use key_wallet::account::account_type::StandardAccountType;
-    use key_wallet::transaction_checking::BlockInfo;
+    use crate::test_support::{
+        coin_worth, funded_wallet_manager_with_outputs, masternode_registration,
+        MASTERNODE_COLLATERAL_DUFFS,
+    };
 
     const SPARE: u64 = 500_000_000;
 
-    fn sync_height(wallet_id: WalletId, height: u32) -> WalletEvent {
-        WalletEvent::SyncHeightAdvanced { wallet_id, height }
+    /// A wallet holding a 1,000 DASH coin and a spare one, with no
+    /// registration processed yet. Returns the manager, the wallet, a
+    /// subscription to its events and the 1,000 DASH coin.
+    async fn wallet_holding_a_collateral() -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        WalletId,
+        Receiver<WalletEvent>,
+        OutPoint,
+    ) {
+        let (manager, wallet_id, _generation, _signer) = funded_wallet_manager_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[MASTERNODE_COLLATERAL_DUFFS, SPARE],
+        )
+        .await;
+        let collateral = coin_worth(
+            &manager,
+            &wallet_id,
+            StandardAccountType::BIP44Account,
+            MASTERNODE_COLLATERAL_DUFFS,
+        )
+        .await;
+        let events = manager.read().await.subscribe_events();
+        (manager, wallet_id, events, collateral)
     }
 
-    #[tokio::test]
-    async fn should_carry_a_registration_lock_on_the_wallets_next_changeset_once() {
-        let (manager, wallet_id, _generation, _signer, collateral, _spare) =
-            wallet_manager_with_registered_collateral(StandardAccountType::BIP44Account, SPARE)
-                .await;
-
-        let cs = build_core_changeset(&manager, &sync_height(wallet_id, 2)).await;
-        assert_eq!(cs.outpoint_locks, BTreeMap::from([(collateral, true)]));
-        let lock_only = CoreChangeSet {
-            outpoint_locks: cs.outpoint_locks.clone(),
-            ..CoreChangeSet::default()
-        };
-        assert!(
-            !lock_only.is_empty_no_records(),
-            "a changeset carrying only a lock must still reach the persister"
-        );
-
-        let next = build_core_changeset(&manager, &sync_height(wallet_id, 3)).await;
-        assert!(next.outpoint_locks.is_empty(), "a lock is carried once");
-    }
-
-    #[tokio::test]
-    async fn should_not_queue_a_registration_seen_again() {
-        let (manager, wallet_id, _generation, _signer, collateral, _spare) =
-            wallet_manager_with_registered_collateral(StandardAccountType::BIP44Account, SPARE)
-                .await;
-        let _ = build_core_changeset(&manager, &sync_height(wallet_id, 2)).await;
-
-        // The block that confirms it again, or a rescan.
+    /// Process a block at `height` holding the registration of `collateral`
+    /// (funded and signed elsewhere, so nothing else of it is the wallet's)
+    /// and return the lock deltas of the changesets its events project to.
+    async fn locks_stored_for_registration_block(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        events: &mut Receiver<WalletEvent>,
+        collateral: OutPoint,
+        height: u32,
+    ) -> Vec<BTreeMap<OutPoint, bool>> {
+        let block = Block::dummy(height, vec![masternode_registration(collateral)]);
         manager
             .write()
             .await
-            .check_transaction_in_all_wallets(
-                &masternode_registration(collateral),
-                TransactionContext::InChainLockedBlock(BlockInfo::new(
-                    3,
-                    dashcore::BlockHash::all_zeros(),
-                    1_700_000_200,
-                )),
-                true,
-                true,
+            .process_block_for_wallets(
+                &block,
+                block.block_hash(),
+                height,
+                &BTreeSet::from([wallet_id]),
             )
             .await;
-        let cs = build_core_changeset(&manager, &sync_height(wallet_id, 3)).await;
-        assert!(
-            cs.outpoint_locks.is_empty(),
-            "the wallet already holds that lock"
+        let mut stored = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            let cs = build_core_changeset(manager, &event).await;
+            if !cs.is_empty_no_records() && !cs.outpoint_locks.is_empty() {
+                stored.push(cs.outpoint_locks);
+            }
+        }
+        stored
+    }
+
+    #[tokio::test]
+    async fn should_store_a_registration_lock_with_the_block_that_made_it() {
+        let (manager, wallet_id, mut events, collateral) = wallet_holding_a_collateral().await;
+
+        let stored =
+            locks_stored_for_registration_block(&manager, wallet_id, &mut events, collateral, 2)
+                .await;
+
+        assert_eq!(
+            stored,
+            vec![BTreeMap::from([(collateral, true)])],
+            "the block's changeset carries the lock, and is not dropped as empty"
         );
+    }
+
+    #[tokio::test]
+    async fn should_not_store_a_lock_the_wallet_already_holds() {
+        let (manager, wallet_id, mut events, collateral) = wallet_holding_a_collateral().await;
+        locks_stored_for_registration_block(&manager, wallet_id, &mut events, collateral, 2).await;
+
+        // A later block carrying the registration again, as a rescan does.
+        let stored =
+            locks_stored_for_registration_block(&manager, wallet_id, &mut events, collateral, 3)
+                .await;
+
+        assert!(stored.is_empty(), "the lock is stored once");
     }
 }

@@ -54,7 +54,9 @@ use crate::manager::PlatformWalletManager;
 use crate::wallet::masternode_withdrawal::{
     execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
 };
-use crate::wallet::outpoint_locks::{lock_known_masternode_collaterals, named_collateral};
+use crate::wallet::outpoint_locks::{
+    lock_known_masternode_collaterals, named_collateral, persist_outpoint_locks,
+};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 // ---------------------------------------------------------------------------
@@ -841,11 +843,12 @@ impl TrackedMasternodes {
         // wallet's coin selection: spending it would end the registration.
         if let Some(registration) = tracked.snapshot.registration.as_ref() {
             let collateral = named_collateral(&tracked.pro_tx_hash, registration.collateral);
-            lock_known_masternode_collaterals(
+            let locked = lock_known_masternode_collaterals(
                 self.wallet_manager.as_ref(),
                 &BTreeSet::from([collateral]),
             )
             .await;
+            persist_outpoint_locks(self.persister.as_ref(), locked);
         }
 
         let entry = outcome

@@ -45,7 +45,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         }
     }
 
@@ -63,7 +62,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         }
     }
 
@@ -381,10 +379,6 @@ impl WalletTransactionChecker for PlatformWalletInfo {
                     .filter(|record| record.context.is_chain_locked()),
             ));
         }
-        // A ProRegTx locks its collateral, relevant or not, and no
-        // `WalletEvent` carries the lock: queue it for the wallet-event
-        // adapter to persist with this wallet's next changeset.
-        self.queue_outpoint_locks(result.locked_outpoints.iter().copied());
         result
     }
 }

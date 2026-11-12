@@ -11,13 +11,14 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
-use crate::wallet::outpoint_locks::lock_known_masternode_collaterals;
+use crate::wallet::outpoint_locks::{lock_known_masternode_collaterals, persist_outpoint_locks};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dashcore::OutPoint;
 use dpp::prelude::Identifier;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
@@ -141,6 +142,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
             Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
+        // The outpoints the replay of unconfirmed sends locked in each wallet,
+        // stored once the load is past its rollback point.
+        let mut replay_locks_by_wallet: BTreeMap<WalletId, Vec<OutPoint>> = BTreeMap::new();
 
         // Each wallet's start state, and whether it was re-read under the
         // durable-cursor lock that `held` still holds (see the publication
@@ -191,10 +195,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // `update_state` and `update_balance` are both on: the balance
             // this produces is what `generation.set(..)` mirrors a few lines
             // below, and the UI reads that.
-            // A replayed ProRegTx locks its collateral here, and nothing
-            // persists that lock unless it is queued with the rest: once the
-            // registration confirms it leaves this list and is never replayed
-            // again.
+            // A replayed ProRegTx locks its collateral here, and no wallet
+            // event carries that lock to the persister: it is stored with the
+            // other locks this load makes. Once the registration confirms it
+            // leaves this list and is never replayed again.
             let mut replay_locks = Vec::new();
             if !unconfirmed_outgoing_txs.is_empty() {
                 let mut replayed = 0usize;
@@ -298,9 +302,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
                 rewind_barrier: Default::default(),
-                pending_outpoint_locks: Default::default(),
             };
-            platform_info.queue_outpoint_locks(replay_locks);
+            if !replay_locks.is_empty() {
+                replay_locks_by_wallet.insert(wallet_id, replay_locks);
+            }
             // A restored outbound-account marker says the contact's external
             // account was built from its current xpub, which suppresses the
             // startup rebuild. It must not vouch for a pool the host kept
@@ -733,13 +738,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Keep the collateral of every masternode the wallets already know out
         // of coin selection: registrations restored into their histories
         // without a transaction check, and tracked masternodes whose
-        // registration has been fetched. New locks are queued for persistence
-        // like the ones a check makes. See `wallet::outpoint_locks`.
-        lock_known_masternode_collaterals(
+        // registration has been fetched. These locks and the ones the replay
+        // above made are stored here, since no wallet event carries them. See
+        // `wallet::outpoint_locks`.
+        let mut new_locks = lock_known_masternode_collaterals(
             &self.wallet_manager,
             &self.tracked_masternodes_service().known_collaterals(),
         )
         .await;
+        for (wallet_id, locked) in replay_locks_by_wallet {
+            new_locks.entry(wallet_id).or_default().extend(locked);
+        }
+        persist_outpoint_locks(&*self.persister, new_locks);
 
         // Past the rollback point. A store configured before this load
         // restores the held wallets' private payments now, with no keys and
@@ -2227,7 +2237,7 @@ mod masternode_collateral_load_tests {
     //! knows, including one whose registration the wallet never processed.
 
     use std::collections::BTreeMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use dashcore::{BlockHash, OutPoint, Transaction};
     use key_wallet::test_utils::TestWalletContext;
@@ -2247,19 +2257,29 @@ mod masternode_collateral_load_tests {
 
     const SPARE: u64 = 500_000_000;
 
-    /// Hands back one wallet and one tracked masternode.
+    /// Hands back one wallet and one tracked masternode, and records the
+    /// outpoint locks it is asked to store.
     struct TrackedCollateralPersister {
         wallet: Wallet,
         managed: ManagedWalletInfo,
         tracked: TrackedMasternode,
+        stored_locks: Mutex<Vec<(WalletId, BTreeMap<OutPoint, bool>)>>,
     }
 
     impl PlatformWalletPersistence for TrackedCollateralPersister {
         fn store(
             &self,
-            _wallet_id: WalletId,
-            _changeset: PlatformWalletChangeSet,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if let Some(core) = changeset.core {
+                if !core.outpoint_locks.is_empty() {
+                    self.stored_locks
+                        .lock()
+                        .expect("stored locks")
+                        .push((wallet_id, core.outpoint_locks));
+                }
+            }
             Ok(())
         }
 
@@ -2298,7 +2318,7 @@ mod masternode_collateral_load_tests {
     /// whose registration the wallet never processed (funded and signed
     /// elsewhere). After a load the collateral is locked: it is out of the
     /// spendable balance and out of every send's coin selection, and the
-    /// lock is queued for persistence.
+    /// lock is stored.
     #[tokio::test]
     async fn should_lock_a_tracked_masternodes_collateral_on_load() {
         let mut ctx = TestWalletContext::new_random();
@@ -2340,13 +2360,15 @@ mod masternode_collateral_load_tests {
         };
 
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(TrackedCollateralPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+            tracked,
+            stored_locks: Mutex::new(Vec::new()),
+        });
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
-            Arc::new(TrackedCollateralPersister {
-                wallet: ctx.wallet,
-                managed: ctx.managed_wallet,
-                tracked,
-            }),
+            Arc::clone(&persister),
             Arc::new(NoopTestEventHandler) as _,
         ));
         manager
@@ -2372,12 +2394,10 @@ mod masternode_collateral_load_tests {
             SPARE,
             "coin selection sees only the spare coin"
         );
-        let wm = wallet.wallet_manager().read().await;
-        let info = wm.get_wallet_info(&wallet_id).expect("wallet");
         assert_eq!(
-            info.take_queued_outpoint_locks(),
-            std::collections::BTreeSet::from([collateral]),
-            "the lock is queued for persistence"
+            *persister.stored_locks.lock().expect("stored locks"),
+            vec![(wallet_id, BTreeMap::from([(collateral, true)]))],
+            "the load stores the lock it made"
         );
     }
 }

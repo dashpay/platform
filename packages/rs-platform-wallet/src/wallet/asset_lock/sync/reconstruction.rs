@@ -668,7 +668,6 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
-            pending_outpoint_locks: Default::default(),
         };
         assert_eq!(
             funding_account_index(&info, &txid),
