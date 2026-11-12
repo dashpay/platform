@@ -238,7 +238,7 @@ public struct DocumentHistoryLifecycle: Sendable {
     ) -> String {
         switch after.state {
         case .absent:
-            return "Erasure complete: no revisions remain and the id is free again."
+            return "Erasure complete: no retained revisions remain."
         case .erasing:
             return "Erasure in progress: \(after.remainingRevisions) revisions still retained; submit another erase to continue."
         case .deleted:

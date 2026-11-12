@@ -103,7 +103,7 @@ data class DocumentLifecycle(
  */
 fun describeEraseProgress(before: DocumentLifecycle?, after: DocumentLifecycle): String = when (after.state) {
     DocumentLifecycleState.ABSENT ->
-        "Erasure complete: no revisions remain and the id is free again."
+        "Erasure complete: no retained revisions remain."
     DocumentLifecycleState.ERASING ->
         "Erasure in progress: ${after.remainingRevisions} revisions still retained; " +
             "submit another erase to continue."
