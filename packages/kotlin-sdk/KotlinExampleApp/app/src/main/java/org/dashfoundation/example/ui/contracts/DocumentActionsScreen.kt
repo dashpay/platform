@@ -42,6 +42,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.queries.DocumentLifecycle
+import org.dashfoundation.dashsdk.queries.DocumentLifecycleState
 import org.dashfoundation.dashsdk.queries.describeEraseProgress
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -657,7 +658,9 @@ fun DocumentActionsScreen(
             text = {
                 Text(
                     "This removes up to 100 retained revisions of the deleted document " +
-                        "${truncateMiddle(documentIdText.trim(), 8, 6)}. This cannot be undone.",
+                        "${truncateMiddle(documentIdText.trim(), 8, 6)}. " +
+                        "Signing identity: ${actingIdentity?.let { Base58.encode(it.identityId) }}. " +
+                        "This cannot be undone.",
                 )
             },
             confirmButton = {
@@ -730,6 +733,9 @@ internal suspend fun eraseAndDescribe(
     }
 
     val before = observe()
+    if (before?.state == DocumentLifecycleState.ACTIVE || before?.state == DocumentLifecycleState.ABSENT) {
+        return "Erase not submitted. Lifecycle: ${before.state}. " + describeEraseProgress(before, before)
+    }
     erase()
     val after = observe()
     return "Erase submitted; document absence observed. " +

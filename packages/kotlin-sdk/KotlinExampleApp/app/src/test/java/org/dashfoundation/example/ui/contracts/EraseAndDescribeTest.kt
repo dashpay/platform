@@ -13,14 +13,9 @@ import org.junit.Test
  * Pins the failure split in [eraseAndDescribe]: the erase decides the
  * submission, the lifecycle reads only describe it.
  *
- * The hazard: the lifecycle read runs after the erase has been broadcast and
- * confirmed. A transient DAPI or JNI failure there used to escape the submit
- * helper's failure callback, so the UI showed a confirmed erase as failed and
- * invited the user to submit a second, fee-bearing one.
- *
- * Red→green: drop the `try`/`catch` around the reads in [eraseAndDescribe] and
- * [lifecycleReadFailureAfterBroadcast_stillReportsSuccess] fails — the read's
- * exception propagates out instead of producing a success message.
+ * A failed lifecycle observation must not report a broadcast as failed or
+ * invite another fee-bearing submission. An ACTIVE or ABSENT observation
+ * before the broadcast must instead explain why no submission is needed.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class EraseAndDescribeTest {
@@ -33,6 +28,22 @@ class EraseAndDescribeTest {
         erasingFromTimeMs = 1_700_000_000_000uL,
         erasingFromRevision = 7uL,
     )
+
+    @Test
+    fun activeOrAbsentLifecycleSkipsThePaidErase() = runTest {
+        for (state in listOf(DocumentLifecycleState.ACTIVE, DocumentLifecycleState.ABSENT)) {
+            var erases = 0
+            var reads = 0
+            val message = eraseAndDescribe(
+                readLifecycle = { reads++; lifecycle(state, 0) },
+                erase = { erases++ },
+            )
+            assertEquals("no erase is needed for $state", 0, erases)
+            assertEquals("no post-broadcast read is needed", 1, reads)
+            assertTrue(message, message.startsWith("Erase not submitted"))
+            assertTrue(message, message.contains(state.name))
+        }
+    }
 
     @Test
     fun lifecycleReadFailureAfterBroadcast_stillReportsSuccess() = runTest {
