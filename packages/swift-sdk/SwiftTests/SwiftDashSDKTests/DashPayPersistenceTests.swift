@@ -182,6 +182,37 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertTrue(try fetchContactProfileRows().isEmpty)
     }
 
+    func testContactProfileReadFailureRollsBackTombstoneAddressesAndIdentityChanges() throws {
+        let shielded = Data(repeating: 3, count: 43)
+        XCTAssertTrue(applyContactProfiles([.init(
+            contactIdentityId: contactId, isPresent: true, displayName: "Keep profile",
+            bio: nil, publicMessage: nil, avatarUrl: nil, avatarHash: nil,
+            avatarFingerprint: nil, shieldedAddress: shielded, checkedAtMs: 1)]))
+        let context = ModelContext(container)
+        let owner = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        owner.balance = 321
+        owner.revision = 5
+        try context.save()
+
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet,
+            modelFetcher: ContactProfileReadFailure())
+        XCTAssertFalse(applyContactProfiles([.init(
+            contactIdentityId: contactId, isPresent: false, displayName: nil,
+            bio: nil, publicMessage: nil, avatarUrl: nil, avatarHash: nil,
+            avatarFingerprint: nil, checkedAtMs: 2)]))
+
+        let restored = ModelContext(container)
+        let profile = try XCTUnwrap(restored.fetch(
+            FetchDescriptor<PersistentDashpayContactProfile>()).first)
+        XCTAssertEqual(profile.displayName, "Keep profile")
+        let addresses = try restored.fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>())
+        XCTAssertEqual(addresses.count, 1)
+        XCTAssertEqual(addresses.first?.shieldedAddress, shielded)
+        let restoredOwner = try XCTUnwrap(restored.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        XCTAssertEqual(restoredOwner.balance, 321)
+        XCTAssertEqual(restoredOwner.revision, 5)
+    }
+
     func testPaymentAddressReadFailureRejectsWalletRestore() throws {
         let context = ModelContext(container)
         let wallet = PersistentWallet(walletId: walletId, network: .testnet)
@@ -1313,6 +1344,14 @@ private struct PaymentAddressReadFailure: ModelFetching {
     struct ReadError: Error {}
     func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>, in context: ModelContext) throws -> [T] {
         if T.self == PersistentDashpayPaymentAddresses.self { throw ReadError() }
+        return try context.fetch(descriptor)
+    }
+}
+
+private struct ContactProfileReadFailure: ModelFetching {
+    struct ReadError: Error {}
+    func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>, in context: ModelContext) throws -> [T] {
+        if T.self == PersistentDashpayContactProfile.self { throw ReadError() }
         return try context.fetch(descriptor)
     }
 }

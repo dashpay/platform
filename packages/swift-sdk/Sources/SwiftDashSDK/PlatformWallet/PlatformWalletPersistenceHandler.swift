@@ -4185,7 +4185,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     profileIdentityId: contactIdentityId, core: nil, platform: nil, shielded: nil, fetcher: modelFetcher)
                 // Confirmed-absent: delete the stale row if one exists; a
                 // never-persisted contact is a no-op.
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                     backgroundContext.delete(existing)
                 }
                 continue

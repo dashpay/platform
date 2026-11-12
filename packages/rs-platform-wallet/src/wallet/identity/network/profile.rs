@@ -1029,6 +1029,107 @@ mod address_patch_tests {
             .contains("does not support corePaymentAddress"));
     }
 
+    #[tokio::test]
+    async fn should_sync_address_only_profile_and_retain_it_in_snapshots() {
+        use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+        use dash_sdk::{platform::DocumentQuery, query_types::Documents};
+        use dpp::document::DocumentV0;
+        use dpp::identity::IdentityV0;
+        use dpp::version::PlatformVersion;
+
+        let owner = Identifier::from([0x61; 32]);
+        let key = orchard::keys::SpendingKey::from_bytes([42; 32]).unwrap();
+        let raw = orchard::keys::FullViewingKey::from(&key)
+            .address_at(19u32, orchard::keys::Scope::External)
+            .to_raw_address_bytes();
+        let contract = super::super::dashpay_contract().unwrap();
+        let query = DocumentQuery::new(contract, "profile")
+            .unwrap()
+            .with_where(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![owner.into()]),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".into(),
+                ascending: true,
+            })
+            .with_limit(100);
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from([0x62; 32]),
+            owner_id: owner,
+            revision: Some(1),
+            properties: [("shieldedAddress".into(), Value::Bytes(raw.to_vec()))].into(),
+            ..Default::default()
+        });
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(key_wallet::Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some([(document.id(), Some(document))].into()),
+            )
+            .await
+            .unwrap();
+        let (wm, wallet_id, generation, _) = crate::test_support::funded_wallet_manager(
+            key_wallet::account::StandardAccountType::BIP44Account,
+        )
+        .await;
+        let persister: Arc<dyn crate::changeset::PlatformWalletPersistence> =
+            Arc::new(crate::wallet::persister::NoPlatformPersistence);
+        wm.write()
+            .await
+            .get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                Identity::V0(IdentityV0 {
+                    id: owner,
+                    public_keys: Default::default(),
+                    balance: 0,
+                    revision: 0,
+                }),
+                0,
+                wallet_id,
+                &crate::wallet::persister::WalletPersister::new(wallet_id, persister.clone()),
+            )
+            .unwrap();
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            wm.clone(),
+            Arc::new(crate::events::PlatformEventManager::new(vec![])),
+        ));
+        let wallet = crate::PlatformWallet::new(
+            Arc::new(sdk),
+            wallet_id,
+            wm.clone(),
+            generation,
+            Arc::new(tokio::sync::Notify::new()),
+            persister,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
+        );
+        assert_eq!(
+            wallet.identity().dashpay().sync_profiles().await.unwrap(),
+            1
+        );
+        let manager = wm.read().await;
+        let managed = manager
+            .get_wallet_info(&wallet_id)
+            .unwrap()
+            .identity_manager
+            .managed_identity(&owner)
+            .unwrap();
+        let snapshot = crate::changeset::IdentityEntry::from_managed(managed);
+        assert_eq!(
+            snapshot.dashpay_profile.unwrap().shielded_address,
+            Some(raw.to_vec())
+        );
+    }
+
     #[test]
     fn should_ignore_invalid_addresses_without_losing_profile() {
         let profile = profile_from_properties(&std::collections::BTreeMap::from([

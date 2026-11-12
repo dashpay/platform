@@ -9304,7 +9304,7 @@ mod tests {
         let wallet = create(&manager);
         assert_eq!(wallet.wallet_id(), wallet_id);
 
-        let held = |id: Identifier| {
+        let held = |id: Identifier, index: u32| {
             runtime().block_on(async {
                 let mut wm = wallet.wallet_manager().write().await;
                 let identities = &mut wm
@@ -9319,7 +9319,7 @@ mod tests {
                             balance: 0,
                             revision: 0,
                         }),
-                        0,
+                        index,
                         wallet.wallet_id(),
                         wallet.persister(),
                     )
@@ -9331,8 +9331,11 @@ mod tests {
                     .private_payments_unrestored()
             })
         };
-        assert!(held(marked), "the identity the kept record names is held");
-        assert!(!held(other), "an identity no kept record names is not");
+        assert!(
+            held(marked, 0),
+            "the identity the kept record names is held"
+        );
+        assert!(!held(other, 1), "an identity no kept record names is not");
     }
 
     #[test]
@@ -9599,22 +9602,17 @@ mod tests {
         address
     }
 
-    /// Host bytes for a shielded address, and what restore keeps of them: a
-    /// decodable Orchard address where shielded support is built in, and
-    /// nothing without it, where no shielded address is payable.
+    /// Orchard key-components vector 0 (`default_d || default_pk_d`), retained
+    /// as public profile metadata with or without shielded spending support.
+    /// https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py
     fn shielded_fixture() -> ([u8; 43], Option<Vec<u8>>) {
-        #[cfg(feature = "shielded")]
-        {
-            let address = OrchardKeySet::from_seed(&[42; 64], Network::Testnet, 0)
-                .expect("orchard keys")
-                .default_address
-                .to_raw_address_bytes();
-            (address, Some(address.to_vec()))
-        }
-        #[cfg(not(feature = "shielded"))]
-        {
-            ([0xE1; 43], None)
-        }
+        let address = [
+            0x8f, 0xf3, 0x38, 0x69, 0x71, 0xcb, 0x64, 0xb8, 0xe7, 0x78, 0x99, 0x08, 0xdd, 0x8e,
+            0xbd, 0x7d, 0xe9, 0x2a, 0x68, 0xe5, 0x86, 0xa3, 0x4d, 0xb8, 0xfe, 0xa9, 0x99, 0xef,
+            0xd2, 0x01, 0x6f, 0xae, 0x76, 0x75, 0x0a, 0xfa, 0xe7, 0xee, 0x94, 0x16, 0x46, 0xbc,
+            0xb9,
+        ];
+        (address, Some(address.to_vec()))
     }
 
     /// Restore re-validates each payment address as a profile fetch would,
@@ -9659,6 +9657,8 @@ mod tests {
     #[test]
     fn owned_dashpay_profile_hydrates_through_the_load_callback() {
         use crate::wallet_restore_types::{ContactProfileRestoreEntryFFI, IdentityRestoreEntryFFI};
+        use dpp::identity::accessors::IdentitySettersV0;
+        use platform_wallet::changeset::IdentityEntry;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         struct Host {
@@ -9798,6 +9798,17 @@ mod tests {
             bucket[&1].dashpay().profile.is_none(),
             "a null profile pointer restores no profile"
         );
+
+        let mut managed = bucket[&0].clone();
+        managed.identity.set_balance(8);
+        let entry = IdentityEntry::from_managed(&managed);
+        assert_eq!(entry.balance, 8);
+        assert_eq!(
+            entry.dashpay_profile.as_ref().unwrap().shielded_address,
+            shielded_fixture().1,
+            "an unrelated scalar snapshot retains restored public address metadata"
+        );
+        assert_eq!(entry.dashpay_profile, Some(profile));
     }
 
     unsafe extern "C" fn noop_free_wallets(
@@ -12617,8 +12628,6 @@ mod tests {
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::Wallet;
-    #[cfg(feature = "shielded")]
-    use platform_wallet::wallet::shielded::OrchardKeySet;
 
     /// Regression: restored pool addresses must be tagged with the
     /// WALLET's network, not the network the base58 string parses as.

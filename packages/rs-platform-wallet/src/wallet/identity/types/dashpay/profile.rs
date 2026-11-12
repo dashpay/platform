@@ -106,22 +106,10 @@ pub struct ShieldedTipRecipient {
     pub address: [u8; 43],
 }
 
-/// Decode a raw Orchard recipient using the same decoder as shielded transfers.
-/// Without shielded support an address must never be advertised as payable.
+/// Validate public Orchard address metadata independently of spending support.
 pub fn validated_shielded_address(bytes: &[u8]) -> Option<[u8; 43]> {
-    #[cfg(feature = "shielded")]
-    {
-        let raw: [u8; 43] = bytes.try_into().ok()?;
-        Option::<grovedb_commitment_tree::PaymentAddress>::from(
-            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
-        )
-        .map(|_| raw)
-    }
-    #[cfg(not(feature = "shielded"))]
-    {
-        let _ = bytes;
-        None
-    }
+    let raw: [u8; 43] = bytes.try_into().ok()?;
+    Option::<orchard::Address>::from(orchard::Address::from_raw_address_bytes(&raw)).map(|_| raw)
 }
 
 /// Storage-form transparent address validation, matching the DashPay trigger.

@@ -303,8 +303,10 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        let _placement = self.identity.identity_placement.read().await;
-        let account = self.tip_source_account(seed, source).await?;
+        {
+            let _placement = self.identity.identity_placement.read().await;
+            self.tip_source_account(seed, source).await?;
+        }
         let current = self
             .identity()
             .dashpay()
@@ -315,6 +317,8 @@ impl PlatformWallet {
                 "The tip recipient changed; review and confirm the payment again".to_string(),
             ));
         }
+        let _placement = self.identity.identity_placement.read().await;
+        let account = self.tip_source_account(seed, source).await?;
         self.shielded_transfer_to(
             coordinator,
             seed,

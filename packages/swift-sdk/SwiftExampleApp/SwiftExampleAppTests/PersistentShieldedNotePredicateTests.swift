@@ -63,15 +63,53 @@ final class PersistentShieldedNotePredicateTests: XCTestCase {
         )
     }
 
+    func testShieldedSendHasNoSourceBalanceForTipOnlyWallet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let wallet = walletId(0xAA)
+        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
+                                nullifier: 0x01, isSpent: false, value: 900))
+        try context.save()
+
+        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
+            predicate: SendTransactionView.shieldedSourcePredicate(walletId: wallet)
+        ))
+        XCTAssertTrue(notes.isEmpty)
+        XCTAssertEqual(notes.reduce(UInt64(0)) { $0 + $1.value }, 0)
+    }
+
+    func testShieldedSendSourceBalanceIncludesOnlyUnspentAccountZeroInSelectedWallet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let wallet = walletId(0xAA)
+        context.insert(makeNote(walletId: wallet, nullifier: 0x01, isSpent: false, value: 100))
+        context.insert(makeNote(walletId: wallet, nullifier: 0x02, isSpent: false, value: 50))
+        context.insert(makeNote(walletId: wallet, nullifier: 0x03, isSpent: true, value: 999))
+        context.insert(makeNote(walletId: wallet, accountIndex: 1,
+                                nullifier: 0x04, isSpent: false, value: 200))
+        context.insert(makeNote(walletId: wallet, accountIndex: 0x4000_0000,
+                                nullifier: 0x05, isSpent: false, value: 900))
+        context.insert(makeNote(walletId: walletId(0xBB),
+                                nullifier: 0x06, isSpent: false, value: 300))
+        try context.save()
+
+        let notes = try context.fetch(FetchDescriptor<PersistentShieldedNote>(
+            predicate: SendTransactionView.shieldedSourcePredicate(walletId: wallet)
+        ))
+        XCTAssertEqual(notes.count, 2)
+        XCTAssertEqual(notes.reduce(UInt64(0)) { $0 + $1.value }, 150)
+    }
+
     private func makeNote(
         walletId: Data,
+        accountIndex: UInt32 = 0,
         nullifier: UInt8,
         isSpent: Bool,
         value: UInt64
     ) -> PersistentShieldedNote {
         PersistentShieldedNote(
             walletId: walletId,
-            accountIndex: 0,
+            accountIndex: accountIndex,
             position: 0,
             cmx: Data(repeating: 0, count: 32),
             nullifier: Data(repeating: nullifier, count: 32),
