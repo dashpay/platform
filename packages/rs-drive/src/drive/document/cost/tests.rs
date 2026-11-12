@@ -5,7 +5,7 @@ use crate::drive::document::fixture_contracts::{
     leave_out_optional_indexed_values, leave_out_optional_unique_values, leave_out_skip_properties,
     small_sums, CONTRACTS,
 };
-use crate::drive::document::make_document_reference;
+use crate::drive::document::{make_document_reference, uses_current_document_history_layout};
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -312,6 +312,46 @@ fn should_price_what_drive_charges() {
 }
 
 #[test]
+fn should_include_the_retained_history_root_when_estimating_processing_paths() {
+    let version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({ "note": {
+        "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
+        "properties": {
+            "tag": { "type": "string", "maxLength": 20, "position": 0 },
+            "code": { "type": "string", "maxLength": 20, "position": 1 },
+            "text": { "type": "string", "maxLength": 60, "position": 2 }
+        },
+        "indices": [
+            { "name": "byTag", "properties": [{ "tag": "asc" }] },
+            { "name": "byCode", "properties": [{ "code": "asc" }] }
+        ],
+        "required": ["tag", "code", "text"], "additionalProperties": false
+    }}));
+    let note = contract.document_type_for_name("note").unwrap();
+    let document = note_document(&contract);
+    let writes = writes_of(&contract, note, &document);
+    let assumptions = CostAssumptions::new(version);
+    let parts = processing_costs(
+        &contract,
+        note,
+        &writes,
+        &vec![false; writes.len()],
+        Scenarios::default(),
+        0,
+        &assumptions,
+        version,
+    )
+    .unwrap();
+    let processing = parts.iter().find(|part| part.code == "writes").unwrap();
+    // Primary storage, retained history and the two index roots make four
+    // entries: the additional root crosses a balanced-tree height boundary.
+    assert_eq!(
+        processing.credits.new_values,
+        write_processing(&writes, &[], 4, &assumptions, version)
+    );
+}
+
+#[test]
 fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
     let platform_version = PlatformVersion::latest();
     let mut ratios = Vec::new();
@@ -321,6 +361,11 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
         for (name, document_type) in contract.document_types() {
             let document_type = document_type.as_ref();
             let type_entries = u64::from(!document_type.index_only())
+                + u64::from(
+                    document_type.documents_keep_history()
+                        && uses_current_document_history_layout(platform_version)
+                            .expect("supported history layout"),
+                )
                 + document_type.index_structure().sub_levels().len() as u64;
             for seed in 0..=100u64 {
                 let mut document = document_type
