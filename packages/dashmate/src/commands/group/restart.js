@@ -1,3 +1,4 @@
+import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
@@ -7,11 +8,11 @@ export default class GroupRestartCommand extends GroupBaseCommand {
 
   static flags = {
     ...GroupBaseCommand.flags,
-    safe: {
+    safe: Flags.boolean({
       char: 's',
       description: 'wait for dkg before stop',
       default: false,
-    },
+    }),
   };
 
   /**
