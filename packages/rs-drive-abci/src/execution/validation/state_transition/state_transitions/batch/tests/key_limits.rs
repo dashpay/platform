@@ -548,3 +548,343 @@ async fn should_keep_transitions_of_unusable_keys_out_of_the_mempool() {
         }
     }
 }
+
+/// A data contract commits its owner beyond the transition that sets it up or changes it. From
+/// protocol version 15 a key with a budget or an expiry signs neither a contract create nor a
+/// contract update.
+mod data_contracts {
+    use super::*;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::DataContract;
+    use dpp::prelude::IdentityNonce;
+    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
+
+    const PUBLIC_KEY_WITH_LIMITS_CANNOT_SIGN_DATA_CONTRACT_TRANSITION: u32 = 20018;
+
+    const CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json";
+
+    /// An identity whose signing key is stored with the given limits, on a chain at the given
+    /// protocol version.
+    struct ContractSigner {
+        platform: TempPlatform<MockCoreRPCLike>,
+        /// The identity as the signer knows it: its signing key carries no limits there.
+        identity: Identity,
+        signer: SimpleSigner,
+        signing_key: IdentityPublicKey,
+        version: &'static PlatformVersion,
+    }
+
+    impl ContractSigner {
+        fn new(
+            version: &'static PlatformVersion,
+            budget: Option<Credits>,
+            expires_at: Option<TimestampMillis>,
+        ) -> Self {
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, signing_key) =
+                setup_identity_without_adding_it(958, dash_to_credits!(2));
+            let mut stored_identity = identity.clone();
+            if budget.is_some() || expires_at.is_some() {
+                stored_identity.add_public_key(signing_key.clone().with_limits(budget, expires_at));
+            }
+            platform
+                .drive
+                .add_new_identity(
+                    stored_identity,
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    version,
+                )
+                .expect("expected to add the identity");
+            Self {
+                platform,
+                identity,
+                signer,
+                signing_key,
+                version,
+            }
+        }
+
+        /// A contract of the identity, as a create with the first identity nonce names it
+        fn contract(&self) -> DataContract {
+            let mut contract = json_document_to_contract_with_ids(
+                CONTRACT_PATH,
+                Some(DataContract::generate_data_contract_id_v0(
+                    self.identity.id(),
+                    1,
+                )),
+                Some(self.identity.id()),
+                false,
+                self.version,
+            )
+            .expect("expected the contract");
+            contract.set_config(
+                DataContractConfig::default_for_version(self.version)
+                    .expect("expected the default config"),
+            );
+            contract
+        }
+
+        async fn contract_creation(&self) -> StateTransition {
+            DataContractCreateTransition::new_from_data_contract(
+                self.contract(),
+                1,
+                &self.identity.clone().into_partial_identity_info(),
+                self.signing_key.id(),
+                &self.signer,
+                self.version,
+                None,
+            )
+            .await
+            .expect("expected a contract create transition")
+        }
+
+        /// Stores the contract, as a key without limits would have registered it, and returns
+        /// its update to version 2 signed by the signing key
+        async fn contract_update_of_a_stored_contract(&self) -> StateTransition {
+            let mut contract = self.contract();
+            self.platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    self.version,
+                )
+                .expect("expected to store the contract");
+            contract.set_version(2);
+            DataContractUpdateTransition::new_from_data_contract(
+                contract,
+                &self.identity.clone().into_partial_identity_info(),
+                self.signing_key.id(),
+                1,
+                0,
+                &self.signer,
+                self.version,
+                None,
+            )
+            .await
+            .expect("expected a contract update transition")
+        }
+
+        fn process(
+            &self,
+            transition: &StateTransition,
+            tx: &drive::grovedb::Transaction,
+        ) -> StateTransitionExecutionResult {
+            let state = self.platform.state.load();
+            let result = self
+                .platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &state,
+                    &BlockInfo {
+                        time_ms: BLOCK_TIME_MS,
+                        ..Default::default()
+                    },
+                    tx,
+                    self.version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+            result.execution_results()[0].clone()
+        }
+
+        fn balance(&self, tx: &drive::grovedb::Transaction) -> Credits {
+            self.platform
+                .drive
+                .fetch_identity_balance(self.identity.id().to_buffer(), Some(tx), self.version)
+                .expect("expected to fetch the balance")
+                .expect("expected a balance")
+        }
+
+        fn remaining_budget(&self, tx: &drive::grovedb::Transaction) -> Option<Credits> {
+            self.platform
+                .drive
+                .fetch_identity_key_remaining_budget(
+                    self.identity.id().to_buffer(),
+                    self.signing_key.id(),
+                    Some(tx),
+                    self.version,
+                )
+                .expect("expected to fetch the remaining budget")
+        }
+
+        fn identity_nonce(&self, tx: &drive::grovedb::Transaction) -> Option<IdentityNonce> {
+            self.platform
+                .drive
+                .fetch_identity_nonce(self.identity.id().to_buffer(), true, Some(tx), self.version)
+                .expect("expected to fetch the identity nonce")
+        }
+
+        /// Nothing was taken from the identity, from the key or from the nonce
+        fn assert_untouched(&self, budget: Option<Credits>, tx: &drive::grovedb::Transaction) {
+            assert_eq!(self.balance(tx), self.identity.balance());
+            assert_eq!(self.remaining_budget(tx), budget);
+            assert_eq!(self.identity_nonce(tx).unwrap_or_default(), 0);
+        }
+    }
+
+    fn protocol_version_14() -> &'static PlatformVersion {
+        PlatformVersion::get(14).expect("expected protocol version 14")
+    }
+
+    #[tokio::test]
+    async fn should_refuse_unpaid_a_contract_create_signed_by_a_key_with_a_budget() {
+        // The budget covers the registration many times over: what is refused is the kind of
+        // transition, not its price.
+        let budget = Some(dash_to_credits!(1.5));
+        let setup = ContractSigner::new(PlatformVersion::latest(), budget, None);
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let execution = setup.process(&setup.contract_creation().await, &tx);
+        assert_unpaid_with_code(
+            &execution,
+            PUBLIC_KEY_WITH_LIMITS_CANNOT_SIGN_DATA_CONTRACT_TRANSITION,
+        );
+        setup.assert_untouched(budget, &tx);
+        assert!(
+            setup
+                .platform
+                .drive
+                .fetch_contract(
+                    setup.contract().id().to_buffer(),
+                    None,
+                    None,
+                    Some(&tx),
+                    setup.version
+                )
+                .unwrap()
+                .expect("expected to look the contract up")
+                .is_none(),
+            "the contract was not registered"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_unpaid_a_contract_create_signed_by_a_key_with_an_expiry() {
+        // An expiry alone is refused too, long before it is reached.
+        let setup =
+            ContractSigner::new(PlatformVersion::latest(), None, Some(BLOCK_TIME_MS * 1_000));
+        let tx = setup.platform.drive.grove.start_transaction();
+
+        let execution = setup.process(&setup.contract_creation().await, &tx);
+        assert_unpaid_with_code(
+            &execution,
+            PUBLIC_KEY_WITH_LIMITS_CANNOT_SIGN_DATA_CONTRACT_TRANSITION,
+        );
+        setup.assert_untouched(None, &tx);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_unpaid_a_contract_update_signed_by_a_key_with_limits() {
+        for (budget, expires_at) in [
+            (Some(dash_to_credits!(1.5)), None),
+            (None, Some(BLOCK_TIME_MS * 1_000)),
+        ] {
+            let setup = ContractSigner::new(PlatformVersion::latest(), budget, expires_at);
+            let update = setup.contract_update_of_a_stored_contract().await;
+            let tx = setup.platform.drive.grove.start_transaction();
+
+            let execution = setup.process(&update, &tx);
+            assert_unpaid_with_code(
+                &execution,
+                PUBLIC_KEY_WITH_LIMITS_CANNOT_SIGN_DATA_CONTRACT_TRANSITION,
+            );
+            setup.assert_untouched(budget, &tx);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_let_a_key_without_limits_create_and_update_a_contract() {
+        let setup = ContractSigner::new(PlatformVersion::latest(), None, None);
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(
+            setup.process(&setup.contract_creation().await, &tx),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let setup = ContractSigner::new(PlatformVersion::latest(), None, None);
+        let update = setup.contract_update_of_a_stored_contract().await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(
+            setup.process(&update, &tx),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_a_contract_create_signed_by_a_key_with_limits_out_of_the_mempool() {
+        use crate::execution::check_tx::CheckTxLevel::FirstTimeCheck;
+        use crate::platform_types::platform::PlatformRef;
+
+        let setup =
+            ContractSigner::new(PlatformVersion::latest(), Some(dash_to_credits!(1.5)), None);
+        let state = setup.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &setup.platform.drive,
+            state: &state,
+            config: &setup.platform.config,
+            core_rpc: &setup.platform.core_rpc,
+        };
+        let raw = setup
+            .contract_creation()
+            .await
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let check_result = setup
+            .platform
+            .check_tx(&raw, FirstTimeCheck, &platform_ref, setup.version)
+            .expect("expected to check tx");
+        assert!(
+            matches!(
+                check_result.errors.as_slice(),
+                [error] if error.code() == PUBLIC_KEY_WITH_LIMITS_CANNOT_SIGN_DATA_CONTRACT_TRANSITION
+            ),
+            "{:?}",
+            check_result.errors
+        );
+    }
+
+    /// Protocol version 14 keeps `validate_state_transition_identity_signed` 1, so the blocks
+    /// committed under it replay with the same results.
+    #[tokio::test]
+    async fn should_let_a_key_with_limits_create_and_update_a_contract_at_protocol_version_14() {
+        let budget = dash_to_credits!(1.5);
+        let setup = ContractSigner::new(protocol_version_14(), Some(budget), None);
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(
+            setup.process(&setup.contract_creation().await, &tx),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let paid_by_identity = setup.identity.balance() - setup.balance(&tx);
+        assert!(paid_by_identity > 0);
+        assert_eq!(setup.remaining_budget(&tx), Some(budget - paid_by_identity));
+
+        let setup = ContractSigner::new(protocol_version_14(), Some(budget), None);
+        let update = setup.contract_update_of_a_stored_contract().await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        assert_matches!(
+            setup.process(&update, &tx),
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+}

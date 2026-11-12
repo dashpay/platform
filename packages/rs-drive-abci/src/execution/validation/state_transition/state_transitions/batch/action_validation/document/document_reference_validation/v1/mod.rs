@@ -36,6 +36,9 @@ use dpp::errors::consensus::state::document::referenced_document_preceded_error:
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::errors::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use dpp::errors::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -776,6 +779,14 @@ fn binds_a_changed_property(
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property, ..
         } => is_changed_field(changed_fields, key_id_property),
+        // A reference naming its target through the referring document binds the
+        // properties it reads the target from: a changed one points the value into another
+        // contract or document type, or names another property for a slot, so the whole
+        // reference is checked again. Kept otherwise, as a permanent or moderated
+        // reference is
+        DocumentPropertyReferenceTarget::DynamicDocument(dynamic) => dynamic
+            .target_properties()
+            .any(|target_property| is_changed_field(changed_fields, target_property)),
         // A list element binds the properties its agreement reads, the
         // `$id` pair's among them: a changed one may name another document,
         // whose list is then checked against every value
@@ -1125,7 +1136,54 @@ fn validate_reference_target_v1(
         | DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
         | DocumentPropertyReferenceTarget::ModeratedDocument { .. }
-        | DocumentPropertyReferenceTarget::ListElement(_) => {
+        | DocumentPropertyReferenceTarget::ListElement(_)
+        | DocumentPropertyReferenceTarget::DynamicDocument(_) => {
+            // A reference naming its target through the referring document (protocol
+            // version 15) has no declaration in the schema: the document says which
+            // contract and which document type its value points into, and from there it
+            // is checked as a reference by id with no `where`. A document that holds the
+            // reference without saying where it points names nothing that exists
+            let no_agreement = BTreeMap::new();
+            let no_conditions = BTreeMap::new();
+            let named_document_type;
+            let declaration = match reference_target.as_dynamic_document_reference() {
+                Some(dynamic) => {
+                    let named_contract_id = document_data
+                        .get(&dynamic.contract_id_property)
+                        .and_then(|contract_id| contract_id.to_identifier().ok());
+                    let named_type = document_data
+                        .get(&dynamic.document_type_property)
+                        .and_then(|document_type_name| document_type_name.as_text());
+                    let (Some(named_contract_id), Some(named_type)) =
+                        (named_contract_id, named_type)
+                    else {
+                        let missing_id = Identifier::from_bytes(&referenced_id)
+                            .map_err(|e| Error::Protocol(e.into()))?;
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(
+                                ReferencedEntityNotFoundError::new(
+                                    missing_id,
+                                    reference_target.clone(),
+                                    path.to_string(),
+                                ),
+                            )),
+                        ));
+                    };
+                    named_document_type = named_type.to_string();
+                    Some(DocumentReferenceDeclaration {
+                        contract_id: Some(named_contract_id),
+                        document_type_name: &named_document_type,
+                        property_agreement: &no_agreement,
+                        where_conditions: &no_conditions,
+                        // Settled below, once the named type is known: a declaration
+                        // listing both kinds is of the kind the type is
+                        kind: dynamic.kind.checked_as(DocumentReferenceKind::Permanent),
+                        lookup: None,
+                        in_list: None,
+                    })
+                }
+                None => reference_target.as_any_document_reference(),
+            };
             let Some(DocumentReferenceDeclaration {
                 contract_id: referenced_contract_id,
                 document_type_name,
@@ -1134,7 +1192,7 @@ fn validate_reference_target_v1(
                 kind,
                 lookup,
                 in_list: _,
-            }) = reference_target.as_any_document_reference()
+            }) = declaration
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "every document reference target carries a document reference declaration",
@@ -1217,6 +1275,77 @@ fn validate_reference_target_v1(
                     .into(),
                 ));
             };
+
+            // What registration checks of a reference naming its target in the schema, a
+            // reference naming it through the referring document meets here, on every
+            // write that checks it: the type is not private, whose documents are encrypted
+            // entries the chain never reads, it is not indexOnly, whose documents are index
+            // entries Drive refuses to fetch by id (the read below would fail the block's
+            // processing of the transition instead of refusing it, paid), and it has the
+            // properties the reference's `documentTypeRequirements` ask for. A slot naming
+            // its property through the referring document reads the name there, and a
+            // slot's `when` is judged against what the type says of each property that
+            // could fill it
+            let kind = match reference_target.as_dynamic_document_reference() {
+                // The kind it declares or, declaring both, a moderated reference into a
+                // moderated type and a permanent one into any other, which the kind check
+                // below refuses for a type whose documents can be deleted
+                Some(dynamic) => dynamic
+                    .kind
+                    .checked_as(referenced_document_type.document_reference_kind()),
+                None => kind,
+            };
+            if let Some(dynamic) = reference_target.as_dynamic_document_reference() {
+                if referenced_document_type.is_private() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypePrivateError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if referenced_document_type.index_only() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeIndexOnlyError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                // Judging the type reads nothing from state, but its work grows with the
+                // type's properties, the slots and their `when` conditions, and a document
+                // may hold many such references: billed by the comparisons it may take,
+                // before it is judged, so a write refused below pays for it too
+                if let Some(requirements) = &dynamic.requirements {
+                    bill_requirement_comparisons(
+                        requirements.comparisons(referenced_document_type),
+                        execution_context,
+                        platform_version,
+                    )?;
+                }
+                let meets_requirements = dynamic.requirements.as_ref().is_none_or(|requirements| {
+                    requirements.met_by(referenced_document_type, |referring_property| {
+                        document_data
+                            .get(referring_property)
+                            .and_then(|name| name.as_text())
+                            .map(str::to_string)
+                    })
+                });
+                if !meets_requirements {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeRequirementNotMetError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+            }
 
             // A `permanentDocument` reference admits only document types
             // whose documents never leave state: what could make them leave
@@ -2049,6 +2178,37 @@ fn bill_where_list_elements(
         })
         .ok_or(Error::Execution(ExecutionError::Overflow(
             "where list comparison fee overflow",
+        )))?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(credits),
+    ));
+    Ok(())
+}
+
+/// Bills `comparisons`, what judging a document type against the
+/// `documentTypeRequirements` of a reference naming its target through the
+/// referring document may take (`DocumentTypeRequirements::comparisons`):
+/// `requirement_credits_per_comparison` each, of the fee schedule's document
+/// reference group. The count is bounded by the slots a declaration may hold,
+/// the nodes of a `when` and the properties of a type, so the product never
+/// nears overflow; an overflow is still an error rather than a wrapped bill.
+fn bill_requirement_comparisons(
+    comparisons: u64,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if comparisons == 0 {
+        return Ok(());
+    }
+    let credits = comparisons
+        .checked_mul(
+            platform_version
+                .fee_version
+                .document_reference
+                .requirement_credits_per_comparison,
+        )
+        .ok_or(Error::Execution(ExecutionError::Overflow(
+            "document type requirement comparison fee overflow",
         )))?;
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
         FeeResult::new_from_processing_fee(credits),
