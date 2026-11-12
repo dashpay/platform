@@ -1,6 +1,7 @@
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::non_transferable_token_cost::external_non_transferable_token_cost_error;
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_patterns::validate_document_schemas_patterns_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
@@ -422,11 +423,20 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         // The contract in serialized form into it's execution form
         let full_validation =
             validation_mode.should_fully_validate_contract_on_transform_into_action();
-        let result = validate_document_schemas_depth_for_check_tx(
+        // The mempool-only checks. Edited in place: under the validation modes of block
+        // execution both return at once, so a block is processed as before
+        let result = validate_document_schemas_patterns_for_check_tx(
             self.data_contract(),
             validation_mode,
             platform_version,
         )
+        .and_then(|()| {
+            validate_document_schemas_depth_for_check_tx(
+                self.data_contract(),
+                validation_mode,
+                platform_version,
+            )
+        })
         .and_then(|()| {
             DataContractCreateTransitionAction::try_from_borrowed_transition(
                 self,

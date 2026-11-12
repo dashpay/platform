@@ -27,6 +27,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property;
+/// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
+///   a contract whose document schemas and `$defs` hold more than
+///   `max_contract_schema_patterns` patterns, or one that does not compile within
+///   `max_schema_pattern_compiled_size`;
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1.
@@ -39,6 +43,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         // `jsonschema` crate, reaching the same verdicts but for one rule of its own: in a
         // `uniqueItems` list, `0.0` and `-0.0` are one value however long the list
         validate_document: 2,
+        // changed: a contract's schemas hold a bounded number of patterns of bounded size
+        validate_schema_patterns: Some(0),
         ..CONTRACT_VERSIONS_V6.methods
     },
     document_type_versions: DocumentTypeVersions {
