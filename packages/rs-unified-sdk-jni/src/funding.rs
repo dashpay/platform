@@ -239,7 +239,8 @@ fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<s
 /// empty string) → `Ok(None)` — the FFI treats a null memo pointer as "no
 /// memo", and Rust's `encode_memo_text` maps an empty string to the same
 /// all-zero memo anyway, so both normalize to null here. Returns `Err(())`
-/// (after throwing) on an interior NUL; a JNI read error is treated as null.
+/// (after throwing) on a JNI read error or an interior NUL, so a memo the
+/// caller supplied is never silently dropped from a paid send.
 fn read_cstring_opt(
     env: &mut JNIEnv,
     s: &JString,
@@ -252,7 +253,8 @@ fn read_cstring_opt(
         Ok(v) => v.into(),
         Err(_) => {
             let _ = env.exception_clear();
-            return Ok(None);
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return Err(());
         }
     };
     if owned.is_empty() {
