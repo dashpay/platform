@@ -131,7 +131,7 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// persistence extension's outpoint-lock persist / load / free slots.
     /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
     /// the declaration when all three slots are wired.
-    public static let outpointLocks: UInt64 = 1 << 13
+    public static let outpointLocks: UInt64 = 1 << 16
 
     public let version: UInt32
     public let bits: UInt64

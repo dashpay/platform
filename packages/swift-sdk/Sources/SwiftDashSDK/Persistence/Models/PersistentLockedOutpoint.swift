@@ -22,4 +22,16 @@ public final class PersistentLockedOutpoint {
         self.walletId = walletId
         self.outpoint = outpoint
     }
+
+    /// Human-readable outpoint (`<txid hex>:<vout>`), the txid in display
+    /// order as `PersistentTxo.outpointHex`. A key that is not 36 bytes
+    /// shows as its plain hex.
+    public var outpointHex: String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txidHex = outpoint.prefix(32).reversed().map { String(format: "%02x", $0) }.joined()
+        let vout = outpoint.suffix(4).reversed().reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
+        return "\(txidHex):\(vout)"
+    }
 }

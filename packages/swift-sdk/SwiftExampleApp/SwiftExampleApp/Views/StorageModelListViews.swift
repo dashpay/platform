@@ -1895,6 +1895,39 @@ struct PendingInputStorageListView: View {
     }
 }
 
+// MARK: - PersistentLockedOutpoint
+
+/// The outpoints each wallet keeps out of coin selection: masternode
+/// collateral, and outpoints locked by hand. A row needs no TXO behind it.
+struct LockedOutpointStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentLockedOutpoint]
+
+    private var filtered: [PersistentLockedOutpoint] {
+        records.filter { $0.networkRaw == network.rawValue }
+            .sorted { ($0.walletId.toHexString(), $0.outpointHex)
+                < ($1.walletId.toHexString(), $1.outpointHex) }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: LockedOutpointStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outpointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    Text("Wallet: \(record.walletId.toHexString())")
+                        .font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Locked Outpoints (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "lock") } }
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 /// Storage explorer surface for tracked asset locks. SwiftData-backed

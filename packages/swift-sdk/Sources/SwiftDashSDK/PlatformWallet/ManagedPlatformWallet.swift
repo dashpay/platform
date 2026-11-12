@@ -142,19 +142,17 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         guard outpoint.txid.count == 32 else {
             throw PlatformWalletError.invalidParameter("txid must be 32 bytes")
         }
-        var entry = OutPointFFI()
-        Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
-            outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
-        }
-        entry.vout = outpoint.vout
-        let ffiOutpoint = entry
         return try await Task.detached(priority: .userInitiated) { [self] in
             try withExtendedLifetime(self) {
-                var input = ffiOutpoint
+                var entry = OutPointFFI()
+                Swift.withUnsafeMutableBytes(of: &entry.txid) { dst in
+                    outpoint.txid.withUnsafeBytes { src in dst.copyMemory(from: src) }
+                }
+                entry.vout = outpoint.vout
                 var changed = false
                 let result = locked
-                    ? platform_wallet_lock_outpoint(handle, &input, &changed)
-                    : platform_wallet_unlock_outpoint(handle, &input, &changed)
+                    ? platform_wallet_lock_outpoint(handle, &entry, &changed)
+                    : platform_wallet_unlock_outpoint(handle, &entry, &changed)
                 try result.check()
                 return changed
             }
