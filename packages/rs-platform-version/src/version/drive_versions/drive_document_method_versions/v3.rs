@@ -121,6 +121,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
         // versions stay on V2's v0 dispatch via their own method
         // tables (see V2's comment for the freeze rationale).
         primary_key_tree_type: 1,
+        document_history_storage_layout: 0,
         fetch_property_constraint_aggregate: 0,
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15

@@ -4,7 +4,8 @@ use super::{
     DriveAbciCoreChainLockMethodVersionsAndConstants, DriveAbciEngineMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciVotingMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
+    DriveAbciVotingMethodVersions,
 };
 
 /// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
@@ -114,6 +115,9 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 ///   only safe together with this check.
 /// - `engine.consensus_params_update` 2 installs the full evidence policy when it changes, and
 ///   gives the protocol version's own Tenderdash consensus version in an emergency update.
+/// - `protocol_upgrade.perform_events_on_first_block_of_protocol_change` is `Some(3)`:
+///   the first block crossing into protocol v15 migrates retained history after the other
+///   activation work, in the same transaction.
 ///
 /// The operator payouts: `core_based_updates.update_masternode_list` is 2 rather than 1, which
 /// keeps the operator payout and the revived height of an updated masternode's Core diff, reads
@@ -138,6 +142,10 @@ const DKG_MINING_SCHEDULES_V1: &[DkgMiningSchedule] = &[
 /// its random token transfers and mints, and `ApplyBlockRandomness` (or `FinalizeBlock`, with
 /// the commit's beacon) draws their values from the block's random beacon.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V11: DriveAbciMethodVersions = DriveAbciMethodVersions {
+    protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
+        perform_events_on_first_block_of_protocol_change: Some(3),
+        ..DRIVE_ABCI_METHOD_VERSIONS_V10.protocol_upgrade
+    },
     engine: DriveAbciEngineMethodVersions {
         consensus_params_update: 2,
         ..DRIVE_ABCI_METHOD_VERSIONS_V10.engine

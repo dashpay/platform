@@ -47,6 +47,27 @@ use grovedb::Element;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeSet;
 
+/// Whether current documents use pointers into the separate retained-history tree.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) fn uses_current_document_history_layout(
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .document_history_storage_layout
+    {
+        0 => Ok(false),
+        1 => Ok(true),
+        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "document_history_storage_layout".to_string(),
+            known_versions: vec![0, 1],
+            received,
+        })),
+    }
+}
+
 #[cfg(feature = "server")]
 mod delete;
 /// The values of derived index properties, read from the documents the references point at
@@ -65,12 +86,16 @@ pub mod expiration;
 mod fetch_property_constraint_aggregate;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
+/// Composite-key history queries and proof results.
 #[cfg(feature = "server")]
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
+/// Activation migration and its inventory.
+#[cfg(feature = "server")]
+pub mod migration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub use insert_contested::ContestWindows;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
@@ -581,6 +606,68 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     6 + reference_path_size
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Creates a reference to a document stored with the per-type history tree by
+/// primary-storage writer version 1.
+///
+/// The reference always points at the primary key tree entry. For a
+/// keep-history type that entry is itself a reference to the current revision
+/// in the history tree, so one more hop is allowed.
+fn make_document_reference_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::Reference(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// [`make_document_reference_v1`] carrying the document's sum contribution for
+/// a summable index.
+pub(crate) fn make_document_reference_with_sum_item_v1(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    sum_value: i64,
+    storage_flags: Option<&StorageFlags>,
+) -> Element {
+    let reference_path = vec![vec![0], document.id().to_vec()];
+    let max_reference_hops = if document_type.documents_keep_history() {
+        2
+    } else {
+        1
+    };
+    Element::new_reference_with_sum_item_with_max_hops_and_flags(
+        UpstreamRootHeightReference(4, reference_path),
+        Some(max_reference_hops),
+        sum_value,
+        StorageFlags::map_to_some_element_flags(storage_flags),
+    )
+}
+
+#[cfg(feature = "server")]
+/// Serialized size of a [`make_document_reference_v1`] reference: the path is
+/// always `[0, document id]`.
+fn document_reference_size_v1() -> u32 {
+    // 1 for type reference
+    // 1 for reference type
+    // 1 for root height offset
+    // 36 for the reference path (vec size, subvec size, 0, subvec size, 32-byte id)
+    // 1 reference_hops option
+    // 1 reference_hops count
+    // 1 element flags option
+    6 + 36
+}
+
 #[cfg(feature = "server")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
@@ -592,7 +679,10 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
+    use super::uses_current_document_history_layout;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
@@ -600,6 +690,62 @@ pub(crate) mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_keep_legacy_history_layout_when_primary_writer_changes() {
+        let mut platform_version = PlatformVersion::get(14).expect("protocol 14").clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage = 1;
+
+        assert!(!uses_current_document_history_layout(&platform_version)
+            .expect("legacy history layout remains supported"));
+    }
+
+    #[test]
+    fn should_keep_current_history_layout_when_primary_writer_changes() {
+        for writer_version in [0, 2] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .insert
+                .add_document_to_primary_storage = writer_version;
+
+            assert!(
+                uses_current_document_history_layout(&platform_version)
+                    .expect("current history layout remains supported"),
+                "writer version {writer_version} must not change the history layout"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_unknown_document_history_storage_layout_versions() {
+        for received in [2, u16::MAX] {
+            let mut platform_version = PlatformVersion::get(15).expect("protocol 15").clone();
+            platform_version
+                .drive
+                .methods
+                .document
+                .document_history_storage_layout = received;
+
+            assert!(matches!(
+                uses_current_document_history_layout(&platform_version),
+                Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                    method,
+                    known_versions,
+                    received: actual,
+                })) if method == "document_history_storage_layout"
+                    && known_versions == vec![0, 1]
+                    && actual == received
+            ));
+        }
+    }
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {
