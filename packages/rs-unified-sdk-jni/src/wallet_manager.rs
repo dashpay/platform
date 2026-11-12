@@ -4067,6 +4067,30 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
     })
 }
 
+/// The rows of one heal page, or `None` when the engine handed back a null
+/// pointer with a non-zero count: those rows must not read as an empty
+/// page while `hasMore` / `budgetSpent` are still trusted, or the page
+/// would be reported applied without them.
+///
+/// # Safety
+///
+/// A non-null `entries` must be valid for `count` rows, each satisfying
+/// the pointer contract [`UtxoPageRow::from_heal_row`] documents.
+unsafe fn heal_page_rows(
+    entries: *const platform_wallet_ffi::TxoHealRowFFI,
+    count: usize,
+) -> Option<Vec<UtxoPageRow>> {
+    if entries.is_null() && count > 0 {
+        return None;
+    }
+    Some(
+        slice_or_empty(entries, count)
+            .iter()
+            .map(|r| UtxoPageRow::from_heal_row(r))
+            .collect(),
+    )
+}
+
 /// One bounded page of the engine's UTXO inventory across every funds
 /// account of one wallet, each row with the engine's heal verdict, for the
 /// wallet's claimed reconcile run. Bridges
@@ -4149,16 +4173,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         // SAFETY: the heal page returned `count` rows at `entries` (or
         // null/0), each satisfying the pointer contract `from_heal_row`
         // documents; they are read before the page is freed.
-        let rows: Vec<UtxoPageRow> = unsafe { slice_or_empty(entries, count) }
-            .iter()
-            .map(|r| unsafe { UtxoPageRow::from_heal_row(r) })
-            .collect();
+        let rows = unsafe { heal_page_rows(entries, count) };
         // A null or empty page is a no-op to free.
         unsafe {
             platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_free(
                 entries as *mut platform_wallet_ffi::TxoHealRowFFI,
                 count,
             )
+        };
+        let Some(rows) = rows else {
+            throw_sdk_exception(
+                env,
+                99,
+                "txo heal page returned a null pointer with a non-zero count",
+            );
+            return ptr::null_mut();
         };
         let page = if budget_spent {
             UtxoPage::budget_spent()
@@ -5458,6 +5487,28 @@ mod tests {
     }
 
     // ── Inventory page (Rust → Kotlin) ────────────────────────────────
+
+    #[test]
+    fn a_null_heal_page_with_a_non_zero_count_fails_closed() {
+        // SAFETY: a null pointer is never dereferenced.
+        assert!(
+            unsafe { heal_page_rows(ptr::null(), 3) }.is_none(),
+            "a null page claiming rows must not read as an empty page"
+        );
+        // SAFETY: as above; null with no rows is the engine's empty page.
+        let empty = unsafe { heal_page_rows(ptr::null(), 0) }.expect("null/0 is an empty page");
+        assert!(empty.is_empty());
+        // Moving the buffers out of each coin leaves their heap storage,
+        // and so the rows' pointers, where they were.
+        let (page, _buffers): (Vec<TxoHealRowFFI>, Vec<_>) = golden_coins()
+            .into_iter()
+            .map(|c| (c.row, (c._address, c.script)))
+            .unzip();
+        // SAFETY: every row points into `_buffers`, alive for the call.
+        let read =
+            unsafe { heal_page_rows(page.as_ptr(), page.len()) }.expect("a non-null page is read");
+        assert_eq!(read.len(), page.len());
+    }
 
     #[test]
     fn inventory_page_serializes_to_the_golden_page() {
