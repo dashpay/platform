@@ -24,7 +24,6 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 use crate::state_transition_action::batch::batched_transition::document_transition::drop_transient_values;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-use crate::util::storage_flags::StorageFlags;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 
@@ -95,20 +94,10 @@ pub struct ConsumedDocument {
     pub document_id: Identifier,
     /// The consumed document's type, in the create's contract.
     pub document_type_name: String,
-    /// What the lookup read of the consumed document, kept by document reference validation 1
-    /// (protocol version 15) so the create conversion 1 deletes it without reading it again.
-    /// `None` from document reference validation 0, whose conversion deletes it by id.
-    pub read: Option<ConsumedDocumentRead>,
-}
-
-/// A consumed document as its `refersTo` lookup read it: the document and the storage flags
-/// of its stored element, which the delete refunds by.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ConsumedDocumentRead {
-    /// The consumed document.
-    pub document: Document,
-    /// The storage flags of the consumed document's stored element.
-    pub storage_flags: Option<StorageFlags>,
+    /// The consumed document as its `refersTo` lookup read it, kept by document reference
+    /// validation 1 (protocol version 15) so the create conversion 1 deletes it without reading
+    /// it again. `None` from document reference validation 0, whose conversion deletes it by id.
+    pub read: Option<Document>,
 }
 
 /// document create transition action accessors v0
