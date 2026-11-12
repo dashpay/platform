@@ -70,7 +70,7 @@ describe('DocumentsTransitions', () => {
     it('should have no action fee agreement when none is given', () => {
       const base = createBase();
 
-      expect(base.actionFeeAgreement).to.be.undefined();
+      expect(base.actionFeeAgreement).to.equal(undefined);
     });
 
     it('should set the action fee agreement', () => {
@@ -86,7 +86,7 @@ describe('DocumentsTransitions', () => {
 
       base.actionFeeAgreement = undefined;
 
-      expect(base.actionFeeAgreement).to.be.undefined();
+      expect(base.actionFeeAgreement).to.equal(undefined);
     });
   });
 
@@ -277,7 +277,7 @@ describe('DocumentsTransitions', () => {
           identityContractNonce: BigInt(1),
         });
 
-        expect(createTransition.base.actionFeeAgreement).to.be.undefined();
+        expect(createTransition.base.actionFeeAgreement).to.equal(undefined);
       });
     });
 
