@@ -574,9 +574,10 @@ mod tests {
         use super::*;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
             build_outputs_only_bundle_bound, process_transition_and_commit,
-            setup_platform_at_protocol_version,
+            setup_platform_at_protocol_version, OutputsOnlyBundle,
         };
-        use dpp::tests::utils::high_s_twin;
+        use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
+        use std::collections::BTreeMap;
 
         #[test]
         fn test_wrong_ecdsa_signature_returns_error() {
@@ -649,20 +650,34 @@ mod tests {
         }
 
         /// The asset lock's one-time key is checked by recovering the public key, which takes
-        /// any S. A third party can replace a shield's signature with its high-S twin and change
-        /// the transition's hash. Protocol version 14 accepts the twin, for replay; from protocol
-        /// version 15 a block refuses it unpaid, with the error of a signature that does not
-        /// verify, and leaves the asset lock unused. The low-S signature is accepted at both.
+        /// any S and either header form. A third party can replace a shield's signature with its
+        /// high-S twin, or with the twin whose header names an uncompressed key, and change the
+        /// transition's hash. Protocol version 14 accepts each twin, for replay; from protocol
+        /// version 15 a block refuses each unpaid, with the error of a signature that does not
+        /// verify, and leaves the asset lock unused. The signature the key made is accepted at
+        /// both.
         ///
         /// The bundle is proved for real, so a transition that passes the signature check is
         /// executed.
         #[test]
-        fn should_refuse_a_high_s_asset_lock_signature_from_protocol_version_15() {
+        fn should_refuse_an_asset_lock_signature_twin_from_protocol_version_15() {
             let latest = PlatformVersion::latest().protocol_version;
-            // (protocol version, whether the twin is submitted). The asset lock is consumed by
-            // the first transition a block accepts, so the low-S signature at 14 gets its own
-            // platform.
-            for (protocol_version, submit_twin) in [(14, false), (14, true), (latest, true)] {
+            let twins: [(&str, fn(&[u8]) -> Vec<u8>); 2] = [
+                ("high-S twin", high_s_twin),
+                ("uncompressed header twin", uncompressed_header_twin),
+            ];
+            // (protocol version, the twins submitted before the signature itself). The asset
+            // lock is consumed by the first transition a block accepts, so at 14 each twin gets
+            // its own platform, as does the signature.
+            // Every platform below is funded by the same asset lock, so a bundle proved against
+            // it serves each platform whose protocol version binds the lock the same way.
+            let mut bundles: BTreeMap<Vec<u8>, OutputsOnlyBundle> = BTreeMap::new();
+            for (protocol_version, submitted) in [
+                (14, &twins[..0]),
+                (14, &twins[..1]),
+                (14, &twins[1..]),
+                (latest, &twins[..]),
+            ] {
                 let platform_version =
                     PlatformVersion::get(protocol_version).expect("known protocol version");
                 let platform = setup_platform_at_protocol_version(protocol_version);
@@ -672,7 +687,10 @@ mod tests {
                 let extra_sighash_data =
                     shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)
                         .expect("the binding of the funding asset lock");
-                let bundle = build_outputs_only_bundle_bound(5_000, &extra_sighash_data);
+                let bundle = bundles
+                    .entry(extra_sighash_data.clone())
+                    .or_insert_with(|| build_outputs_only_bundle_bound(5_000, &extra_sighash_data))
+                    .clone();
                 let signed = create_signed_shield_from_asset_lock_transition(
                     asset_lock_proof,
                     &asset_lock_pk,
@@ -682,41 +700,39 @@ mod tests {
                     bundle.proof,
                     bundle.binding_signature,
                 );
-                let mut malleated = signed.clone();
-                malleated.set_signature(
-                    high_s_twin(signed.signature().expect("signed").as_slice()).into(),
-                );
+                let signature = signed.signature().expect("signed").to_vec();
 
-                if !submit_twin {
-                    let result = process_transition_and_commit(&platform, signed, platform_version);
-                    assert_matches!(
-                        result.execution_results().as_slice(),
-                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                        "the low-S signature is accepted"
-                    );
-                    continue;
+                let mut asset_lock_used = false;
+                for (twin_label, twin) in submitted {
+                    let mut malleated = signed.clone();
+                    malleated.set_signature(twin(&signature).into());
+                    let result =
+                        process_transition_and_commit(&platform, malleated, platform_version);
+                    if protocol_version == 14 {
+                        assert_matches!(
+                            result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                            "protocol version 14 accepts the {twin_label}"
+                        );
+                        asset_lock_used = true;
+                    } else {
+                        assert_matches!(
+                            result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::UnpaidConsensusError(
+                                ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                            )],
+                            "protocol version {protocol_version} refuses the {twin_label}"
+                        );
+                    }
                 }
-                let result = process_transition_and_commit(&platform, malleated, platform_version);
-                if protocol_version == 14 {
-                    assert_matches!(
-                        result.execution_results().as_slice(),
-                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                        "protocol version 14 accepts the high-S twin"
-                    );
-                } else {
-                    assert_matches!(
-                        result.execution_results().as_slice(),
-                        [StateTransitionExecutionResult::UnpaidConsensusError(
-                            ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
-                        )],
-                        "protocol version {protocol_version} refuses the high-S twin"
-                    );
-                    // The asset lock is left unused, so the signature the key made still shields.
+                if !asset_lock_used {
+                    // No twin was accepted, so the asset lock is unused and the signature the
+                    // key made still shields.
                     let result = process_transition_and_commit(&platform, signed, platform_version);
                     assert_matches!(
                         result.execution_results().as_slice(),
                         [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                        "the low-S signature is accepted"
+                        "protocol version {protocol_version} accepts the signature"
                     );
                 }
             }

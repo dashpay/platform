@@ -9258,20 +9258,21 @@ mod tests {
     }
 
     // ==========================================
-    // HIGH-S P2PKH WITNESS
+    // P2PKH WITNESS TWINS
     // ==========================================
 
-    /// A P2PKH witness is checked by recovering the public key, which takes any S. A third party
-    /// can replace a witness's signature with its high-S twin and change the transition's hash.
-    /// Protocol version 14 accepts the twin, for replay; from protocol version 15 a block refuses
-    /// it unpaid, with the error of a witness that does not verify. The low-S witness is accepted
-    /// at both.
-    mod high_s_witness {
+    /// A P2PKH witness is checked by recovering the public key, which takes any S and either
+    /// header form. A third party can replace a witness's signature with its high-S twin, or with
+    /// the twin whose header names an uncompressed key, and change the transition's hash.
+    /// Protocol version 14 accepts each twin, for replay; from protocol version 15 a block
+    /// refuses each unpaid, with the error of a witness that does not verify. The witness the
+    /// key made is accepted at both.
+    mod witness_twins {
         use super::*;
-        use dpp::tests::utils::high_s_twin;
+        use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
 
         #[tokio::test]
-        async fn should_refuse_a_high_s_p2pkh_witness_from_protocol_version_15() {
+        async fn should_refuse_a_p2pkh_witness_twin_from_protocol_version_15() {
             for platform_version in [
                 PlatformVersion::get(14).expect("expected protocol version 14"),
                 PlatformVersion::latest(),
@@ -9301,20 +9302,31 @@ mod tests {
                 .await
                 .expect("should create signed transition");
 
-                let mut malleated = signed.clone();
-                let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(v0)) =
-                    &mut malleated
+                let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                    signed_v0,
+                )) = &signed
                 else {
                     panic!("expected an address funds transfer");
                 };
-                let AddressWitness::P2pkh { signature } = &v0.input_witnesses[0] else {
+                let AddressWitness::P2pkh { signature } = &signed_v0.input_witnesses[0] else {
                     panic!("expected a P2PKH witness");
                 };
-                v0.input_witnesses[0] = AddressWitness::P2pkh {
-                    signature: BinaryData::new(high_s_twin(signature.as_slice())),
+                let signature = signature.to_vec();
+                let with_witness_signature = |signature: Vec<u8>| {
+                    let mut malleated = signed.clone();
+                    let StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                        v0,
+                    )) = &mut malleated
+                    else {
+                        panic!("expected an address funds transfer");
+                    };
+                    v0.input_witnesses[0] = AddressWitness::P2pkh {
+                        signature: BinaryData::new(signature),
+                    };
+                    malleated
                 };
 
-                // Each transition runs in its own uncommitted block transaction, so both spend
+                // Each transition runs in its own uncommitted block transaction, so all spend
                 // the same nonce.
                 let process = |transition: &StateTransition| {
                     let platform_state = platform.state.load();
@@ -9337,25 +9349,33 @@ mod tests {
                 assert_matches!(
                     process(&signed).as_slice(),
                     [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                    "protocol version {protocol_version} accepts the low-S witness"
+                    "protocol version {protocol_version} accepts the witness the key made"
                 );
-                let malleated_results = process(&malleated);
-                if protocol_version == 14 {
-                    assert_matches!(
-                        malleated_results.as_slice(),
-                        [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                        "protocol version 14 accepts the high-S twin"
-                    );
-                } else {
-                    assert_matches!(
-                        malleated_results.as_slice(),
-                        [StateTransitionExecutionResult::UnpaidConsensusError(
-                            ConsensusError::SignatureError(
-                                SignatureError::InvalidStateTransitionSignatureError(_)
-                            )
-                        )],
-                        "protocol version {protocol_version} refuses the high-S twin"
-                    );
+                for (twin_label, twin) in [
+                    ("high-S twin", high_s_twin(&signature)),
+                    (
+                        "uncompressed header twin",
+                        uncompressed_header_twin(&signature),
+                    ),
+                ] {
+                    let malleated_results = process(&with_witness_signature(twin));
+                    if protocol_version == 14 {
+                        assert_matches!(
+                            malleated_results.as_slice(),
+                            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                            "protocol version 14 accepts the {twin_label}"
+                        );
+                    } else {
+                        assert_matches!(
+                            malleated_results.as_slice(),
+                            [StateTransitionExecutionResult::UnpaidConsensusError(
+                                ConsensusError::SignatureError(
+                                    SignatureError::InvalidStateTransitionSignatureError(_)
+                                )
+                            )],
+                            "protocol version {protocol_version} refuses the {twin_label}"
+                        );
+                    }
                 }
             }
         }

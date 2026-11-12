@@ -15,7 +15,7 @@ impl StateTransition {
     ///
     /// An ECDSA_HASH160 key is checked by recovering the public key, through
     /// `verify_hash_signature`, which `platform_version` selects too: from protocol version 15 it
-    /// refuses a high-S signature.
+    /// refuses a high-S signature and a header naming an uncompressed key.
     pub fn verify_identity_signed_signature(
         &self,
         public_key: &IdentityPublicKey,

@@ -276,12 +276,23 @@ fn should_reject_high_s_verification_but_accept_high_s_recovery() {
     .unwrap();
 }
 
-/// A P2PKH witness is checked by recovering the key, which takes any S. Protocol version 14
-/// accepts the historical signature's high-S twin, for replay; from protocol version 15
-/// (`verify_hash_signature` 1) it is refused as a signature that does not verify. The low-S
-/// signature is accepted at both.
+/// The historical signature with its header rewritten from that of a compressed key to that of
+/// an uncompressed one: R, S and the recovery id are untouched. Key recovery hashes the recovered
+/// key in its compressed form either way.
+fn uncompressed_header_twin() -> Vec<u8> {
+    let (_, mut signature, _) = fixture();
+    assert_eq!(signature[0], 31);
+    signature[0] = 27;
+    signature
+}
+
+/// A P2PKH witness is checked by recovering the key, which takes any S and either header form.
+/// Protocol version 14 accepts the two twins a third party can derive from the historical
+/// signature, the high-S one and the one whose header names an uncompressed key, for replay;
+/// from protocol version 15 (`verify_hash_signature` 1) each is refused as a signature that does
+/// not verify. The signature itself is accepted at both.
 #[test]
-fn should_refuse_a_high_s_p2pkh_witness_from_protocol_version_15() {
+fn should_refuse_a_p2pkh_witness_twin_from_protocol_version_15() {
     let (data, signature, public_key) = fixture();
     let address = PlatformAddress::P2pkh(hash160::Hash::hash(&public_key).to_byte_array());
     let witness = |signature: Vec<u8>| AddressWitness::P2pkh {
@@ -297,24 +308,26 @@ fn should_refuse_a_high_s_p2pkh_witness_from_protocol_version_15() {
             AddressWitnessVerificationOperations::for_p2pkh(data.len())
         );
     }
-    assert_eq!(
-        address
-            .verify_bytes_against_witness(&witness(high_s_twin()), &data, last_without_the_check)
-            .unwrap(),
-        AddressWitnessVerificationOperations::for_p2pkh(data.len())
-    );
-    match address
-        .verify_bytes_against_witness(&witness(high_s_twin()), &data, latest)
-        .unwrap_err()
-    {
-        ProtocolError::AddressWitnessError(message) => assert_eq!(
-            message,
-            format!(
-                "P2PKH signature verification failed: {}",
-                EcdsaError::VerifyFailed
-            )
-        ),
-        error => panic!("unexpected error: {error}"),
+    for twin in [high_s_twin(), uncompressed_header_twin()] {
+        assert_eq!(
+            address
+                .verify_bytes_against_witness(&witness(twin.clone()), &data, last_without_the_check)
+                .unwrap(),
+            AddressWitnessVerificationOperations::for_p2pkh(data.len())
+        );
+        match address
+            .verify_bytes_against_witness(&witness(twin), &data, latest)
+            .unwrap_err()
+        {
+            ProtocolError::AddressWitnessError(message) => assert_eq!(
+                message,
+                format!(
+                    "P2PKH signature verification failed: {}",
+                    EcdsaError::VerifyFailed
+                )
+            ),
+            error => panic!("unexpected error: {error}"),
+        }
     }
 }
 

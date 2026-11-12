@@ -13,8 +13,9 @@ pub struct DPPStateTransitionMethodVersions {
     /// `dpp::util::ecdsa::verify_hash_signature`, the check of a compact recoverable
     /// ECDSA signature by recovering its public key and comparing the key's HASH160 (an
     /// ECDSA_HASH160 identity key, a P2PKH address witness, an asset lock's one-time key): 0
-    /// accepts a signature whose S is in the upper half of the curve order, which any third party
-    /// can derive from a valid one, 1 refuses it.
+    /// accepts a signature whose S is in the upper half of the curve order and one whose header
+    /// names an uncompressed key, each of which any third party can derive from a valid
+    /// signature, 1 refuses both.
     pub verify_hash_signature: FeatureVersion,
 }
 

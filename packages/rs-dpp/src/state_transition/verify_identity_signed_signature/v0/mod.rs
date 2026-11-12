@@ -26,7 +26,7 @@ impl StateTransition {
     ///
     /// The ECDSA_HASH160 arm reads `platform_version` only to select `verify_hash_signature`:
     /// 0, the check this arm made before, at protocol versions 1 to 14, and 1, which also refuses
-    /// a high-S signature, from 15.
+    /// a high-S signature and a header naming an uncompressed key, from 15.
     pub(super) fn identity_signed_signature_verdict_v0(
         &self,
         public_key: &IdentityPublicKey,

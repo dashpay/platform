@@ -3430,15 +3430,16 @@ mod tests {
         }
     }
 
-    // An ECDSA_HASH160 key is checked by recovering the public key, which takes any S. From
-    // protocol version 15 (`verify_hash_signature` 1) the high-S twin of a valid signature is
-    // refused; protocol version 14 keeps accepting it for replay. Masternode votes, signed by an
-    // ECDSA_HASH160 VOTING key, take the same path.
+    // An ECDSA_HASH160 key is checked by recovering the public key, which takes any S and either
+    // header form. From protocol version 15 (`verify_hash_signature` 1) the two twins a third
+    // party can derive from a valid signature, the high-S one and the one whose header names an
+    // uncompressed key, are refused; protocol version 14 keeps accepting them for replay.
+    // Masternode votes, signed by an ECDSA_HASH160 VOTING key, take the same path.
     #[cfg(feature = "state-transition-signing")]
     #[test]
-    fn should_refuse_a_high_s_ecdsa_hash160_signature_from_protocol_version_15() {
+    fn should_refuse_an_ecdsa_hash160_signature_twin_from_protocol_version_15() {
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-        use crate::tests::utils::high_s_twin;
+        use crate::tests::utils::{high_s_twin, uncompressed_header_twin};
         use secp256k1::{PublicKey as SecpPublicKey, SecretKey};
 
         let bls = crate::bls::native_bls::NativeBlsModule;
@@ -3474,10 +3475,7 @@ mod tests {
             signed
                 .sign_by_private_key(&private_key, KeyType::ECDSA_HASH160, &bls)
                 .expect("the key signs");
-            let mut malleated = signed.clone();
-            malleated.set_signature(BinaryData::new(high_s_twin(
-                signed.signature().expect("signed").as_slice(),
-            )));
+            let signature = signed.signature().expect("signed").to_vec();
 
             for platform_version in [latest, last_without_the_check] {
                 signed
@@ -3489,21 +3487,31 @@ mod tests {
                         )
                     });
             }
-            malleated
-                .verify_identity_signed_signature(&key, &bls, last_without_the_check)
-                .unwrap_or_else(|e| {
-                    panic!("{label}: protocol version 14 accepts the high-S twin: {e:?}")
-                });
-            let error = malleated
-                .verify_identity_signed_signature(&key, &bls, latest)
-                .expect_err("the high-S twin is refused");
-            assert!(
-                matches!(&error, ProtocolError::ConsensusError(consensus_error)
-                if matches!(&**consensus_error, ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(_)
-                ))),
-                "{label}: {error:?}"
-            );
+            for (twin, twin_label) in [
+                (high_s_twin(&signature), "high-S twin"),
+                (
+                    uncompressed_header_twin(&signature),
+                    "uncompressed header twin",
+                ),
+            ] {
+                let mut malleated = signed.clone();
+                malleated.set_signature(BinaryData::new(twin));
+                malleated
+                    .verify_identity_signed_signature(&key, &bls, last_without_the_check)
+                    .unwrap_or_else(|e| {
+                        panic!("{label}: protocol version 14 accepts the {twin_label}: {e:?}")
+                    });
+                let error = malleated
+                    .verify_identity_signed_signature(&key, &bls, latest)
+                    .expect_err("the twin is refused");
+                assert!(
+                    matches!(&error, ProtocolError::ConsensusError(consensus_error)
+                    if matches!(&**consensus_error, ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    ))),
+                    "{label}, {twin_label}: {error:?}"
+                );
+            }
         }
     }
 

@@ -300,3 +300,19 @@ pub fn high_s_twin(signature: &[u8]) -> Vec<u8> {
     twin[0] = base + ((twin[0] - base) ^ 1);
     twin
 }
+
+/// `signature`, a 65-byte compact recoverable ECDSA signature made by a compressed key, with its
+/// header rewritten from `31 + id` to `27 + id`, the header of an uncompressed key: a twin a
+/// third party can derive from a valid signature without touching R or S. Key recovery accepts
+/// it like the original, because it hashes the recovered key in its compressed form whatever
+/// the header says.
+pub fn uncompressed_header_twin(signature: &[u8]) -> Vec<u8> {
+    assert_eq!(signature.len(), 65, "a 65-byte compact signature");
+    assert!(
+        (31..=34).contains(&signature[0]),
+        "the header of a compressed key"
+    );
+    let mut twin = signature.to_vec();
+    twin[0] -= 4;
+    twin
+}

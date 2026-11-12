@@ -473,7 +473,7 @@ impl PlatformAddress {
     /// * `witness` - The witness containing signature(s) and either a public key (P2PKH) or redeem script (P2SH)
     /// * `signable_bytes` - The data that was signed (will be double-SHA256 hashed internally)
     /// * `platform_version` - Selects `verify_hash_signature` for a P2PKH witness: from protocol
-    ///   version 15 a high-S signature is refused.
+    ///   version 15 a high-S signature and a header naming an uncompressed key are refused.
     ///
     /// # Returns
     /// * `Ok(AddressWitnessVerificationOperations)` - Operations performed if verification succeeds

@@ -168,7 +168,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
 
             // `verify_hash_signature` 0 at protocol versions 14 and earlier is the
             // `dashcore::signer::verify_hash_signature` call this site made before; 1 also
-            // refuses a high-S signature.
+            // refuses a high-S signature and a header naming an uncompressed key.
             if let Err(e) = verify_hash_signature(
                 signable_bytes_hasher.hash_bytes().as_slice(),
                 self.signature().as_slice(),

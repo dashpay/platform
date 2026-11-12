@@ -508,21 +508,32 @@ mod tests {
         assert_eq!(identity_balance, expected_identity_balance);
     }
 
-    /// The asset lock's one-time key is checked by recovering the public key, which takes any S.
-    /// A third party can replace an identity create's signature with its high-S twin and change
-    /// the transition's hash. Protocol version 14 accepts the twin, for replay; from protocol
-    /// version 15 a block refuses it unpaid, with the error of a signature that does not verify,
-    /// and leaves the asset lock unused. The low-S signature is accepted at both.
+    /// The asset lock's one-time key is checked by recovering the public key, which takes any S
+    /// and either header form. A third party can replace an identity create's signature with its
+    /// high-S twin, or with the twin whose header names an uncompressed key, and change the
+    /// transition's hash. Protocol version 14 accepts each twin, for replay; from protocol
+    /// version 15 a block refuses each unpaid, with the error of a signature that does not
+    /// verify, and leaves the asset lock unused. The signature the key made is accepted at both.
     #[tokio::test]
-    async fn should_refuse_a_high_s_asset_lock_signature_from_protocol_version_15() {
+    async fn should_refuse_an_asset_lock_signature_twin_from_protocol_version_15() {
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
         use dpp::consensus::signature::SignatureError;
-        use dpp::tests::utils::high_s_twin;
+        use dpp::tests::utils::{high_s_twin, uncompressed_header_twin};
 
         let latest = PlatformVersion::latest().protocol_version;
-        // (protocol version, whether the twin is submitted). The asset lock is consumed by the
-        // first transition a block accepts, so the low-S signature at 14 gets its own platform.
-        for (protocol_version, submit_twin) in [(14, false), (14, true), (latest, true)] {
+        let twins: [(&str, fn(&[u8]) -> Vec<u8>); 2] = [
+            ("high-S twin", high_s_twin),
+            ("uncompressed header twin", uncompressed_header_twin),
+        ];
+        // (protocol version, the twins submitted before the signature itself). The asset lock is
+        // consumed by the first transition a block accepts, so at 14 each twin gets its own
+        // platform, as does the signature.
+        for (protocol_version, submitted) in [
+            (14, &twins[..0]),
+            (14, &twins[..1]),
+            (14, &twins[1..]),
+            (latest, &twins[..]),
+        ] {
             let platform_version = PlatformVersion::get(protocol_version)
                 .expect("expected platform version for the requested protocol_version");
             let platform = TestPlatformBuilder::new()
@@ -578,9 +589,7 @@ mod tests {
                 )
                 .await
                 .expect("expected an identity create transition");
-            let mut malleated = signed.clone();
-            malleated
-                .set_signature(high_s_twin(signed.signature().expect("signed").as_slice()).into());
+            let signature = signed.signature().expect("signed").to_vec();
 
             let process = |transition: &StateTransition| {
                 let transaction = platform.drive.grove.start_transaction();
@@ -605,38 +614,37 @@ mod tests {
                 result
             };
 
-            if !submit_twin {
-                let result = process(&signed);
-                assert_eq!(
-                    result.valid_count(),
-                    1,
-                    "the low-S signature is accepted: {:?}",
-                    result.execution_results()
-                );
-                continue;
+            let mut asset_lock_used = false;
+            for (twin_label, twin) in submitted {
+                let mut malleated = signed.clone();
+                malleated.set_signature(twin(&signature).into());
+                let result = process(&malleated);
+                if protocol_version == 14 {
+                    assert_eq!(
+                        result.valid_count(),
+                        1,
+                        "protocol version 14 accepts the {twin_label}: {:?}",
+                        result.execution_results()
+                    );
+                    asset_lock_used = true;
+                } else {
+                    assert_matches!(
+                        result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::UnpaidConsensusError(
+                            ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                        )],
+                        "protocol version {protocol_version} refuses the {twin_label}"
+                    );
+                }
             }
-            let result = process(&malleated);
-            if protocol_version == 14 {
-                assert_eq!(
-                    result.valid_count(),
-                    1,
-                    "protocol version 14 accepts the high-S twin: {:?}",
-                    result.execution_results()
-                );
-            } else {
-                assert_matches!(
-                    result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::UnpaidConsensusError(
-                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
-                    )],
-                    "protocol version {protocol_version} refuses the high-S twin"
-                );
-                // The asset lock is left unused, so the signature the key made still creates.
+            if !asset_lock_used {
+                // No twin was accepted, so the asset lock is unused and the signature the key
+                // made still creates.
                 let result = process(&signed);
                 assert_eq!(
                     result.valid_count(),
                     1,
-                    "the low-S signature is accepted: {:?}",
+                    "protocol version {protocol_version} accepts the signature: {:?}",
                     result.execution_results()
                 );
             }
