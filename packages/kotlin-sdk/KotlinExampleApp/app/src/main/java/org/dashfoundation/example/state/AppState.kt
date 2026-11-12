@@ -121,6 +121,9 @@ class AppState(
      */
     private val quorumModeLock = Mutex()
 
+    /** Drops a quorum-source read that a later refresh superseded. */
+    private val quorumSourceReads = LatestRead()
+
     /** Restore persisted preferences; called once from bootstrap. */
     suspend fun restorePreferences() {
         val prefs = dataStore.data.first()
@@ -262,20 +265,22 @@ class AppState(
      * Read the current SDK's quorum source into [quorumSource] — port of
      * the Swift `AppState.refreshQuorumSource`. In Auto the adaptive
      * provider follows SPV readiness by itself, so SPV progress needs only
-     * this refresh, not a mode change. An SDK a rebuild closed meanwhile is
-     * skipped, as is a failed read: the indicator keeps its last value, and a
-     * rebuild refreshes for its replacement.
+     * this refresh, not a mode change. Refreshes overlap, so a read that a
+     * later refresh superseded is dropped, as is a read of an SDK a rebuild
+     * closed meanwhile, and a failed read: the indicator keeps its last value,
+     * and a rebuild refreshes for its replacement.
      */
     suspend fun refreshQuorumSource() {
         val sdk = _sdk.value ?: return
-        val source = try {
-            sdk.quorumSource()
+        try {
+            quorumSourceReads.publishLatest(read = { sdk.quorumSource() }) { source ->
+                if (_sdk.value === sdk) _quorumSource.value = source
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return
+            // The indicator keeps its last value.
         }
-        if (_sdk.value === sdk) _quorumSource.value = source
     }
 
     fun setUseDockerSetup(enabled: Boolean) {
