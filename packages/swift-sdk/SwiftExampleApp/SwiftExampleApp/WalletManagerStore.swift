@@ -174,6 +174,25 @@ final class WalletManagerStore: ObservableObject {
     /// the cached one.
     private var managerSdks: [Network: SDK] = [:]
 
+    /// Networks with an `activate` call still running. The store keeps its
+    /// own invariant, one activation per network at a time, instead of
+    /// relying on every caller being serialized: `AppState.rebuildSdk` runs
+    /// one SDK rebuild at a time, which is the rebuild's invariant, not the
+    /// store's. A replacement suspends while the manager it replaces shuts
+    /// down, and a second call in that window would replace the same cached
+    /// manager and publish over the first one's without shutting it down.
+    private var activatingNetworks: Set<Network> = []
+
+    /// Thrown by `activate` while another activation for the same network is
+    /// still running. The refused call configured and published nothing.
+    struct ActivationInProgress: LocalizedError {
+        let network: Network
+
+        var errorDescription: String? {
+            "The \(network.displayName) wallet manager is already being replaced, so this change was not applied."
+        }
+    }
+
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
     /// fetch to its own network so the shared store doesn't cause
@@ -219,13 +238,12 @@ final class WalletManagerStore: ObservableObject {
     /// `backgroundManager(for:)` still return it, and calls on it fail
     /// with `invalidHandle`.
     ///
-    /// Two calls replacing one network's manager must not overlap: both
-    /// would replace the same cached manager, and the later one would
-    /// publish over the earlier one without shutting it down. They don't:
-    /// SDK rebuilds call this inside `AppState.rebuildSdk`, one at a time;
-    /// the bootstrap calls it before any window can rebuild; and
-    /// `backgroundManager(for:)` calls it only for a network without a
-    /// manager, which replaces nothing and never suspends.
+    /// A call for a network whose activation is still running throws
+    /// `ActivationInProgress` before it configures anything or suspends:
+    /// both would replace the same cached manager, and the later one would
+    /// publish over the earlier one without shutting it down. The store
+    /// refuses it whatever its callers do; SDK rebuilds, serialized by
+    /// `AppState.rebuildSdk`, do not reach the refusal.
     ///
     /// `makeActive == false` materializes the manager into the cache
     /// without swapping `activeManager`, unless the manager it replaces is
@@ -234,6 +252,10 @@ final class WalletManagerStore: ObservableObject {
     /// a non-active network without triggering a user-visible network
     /// switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) async throws {
+        guard activatingNetworks.insert(network).inserted else {
+            throw ActivationInProgress(network: network)
+        }
+        defer { activatingNetworks.remove(network) }
         // Stale-cache check: the cached manager's Sdk clone is locked
         // in at `configure` time (the FFI is single-shot — see
         // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
