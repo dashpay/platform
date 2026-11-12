@@ -44,6 +44,8 @@ With `--safe`, it checks every 10 seconds and stops the node as soon as that is 
 
 On Core older than 24.1, dashmate checks a safe result again 15 seconds later, so stopping a masternode takes about that much longer.
 
+How dashmate decides is described in [DKG-safe stop](../specs/dkg-safe-stop.md).
+
 ## Examples
 
 ```bash
