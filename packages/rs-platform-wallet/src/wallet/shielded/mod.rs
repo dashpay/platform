@@ -40,6 +40,9 @@ pub mod balance;
 mod balance_tests;
 #[cfg(test)]
 mod cancelled_scan_tests;
+pub(crate) mod contact_address;
+#[cfg(test)]
+mod contact_address_tests;
 pub mod coordinator;
 pub mod file_store;
 #[cfg(test)]
@@ -71,6 +74,7 @@ pub use balance::{
     ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
     ShieldedLocalBalanceState,
 };
+pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};

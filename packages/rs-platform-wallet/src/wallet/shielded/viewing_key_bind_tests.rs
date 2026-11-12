@@ -37,7 +37,7 @@ use crate::wallet::shielded::{
 ///   counted so the test can assert the seedless path actually read
 ///   persistence rather than short-circuiting.
 #[derive(Default)]
-struct CapturingPersistence {
+pub(super) struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     durability_events: Mutex<Vec<&'static str>>,
     fail_flush: std::sync::atomic::AtomicBool,
@@ -156,7 +156,7 @@ impl PlatformWalletPersistence for CapturingPersistence {
 }
 
 /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
-fn temp_dir(tag: &str) -> PathBuf {
+pub(super) fn temp_dir(tag: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -164,7 +164,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("viewing_key_bind_test_{tag}_{nanos}"))
 }
 
-fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+pub(super) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
     std::fs::create_dir_all(dir).expect("create temp dir");
     let db_path = dir.join("tree.sqlite");
     let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
@@ -1178,7 +1178,7 @@ async fn fresh_address_and_own_check_follow_the_bound_account() {
 /// The MASTER authentication key this seed derives for `identity_index` on
 /// testnet, as an identity public-key map: what discovery and registration
 /// leave on a wallet-owned identity, and what tip preparation verifies.
-fn seed_master_key(
+pub(super) fn seed_master_key(
     seed: &[u8],
     identity_index: u32,
 ) -> BTreeMap<dpp::identity::KeyID, dpp::identity::IdentityPublicKey> {

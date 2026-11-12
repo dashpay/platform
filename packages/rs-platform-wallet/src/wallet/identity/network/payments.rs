@@ -13435,6 +13435,8 @@ mod tests {
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
             identity_placement: Arc::clone(&real.identity_placement),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 
@@ -13478,6 +13480,8 @@ mod tests {
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
             identity_placement: Arc::clone(&real.identity_placement),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 
@@ -13535,6 +13539,8 @@ mod tests {
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
             identity_placement: Arc::clone(&real.identity_placement),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: real.contact_shielded_addresses.clone(),
         }
     }
 

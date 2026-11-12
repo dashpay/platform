@@ -22,6 +22,17 @@ pub(crate) struct PreparedTipAccount {
     clear_generation: u64,
 }
 
+impl PreparedTipAccount {
+    /// The prepared account, while the preparation stands: its coordinator is alive
+    /// and has not been cleared since.
+    pub(crate) fn standing_account(&self) -> Option<u32> {
+        self.coordinator
+            .upgrade()
+            .is_some_and(|coordinator| coordinator.clear_generation() == self.clear_generation)
+            .then_some(self.account)
+    }
+}
+
 pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;
 
 pub fn shielded_identity_account_index(identity_index: u32) -> Result<u32, PlatformWalletError> {
