@@ -417,8 +417,8 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Pre-load every locally-stored data contract into the SDK's trusted
-     * context provider — port of `AppState.loadKnownContractsIntoSDK`. This
+     * Pre-load every locally-stored data contract into the SDK's context
+     * provider — port of `AppState.loadKnownContractsIntoSDK`. This
      * lets proof verification resolve those contracts without a network
      * fetch. Best-effort and non-fatal: any failure is logged, never thrown,
      * so it can't stall or fail bootstrap (mirrors iOS, where the load is
@@ -426,14 +426,14 @@ class AppContainer(private val context: Context) {
      *
      * Only contracts with a non-null [DataContractEntity.binarySerialization]
      * are loaded — that field holds the versioned binary serialization the
-     * trusted provider deserializes; the JSON `serializedContract` is the
-     * wrong shape. Ids are base58-encoded to match what the native
+     * native `addKnownContracts` deserializes; the JSON `serializedContract`
+     * is the wrong shape. Ids are base58-encoded to match what
      * `addKnownContracts` splits from its CSV.
      */
     private suspend fun loadKnownContractsIntoSdk() {
         val sdk = appState.sdk.value ?: return
         try {
-            // Scope to the SDK's own network: the trusted-context cache is
+            // Scope to the SDK's own network: the provider's contract cache is
             // keyed only by contract id, so seeding a network-locked SDK with
             // another network's contract could resolve the wrong/stale schema
             // (same network-scoping rule as onLoadWalletList).

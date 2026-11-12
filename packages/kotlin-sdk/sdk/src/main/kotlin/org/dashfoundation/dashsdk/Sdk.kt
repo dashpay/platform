@@ -128,8 +128,9 @@ class Sdk private constructor(
 
     /**
      * Set the quorum mode of the native SDK's context provider without
-     * replacing it — port of `SDK.setQuorumMode`. Only an adaptive SDK has
-     * one; any other refuses with a [org.dashfoundation.dashsdk.errors.DashSdkError].
+     * replacing it — port of `SDK.setQuorumMode` (`SwiftDashSDK/SDK.swift`).
+     * Only an adaptive SDK has one; any other refuses with a
+     * [org.dashfoundation.dashsdk.errors.DashSdkError].
      */
     suspend fun setQuorumMode(mode: QuorumMode): Unit = queryGate.op {
         mapNativeErrors { SdkNative.setQuorumMode(handle, mode.ffiValue) }
@@ -512,7 +513,8 @@ class Sdk private constructor(
 
         /**
          * Create an SDK instance with the adaptive context provider, in
-         * [QuorumMode.AUTO] — port of `SDK.init(network:platformVersion:)`,
+         * [QuorumMode.AUTO] — port of `SDK.init(network:platformVersion:)`
+         * (`SwiftDashSDK/SDK.swift`),
          * whose `contextProvider` defaults to `.adaptive`. Proofs are
          * verified with the trusted quorum service's keys until a
          * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager] built on
@@ -529,7 +531,8 @@ class Sdk private constructor(
 
         /**
          * Create an SDK instance with [contextProvider] — port of
-         * `SDK.init(network:platformVersion:contextProvider:)` including the
+         * `SDK.init(network:platformVersion:contextProvider:)`
+         * (`SwiftDashSDK/SDK.swift`) including the
          * override gating and devnet auto-discovery policy:
          *
          * - Regtest: DAPI/quorum overrides applied unconditionally (Rust
