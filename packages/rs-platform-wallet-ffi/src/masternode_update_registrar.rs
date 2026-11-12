@@ -670,7 +670,8 @@ fn candidate_to_ffi(candidate: ProviderKeyCandidate) -> ProviderKeyCandidateFFI 
     }
 }
 
-/// The wallet's first `count` provider keys of `kind`
+/// Up to the first `count` provider keys of `kind` that a rotation can
+/// select (the wallet's tracked pool, so `count` only caps the listing)
 /// ([`crate::provider_key_at_index::PROVIDER_KEY_KIND_OPERATOR`] = 10,
 /// [`crate::provider_key_at_index::PROVIDER_KEY_KIND_VOTING`] = 8 — the
 /// same account-type tags every provider-key FFI uses), each joined against the

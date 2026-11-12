@@ -34,7 +34,13 @@ pub struct ProviderKeyCandidate {
     pub used_by: Option<[u8; 32]>,
 }
 
-/// Derive the first `count` keys of `kind` and join each against the list.
+/// Derive up to the first `count` keys of `kind` and join each against the
+/// list. Only indices a registrar update accepts are listed: the wallet's
+/// tracked operator window
+/// ([`PlatformWallet::provider_operator_tracked_window`]) or its registered
+/// voting pool ([`PlatformWallet::provider_voting_tracked_window`]). A
+/// `count` past that window returns the whole window.
+///
 /// Supports [`ProviderKeyKind::Operator`] (matched against entry operator
 /// keys under both serializations) and [`ProviderKeyKind::Voting`] (hash160
 /// matched against entry voting key ids); other kinds are refused — owner
@@ -50,22 +56,19 @@ pub struct ProviderKeyCandidate {
 /// this on its plain calling thread for exactly this reason.)
 ///
 /// # Panics
-/// Called on an async runtime worker with a supported kind and a nonzero
-/// `count` — tokio's `blocking_read` panics in an asynchronous execution
-/// context, even uncontended, instead of returning an error.
+/// Called on an async runtime worker with a supported kind — tokio's
+/// `blocking_read` panics in an asynchronous execution context, even
+/// uncontended, instead of returning an error.
 pub fn provider_key_candidates(
     wallet: &PlatformWallet,
     summaries: &[MasternodeListSummary],
     kind: ProviderKeyKind,
     count: u32,
 ) -> Result<Vec<ProviderKeyCandidate>, PlatformWalletError> {
-    match kind {
-        ProviderKeyKind::Operator | ProviderKeyKind::Voting => {}
-        _ => {
-            return Err(PlatformWalletError::InvalidParameter(
-                "key candidates are available for operator and voting keys only".to_string(),
-            ));
-        }
+    if !matches!(kind, ProviderKeyKind::Operator | ProviderKeyKind::Voting) {
+        return Err(PlatformWalletError::InvalidParameter(
+            "key candidates are available for operator and voting keys only".to_string(),
+        ));
     }
     if count > MAX_PROVIDER_KEY_CANDIDATES {
         return Err(PlatformWalletError::InvalidParameter(format!(
@@ -73,6 +76,14 @@ pub fn provider_key_candidates(
              {count} were requested"
         )));
     }
+
+    // A registrar update refuses an index outside this window, so a key
+    // past it is not a candidate.
+    let window = match kind {
+        ProviderKeyKind::Operator => wallet.provider_operator_tracked_window()?,
+        _ => wallet.provider_voting_tracked_window()?,
+    };
+    let count = count.min(window);
 
     let mut candidates = Vec::with_capacity(count as usize);
     for index in 0..count {
@@ -125,6 +136,35 @@ mod tests {
     /// it — the same threading shape the FFI worker gives it.
     fn test_wallet() -> Arc<PlatformWallet> {
         sync_test_platform_wallet()
+    }
+
+    /// The registrar update refuses an index past the tracked window, so
+    /// the picker must not offer one.
+    #[test]
+    fn should_list_only_indices_a_registrar_update_accepts() {
+        let wallet = test_wallet();
+        let summaries = vec![masternode(0x44)];
+
+        for (kind, window) in [
+            (
+                ProviderKeyKind::Operator,
+                wallet
+                    .provider_operator_tracked_window()
+                    .expect("operator window"),
+            ),
+            (
+                ProviderKeyKind::Voting,
+                wallet
+                    .provider_voting_tracked_window()
+                    .expect("voting window"),
+            ),
+        ] {
+            let candidates =
+                provider_key_candidates(&wallet, &summaries, kind, MAX_PROVIDER_KEY_CANDIDATES)
+                    .expect("candidates");
+            let indices: Vec<u32> = candidates.iter().map(|c| c.index).collect();
+            assert_eq!(indices, (0..window).collect::<Vec<_>>(), "{kind:?}");
+        }
     }
 
     #[test]

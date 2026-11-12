@@ -60,8 +60,10 @@ extension PlatformWalletManager {
         qos: .userInitiated
     )
 
-    /// The wallet's first `count` provider keys of `kind`, each joined
-    /// against the live masternode list. Throws
+    /// The wallet's provider keys of `kind` that a rotation can select,
+    /// each joined against the live masternode list. Rust owns which
+    /// indices those are (the wallet's tracked pool); `count` only caps the
+    /// listing and defaults to the most one call returns. Throws
     /// `.masternodeListUnavailable` before the list has synced — "unused"
     /// cannot be asserted without it. The FFI blocks (derivation + list
     /// join), so it runs on [`candidatesQueue`] and resumes the async
@@ -69,7 +71,7 @@ extension PlatformWalletManager {
     public func providerKeyCandidates(
         walletId: Data,
         kind: RotationKeyKind,
-        count: UInt32 = 20
+        count: UInt32 = UInt32(PLATFORM_WALLET_PROVIDER_KEY_CANDIDATES_MAX)
     ) async throws -> [ProviderKeyCandidate] {
         guard isConfigured, handle != NULL_HANDLE, walletId.count == 32,
             count <= UInt32(PLATFORM_WALLET_PROVIDER_KEY_CANDIDATES_MAX)
