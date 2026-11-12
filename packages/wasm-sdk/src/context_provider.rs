@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dash_sdk::dpp::dashcore::Network;
-use dash_sdk::platform::{ContextProvider, QuorumKeyFuture};
+use dash_sdk::platform::{ContextProvider, QuorumKeyFuture, QuorumKeySource};
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
@@ -151,6 +151,10 @@ impl ContextProvider for WasmTrustedContext {
     ) {
         self.inner
             .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        self.inner.quorum_source()
     }
 }
 
@@ -682,6 +686,15 @@ mod tests {
         )
         .expect("write quorum response");
         stream.flush().expect("flush quorum response");
+    }
+
+    /// The SDK asks its context provider where quorum keys come from; a wrapper that did not
+    /// pass the question on would read as a provider that says nothing.
+    #[test]
+    fn should_report_the_trusted_quorum_source_of_the_wrapped_provider() {
+        let context = WasmTrustedContext::for_testing(vec![]);
+
+        assert_eq!(context.quorum_source(), Some(QuorumKeySource::Trusted));
     }
 
     /// A contract the SDK registers replaces the one the known-contracts cache held: a DPNS

@@ -1,18 +1,18 @@
 use crate::error::{with_causes, TrustedContextProviderError};
 use crate::get_quorum_base_url;
-use crate::known_contracts::hold_unless_newer_held;
+use crate::local::LocalContextResolver;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
 };
-use crate::system_contracts::{
-    is_inactive_system_contract, platform_activation_height, system_data_contract,
-};
+use crate::system_contracts::is_inactive_system_contract;
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
-use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use dash_context_provider::platform_activation_height;
+use dash_context_provider::{
+    ContextProvider, ContextProviderError, QuorumKeyFuture, QuorumKeySource,
+};
 use dpp::bls::PublicKey;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
 type QuorumHash = [u8; 32];
@@ -26,7 +26,6 @@ use reqwest::Client;
 use serde::Deserialize;
 #[cfg(test)]
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::error::Error as StdError;
 #[cfg(all(
     not(target_arch = "wasm32"),
@@ -75,11 +74,9 @@ pub struct TrustedHttpContextProvider {
     /// Optional fallback provider for data contracts and token configurations
     fallback_provider: Option<Arc<dyn ContextProvider>>,
 
-    /// Known contracts cache - contracts that are pre-loaded and can be served immediately
-    known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
-
-    /// Known token configurations cache - token configs that are pre-loaded for proof verification
-    known_token_configurations: Arc<Mutex<HashMap<Identifier, TokenConfiguration>>>,
+    /// Known contracts, token configurations and system contracts, shared by
+    /// clones and by whoever holds [`Self::local_resolver`].
+    local: Arc<LocalContextResolver>,
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
@@ -253,8 +250,7 @@ impl TrustedHttpContextProvider {
             last_current_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
-            known_contracts: Arc::new(Mutex::new(HashMap::new())),
-            known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
+            local: Arc::default(),
             refetch_if_not_found: true,
             quorum_refreshes: Arc::default(),
         })
@@ -283,8 +279,7 @@ impl TrustedHttpContextProvider {
     /// a higher version under the same id, which another operation promoted:
     /// an older contract restored from a saved cache does not replace it.
     pub fn add_known_contract(&self, contract: DataContract) {
-        let mut known = self.known_contracts.lock().unwrap();
-        hold_unless_newer_held(&mut known, Arc::new(contract));
+        self.local.add_known_contract(contract);
     }
 
     /// Put a data contract in the known contracts cache in place of whatever it
@@ -292,61 +287,47 @@ impl TrustedHttpContextProvider {
     /// that means it, such as one rolling back to a contract it bundles.
     /// [`Self::add_known_contract`] keeps a newer one instead.
     pub fn replace_known_contract(&self, contract: DataContract) {
-        let id = contract.id();
-        let mut known = self.known_contracts.lock().unwrap();
-        known.insert(id, Arc::new(contract));
+        self.local.replace_known_contract(contract);
     }
 
     /// Insert a contract only when its version is strictly newer, returning
     /// the retained entry. Equal versions preserve the existing body.
     pub fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
-        let id = contract.id();
-        let mut known = self.known_contracts.lock().unwrap();
-        if let Some(existing) = known.get(&id) {
-            if existing.version() >= contract.version() {
-                return existing.clone();
-            }
-        }
-        let contract = Arc::new(contract);
-        known.insert(id, contract.clone());
-        contract
+        self.local.add_known_contract_if_newer(contract)
     }
 
     /// Get a data contract from the known contracts cache
     /// Returns None if the contract is not in the cache
     pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
-        let known = self.known_contracts.lock().unwrap();
-        known.get(id).cloned()
+        self.local.get_known_contract(id)
     }
 
     /// Remove a data contract from the known contracts cache
     /// Returns true if the contract was present and removed, false otherwise
     pub fn remove_known_contract(&self, id: &Identifier) -> bool {
-        let mut known = self.known_contracts.lock().unwrap();
-        known.remove(id).is_some()
+        self.local.remove_known_contract(id)
     }
 
     /// Add multiple data contracts to the known contracts cache, each as
     /// [`Self::add_known_contract`] adds one.
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
-        let mut known = self.known_contracts.lock().unwrap();
-        for contract in contracts {
-            hold_unless_newer_held(&mut known, Arc::new(contract));
-        }
+        self.local.add_known_contracts(contracts);
     }
 
     /// Add a token configuration to the known token configurations cache
     pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
-        let mut known = self.known_token_configurations.lock().unwrap();
-        known.insert(token_id, config);
+        self.local.add_known_token_configuration(token_id, config);
     }
 
     /// Add multiple token configurations to the known token configurations cache
     pub fn add_known_token_configurations(&self, configs: Vec<(Identifier, TokenConfiguration)>) {
-        let mut known = self.known_token_configurations.lock().unwrap();
-        for (token_id, config) in configs {
-            known.insert(token_id, config);
-        }
+        self.local.add_known_token_configurations(configs);
+    }
+
+    /// The contracts and token configurations this provider serves without a
+    /// network. The returned resolver shares this provider's caches.
+    pub fn local_resolver(&self) -> Arc<LocalContextResolver> {
+        Arc::clone(&self.local)
     }
 
     /// Update the quorum caches by fetching current and previous quorums.
@@ -1011,19 +992,14 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // A system contract not active yet is served under its id from no source
+        // A system contract not active yet is served under its id from no
+        // source, the fallback provider included.
         if is_inactive_system_contract(id, platform_version) {
             return Ok(None);
         }
 
-        // First check known contracts cache
-        let known = self.known_contracts.lock().unwrap();
-        if let Some(contract) = known.get(id) {
-            return Ok(Some(contract.clone()));
-        }
-        drop(known);
-
-        if let Some(contract) = system_data_contract(id, platform_version)? {
+        // Known contracts first, then the system contracts.
+        if let Some(contract) = self.local.data_contract(id, platform_version)? {
             return Ok(Some(contract));
         }
 
@@ -1039,8 +1015,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     /// Keeps a held contract of a higher version: a registration that waited
     /// on a fetch must not replace one another operation promoted meanwhile.
     fn register_data_contract(&self, contract: Arc<DataContract>) {
-        let mut known = self.known_contracts.lock().unwrap();
-        hold_unless_newer_held(&mut known, contract);
+        self.local.add_known_data_contract(contract);
     }
 
     fn get_token_configuration(
@@ -1048,11 +1023,9 @@ impl ContextProvider for TrustedHttpContextProvider {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         // First check known token configurations cache
-        let known = self.known_token_configurations.lock().unwrap();
-        if let Some(config) = known.get(token_id) {
-            return Ok(Some(config.clone()));
+        if let Some(config) = self.local.token_configuration(token_id) {
+            return Ok(Some(config));
         }
-        drop(known);
 
         // Delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
@@ -1066,12 +1039,17 @@ impl ContextProvider for TrustedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(platform_activation_height(self.network))
     }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        Some(QuorumKeySource::Trusted)
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use dash_context_provider::ContextProviderMode;
     use data_contracts::SystemDataContract;
     use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
@@ -2261,6 +2239,61 @@ pub(crate) mod tests {
         }
     }
 
+    /// A trusted SDK's diagnostics read the source from its provider. One
+    /// that said nothing would be reported as custom, and one with a mode
+    /// would let a caller believe it could switch to SPV.
+    #[test]
+    fn should_report_its_trusted_source_and_refuse_a_mode_change() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(1).expect("non-zero cache size"),
+        )
+        .expect("offline provider");
+
+        assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Trusted));
+        assert!(matches!(
+            provider.set_quorum_mode(ContextProviderMode::Spv),
+            Err(ContextProviderError::Config(_))
+        ));
+        assert!(provider.spv_source_slot().is_none());
+    }
+
+    /// Clones, the detached copy a quorum refresh runs on, and the resolver
+    /// handed out by `local_resolver` must all see one contract cache: the SDK
+    /// registers contracts through one handle and verifies proofs through
+    /// another.
+    #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_share_one_contract_cache_across_clones_and_the_local_resolver() {
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(1).expect("non-zero cache size"),
+        )
+        .expect("offline provider");
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract");
+        contract.set_id(Identifier::new([0x5b; 32]));
+        let id = contract.id();
+
+        provider.local_resolver().add_known_contract(contract);
+
+        for handle in [provider.clone(), provider.detached()] {
+            assert!(handle.get_known_contract(&id).is_some());
+            assert!(handle
+                .get_data_contract(&id, PlatformVersion::latest())
+                .unwrap()
+                .is_some());
+        }
+        assert!(provider.remove_known_contract(&id));
+        assert!(provider.local_resolver().get_known_contract(&id).is_none());
+    }
+
     /// A one-type contract `id` at `version`.
     pub(crate) fn contract_at_version(id: [u8; 32], version: u32) -> DataContract {
         use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -2295,6 +2328,8 @@ pub(crate) mod tests {
     /// the registration waited on its fetch.
     #[test]
     fn should_keep_a_newer_contract_over_a_registered_older_one() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
         let provider = TrustedHttpContextProvider::new_with_url(
             Network::Testnet,
             "https://127.0.0.1".to_string(),
@@ -2319,6 +2354,8 @@ pub(crate) mod tests {
     /// from a saved cache does not undo a promotion.
     #[test]
     fn should_keep_a_newer_contract_over_an_older_one_added_or_hydrated() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
         let id = Identifier::from([0x73; 32]);
         let held = |provider: &TrustedHttpContextProvider| {
             provider
@@ -2554,6 +2591,101 @@ pub(crate) mod tests {
             .is_none());
         assert!(provider
             .get_data_contract(&id, platform_version)
+            .expect("the lookup must succeed from protocol version 15")
+            .is_some());
+    }
+
+    /// A fallback provider that serves an empty contract under any id it is
+    /// asked for.
+    struct ServesEveryContract;
+
+    impl ContextProvider for ServesEveryContract {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            use dpp::data_contract::config::DataContractConfig;
+            use dpp::data_contract::v1::DataContractV1;
+            use std::collections::BTreeMap;
+
+            Ok(Some(Arc::new(DataContract::V1(DataContractV1 {
+                id: *id,
+                version: 1,
+                owner_id: Identifier::from([2u8; 32]),
+                document_types: BTreeMap::new(),
+                config: DataContractConfig::default_for_version(platform_version)
+                    .expect("expected a default config"),
+                schema_defs: None,
+                created_at: None,
+                updated_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                created_at_epoch: None,
+                updated_at_epoch: None,
+                groups: BTreeMap::new(),
+                tokens: BTreeMap::new(),
+                keywords: vec![],
+                description: None,
+            }))))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config(
+                "serves no quorums".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// The token market contract does not exist before protocol version 15,
+    /// so no source may serve one under its id there: a fallback provider
+    /// asked after the local contracts must not be able to supply it either.
+    #[test]
+    fn should_refuse_a_token_market_contract_from_the_fallback_before_protocol_15() {
+        use dpp::version::PlatformVersion;
+
+        // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Testnet,
+            "https://127.0.0.1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .unwrap()
+        .with_fallback_provider(ServesEveryContract);
+        let pv14 = PlatformVersion::get(14).unwrap();
+
+        let app_contract = Identifier::new([0x5a; 32]);
+        assert!(
+            provider
+                .get_data_contract(&app_contract, pv14)
+                .expect("the fallback answers")
+                .is_some(),
+            "the fallback must be asked for a contract the provider does not hold"
+        );
+
+        let token_market = SystemDataContract::TokenMarket.id();
+        assert!(provider
+            .get_data_contract(&token_market, pv14)
+            .expect("a pre-activation lookup must not error")
+            .is_none());
+        assert!(provider
+            .get_data_contract(&token_market, PlatformVersion::get(15).unwrap())
             .expect("the lookup must succeed from protocol version 15")
             .is_some());
     }

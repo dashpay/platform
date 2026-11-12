@@ -1,14 +1,19 @@
 //! A document reference naming its target through the referring document
 //! (`contractId` and `documentType` written `"$self.<property>"`, `documentTypeRequirements`,
 //! protocol version 15): the document says which contract and which document type its value points into, so
-//! everything about the target is checked when the document is written. The target here is
-//! `post`, a type whose documents only the contract's moderators remove, each removal leaving
+//! everything about the target is checked when the document is written. The shared fixture's
+//! target is `post`, whose documents only the contract's moderators remove, each removal leaving
 //! a record. A reference may also admit a type of either kind, permanent or moderated, and
 //! ask of a property filling a slot what the type says of it (`when`).
 
 use super::*;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentReferenceKind;
+use drive::drive::document::paths::document_history_path;
+use drive::grovedb::Element;
+use drive::query::document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryFilter,
+};
 
 const NOTE: &str = "note";
 const BYTES_NOTE: &str = "bytesNote";
@@ -20,6 +25,7 @@ const ARTICLE: &str = "article";
 const PERMANENT_NOTE: &str = "permanentNote";
 const TALLY: &str = "tally";
 const REFERENCED_ENTITY_NOT_FOUND: u32 = 40120;
+const REFERENCED_DOCUMENT_PROPERTY_MISMATCH: u32 = 40127;
 const REFERENCED_DOCUMENT_TYPE_NOT_FOUND: u32 = 40121;
 const REFERENCED_DOCUMENT_TYPE_NOT_MODERATED: u32 = 40143;
 const REFERENCED_DOCUMENT_TYPE_INDEX_ONLY: u32 = 40146;
@@ -513,6 +519,160 @@ async fn should_follow_a_dynamic_reference_into_another_contract() {
     note.set("body", "an edit".into());
     let edit = replacement(&setup.stranger, &setup.contract, NOTE, &mut note).await;
     assert_success(&setup.process(&edit, &transaction));
+}
+
+/// Dynamic references check existence through the history pointer; a static reference's
+/// agreement must read the current revision even while the old value remains in history.
+#[tokio::test]
+async fn should_check_dynamic_and_static_references_to_a_keep_history_target() {
+    let platform_version = PlatformVersion::latest();
+    let setup = Setup::new_at_with(None, platform_version, |contract| {
+        add_document_type(
+            contract,
+            POST,
+            platform_value!({
+                "type": "object",
+                "documentsKeepHistory": true,
+                "documentsMutable": true,
+                "canBeDeleted": false,
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "required": ["text"],
+                "additionalProperties": false,
+            }),
+        );
+        add_document_type(contract, PERMANENT_NOTE, permanent_note_schema());
+        let mut post_id = identifier_property(0);
+        post_id
+            .insert(
+                "refersTo".into(),
+                platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": POST,
+                    "where": { "text": "quotedText" },
+                }),
+            )
+            .expect("expected the reference declaration");
+        add_document_type(
+            contract,
+            "quote",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "postId": post_id,
+                    "quotedText": { "type": "string", "maxLength": 50, "position": 1 },
+                },
+                "required": ["postId", "quotedText"],
+                "additionalProperties": false,
+            }),
+        );
+    })
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract_id = setup.contract.id();
+    let (mut post, create_post) =
+        create_with(&setup, &setup.user, POST, vec![("text", "first".into())]).await;
+    assert_success(&setup.process(&create_post, &transaction));
+
+    let (_, dynamic) = create_with(
+        &setup,
+        &setup.stranger,
+        PERMANENT_NOTE,
+        note_naming(contract_id, POST, post.id()),
+    )
+    .await;
+    assert_success(&setup.process(&dynamic, &transaction));
+
+    post.set("text", "current".into());
+    let replace = replacement(&setup.user, &setup.contract, POST, &mut post).await;
+    assert_success(&setup.process(&replace, &transaction));
+
+    let mut primary_path =
+        document_history_path(contract_id.as_bytes(), POST, post.id().as_bytes());
+    primary_path.truncate(4);
+    primary_path.push(vec![0]);
+    let primary_entry = setup
+        .platform
+        .drive
+        .grove
+        .get_raw(
+            primary_path.as_slice().into(),
+            post.id().as_bytes(),
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        )
+        .value
+        .expect("expected the primary entry");
+    assert!(matches!(primary_entry, Element::Reference(..)));
+    let history = setup
+        .platform
+        .drive
+        .fetch_document_history(
+            &DocumentHistoryDriveQuery {
+                contract_id: contract_id.to_buffer(),
+                document_type_name: POST.into(),
+                document_id: post.id().to_buffer(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit: None,
+            },
+            setup
+                .contract
+                .document_type_for_name(POST)
+                .expect("post type"),
+            Some(&transaction),
+            platform_version,
+        )
+        .expect("expected both retained revisions");
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.revision, entry.document.get("text").cloned()))
+            .collect::<Vec<_>>(),
+        [(1, Some("first".into())), (2, Some("current".into()))]
+    );
+
+    for (id, expected_code) in [
+        (post.id(), None),
+        (
+            Identifier::new([255; 32]),
+            Some(REFERENCED_ENTITY_NOT_FOUND),
+        ),
+    ] {
+        let (_, dynamic) = create_with(
+            &setup,
+            &setup.stranger,
+            PERMANENT_NOTE,
+            note_naming(contract_id, POST, id),
+        )
+        .await;
+        let result = setup.process(&dynamic, &transaction);
+        if let Some(code) = expected_code {
+            assert_paid_with_code(&result, code);
+        } else {
+            assert_success(&result);
+        }
+    }
+
+    for (text, expected_code) in [
+        ("first", Some(REFERENCED_DOCUMENT_PROPERTY_MISMATCH)),
+        ("current", None),
+    ] {
+        let (_, quote) = create_with(
+            &setup,
+            &setup.stranger,
+            "quote",
+            vec![("postId", id_value(post.id())), ("quotedText", text.into())],
+        )
+        .await;
+        let result = setup.process(&quote, &transaction);
+        if let Some(code) = expected_code {
+            assert_paid_with_code(&result, code);
+        } else {
+            assert_success(&result);
+        }
+    }
 }
 
 /// A string a removal takes with the document and its author writes, when the type is a
