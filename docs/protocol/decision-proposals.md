@@ -134,8 +134,10 @@ is a contender of its own, so an identity may enter several.
 ### `multipleChoiceProposal`
 
 Undeletable (`canBeDeleted: false`), so a `choice` can refer to it as a
-`permanentDocument`. The owner may edit `title`, `description` and `url` until
-two hours after the proposal was created: each is an `immutable` entry whose
+`permanentDocument`. The owner may edit `title` and `url`, and point the
+proposal at another description (`descriptionId`, `descriptionContractId`,
+`descriptionDocumentType`), until two hours after the proposal was created:
+each is an `immutable` entry whose
 condition,
 `{ "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 7200000] }`,
 freezes it once that time has passed, and an edit after it is refused
@@ -150,12 +152,136 @@ rejected.
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `title` | string, 1 to 128 characters and at most 512 bytes, required | The question, in one line |
-| `description` | string, 1 to 4096 characters and at most 4096 bytes, required | What is being decided |
+| `descriptionId` | identifier, required | The document saying what is being decided: a [reference whose target the proposal names](../../book/src/contract-keywords/refers-to-dynamic.md) |
+| `descriptionContractId` | identifier, required | The contract that document lives in: `refersTo` a `contract` with `contractRequirements: { "moderation": "elected", "ownerProtected": false }` |
+| `descriptionDocumentType` | string, 1 to 64 characters, required | That document's document type |
 | `url` | string, `format: uri`, 1 to 512 characters and at most 512 bytes | Where the proposal is discussed |
 | `open` | boolean, required | Whether anyone may enter choices. Only the proposal's owner may when it is `false` |
 
 Indexes: `byOwner` (`$ownerId`, `$createdAt`) and `byCreatedAt` (`$createdAt`),
 neither unique.
+
+#### The description
+
+A proposal costs its storage and nothing else, so text held in it would be
+cheap to fill with anything and could never be taken down: the proposal is
+undeletable. It therefore holds no description. It points at a document that
+does, hosted where moderators can remove it:
+
+```json
+"descriptionId": {
+  "type": "identifier",
+  "refersTo": {
+    "type": "moderatedDocument",
+    "contractId": "$self.descriptionContractId",
+    "documentType": "$self.descriptionDocumentType",
+    "documentTypeRequirements": {
+      "when": <removable by the elected team>,
+      "properties": {
+        "body":      { "name": "$any", "type": "string", "when": <taken with the document> },
+        "bodyBytes": { "name": "$any", "type": "array", "byteArray": true, "when": <taken with the document> }
+      },
+      "require": { "anyOf": ["body", "bodyBytes"] }
+    }
+  }
+},
+"descriptionContractId": {
+  "type": "identifier",
+  "refersTo": {
+    "type": "contract",
+    "contractRequirements": { "moderation": "elected", "ownerProtected": false }
+  }
+}
+```
+
+where `<removable by the elected team>` is
+
+```json
+{ "allOf": [
+  { "contains": ["$electedAbilities", { "const": "deleteDocuments" }] },
+  { "anyOf": [
+    { "absent": "$moderatorAbilities.deleteWithin" },
+    { "allOf": [
+      { "present": "$moderatorAbilities.deleteSettled" },
+      { "absent": "$moderatorAbilities.deleteSettled.approversPredateDocument" }
+    ] }
+  ] }
+] }
+```
+
+and `<taken with the document>` is
+
+```json
+{ "allOf": [
+  { "not": { "contains": ["$moderatorAbilities.deleteKeepsFields", "$property"] } },
+  { "not": { "contains": ["$moderatorAbilities.changeFields", "$property"] } }
+] }
+```
+
+Checked when the proposal is created, and again when an edit points it
+elsewhere. The description is checked before the contract it names. The rows
+are in the order checked, the first that applies refusing the write:
+
+| What the proposal names | Refused with |
+| --- | --- |
+| A contract that does not exist, or has no such document type | `ReferencedDocumentTypeNotFoundError` (40121) |
+| A private document type, whose documents are encrypted entries the chain never reads | `ReferencedDocumentTypePrivateError` (40150) |
+| An `indexOnly` document type, whose documents are index entries with none to find by its id | `ReferencedDocumentTypeIndexOnlyError` (40146) |
+| A type its contract's elected team may not delete from (the contract elects no team, or leaves the type out of the team's `deleteDocuments`), or one moderators delete only within a window (`deleteWithin`) with no rule for later (`deleteSettled`), or with a rule that counts a member the leader added only for documents created after its addition (`approversPredateDocument`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
+| A moderated type with no string or byte array a removal takes away: every one is kept in the removal record (`deleteKeepsFields`) or is the moderators' to write (`changeFields`) | `ReferencedDocumentTypeRequirementNotMetError` (40153) |
+| A document type whose documents their owner can delete, or that never leave state | `ReferencedDocumentTypeNotModeratedError` (40143) |
+| A document that is not there | `ReferencedEntityNotFoundError` (40120) |
+| A contract whose elected declaration protects its owner from the team. A contract that declares no elected moderation never gets this far: it gives no elected team the deletion of the type, and is refused with 40153 above | `ReferencedContractRequirementNotMetError` (40135) |
+
+What this does and does not give:
+
+- A moderator's removal of the description leaves the proposal in place,
+  pointing at the removal record: the question and its vote stay, the text is
+  gone.
+- The contract declares a team the masternodes elect. It does not have to have
+  seated one yet: until it does, whoever the contract names for the interim
+  moderates, which may be its owner or nobody. How long that lasts is the
+  contract's to say: its `electionDelay`, counted from its creation, holds off
+  the first election, and has no upper bound short of some 136 years. A
+  reference requiring `"moderation": "electionOpen"` would admit only a
+  contract whose delay has passed; it would still not require a seated team.
+- The team may moderate the contract's owner like anyone: a contract whose
+  declaration protects its owner (`ownerProtected`) is refused, since a
+  description the owner wrote there could not be removed.
+- The team is given the deletion of the description's type, and a description
+  stays deletable. A contract that leaves the type out of the abilities it
+  gives its elected team (`deleteDocuments`) is refused, since once a team is
+  seated nobody could remove its documents. So is a type that lets moderators
+  delete only within a window after a document's last change
+  (`moderatorAbilities.deleteWithin`) without saying who may delete a settled
+  one (`deleteSettled`), since a description would outlast the window for
+  good. And so is a type whose rule for a settled document counts a member the
+  team's leader added only for documents created after its addition
+  (`approversPredateDocument`, the default once a rule asks for more than one
+  approval): under a rule taking more approvals than the leader and the
+  elected members give, a description older than the added members could
+  never be deleted. A type with a window qualifies with a rule one approval
+  meets, or one that sets `approversPredateDocument` to false. A settled
+  document is deleted by a seated team alone, so within the interim a
+  description past its window waits for the first election, and a rule taking
+  several approvals takes that many members of the team.
+- All of this is what the host declares, checked when the proposal is written.
+  The team that is seated is the masternodes' to elect and changes afterwards,
+  and the reference does not read it. Two things about a seated team can keep
+  a description in place:
+  - A seated team does not moderate its own leader or active members. A
+    description one of them wrote, or whose author takes a seat later, cannot
+    be removed while the author holds the seat.
+  - A seated team acts only for a reason its charter lists, and a charter may
+    list none. Such a team removes nothing until another is elected.
+- The description's own edit rules are its document type's. A type that lets
+  its author replace a document lets the author change the description after
+  the two hours, and after choices were entered. The proposal's history keeps
+  which document it pointed at, not what that document said.
+- Which property of the document is the description is the first, in the
+  type's `position` order, that fills the `body` slot, then `bodyBytes`
+  (see [the binding rule](../../book/src/contract-keywords/refers-to-dynamic.md#documenttyperequirements)).
+- `title` and `url` are still text of the proposal.
 
 ### `choice`
 

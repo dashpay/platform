@@ -732,8 +732,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     backfilled); a property it does not hold for does not fill the slot. Judging the
 ///     named type is billed before it is judged, `requirement_credits_per_comparison`
 ///     (100, added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`, which nothing read for
-///     it before) for each property a slot tries and each node of its `when` for it. The native schema check of note 7 admits the keys and meta-schema v3 refuses
-///     them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
+///     it before) for each property a slot tries and each node of its `when` for it.
+///     `documentTypeRequirements` takes a `when` of its own, the same condition judged
+///     once for the named type as a whole, reading no `$property`; a `when` may also look
+///     into `$electedAbilities` (the abilities the type's contract gives its elected
+///     moderation team on the type) and test with `present` or `absent` whether the type
+///     declares `moderatorAbilities.deleteWithin` or `moderatorAbilities.deleteSettled`,
+///     or whether that rule sets `approversPredateDocument`. The native schema check of
+///     note 7 admits the keys and meta-schema v3 refuses them. It parses to `DocumentPropertyReferenceTarget::DynamicDocument`,
 ///     appended. Such a declaration carries nothing else (no `contractId`, `documentType`,
 ///     `findBy`, `where`, `inList`, `consume` or `constraints`), is no operand of a reference
 ///     expression, sits on no typed array's elements and in no `ownerRefersTo` or
@@ -750,8 +756,11 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     the declared kind (40122, 40143, 40144), and the document exists (40120) or, for a
 ///     moderated one a replace keeps, was removed on the record. A replace checks the
 ///     reference again when its value or a property it reads the target from changed.
-///     Protocol v14 and earlier keep `apply_property_reference` 0, which does not read the
-///     keys, and `document_reference_validation` 0, which no dynamic reference reaches.
+///     The decision proposals contract's `multipleChoiceProposal` type uses it for its
+///     description: a moderated document, of a contract declaring elected moderation, whose
+///     text a moderator's removal takes away. Protocol v14 and earlier keep
+///     `apply_property_reference` 0, which does not read the keys, and
+///     `document_reference_validation` 0, which no dynamic reference reaches.
 ///     Version 1 takes this reading only for a declaration version 0 cannot read at all (a
 ///     reference to a document whose `contractId` is written `"$self."`, or a `type` listing
 ///     kinds), so a contract stored before 15 with `"$self."` keys on any other declaration
