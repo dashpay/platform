@@ -11,7 +11,12 @@ mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "spv-context")]
+mod spv_quorums;
+#[cfg(feature = "spv-context")]
+pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
+pub mod txo_reconcile;
 mod wallet_lifecycle;
 
 pub(crate) use persistence_load::run_blocking_load;
@@ -42,6 +47,7 @@ use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
+use crate::manager::txo_reconcile::TxoReconcileSchedule;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
@@ -517,6 +523,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+    /// The SDK provider slot this manager serves SPV quorum keys into, held
+    /// from [`Self::serve_spv_quorums`] until [`Self::shutdown`].
+    #[cfg(feature = "spv-context")]
+    pub(super) spv_quorum_lease: std::sync::Mutex<Option<dash_context_provider::SpvSourceLease>>,
+    /// The host TXO-store reconcile's steady-state edge, runs in flight and
+    /// per-wallet cadence — see [`txo_reconcile`]. A `std::sync::Mutex`,
+    /// never held across an await.
+    pub(super) txo_reconcile_schedule: Arc<std::sync::Mutex<TxoReconcileSchedule>>,
 }
 
 /// Keep `record`'s coverage only for the DashPay receival accounts `core`
@@ -697,6 +711,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            #[cfg(feature = "spv-context")]
+            spv_quorum_lease: std::sync::Mutex::new(None),
+            txo_reconcile_schedule: Arc::default(),
         }
     }
 
@@ -1253,7 +1270,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
     ///    events, then payment-task admission is closed and all admitted
-    ///    DashPay payment-hook work is joined.
+    ///    DashPay payment-hook work is joined. TXO-reconcile engine guards a
+    ///    host still holds are force-released only after SPV stopped
+    ///    cleanly, never before, so no fork can land between a host's read
+    ///    and its in-flight store write; a failed stop leaves them held.
     /// 2. `quiesce()` each coordinator. Cancel-only `stop()` would
     ///    let a pass already inside `sync_now` keep running and call
     ///    `persister.store(...)` / fire a host completion callback after
@@ -1281,6 +1301,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// (its live handle is re-parked on timeout so a retry re-joins it).
     /// Past those SPV lock waits, a wedged await therefore surfaces as a
     /// non-clean report instead of hanging the FFI's `destroy` forever.
+    /// A host still writing a TXO-reconcile page holds its engine guard
+    /// through SPV stop, so SPV teardown (and anything queued on the engine
+    /// behind it) waits for that write; a write that never ends turns into a
+    /// timed-out SPV stop, not a hang.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -1292,11 +1316,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // Stop serving SPV quorum keys before SPV stops, whether or not the
+        // stop is clean: a stopping client must not answer proof lookups.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
+
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
         // report — a failed stop must not hide behind a clean coordinator join.
-        let spv_status = match self.spv_manager.stop().await {
+        //
+        // A TXO reconcile's engine guard is held across one host store write
+        // and released by the host, which may still be writing when this
+        // runs. It is released here only AFTER SPV stopped cleanly — SPV is
+        // what applies forks, and a fork landing under a revoked guard
+        // before the host's write lands is exactly what the guard prevents.
+        // Until then an SPV writer simply waits for the host's write, under
+        // the stop's own deadline. A failed or timed-out stop releases
+        // nothing (fail closed): the guard stays with the host's handle.
+        let spv_status = match self.stop_spv_then_release_txo_reconcile_holds().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
                 tracing::warn!(?error, "SPV shutdown failed");
@@ -1445,6 +1483,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// fields can no longer be moved out.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
+        // As in `shutdown`: stop serving SPV quorum keys first. Until the lease
+        // goes, the SDK's slot keeps this manager's SPV runtime alive.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
         // Cancel and detach, never `abort`: the task observes the token at its
         // next `recv` and exits after committing whatever its drain claimed the
         // persister for. Aborting stops it at whatever await it is parked on,

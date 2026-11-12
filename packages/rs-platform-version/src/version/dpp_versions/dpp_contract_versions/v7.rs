@@ -58,6 +58,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             apply_generated_from: Some(1), // changed: admits sys.tokens.decimals
             // changed: also reads a reference whose target the referring document names
             apply_property_reference: Some(1),
+            // changed: the depth and cycle check reads a `$ref` pointer as the validator does
+            validate_max_depth: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

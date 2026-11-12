@@ -77,8 +77,14 @@ verifies from protocol version 15.
 ## Block Time
 
 In a document type that keeps history, a query with a block time asks for the newest version of
-the document stored at or before that time. It answers with no document for a time before the
-document was first stored. Without a block time the query asks for the latest version.
+the document retained at or before that time, clamped to `i64::MAX`. At equal timestamps the
+highest revision wins. It answers with no document before the first retained revision. Without
+a block time the query asks for the latest version. Migrated history contains the last write
+retained at each old timestamp; overwritten revisions cannot be recovered.
+
+This applies to `SingleDocumentDriveQuery` in Drive's Rust API and to this verifier. Documents
+queries (`DriveDocumentQuery`) with a block time still reject keep-history types after
+activation. The SDK and DAPI paths do not build timed single-document queries.
 
 A `NotContested` query with a block time verifies from protocol version 15. A contest's area
 keeps no history: it holds each contender as it was submitted. So a `Contested` query ignores the

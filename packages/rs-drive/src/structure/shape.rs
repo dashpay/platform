@@ -54,7 +54,7 @@ pub(super) fn layer_shapes(
 }
 
 /// The exact Merk binary tree of the layer at `path`
-pub(super) fn shape_at(
+pub(crate) fn shape_at(
     drive: &Drive,
     path: &[Vec<u8>],
     platform_version: &PlatformVersion,
