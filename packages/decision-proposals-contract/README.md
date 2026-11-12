@@ -59,7 +59,9 @@ and point it at another description, for two hours after creating it; after
 that they freeze. Every version is kept (`documentsKeepHistory`), so a reader
 can see the proposal as it was when a choice was entered. Whether it is `open`
 never changes. Creating it opens no vote and states no fund: the first choice
-does.
+does. It pays a flat processing fee of 0.2 Dash instead, on top of its gas,
+which goes to the processing fee pools; each choice then pays its contest's
+fund (0.1 Dash at first).
 
 The proposal holds no description of its own. What is being decided is said
 in one of two places, or both: at its `url`, for a description hosted

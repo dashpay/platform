@@ -41,7 +41,10 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentReferenceKind;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::decision_proposal::DECISION_PROPOSALS_CONTRACT_ID;
+use dpp::decision_proposal::{
+    multiple_choice_proposal_processing_fee, DECISION_PROPOSALS_CONTRACT_ID,
+    MULTIPLE_CHOICE_PROPOSAL_DOCUMENT_TYPE_NAME,
+};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
@@ -2341,4 +2344,183 @@ async fn should_take_the_description_from_a_document_a_url_or_both() {
             );
         }
     }
+}
+
+/// The identity's balance now.
+fn balance(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    identity_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    platform
+        .drive
+        .fetch_identity_balance(identity_id.to_buffer(), None, platform_version)
+        .expect("expected to read the balance")
+        .expect("expected the identity")
+}
+
+/// Creating a multiple choice proposal opens no poll and prefunds no votes, so it pays a
+/// flat processing fee instead: 0.2 Dash on top of its gas. Nothing else of the contract
+/// pays it, a create that is refused does not, and an identity that cannot cover it creates
+/// no proposal.
+#[tokio::test]
+async fn should_charge_a_flat_processing_fee_for_a_multiple_choice_proposal() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let fee = multiple_choice_proposal_processing_fee(platform_version);
+    assert_eq!(fee, dash_to_credits!(0.2));
+    // No fee schedule before protocol version 15 charges it
+    assert_eq!(
+        multiple_choice_proposal_processing_fee(
+            PlatformVersion::get(14).expect("expected protocol version 14")
+        ),
+        0
+    );
+    assert_eq!(
+        multiple_choice_proposal::NAME,
+        MULTIPLE_CHOICE_PROPOSAL_DOCUMENT_TYPE_NAME
+    );
+    // The gas of any transition here is far below the fee
+    let at_most_gas = fee / 10;
+
+    let mut proposer = writer(&mut platform, &mut rng);
+    let mut alice = writer(&mut platform, &mut rng);
+    let described_at_a_url = |question: &str| {
+        BTreeMap::from([
+            (
+                multiple_choice_proposal::properties::TITLE.to_string(),
+                Value::Text(question.to_string()),
+            ),
+            (
+                multiple_choice_proposal::properties::URL.to_string(),
+                Value::Text("https://example.org/proposals/mascot".to_string()),
+            ),
+            (
+                multiple_choice_proposal::properties::OPEN.to_string(),
+                Value::Bool(true),
+            ),
+        ])
+    };
+
+    // The proposal pays the fee as processing, whoever described it and wherever
+    let before = balance(&platform, proposer.id(), platform_version);
+    let (transition, proposal_id) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        described_at_a_url("Which mascot?"),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } =
+        process(&platform, transition, 20_000, platform_version)
+    else {
+        panic!("expected the proposal to be created");
+    };
+    assert!(
+        fee_result.processing_fee >= fee && fee_result.processing_fee < fee + at_most_gas,
+        "expected the gas and the proposal fee, got {}",
+        fee_result.processing_fee
+    );
+    let after = balance(&platform, proposer.id(), platform_version);
+    assert_eq!(
+        before - after,
+        fee_result.processing_fee + fee_result.storage_fee
+    );
+
+    // A choice pays its contest's fund, which prefunds the votes, and no proposal fee
+    let before = balance(&platform, alice.id(), platform_version);
+    let (transition, _) = choice_transition(
+        &contract,
+        &mut alice,
+        proposal_id,
+        "An owl",
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } =
+        process(&platform, transition, 30_000, platform_version)
+    else {
+        panic!("expected the choice to be entered");
+    };
+    assert!(
+        fee_result.processing_fee < at_most_gas,
+        "{}",
+        fee_result.processing_fee
+    );
+    let fund = platform_version
+        .fee_version
+        .vote_resolution_fund_fees
+        .contested_document_vote_resolution_fund_required_amount;
+    assert_eq!(
+        before - balance(&platform, alice.id(), platform_version),
+        fund + fee_result.processing_fee + fee_result.storage_fee
+    );
+
+    // A proposal that is refused is not created, and pays its gas alone
+    let (transition, _) = create_transition(
+        &contract,
+        &mut proposer,
+        multiple_choice_proposal::NAME,
+        BTreeMap::from([
+            (
+                multiple_choice_proposal::properties::TITLE.to_string(),
+                Value::Text("Described nowhere".to_string()),
+            ),
+            (
+                multiple_choice_proposal::properties::OPEN.to_string(),
+                Value::Bool(true),
+            ),
+        ]),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } =
+        process(&platform, transition, 40_000, platform_version)
+    else {
+        panic!("expected the proposal described nowhere to be refused");
+    };
+    assert!(
+        actual_fees.processing_fee < at_most_gas,
+        "{}",
+        actual_fees.processing_fee
+    );
+
+    // An identity holding less than the fee creates no proposal and keeps its balance
+    let mut poor = Writer {
+        info: setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1)),
+        next_nonce: 1,
+    };
+    let (transition, unaffordable_id) = create_transition(
+        &contract,
+        &mut poor,
+        multiple_choice_proposal::NAME,
+        described_at_a_url("Which colour?"),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let result = process(&platform, transition, 50_000, platform_version);
+    assert!(
+        matches!(
+            result,
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                StateError::IdentityInsufficientBalanceError(_)
+            ))
+        ),
+        "{result:?}"
+    );
+    assert!(stored_document(
+        &platform,
+        &contract,
+        multiple_choice_proposal::NAME,
+        unaffordable_id
+    )
+    .is_none());
+    assert_eq!(
+        balance(&platform, poor.id(), platform_version),
+        dash_to_credits!(0.1)
+    );
 }
