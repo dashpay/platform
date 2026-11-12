@@ -107,6 +107,7 @@ mod tests {
                                     .filter(|other| *other != slot)
                                     .cloned()
                                     .collect::<BTreeSet<_>>(),
+                                when: None,
                             },
                         )
                     })
