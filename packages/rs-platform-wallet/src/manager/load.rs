@@ -302,6 +302,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
                 rewind_barrier: Default::default(),
+                tracked_collaterals: Default::default(),
             };
             if !replay_locks.is_empty() {
                 replay_locks_by_wallet.insert(wallet_id, replay_locks);

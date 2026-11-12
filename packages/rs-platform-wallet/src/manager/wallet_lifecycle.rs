@@ -366,10 +366,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
-        // A tracked masternode's collateral may reach this wallet as it syncs;
-        // lock it now so it arrives locked. The locks are stored with the
-        // registration below.
+        // A tracked masternode's collateral may reach this wallet as it syncs:
+        // track it now so it is locked when it arrives. Any lock made here is
+        // stored with the registration below.
         let registration_locks = platform_info.lock_known_masternode_collaterals(
             &self.tracked_masternodes_service().known_collaterals(),
         );

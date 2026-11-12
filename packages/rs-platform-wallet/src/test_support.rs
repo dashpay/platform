@@ -275,6 +275,7 @@ pub async fn funded_wallet_manager_with_outputs(
         dpns_name_states: BTreeMap::new(),
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
+        tracked_collaterals: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -503,6 +504,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         dpns_name_states: BTreeMap::new(),
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
+        tracked_collaterals: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -609,6 +611,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         dpns_name_states: BTreeMap::new(),
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
+        tracked_collaterals: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -680,6 +683,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         dpns_name_states: BTreeMap::new(),
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
+        tracked_collaterals: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -1020,6 +1024,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         dpns_name_states: BTreeMap::new(),
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
+        tracked_collaterals: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

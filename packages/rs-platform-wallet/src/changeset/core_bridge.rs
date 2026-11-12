@@ -4496,6 +4496,7 @@ mod contact_watch_only_projection_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         }
@@ -5715,6 +5716,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         manager
             .write()
@@ -5768,6 +5770,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5834,6 +5837,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -5915,6 +5919,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         info.core_wallet.update_synced_height(synced_height);
         let manager = test_manager();
@@ -6145,6 +6150,7 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
         };
         successor.rewind_barrier.inherit(retired);
         assert!(
@@ -9087,6 +9093,7 @@ mod utxo_credit_verdict_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9185,6 +9192,7 @@ mod utxo_credit_verdict_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9220,7 +9228,7 @@ mod outpoint_lock_projection_tests {
 
     use std::collections::BTreeSet;
 
-    use dashcore::Block;
+    use dashcore::{Block, Transaction};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet_manager::WalletInterface;
     use tokio::sync::broadcast::Receiver;
@@ -9230,6 +9238,7 @@ mod outpoint_lock_projection_tests {
         coin_worth, funded_wallet_manager_with_outputs, masternode_registration,
         MASTERNODE_COLLATERAL_DUFFS,
     };
+    use crate::wallet::outpoint_locks::track_masternode_collaterals;
 
     const SPARE: u64 = 500_000_000;
 
@@ -9315,5 +9324,49 @@ mod outpoint_lock_projection_tests {
                 .await;
 
         assert!(stored.is_empty(), "the lock is stored once");
+    }
+
+    /// A tracked masternode's collateral that a block pays the wallet is
+    /// locked by that block's check, and the block's changeset stores the
+    /// lock.
+    #[tokio::test]
+    async fn should_store_the_lock_of_a_tracked_collateral_with_the_block_that_brings_it() {
+        let (manager, wallet_id, mut events, held) = wallet_holding_a_collateral().await;
+        let address = {
+            let wm = manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+            info.core_wallet
+                .first_bip44_managed_account()
+                .expect("bip44 account")
+                .utxos
+                .get(&held)
+                .expect("funded coin")
+                .address
+                .clone()
+        };
+        let incoming = Transaction::dummy(&address, 9..10, &[MASTERNODE_COLLATERAL_DUFFS]);
+        let collateral = OutPoint::new(incoming.txid(), 0);
+        assert!(
+            track_masternode_collaterals(&manager, &BTreeSet::from([collateral]))
+                .await
+                .is_empty(),
+            "the wallet does not hold the coin yet"
+        );
+
+        let block = Block::dummy(2, vec![incoming]);
+        manager
+            .write()
+            .await
+            .process_block_for_wallets(&block, block.block_hash(), 2, &BTreeSet::from([wallet_id]))
+            .await;
+        let mut stored = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            let cs = build_core_changeset(&manager, &event).await;
+            if !cs.outpoint_locks.is_empty() {
+                stored.push(cs.outpoint_locks);
+            }
+        }
+
+        assert_eq!(stored, vec![BTreeMap::from([(collateral, true)])]);
     }
 }

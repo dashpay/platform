@@ -55,7 +55,7 @@ use crate::wallet::masternode_withdrawal::{
     execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
 };
 use crate::wallet::outpoint_locks::{
-    lock_known_masternode_collaterals, named_collateral, persist_outpoint_locks,
+    named_collateral, persist_outpoint_locks, track_masternode_collaterals,
 };
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -506,7 +506,7 @@ pub struct TrackedMasternodes {
     persister: std::sync::Arc<dyn PlatformWalletPersistence>,
     network: Network,
     /// The manager's wallets, so a refresh that learns a registration can
-    /// lock its collateral in them.
+    /// have the wallet that holds its collateral lock it.
     wallet_manager: std::sync::Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>,
 }
 
@@ -839,11 +839,12 @@ impl TrackedMasternodes {
         )
         .await?;
 
-        // Once the registration is known, keep its collateral out of every
-        // wallet's coin selection: spending it would end the registration.
+        // Once the registration is known, the wallet that holds its
+        // collateral keeps it out of coin selection, now or when the coin
+        // arrives: spending it would end the registration.
         if let Some(registration) = tracked.snapshot.registration.as_ref() {
             let collateral = named_collateral(&tracked.pro_tx_hash, registration.collateral);
-            let locked = lock_known_masternode_collaterals(
+            let locked = track_masternode_collaterals(
                 self.wallet_manager.as_ref(),
                 &BTreeSet::from([collateral]),
             )
