@@ -219,10 +219,9 @@ impl AccountViewingKeys {
 
     /// An external-scope payment address at a uniformly random diversifier
     /// index below 2^87, drawn from the OS CSPRNG. Index 0 (the default
-    /// address) is redrawn, so the result is never the default address, and
-    /// so is an index of 2^87 or above: that half of the index space holds
-    /// only the addresses of DashPay contact requests
-    /// ([`Self::contact_address`]), so a fresh address is never taken for one.
+    /// address) and every index of 2^87 or above (reserved for
+    /// [`Self::contact_address`]) are redrawn, so the result is never the
+    /// default address or a contact address.
     /// Every 11-byte Orchard diversifier index yields a valid address, so
     /// no other retry is needed. Writes no state: the scan finds notes to
     /// the returned address through the IVK, whatever its index.
