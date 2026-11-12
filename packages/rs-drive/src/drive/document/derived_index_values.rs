@@ -1012,7 +1012,24 @@ mod tests {
             replies_on(&drive, &contract, "rust"),
             vec![Identifier::from([2; 32])]
         );
-        delete_reply(&drive, &contract, 2, true);
+        let price = |apply| {
+            drive
+                .delete_document_for_contract(
+                    [2; 32].into(),
+                    &contract,
+                    "reply",
+                    BlockInfo::default_with_time(CREATED_AT + 1),
+                    apply,
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .unwrap()
+        };
+        let estimated = price(false);
+        let actual = price(true);
+        println!("delete derived-index: estimated storage={} processing={}, actual storage={} processing={}", estimated.storage_fee, estimated.processing_fee, actual.storage_fee, actual.processing_fee);
+        assert!(estimated.storage_fee >= actual.storage_fee);
+        assert!(estimated.processing_fee >= actual.processing_fee);
         assert!(replies_on(&drive, &contract, "rust").is_empty());
     }
 

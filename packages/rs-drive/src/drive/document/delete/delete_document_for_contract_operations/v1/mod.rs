@@ -4,7 +4,7 @@ use grovedb::{Element, TransactionArg, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
-use crate::drive::constants::{DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE, STORAGE_FLAGS_SIZE};
+use crate::drive::constants::DOCUMENT_HISTORY_CURRENT_REFERENCE_PATH_SIZE;
 use crate::drive::document::paths::{
     contract_documents_primary_key_path, document_history_path, document_lifecycle_path,
     DOCUMENT_LIFECYCLE_TREE_KEY,
@@ -189,7 +189,11 @@ impl Drive {
         let history_query_type = if estimated_costs_only_with_layer_info.is_some() {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
-                query_target: QueryTargetTree(STORAGE_FLAGS_SIZE, TreeType::ProvableCountTree),
+                // The history tree retains the creator's owner flags.
+                query_target: QueryTargetTree(
+                    StorageFlags::approximate_size(true, None),
+                    TreeType::ProvableCountTree,
+                ),
             }
         } else {
             DirectQueryType::StatefulDirectQuery

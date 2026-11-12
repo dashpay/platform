@@ -617,6 +617,12 @@ fn should_price_an_erase_for_a_full_chunk_whatever_the_document_retains() {
         let actual = erase(&drive, &contract, id, 6_000);
 
         assert!(
+            estimated.storage_fee >= actual.storage_fee,
+            "the storage estimate under-charged a {revisions}-revision erase: {} < {}",
+            estimated.storage_fee,
+            actual.storage_fee
+        );
+        assert!(
             estimated.processing_fee >= actual.processing_fee,
             "the admission estimate under-charged a {revisions}-revision erase: {} < {}",
             estimated.processing_fee,
@@ -2953,5 +2959,224 @@ fn should_preserve_pending_operations_when_force_deleting_a_non_history_document
         matches!(error, Error::Drive(DriveError::UnknownVersionMismatch {
         known_versions, received: 3, ..
     }) if known_versions == vec![0, 1])
+    );
+}
+
+#[test]
+fn should_cover_applied_lifecycle_delete_fees_in_the_admission_estimate() {
+    use crate::drive::document::paths::contract_document_type_path_vec;
+    use crate::state_transition_action::batch::record_gas_sponsor_as_storage_owner;
+    use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::document_factory::DocumentFactory;
+    use dpp::platform_value::platform_value;
+    use grovedb::Element;
+
+    let version = latest();
+    let mut underestimates = vec![];
+    for case in ["first-container", "summable-countable", "sponsored"] {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let schema = if case == "summable-countable" {
+            platform_value!({
+                "type": "object", "documentsKeepHistory": true, "canBeDeleted": true,
+                "documentsMutable": false, "documentsCountable": true, "documentsSummable": "amount",
+                "properties": {"amount": {"type": "integer", "minimum": 5, "maximum": 5, "position": 0}},
+                "required": ["amount"], "additionalProperties": false,
+                "indices": [{"name": "amount", "properties": [{"amount": "asc"}]}]
+            })
+        } else {
+            platform_value!({
+                "type": "object", "documentsKeepHistory": true, "canBeDeleted": true,
+                "documentsMutable": false,
+                "properties": {"amount": {"type": "integer", "minimum": 5, "maximum": 5, "position": 0}},
+                "required": ["amount"], "additionalProperties": false
+            })
+        };
+        let contract = DataContractFactory::new(version.protocol_version)
+            .unwrap()
+            .create_with_value_config(
+                [7; 32].into(),
+                0,
+                platform_value!({"person": schema}),
+                None,
+                None,
+            )
+            .unwrap()
+            .data_contract_owned();
+        drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        let document_type = document_type_of(&contract);
+        let properties = platform_value!({"amount": 5});
+        let document = DocumentFactory::new(version.protocol_version)
+            .unwrap()
+            .create_document(&contract, [7; 32].into(), "person".into(), properties)
+            .unwrap();
+        let flags = Some(Cow::Owned(StorageFlags::new_single_epoch(0, Some([7; 32]))));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentInfo::DocumentRefInfo((&document, flags)),
+                        owner_id: Some([7; 32]),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default_with_time(1000),
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        let type_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "person");
+        assert!(drive
+            .grove
+            .get_raw_optional(
+                type_path.as_slice().into(),
+                &[1],
+                None,
+                &version.drive.grove_version
+            )
+            .value
+            .unwrap()
+            .is_none());
+        let block = BlockInfo::default_with_time(5000);
+        let price = |estimate: bool| {
+            let mut high_level = vec![DriveOperation::DocumentOperation(
+                DocumentOperationType::DeleteDocument {
+                    document_id: document.id(),
+                    deleter_id: Some([8; 32].into()),
+                    contract_info: DataContractInfo::BorrowedDataContract(&contract),
+                    document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
+                },
+            )];
+            if case == "sponsored" {
+                record_gas_sponsor_as_storage_owner(&mut high_level, [9; 32].into());
+            }
+            let mut layers = estimate.then(EstimatedLayers::new);
+            let operations = high_level
+                .pop()
+                .unwrap()
+                .into_low_level_drive_operations(&drive, &mut layers, &block, None, version)
+                .unwrap();
+            let mut costs = vec![];
+            drive
+                .apply_batch_low_level_drive_operations(
+                    layers,
+                    None,
+                    operations,
+                    &mut costs,
+                    &version.drive,
+                )
+                .unwrap();
+            drive
+                .calculate_fee(None, Some(costs), &block.epoch, version)
+                .unwrap()
+        };
+        let estimated = price(true);
+        let actual = price(false);
+        println!(
+            "delete {case}: estimated storage={} processing={}, actual storage={} processing={}",
+            estimated.storage_fee,
+            estimated.processing_fee,
+            actual.storage_fee,
+            actual.processing_fee
+        );
+        if estimated.storage_fee < actual.storage_fee
+            || estimated.processing_fee < actual.processing_fee
+        {
+            underestimates.push(case);
+        }
+        let record = drive
+            .grove
+            .get_raw(
+                document_lifecycle_path(contract.id_ref().as_bytes(), "person")
+                    .as_slice()
+                    .into(),
+                document.id().as_bytes(),
+                None,
+                &version.drive.grove_version,
+            )
+            .value
+            .unwrap();
+        assert!(matches!(record, Element::Item(..)));
+        let flags = StorageFlags::map_cow_some_element_flags_ref(record.get_flags())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            flags.owner_id(),
+            Some(&if case == "sponsored" {
+                [9; 32]
+            } else {
+                [8; 32]
+            })
+        );
+    }
+    assert!(
+        underestimates.is_empty(),
+        "lifecycle delete estimates must cover applied fees: {underestimates:?}"
+    );
+}
+
+#[test]
+fn should_cover_the_owned_history_tree_read_in_the_delete_estimate() {
+    use crate::fees::op::LowLevelDriveOperation;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::GroveDb;
+
+    let version = latest();
+    let (drive, contract, id) = setup_history(1, [7; 32]);
+    let mut history_root =
+        document_history_path(contract.id_ref().as_bytes(), "person", id.as_bytes());
+    history_root.pop();
+    let tree = drive
+        .grove
+        .get_raw(
+            history_root.as_slice().into(),
+            id.as_bytes(),
+            None,
+            &version.drive.grove_version,
+        )
+        .value
+        .unwrap();
+    let flags_size = tree.get_flags().as_ref().unwrap().len() as u32;
+    assert!(flags_size >= StorageFlags::approximate_size(true, None));
+    let expected = GroveDb::average_case_for_get_tree(
+        &KeyInfoPath::from_known_owned_path(history_root),
+        &KeyInfo::KnownKey(id.to_vec()),
+        flags_size,
+        TreeType::ProvableCountTree,
+        TreeType::NormalTree,
+        &version.drive.grove_version,
+    )
+    .unwrap();
+    let operations = drive
+        .delete_document_for_contract_operations(
+            id,
+            &contract,
+            document_type_of(&contract),
+            &BlockInfo::default_with_time(5000),
+            Some([8; 32].into()),
+            None,
+            &mut Some(EstimatedLayers::new()),
+            None,
+            version,
+        )
+        .unwrap();
+    let Some(LowLevelDriveOperation::CalculatedCostOperation(estimated)) = operations.get(1) else {
+        panic!("the second read loads the per-document history tree");
+    };
+    println!(
+        "history tree read: estimated loaded={} expected loaded={}",
+        estimated.storage_loaded_bytes, expected.storage_loaded_bytes
+    );
+    assert!(
+        estimated.storage_loaded_bytes >= expected.storage_loaded_bytes,
+        "the history aggregate read must price its creator-owned flags"
     );
 }
