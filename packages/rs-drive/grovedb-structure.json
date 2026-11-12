@@ -3121,6 +3121,51 @@
                         ]
                       },
                       {
+                        "id": "contracts.contract.documents.document_type.lifecycle",
+                        "key": {
+                          "type": "fixed",
+                          "hex": "01",
+                          "label": "Lifecycle",
+                          "constant": "DOCUMENT_LIFECYCLE_TREE_KEY"
+                        },
+                        "kinds": [
+                          "Tree"
+                        ],
+                        "since": 15,
+                        "presence": "lazy",
+                        "source": "packages/rs-drive/src/drive/document/paths.rs",
+                        "description": "An unflagged normal tree of lifecycle records for a type that keeps history. Created on the first delete and retained after all records are erased.",
+                        "children": [
+                          {
+                            "id": "contracts.contract.documents.document_type.lifecycle.record",
+                            "key": {
+                              "type": "dynamic",
+                              "name": "document_id",
+                              "matcher": {
+                                "type": "len",
+                                "len": 32
+                              },
+                              "encoding": "identifier32",
+                              "description": "The deleted document id"
+                            },
+                            "kinds": [
+                              "Item"
+                            ],
+                            "flags": [
+                              "EpochOwned",
+                              "None"
+                            ],
+                            "flags_note": "The deletion's storage payer, including its gas sponsor when sponsored; no flags when the caller supplies no payer. Erase refunds the record's stored flag owner.",
+                            "value": "versioned DPP DocumentLifecycleRecord",
+                            "since": 15,
+                            "presence": "lazy",
+                            "source": "packages/rs-dpp/src/document/lifecycle/mod.rs",
+                            "description": "One document's lifecycle record, present while Deleted or Erasing. The terminal erase removes it together with the remaining history.",
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
                         "id": "contracts.contract.documents.document_type.history",
                         "key": {
                           "type": "fixed",
