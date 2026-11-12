@@ -28,7 +28,7 @@ use dash_context_provider::SpvSourceLease;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use platform_wallet::changeset::PlatformWalletPersistence;
-use platform_wallet::PlatformWalletManager;
+use platform_wallet::{claim_spv_quorum_lease, PlatformWalletManager};
 use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -188,10 +188,11 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
 /// Create a manager from an owning SDK handle, with the persistence and event
 /// extensions of [`platform_wallet_manager_create_with_extensions`].
 ///
-/// When the SDK was created with an SPV-capable context provider
-/// (`dash_sdk_create_spv` or `dash_sdk_create_adaptive`), the manager serves
-/// that provider's SPV quorum keys from its own SPV client for as long as the
-/// manager lives. Only one manager can serve an SDK; a second one fails here.
+/// When the SDK's current context provider takes quorum keys from an SPV
+/// client, as the providers `dash_sdk_create_spv` and
+/// `dash_sdk_create_adaptive` build do, the manager serves them from its own
+/// SPV client for as long as the manager lives. Only one manager can serve an
+/// SDK; a second one fails here.
 ///
 /// The SDK handle is borrowed only for this synchronous call. The manager
 /// retains an `Sdk` clone, never the raw handle. Context ownership follows
@@ -220,24 +221,8 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
     }
     // Claimed before the manager exists, so a refusal never takes ownership
     // of the host's callback contexts.
-    let spv_quorum_lease = match rs_sdk_ffi::dash_sdk_spv_source_slot(sdk_handle) {
-        Ok(Some(slot)) => match slot.claim() {
-            Ok(lease) => Some(lease),
-            Err(error) => {
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                    error.to_string(),
-                );
-            }
-        },
-        Ok(None) => None,
-        Err(message) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                message,
-            );
-        }
-    };
+    let spv_quorum_lease =
+        unwrap_result_or_return!(claim_spv_quorum_lease(&*(sdk_ptr as *const Sdk)));
 
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
@@ -1007,6 +992,13 @@ mod tests {
     use crate::contact_persistence::{
         ContactRequestRemovalFFI, PrivateContactRequestsPositionFFI, PrivateShieldedAddressFFI,
     };
+    use dash_context_provider::{
+        ContextProvider, ContextProviderError, ContractSource, SpvContextProvider,
+    };
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+    use std::ffi::{CStr, CString};
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1269,6 +1261,117 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         assert_eq!(persistence_releases.load(Ordering::SeqCst), 1);
         assert_eq!(event_releases.load(Ordering::SeqCst), 1);
+    }
+
+    /// An SDK handle `create` builds for regtest, on loopback addresses no
+    /// test waits on: a strict SPV SDK only parses them.
+    fn regtest_sdk_handle(
+        create: unsafe extern "C" fn(*const rs_sdk_ffi::DashSDKConfig) -> rs_sdk_ffi::DashSDKResult,
+    ) -> *mut rs_sdk_ffi::SDKHandle {
+        let loopback = CString::new("http://127.0.0.1:1").expect("address");
+        let config = rs_sdk_ffi::DashSDKConfig {
+            network: rs_sdk_ffi::FFINetwork::Regtest,
+            dapi_addresses: loopback.as_ptr(),
+            skip_asset_lock_proof_verification: false,
+            request_retry_count: 1,
+            request_timeout_ms: 1_000,
+            quorum_url: loopback.as_ptr(),
+            platform_version: 0,
+        };
+        let result = unsafe { create(&config) };
+        assert!(result.error.is_null(), "the SDK must build offline");
+        result.data as *mut rs_sdk_ffi::SDKHandle
+    }
+
+    /// `platform_wallet_manager_create_with_sdk` with no capabilities or
+    /// extensions declared, returning the result's code and message.
+    fn create_with_sdk(
+        sdk: *mut rs_sdk_ffi::SDKHandle,
+        persistence: &PersistenceCallbacks,
+        events: &EventHandlerCallbacks,
+        out_handle: *mut Handle,
+    ) -> (PlatformWalletFFIResultCode, String) {
+        let capabilities = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: 0,
+        };
+        let persistence_extension = PersistenceCallbacksExtension::default();
+        let event_extension = EventHandlerCallbacksExtension::default();
+        let mut result = unsafe {
+            platform_wallet_manager_create_with_sdk(
+                sdk,
+                persistence,
+                events,
+                &capabilities,
+                &persistence_extension,
+                &event_extension,
+                out_handle,
+            )
+        };
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    /// No contracts, for a strict SPV provider whose contracts no test reads.
+    struct NoContracts;
+
+    impl ContractSource for NoContracts {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn register_data_contract(&self, _contract: Arc<DataContract>) {}
+    }
+
+    /// The manager serves the SPV slot of its SDK's current provider. Native
+    /// code can replace the provider an FFI-built SDK started with; a manager
+    /// serving the replaced provider's slot would serve keys nobody reads,
+    /// while the current provider's lookups fail closed.
+    #[test]
+    fn should_claim_the_slot_of_a_provider_set_after_build() {
+        let sdk_handle = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+        let sdk = unsafe { &*(rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle) as *const Sdk) };
+        let replacement = SpvContextProvider::new(Arc::new(NoContracts), sdk.network);
+        let slot = replacement.spv_source_slot().expect("an SPV slot");
+        sdk.set_context_provider(replacement)
+            .expect("a provider for the SDK's network");
+
+        let mut handle = 0;
+        let (code, message) = create_with_sdk(
+            sdk_handle,
+            &persistence_callbacks(),
+            &event_callbacks(),
+            &mut handle,
+        );
+        assert_eq!(code, PlatformWalletFFIResultCode::Success, "{message}");
+        assert!(
+            slot.claim().is_err(),
+            "the manager must serve the current provider's slot"
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk_handle) };
     }
 
     fn query(handle: Handle) -> PersistenceCapabilitiesFFI {

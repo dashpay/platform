@@ -13,6 +13,8 @@ pub mod platform_address_sync;
 pub mod shielded_sync;
 #[cfg(feature = "spv-context")]
 mod spv_quorums;
+#[cfg(feature = "spv-context")]
+pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
 mod wallet_lifecycle;
 

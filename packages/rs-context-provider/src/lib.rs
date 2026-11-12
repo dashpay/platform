@@ -10,16 +10,18 @@ pub mod adaptive;
 pub mod contract_source;
 pub mod error;
 pub mod provider;
+pub mod quorum_source;
 pub mod spv;
 #[cfg(test)]
 mod test_support;
 
-pub use adaptive::{AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode};
+pub use adaptive::AdaptiveContextProvider;
 pub use contract_source::ContractSource;
 pub use error::ContextProviderError;
 pub use provider::{
     platform_activation_height, ContextProvider, DataContractProvider, QuorumKeyFuture,
 };
+pub use quorum_source::{ContextProviderMode, QuorumKeySource};
 pub use spv::{Readiness, SpvContextProvider, SpvSourceLease, SpvSourceSlot, SpvSourceSlotTaken};
 
 #[cfg(feature = "mocks")]

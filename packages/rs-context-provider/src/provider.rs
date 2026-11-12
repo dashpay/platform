@@ -1,4 +1,5 @@
 use crate::error::ContextProviderError;
+use crate::{ContextProviderMode, QuorumKeySource, SpvSourceSlot};
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
@@ -204,6 +205,36 @@ pub trait ContextProvider: Send + Sync {
         _core_chain_locked_height: u32,
     ) {
     }
+
+    /// The source this provider answers quorum lookups from right now, for
+    /// diagnostics: its only source, or, for a provider that switches between
+    /// sources, the one it would ask now. For one that chooses by whether a
+    /// published SPV client is ready, a client that cannot say counts as not
+    /// ready, so this reports the trusted source then.
+    ///
+    /// The default, `None`, makes no claim. A provider wrapping another
+    /// forwards this and the two methods below, or the wrapped provider
+    /// reads as one that says nothing, has no mode and no SPV slot.
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        None
+    }
+
+    /// Change which source later quorum lookups use, on a provider that
+    /// switches between sources at run time.
+    ///
+    /// The default refuses with [`ContextProviderError::Config`]: a provider
+    /// with a single source has no mode.
+    fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
+        Err(ContextProviderError::Config(format!(
+            "the context provider has no quorum mode to set to {mode:?}"
+        )))
+    }
+
+    /// The slot an SPV client publishes this provider's quorum keys into, if
+    /// it takes them from one. The default, `None`, takes none.
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        None
+    }
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -266,6 +297,18 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     ) {
         self.as_ref()
             .core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        self.as_ref().quorum_source()
+    }
+
+    fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
+        self.as_ref().set_quorum_mode(mode)
+    }
+
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        self.as_ref().spv_source_slot()
     }
 }
 
@@ -339,6 +382,21 @@ where
     ) {
         let lock = self.lock().expect("lock poisoned");
         lock.core_height_verified(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.quorum_source()
+    }
+
+    fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.set_quorum_mode(mode)
+    }
+
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.spv_source_slot()
     }
 }
 
@@ -621,6 +679,20 @@ mod tests {
             assert_eq!(provider.network(), Some(Network::Testnet));
             assert!(provider.requires_proofs());
         }
+    }
+
+    /// A provider that does not say where its quorum keys come from is
+    /// reported as custom, has no mode to change and no SPV slot: the FFI
+    /// must not present it as trusted, nor claim a mode change it ignored.
+    #[test]
+    fn should_report_no_quorum_source_mode_or_slot_by_default() {
+        let provider = FetchingProvider::default();
+        assert_eq!(provider.quorum_source(), None);
+        assert!(matches!(
+            provider.set_quorum_mode(ContextProviderMode::Spv),
+            Err(ContextProviderError::Config(_))
+        ));
+        assert!(provider.spv_source_slot().is_none());
     }
 
     /// The proof verifier reports verified heights through the same

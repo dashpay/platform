@@ -9,7 +9,9 @@ use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::platform_activation_height;
-use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use dash_context_provider::{
+    ContextProvider, ContextProviderError, QuorumKeyFuture, QuorumKeySource,
+};
 use dpp::bls::PublicKey;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
@@ -1037,12 +1039,17 @@ impl ContextProvider for TrustedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         Ok(platform_activation_height(self.network))
     }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        Some(QuorumKeySource::Trusted)
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
+    use dash_context_provider::ContextProviderMode;
     use data_contracts::SystemDataContract;
     use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
@@ -2230,6 +2237,26 @@ pub(crate) mod tests {
                 reserved
             );
         }
+    }
+
+    /// A trusted SDK's diagnostics read the source from its provider. One
+    /// that said nothing would be reported as custom, and one with a mode
+    /// would let a caller believe it could switch to SPV.
+    #[test]
+    fn should_report_its_trusted_source_and_refuse_a_mode_change() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(1).expect("non-zero cache size"),
+        )
+        .expect("offline provider");
+
+        assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Trusted));
+        assert!(matches!(
+            provider.set_quorum_mode(ContextProviderMode::Spv),
+            Err(ContextProviderError::Config(_))
+        ));
+        assert!(provider.spv_source_slot().is_none());
     }
 
     /// Clones, the detached copy a quorum refresh runs on, and the resolver

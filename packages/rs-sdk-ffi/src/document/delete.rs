@@ -95,25 +95,8 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from the SDK's local contract cache
-        let data_contract = if let Some(ref provider) = wrapper.local_contracts {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in the local contract cache",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No local contract cache configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
@@ -278,25 +261,8 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from the SDK's local contract cache
-        let data_contract = if let Some(ref provider) = wrapper.local_contracts {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in the local contract cache",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No local contract cache configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;

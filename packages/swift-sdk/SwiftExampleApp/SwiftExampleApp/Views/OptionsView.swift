@@ -451,6 +451,10 @@ struct OptionsView: View {
                             Label("Trusted (HTTP)", systemImage: "network")
                                 .foregroundColor(.orange)
                                 .font(.caption.weight(.semibold))
+                        case .custom:
+                            Label("Custom", systemImage: "questionmark.circle")
+                                .foregroundColor(.secondary)
+                                .font(.caption.weight(.semibold))
                         }
                     }
                     .help("Which quorum public-key source the SDK currently uses to verify Platform proofs. Switches to SPV automatically once the masternode list has synced (start SPV sync from the Core tab).")

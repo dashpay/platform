@@ -1,10 +1,10 @@
 //! SDK status query
 
-use dash_context_provider::AdaptiveContextProviderSource;
+use dash_context_provider::QuorumKeySource;
 use serde_json::json;
 use std::ffi::CString;
 
-use crate::sdk::{quorum_source, SDKWrapper};
+use crate::sdk::{quorum_source, FixedContextProviderKind, SDKWrapper};
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 
@@ -13,12 +13,14 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 ///
 /// - `mode` is the context provider the SDK was built with: `"trusted"`,
 ///   `"spv"`, `"adaptive"`, or `"custom"` for a provider this crate did not
-///   build (caller-supplied or mock).
-/// - `quorumSource` is the source answering quorum lookups now: `"trusted"`
-///   or `"spv"`. An adaptive SDK reports its live routing choice. It is
-///   `null` for a custom provider.
-/// - `quorumCount` is the number of quorums in the trusted provider's cache,
-///   whichever source answers; `0` without a trusted provider.
+///   build (caller-supplied or mock). It stays so after native code replaces
+///   the provider.
+/// - `quorumSource` is the source the SDK's current provider answers quorum
+///   lookups from now: `"trusted"` or `"spv"`; an adaptive provider reports
+///   its live choice. It is `null` for a provider that does not say.
+/// - `quorumCount` is the number of quorums in the cache of the trusted
+///   provider the SDK was built with, whichever source answers; `0` without
+///   one.
 ///
 /// # Safety
 /// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
@@ -41,20 +43,15 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
 
     let network_str = wrapper.sdk.network.to_string();
 
-    // An adaptive SDK also holds a trusted provider, so it is checked first,
-    // in the order `quorum_source` uses.
-    let mode = if wrapper.adaptive_provider.is_some() {
-        "adaptive"
-    } else if wrapper.trusted_provider.is_some() {
-        "trusted"
-    } else if wrapper.spv_source_slot.is_some() {
-        "spv"
-    } else {
-        "custom"
+    let mode = match wrapper.provider_kind {
+        Some(FixedContextProviderKind::Adaptive) => "adaptive",
+        Some(FixedContextProviderKind::Trusted) => "trusted",
+        Some(FixedContextProviderKind::Spv) => "spv",
+        None => "custom",
     };
     let quorum_source = quorum_source(wrapper).map(|source| match source {
-        AdaptiveContextProviderSource::Trusted => "trusted",
-        AdaptiveContextProviderSource::Spv => "spv",
+        QuorumKeySource::Trusted => "trusted",
+        QuorumKeySource::Spv => "spv",
     });
 
     let quorum_count = wrapper
@@ -107,15 +104,17 @@ mod tests {
     use std::ffi::{CStr, CString};
 
     use dash_context_provider::ContextProviderMode;
+    use dash_sdk::platform::MockContextProvider;
+    use dash_sdk::Sdk;
     use serde_json::Value;
 
     use super::dash_sdk_get_status;
-    use crate::sdk::SDKWrapper;
+    use crate::sdk::{build_trusted_provider, SDKWrapper};
     use crate::types::{DashSDKConfig, Network, SDKHandle};
     use crate::{
         dash_sdk_create_adaptive, dash_sdk_create_spv, dash_sdk_create_trusted, dash_sdk_destroy,
-        dash_sdk_error_free, dash_sdk_set_context_provider_mode, dash_sdk_string_free,
-        DashSDKResult,
+        dash_sdk_error_free, dash_sdk_get_inner_sdk_ptr, dash_sdk_set_context_provider_mode,
+        dash_sdk_string_free, DashSDKResult,
     };
 
     /// A fixed-provider SDK built from `create`. Nothing connects: the DAPI
@@ -220,5 +219,45 @@ mod tests {
         assert_eq!(status_of_custom["mode"], "custom");
         assert!(status_of_custom["quorumSource"].is_null());
         unsafe { dash_sdk_destroy(custom) };
+    }
+
+    /// `quorumSource` is the source of the SDK's current provider. After
+    /// native code replaces the provider an adaptive SDK was built with, it
+    /// follows the replacement, while `mode` still names the provider the SDK
+    /// was built with.
+    #[test]
+    fn should_report_the_source_of_a_provider_set_after_build() {
+        let quorum_url = CString::new("http://127.0.0.1:1").expect("quorum URL");
+        let handle = sdk(
+            dash_sdk_create_adaptive,
+            Network::Regtest,
+            Some(&quorum_url),
+        );
+        let set =
+            unsafe { dash_sdk_set_context_provider_mode(handle, ContextProviderMode::Spv as u8) };
+        assert!(set.error.is_null(), "setting the mode must succeed");
+
+        let trusted =
+            build_trusted_provider(Network::Regtest, Some("http://127.0.0.1:1".to_string()))
+                .unwrap_or_else(|_| panic!("offline trusted provider"));
+        let inner = unsafe { &*(dash_sdk_get_inner_sdk_ptr(handle) as *const Sdk) };
+        inner
+            .set_context_provider(trusted)
+            .expect("a provider the SDK accepts");
+
+        let replaced = status(handle);
+        assert_eq!(replaced["mode"], "adaptive");
+        assert_eq!(replaced["quorumSource"], "trusted");
+
+        inner
+            .set_context_provider(MockContextProvider::new())
+            .expect("a provider the SDK accepts");
+        let silent = status(handle);
+        assert_eq!(silent["mode"], "adaptive");
+        assert!(
+            silent["quorumSource"].is_null(),
+            "a provider that names no source must not be reported as one"
+        );
+        unsafe { dash_sdk_destroy(handle) };
     }
 }

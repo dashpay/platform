@@ -12,46 +12,9 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
 use crate::{
-    platform_activation_height, ContextProvider, ContextProviderError, ContractSource,
-    QuorumKeyFuture, SpvSourceSlot,
+    platform_activation_height, ContextProvider, ContextProviderError, ContextProviderMode,
+    ContractSource, QuorumKeyFuture, QuorumKeySource, SpvSourceSlot,
 };
-
-/// Where an [`AdaptiveContextProvider`] takes quorum keys from.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum ContextProviderMode {
-    /// SPV while its source is published and synced, trusted whenever it is
-    /// not. The fallback can be forced, see [`AdaptiveContextProvider`].
-    Auto = 0,
-    /// SPV only; lookups fail whenever its source is not published and
-    /// synced, and never fall back to the trusted provider.
-    Spv = 1,
-    /// The trusted provider only.
-    Trusted = 2,
-}
-
-impl TryFrom<u8> for ContextProviderMode {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Auto),
-            1 => Ok(Self::Spv),
-            2 => Ok(Self::Trusted),
-            _ => Err(()),
-        }
-    }
-}
-
-/// The source an [`AdaptiveContextProvider`] would ask right now.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum AdaptiveContextProviderSource {
-    /// The trusted provider.
-    Trusted = 0,
-    /// The SPV client.
-    Spv = 1,
-}
 
 /// Routes each quorum lookup to an SPV client or a trusted provider by
 /// [`ContextProviderMode`]; contracts and tokens come from a
@@ -105,16 +68,6 @@ impl AdaptiveContextProvider {
         })
     }
 
-    /// The slot an SPV client publishes its quorum keys into.
-    pub fn source_slot(&self) -> Arc<SpvSourceSlot> {
-        Arc::clone(&self.spv)
-    }
-
-    /// Change where later lookups go.
-    pub fn set_mode(&self, mode: ContextProviderMode) {
-        self.mode.store(mode as u8, Ordering::Release);
-    }
-
     /// Where lookups go.
     pub fn mode(&self) -> ContextProviderMode {
         ContextProviderMode::try_from(self.mode.load(Ordering::Acquire))
@@ -122,12 +75,12 @@ impl AdaptiveContextProvider {
     }
 
     /// The source a lookup would ask right now.
-    pub fn active_source(&self) -> AdaptiveContextProviderSource {
+    fn current_source(&self) -> QuorumKeySource {
         match self.mode() {
-            ContextProviderMode::Trusted => AdaptiveContextProviderSource::Trusted,
-            ContextProviderMode::Spv => AdaptiveContextProviderSource::Spv,
-            ContextProviderMode::Auto if self.spv.is_ready() => AdaptiveContextProviderSource::Spv,
-            ContextProviderMode::Auto => AdaptiveContextProviderSource::Trusted,
+            ContextProviderMode::Trusted => QuorumKeySource::Trusted,
+            ContextProviderMode::Spv => QuorumKeySource::Spv,
+            ContextProviderMode::Auto if self.spv.is_ready() => QuorumKeySource::Spv,
+            ContextProviderMode::Auto => QuorumKeySource::Trusted,
         }
     }
 }
@@ -173,13 +126,13 @@ impl ContextProvider for AdaptiveContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Option<QuorumKeyFuture> {
-        match self.active_source() {
-            AdaptiveContextProviderSource::Trusted => self.trusted.fetch_quorum_public_key(
+        match self.current_source() {
+            QuorumKeySource::Trusted => self.trusted.fetch_quorum_public_key(
                 quorum_type,
                 quorum_hash,
                 core_chain_locked_height,
             ),
-            AdaptiveContextProviderSource::Spv => None,
+            QuorumKeySource::Spv => None,
         }
     }
 
@@ -215,6 +168,22 @@ impl ContextProvider for AdaptiveContextProvider {
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         self.contracts.get_token_configuration(token_id)
     }
+
+    /// In [`ContextProviderMode::Auto`], SPV only while the client published
+    /// into the slot says it is ready; a client that cannot say counts as not
+    /// ready, as it does for lookups.
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        Some(self.current_source())
+    }
+
+    fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
+        self.mode.store(mode as u8, Ordering::Release);
+        Ok(())
+    }
+
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        Some(Arc::clone(&self.spv))
+    }
 }
 
 #[cfg(test)]
@@ -227,11 +196,11 @@ mod tests {
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dpp::version::PlatformVersion;
 
-    use super::{AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode};
+    use super::AdaptiveContextProvider;
     use crate::test_support::{
-        failing_quorums, is_unavailable, publish, quorum_key, quorums, TestContracts,
+        failing_quorums, is_unavailable, publish, quorum_key, quorums, slot_of, TestContracts,
     };
-    use crate::{ContextProvider, ContextProviderError};
+    use crate::{ContextProvider, ContextProviderError, ContextProviderMode, QuorumKeySource};
     use crate::{SpvContextProvider, SpvSourceSlot};
 
     fn adaptive() -> AdaptiveContextProvider {
@@ -246,15 +215,12 @@ mod tests {
     #[test]
     fn should_route_quorum_lookups_by_mode_and_readiness() {
         let adaptive = adaptive();
-        let slot = adaptive.source_slot();
+        let slot = slot_of(&adaptive);
 
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
-        assert_eq!(
-            adaptive.active_source(),
-            AdaptiveContextProviderSource::Trusted
-        );
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
 
-        adaptive.set_mode(ContextProviderMode::Spv);
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
         assert!(is_unavailable(quorum_key(&adaptive)));
 
         let ready = Arc::new(AtomicBool::new(false));
@@ -268,30 +234,59 @@ mod tests {
             is_unavailable(quorum_key(&adaptive)),
             "unready SPV must fail closed"
         );
-        assert_eq!(adaptive.active_source(), AdaptiveContextProviderSource::Spv);
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Spv));
 
         ready.store(true, Ordering::Release);
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
 
-        adaptive.set_mode(ContextProviderMode::Trusted);
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
 
-        adaptive.set_mode(ContextProviderMode::Auto);
+        adaptive.set_quorum_mode(ContextProviderMode::Auto).unwrap();
         ready.store(false, Ordering::Release);
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x11; 48]);
-        assert_eq!(
-            adaptive.active_source(),
-            AdaptiveContextProviderSource::Trusted
-        );
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
         ready.store(true, Ordering::Release);
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
-        assert_eq!(adaptive.active_source(), AdaptiveContextProviderSource::Spv);
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Spv));
+    }
+
+    /// The SDK keeps its provider behind wrappers, and the FFI asks the
+    /// provider it reaches through them for its source, changes its mode and
+    /// takes its SPV slot. A wrapper answering with the defaults would report
+    /// a custom provider, refuse a mode change the provider supports, and
+    /// hand out no slot, so no wallet manager could serve it SPV keys.
+    #[test]
+    fn should_answer_for_its_quorum_source_through_every_wrapper() {
+        let inner: Arc<dyn ContextProvider> = Arc::new(adaptive());
+        let boxed: Arc<Box<dyn ContextProvider>> =
+            Arc::new(Box::new(Arc::clone(&inner)) as Box<dyn ContextProvider>);
+        let mutex = Mutex::new(Arc::clone(&inner));
+        let wrappers: [&dyn ContextProvider; 3] = [&inner, &boxed, &mutex];
+        let slot = slot_of(&inner);
+
+        for provider in wrappers {
+            provider
+                .set_quorum_mode(ContextProviderMode::Spv)
+                .expect("the adaptive provider has a mode");
+            assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Spv));
+            provider
+                .set_quorum_mode(ContextProviderMode::Trusted)
+                .expect("the adaptive provider has a mode");
+            assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Trusted));
+            assert!(Arc::ptr_eq(
+                &provider.spv_source_slot().expect("an SPV slot"),
+                &slot
+            ));
+        }
     }
 
     #[test]
     fn should_read_contracts_and_tokens_from_the_contract_source_in_every_mode() {
         let adaptive = adaptive();
-        let _lease = publish(&adaptive.source_slot(), quorums("spv", 0x22), true);
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
         let id = Identifier::new([7; 32]);
 
         for mode in [
@@ -299,7 +294,7 @@ mod tests {
             ContextProviderMode::Spv,
             ContextProviderMode::Trusted,
         ] {
-            adaptive.set_mode(mode);
+            adaptive.set_quorum_mode(mode).unwrap();
             let contract_error = adaptive
                 .get_data_contract(&id, PlatformVersion::latest())
                 .unwrap_err()
@@ -316,7 +311,7 @@ mod tests {
     #[test]
     fn should_not_retry_a_ready_spv_miss_against_trusted() {
         let adaptive = adaptive();
-        let _lease = publish(&adaptive.source_slot(), failing_quorums("spv"), true);
+        let _lease = publish(&slot_of(&adaptive), failing_quorums("spv"), true);
 
         let error = quorum_key(&adaptive).unwrap_err().to_string();
         assert!(error.contains("spv quorum miss"));
@@ -335,22 +330,24 @@ mod tests {
         let fetched = fetch(&adaptive).expect("Auto without SPV fetches from trusted");
         assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
 
-        adaptive.set_mode(ContextProviderMode::Spv);
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
         assert!(
             fetch(&adaptive).is_none(),
             "SPV without a source must not fetch"
         );
 
-        let _lease = publish(&adaptive.source_slot(), quorums("spv", 0x22), true);
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
         assert!(fetch(&adaptive).is_none(), "SPV must not fetch");
 
-        adaptive.set_mode(ContextProviderMode::Auto);
+        adaptive.set_quorum_mode(ContextProviderMode::Auto).unwrap();
         assert!(
             fetch(&adaptive).is_none(),
             "Auto on ready SPV must not fetch"
         );
 
-        adaptive.set_mode(ContextProviderMode::Trusted);
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
         let fetched = fetch(&adaptive).expect("Trusted fetches");
         assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
     }
@@ -363,13 +360,13 @@ mod tests {
     fn should_report_an_unusable_spv_source_without_blaming_the_node() {
         let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
         let adaptive = adaptive();
-        adaptive.set_mode(ContextProviderMode::Spv);
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
 
         assert!(is_unavailable(quorum_key(&fixed)));
         assert!(is_unavailable(quorum_key(&adaptive)));
 
-        let unready = publish(&fixed.source_slot(), quorums("spv", 0x22), false);
-        let adaptive_unready = publish(&adaptive.source_slot(), quorums("spv", 0x22), false);
+        let unready = publish(&slot_of(&fixed), quorums("spv", 0x22), false);
+        let adaptive_unready = publish(&slot_of(&adaptive), quorums("spv", 0x22), false);
         assert!(is_unavailable(quorum_key(&fixed)));
         assert!(is_unavailable(quorum_key(&adaptive)));
         drop((unready, adaptive_unready));
@@ -382,8 +379,8 @@ mod tests {
             );
             lease
         };
-        let _fixed_lease = failing_readiness(&fixed.source_slot());
-        let _adaptive_lease = failing_readiness(&adaptive.source_slot());
+        let _fixed_lease = failing_readiness(&slot_of(&fixed));
+        let _adaptive_lease = failing_readiness(&slot_of(&adaptive));
         assert!(is_unavailable(quorum_key(&fixed)));
         assert!(is_unavailable(quorum_key(&adaptive)));
     }
@@ -520,7 +517,7 @@ mod tests {
             Network::Testnet,
         )
         .expect("a trusted provider without a network");
-        let _lease = publish(&adaptive.source_slot(), quorums("spv", 0x22), true);
+        let _lease = publish(&slot_of(&adaptive), quorums("spv", 0x22), true);
         assert_eq!(quorum_key(&adaptive).unwrap(), [0x22; 48]);
 
         adaptive.core_height_verified(1, [2; 32], 3);
@@ -532,16 +529,13 @@ mod tests {
     #[test]
     fn should_fall_back_to_trusted_in_auto_mode_when_readiness_is_unknown() {
         let adaptive = adaptive();
-        let lease = adaptive.source_slot().claim().expect("empty slot");
+        let lease = slot_of(&adaptive).claim().expect("empty slot");
         lease.publish(
             quorums("spv", 0x22),
             Arc::new(|| Err(ContextProviderError::Generic("no runtime".to_string()))),
         );
 
-        assert_eq!(
-            adaptive.active_source(),
-            AdaptiveContextProviderSource::Trusted
-        );
+        assert_eq!(adaptive.quorum_source(), Some(QuorumKeySource::Trusted));
         assert_eq!(quorum_key(&adaptive).expect("trusted key"), [0x11; 48]);
     }
 }

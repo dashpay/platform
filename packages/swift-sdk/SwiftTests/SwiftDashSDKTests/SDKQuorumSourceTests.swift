@@ -15,4 +15,12 @@ final class SDKQuorumSourceTests: XCTestCase {
 
         XCTAssertEqual(sdk.quorumSource, .spv)
     }
+
+    /// A provider that does not say where its quorum keys come from, here the
+    /// mock's, must not be shown as the trusted service.
+    func testShouldReportCustomForAProviderThatNamesNoSource() throws {
+        let sdk = try SDK(mockVectorsDirectory: nil)
+
+        XCTAssertEqual(sdk.quorumSource, .custom)
+    }
 }

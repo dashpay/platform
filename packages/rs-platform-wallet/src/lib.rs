@@ -43,6 +43,8 @@ pub use key_wallet_manager::DerivedAddress;
 pub use address_paths::{
     derivation_path_for_derived_address, derivation_path_string_for_derived_address,
 };
+#[cfg(feature = "spv-context")]
+pub use manager::claim_spv_quorum_lease;
 pub use manager::dashpay_sync::{
     DashPaySyncManager, DashPaySyncSummary, WalletDashPaySyncOutcome,
     DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,

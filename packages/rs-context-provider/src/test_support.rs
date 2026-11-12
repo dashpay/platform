@@ -128,6 +128,11 @@ pub(super) fn publish(
     lease
 }
 
+/// The SPV slot `provider` takes quorum keys from.
+pub(super) fn slot_of(provider: &impl ContextProvider) -> Arc<SpvSourceSlot> {
+    provider.spv_source_slot().expect("an SPV slot")
+}
+
 pub(super) fn is_unavailable(result: Result<[u8; 48], ContextProviderError>) -> bool {
     matches!(
         result,

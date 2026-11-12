@@ -6,10 +6,15 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 
 use super::SpvSourceSlot;
-use crate::{platform_activation_height, ContextProvider, ContextProviderError, ContractSource};
+use crate::{
+    platform_activation_height, ContextProvider, ContextProviderError, ContractSource,
+    QuorumKeySource,
+};
 
 /// Strict SPV: quorum keys come only from the SPV client published into
-/// [`Self::source_slot`]; contracts and tokens come from a [`ContractSource`].
+/// [`ContextProvider::spv_source_slot`]; contracts and tokens come from a
+/// [`ContractSource`]. It has no mode: every
+/// [`ContextProvider::set_quorum_mode`] is refused.
 pub struct SpvContextProvider {
     spv: Arc<SpvSourceSlot>,
     contracts: Arc<dyn ContractSource>,
@@ -25,11 +30,6 @@ impl SpvContextProvider {
             contracts,
             network,
         }
-    }
-
-    /// The slot an SPV client publishes its quorum keys into.
-    pub fn source_slot(&self) -> Arc<SpvSourceSlot> {
-        Arc::clone(&self.spv)
     }
 }
 
@@ -73,6 +73,14 @@ impl ContextProvider for SpvContextProvider {
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         self.contracts.get_token_configuration(token_id)
     }
+
+    fn quorum_source(&self) -> Option<QuorumKeySource> {
+        Some(QuorumKeySource::Spv)
+    }
+
+    fn spv_source_slot(&self) -> Option<Arc<SpvSourceSlot>> {
+        Some(Arc::clone(&self.spv))
+    }
 }
 
 #[cfg(test)]
@@ -84,13 +92,15 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use super::SpvContextProvider;
-    use crate::test_support::{is_unavailable, quorum_key, quorums, TestContracts};
-    use crate::ContextProvider;
+    use crate::test_support::{
+        is_unavailable, publish, quorum_key, quorums, slot_of, TestContracts,
+    };
+    use crate::{ContextProvider, ContextProviderError, ContextProviderMode, QuorumKeySource};
 
     #[test]
     fn should_answer_strict_spv_lookups_only_from_the_published_source() {
         let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
-        let slot = fixed.source_slot();
+        let slot = slot_of(&fixed);
 
         assert!(is_unavailable(quorum_key(&fixed)));
         let lease = slot.claim().unwrap();
@@ -113,5 +123,31 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("local token route"));
+    }
+
+    /// Strict SPV has one quorum source and no mode. It reports SPV whether
+    /// or not a client is published, and refuses every mode change, Trusted
+    /// included: nothing reaching it through the SDK can turn it onto
+    /// trusted quorum keys.
+    #[test]
+    fn should_report_spv_and_refuse_every_mode_change() {
+        let fixed = SpvContextProvider::new(Arc::new(TestContracts), Network::Testnet);
+        assert_eq!(fixed.quorum_source(), Some(QuorumKeySource::Spv));
+
+        for mode in [
+            ContextProviderMode::Auto,
+            ContextProviderMode::Spv,
+            ContextProviderMode::Trusted,
+        ] {
+            let refusal = fixed.set_quorum_mode(mode);
+            assert!(
+                matches!(refusal, Err(ContextProviderError::Config(_))),
+                "{mode:?}: {refusal:?}"
+            );
+        }
+
+        let _lease = publish(&slot_of(&fixed), quorums("spv", 0x22), true);
+        assert_eq!(quorum_key(&fixed).unwrap(), [0x22; 48]);
+        assert_eq!(fixed.quorum_source(), Some(QuorumKeySource::Spv));
     }
 }

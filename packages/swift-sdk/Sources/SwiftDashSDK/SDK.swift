@@ -394,6 +394,10 @@ public final class SDK: @unchecked Sendable {
   public enum QuorumSource: Sendable {
     case trusted
     case spv
+    /// The SDK's context provider does not say: one native code set in place
+    /// of the provider this SDK was built with, or the mock's. Also reported
+    /// by an SDK without a native handle.
+    case custom
   }
 
   /// Policy used by the SDK's fixed adaptive context provider.
@@ -409,15 +413,21 @@ public final class SDK: @unchecked Sendable {
     case trusted = 2
   }
 
-  /// The quorum source proof verification uses right now: fixed for a
-  /// Trusted or SPV SDK, and following SPV readiness for an Adaptive SDK in
-  /// Auto mode.
+  /// The quorum source proof verification uses right now, as the native
+  /// SDK's current context provider reports it: fixed for a Trusted or SPV
+  /// SDK, and following SPV readiness for an Adaptive SDK in Auto mode.
   public var quorumSource: QuorumSource {
-    guard let handle else { return .trusted }
-    return dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
+    guard let handle else { return .custom }
+    switch dash_sdk_get_context_provider_source(handle) {
+    case 0: return .trusted
+    case 1: return .spv
+    default: return .custom
+    }
   }
 
-  /// Update quorum routing policy without replacing the SDK context provider.
+  /// Set the quorum mode of the native SDK's context provider without
+  /// replacing it. Only an Adaptive SDK has one; any other refuses, as does
+  /// an Adaptive SDK whose provider native code has replaced.
   public func setQuorumMode(_ mode: QuorumMode) throws {
     guard let handle else {
       throw SDKError.internalError("Cannot set quorum mode: SDK handle is nil")
@@ -480,8 +490,9 @@ public final class SDK: @unchecked Sendable {
     }
   }
 
-  /// Load known contracts into the trusted context provider
-  /// This avoids network calls for these contracts when they're needed
+  /// Load known contracts into the SDK's context provider, which avoids
+  /// network calls for these contracts when they're needed. A provider that
+  /// keeps no contracts ignores them.
   public func loadKnownContracts(_ contracts: [(id: String, data: Data)]) throws {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
@@ -679,14 +690,15 @@ public struct SDKStatus: Codable {
   public let network: String
   /// The context provider the SDK was built with: `"trusted"`, `"spv"`,
   /// `"adaptive"`, or `"custom"` for a provider the native SDK did not build
-  /// (caller-supplied or mock).
-  public let mode: String
-  /// The source answering quorum lookups now, `"trusted"` or `"spv"`; an
-  /// adaptive SDK reports its live routing choice. `nil` for a custom
+  /// (caller-supplied or mock). It stays so after native code replaces the
   /// provider.
+  public let mode: String
+  /// The source the SDK's current provider answers quorum lookups from now,
+  /// `"trusted"` or `"spv"`; an adaptive provider reports its live choice.
+  /// `nil` for a provider that does not say.
   public let quorumSource: String?
-  /// Quorums in the trusted provider's cache, whichever source answers;
-  /// `0` without a trusted provider.
+  /// Quorums in the cache of the trusted provider the SDK was built with,
+  /// whichever source answers; `0` without one.
   public let quorumCount: Int
 }
 

@@ -4,10 +4,31 @@ use std::sync::{Arc, PoisonError};
 
 use dash_context_provider::ContextProvider;
 use dash_context_provider::SpvSourceLease;
+use dash_sdk::Sdk;
 
 use super::PlatformWalletManager;
 use crate::changeset::PlatformWalletPersistence;
+use crate::error::PlatformWalletError;
 use crate::spv_context_provider::SpvQuorumSource;
+
+/// Claim the SPV slot of `sdk`'s current context provider, for a manager to
+/// serve its SPV quorum keys through ([`PlatformWalletManager::serve_spv_quorums`]).
+///
+/// `Ok(None)` when the provider takes no keys from an SPV client. Fails with
+/// [`PlatformWalletError::InvalidParameter`] while another manager holds the
+/// slot: only one manager serves an SDK. The slot is the current provider's,
+/// so a provider set after the SDK was built is the one served.
+pub fn claim_spv_quorum_lease(sdk: &Sdk) -> Result<Option<SpvSourceLease>, PlatformWalletError> {
+    let Some(slot) = sdk
+        .context_provider()
+        .and_then(|provider| provider.spv_source_slot())
+    else {
+        return Ok(None);
+    };
+    slot.claim()
+        .map(Some)
+        .map_err(|taken| PlatformWalletError::InvalidParameter(taken.to_string()))
+}
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Serve this manager's SPV quorum keys through `lease` until
@@ -54,6 +75,9 @@ mod tests {
 
     use dash_context_provider::{ContextProvider, ContextProviderError};
     use dash_context_provider::{ContractSource, SpvContextProvider};
+
+    use super::claim_spv_quorum_lease;
+    use crate::error::PlatformWalletError;
     use dashcore::sml::llmq_type::network::NetworkLLMQExt;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{DataContract, Identifier};
@@ -105,7 +129,7 @@ mod tests {
         let manager = manager();
         let network = manager.sdk.network;
         let provider = SpvContextProvider::new(Arc::new(NoContracts), network);
-        let slot = provider.source_slot();
+        let slot = provider.spv_source_slot().expect("an SPV slot");
 
         manager.serve_spv_quorums(slot.claim().expect("empty slot"));
         assert!(
@@ -131,5 +155,40 @@ mod tests {
             slot.claim().is_ok(),
             "shutdown must free the slot for the next manager"
         );
+    }
+
+    /// A manager serves the SPV slot of its SDK's current provider. Native
+    /// code may replace the provider an SDK was built with; a manager that
+    /// claimed the replaced provider's slot would serve keys nobody reads,
+    /// and the current provider's lookups would fail closed for good.
+    #[test]
+    fn should_claim_the_slot_of_the_sdks_current_provider() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        assert!(
+            claim_spv_quorum_lease(&sdk)
+                .expect("no slot to take")
+                .is_none(),
+            "a provider without an SPV slot has nothing to serve"
+        );
+
+        let replacement = SpvContextProvider::new(Arc::new(NoContracts), sdk.network);
+        let slot = replacement.spv_source_slot().expect("an SPV slot");
+        sdk.set_context_provider(replacement)
+            .expect("a provider for the mock SDK's network");
+
+        let lease = claim_spv_quorum_lease(&sdk)
+            .expect("an empty slot")
+            .expect("the current provider's slot");
+        assert!(slot.claim().is_err(), "the lease must hold that slot");
+        assert!(
+            matches!(
+                claim_spv_quorum_lease(&sdk),
+                Err(PlatformWalletError::InvalidParameter(_))
+            ),
+            "a second manager must not serve the same SDK"
+        );
+
+        drop(lease);
+        assert!(slot.claim().is_ok(), "dropping the lease frees the slot");
     }
 }

@@ -4,6 +4,8 @@ use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::{DataContract, Identifier};
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::AddressList;
@@ -13,8 +15,8 @@ use std::str::FromStr;
 
 use dash_context_provider::ContextProvider;
 use dash_context_provider::{
-    AdaptiveContextProvider, AdaptiveContextProviderSource, ContextProviderMode, ContractSource,
-    SpvContextProvider, SpvSourceSlot,
+    AdaptiveContextProvider, ContextProviderMode, ContractSource, QuorumKeySource,
+    SpvContextProvider,
 };
 use rs_sdk_trusted_context_provider::{LocalContextResolver, TrustedHttpContextProvider};
 
@@ -59,16 +61,21 @@ fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilde
 /// live shared borrow, which is undefined behaviour even if nothing is
 /// written. The one exclusive operation is `dash_sdk_destroy`, whose contract
 /// is that the caller has already stopped every other use of the handle.
+///
+/// Native code can replace the SDK's context provider through
+/// `dash_sdk_get_inner_sdk_ptr`, so every FFI that asks about the provider,
+/// changes it or reads contracts through it goes to `sdk.context_provider()`.
+/// The wrapper keeps only what `dash_sdk_get_status` reports about the
+/// provider the SDK was built with.
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<BigStackRuntime>,
+    /// The trusted provider this SDK was built with, for its cache size in
+    /// `dash_sdk_get_status`.
     pub trusted_provider: Option<Arc<TrustedHttpContextProvider>>,
-    pub adaptive_provider: Option<Arc<AdaptiveContextProvider>>,
-    pub spv_source_slot: Option<Arc<SpvSourceSlot>>,
-    /// The contracts and token configurations this SDK's provider reads, for
-    /// the FFIs that look contracts up or preload them. `None` when the
-    /// provider is the caller's own.
-    pub local_contracts: Option<Arc<LocalContextResolver>>,
+    /// The kind of provider this SDK was built with, for
+    /// `dash_sdk_get_status`. `None` for a provider this crate did not build.
+    pub(crate) provider_kind: Option<FixedContextProviderKind>,
 }
 
 impl SDKWrapper {
@@ -77,9 +84,7 @@ impl SDKWrapper {
             sdk,
             runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: None,
-            adaptive_provider: None,
-            spv_source_slot: None,
-            local_contracts: None,
+            provider_kind: None,
         }
     }
 
@@ -92,11 +97,29 @@ impl SDKWrapper {
         SDKWrapper {
             sdk,
             runtime: Arc::new(BigStackRuntime::new(runtime)),
-            local_contracts: Some(provider.local_resolver()),
             trusted_provider: Some(provider),
-            adaptive_provider: None,
-            spv_source_slot: None,
+            provider_kind: Some(FixedContextProviderKind::Trusted),
         }
+    }
+
+    /// The data contract with `id`, from the SDK's current context provider:
+    /// the one that verifies its proofs.
+    pub(crate) fn data_contract(&self, id: &Identifier) -> Result<Arc<DataContract>, FFIError> {
+        let provider = self
+            .sdk
+            .context_provider()
+            .ok_or_else(|| FFIError::InternalError("SDK has no context provider".to_string()))?;
+        provider
+            .get_data_contract(id, self.sdk.version())
+            .map_err(|e| {
+                FFIError::InternalError(format!("Failed to get contract from context: {}", e))
+            })?
+            .ok_or_else(|| {
+                FFIError::InternalError(format!(
+                    "Contract {} not found in the SDK's context provider",
+                    id.to_string(Encoding::Base58)
+                ))
+            })
     }
 
     #[cfg(test)]
@@ -110,9 +133,7 @@ impl SDKWrapper {
             sdk,
             runtime,
             trusted_provider: None,
-            adaptive_provider: None,
-            spv_source_slot: None,
-            local_contracts: None,
+            provider_kind: None,
         }
     }
 }
@@ -207,9 +228,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
                 sdk,
                 runtime,
                 trusted_provider: None,
-                adaptive_provider: None,
-                spv_source_slot: None,
-                local_contracts: None,
+                provider_kind: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -322,9 +341,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
                 sdk,
                 runtime,
                 trusted_provider: None,
-                adaptive_provider: None,
-                spv_source_slot: None,
-                local_contracts: None,
+                provider_kind: None,
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -334,7 +351,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FixedContextProviderKind {
+pub(crate) enum FixedContextProviderKind {
     Trusted,
     Spv,
     Adaptive,
@@ -343,9 +360,6 @@ enum FixedContextProviderKind {
 struct FixedProviderParts {
     provider: Arc<dyn ContextProvider>,
     trusted: Option<Arc<TrustedHttpContextProvider>>,
-    adaptive: Option<Arc<AdaptiveContextProvider>>,
-    spv_source_slot: Option<Arc<SpvSourceSlot>>,
-    local_contracts: Arc<LocalContextResolver>,
 }
 
 /// Create an SDK with a fixed trusted context provider.
@@ -501,9 +515,7 @@ unsafe fn dash_sdk_create_with_fixed_provider(
                 sdk,
                 runtime,
                 trusted_provider: provider_parts.trusted,
-                adaptive_provider: provider_parts.adaptive,
-                spv_source_slot: provider_parts.spv_source_slot,
-                local_contracts: Some(provider_parts.local_contracts),
+                provider_kind: Some(provider_kind),
             });
             let handle = Box::into_raw(wrapper) as *mut SDKHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
@@ -512,29 +524,26 @@ unsafe fn dash_sdk_create_with_fixed_provider(
     }
 }
 
-/// Build the context provider of `kind` and the pieces the SDK wrapper keeps.
+/// Build the context provider of `kind`, and the trusted provider it uses if
+/// any.
 ///
 /// Trusted and Adaptive read contracts from the trusted provider's own local
-/// cache, so contracts preloaded through the wrapper and contracts the
-/// provider verifies proofs with are one set. Strict SPV gets a standalone
-/// cache and never builds the trusted provider.
+/// cache, so contracts the SDK registers and contracts the provider verifies
+/// proofs with are one set. Strict SPV gets a standalone cache and never
+/// builds the trusted provider.
 unsafe fn fixed_provider_parts(
     config: &DashSDKConfig,
     network: Network,
     kind: FixedContextProviderKind,
 ) -> Result<FixedProviderParts, DashSDKError> {
     if kind == FixedContextProviderKind::Spv {
-        let local_contracts = Arc::new(LocalContextResolver::new());
         let provider = Arc::new(SpvContextProvider::new(
-            Arc::clone(&local_contracts) as Arc<dyn ContractSource>,
+            Arc::new(LocalContextResolver::new()) as Arc<dyn ContractSource>,
             network,
         ));
         return Ok(FixedProviderParts {
-            spv_source_slot: Some(provider.source_slot()),
             provider,
             trusted: None,
-            adaptive: None,
-            local_contracts,
         });
     }
 
@@ -543,20 +552,16 @@ unsafe fn fixed_provider_parts(
         network,
         explicit_quorum_url(config)?,
     )?);
-    let local_contracts = trusted.local_resolver();
     if kind == FixedContextProviderKind::Trusted {
         return Ok(FixedProviderParts {
             provider: Arc::clone(&trusted) as Arc<dyn ContextProvider>,
             trusted: Some(trusted),
-            adaptive: None,
-            spv_source_slot: None,
-            local_contracts,
         });
     }
     let adaptive = Arc::new(
         AdaptiveContextProvider::new(
             Arc::clone(&trusted) as Arc<dyn ContextProvider>,
-            Arc::clone(&local_contracts) as Arc<dyn ContractSource>,
+            trusted.local_resolver() as Arc<dyn ContractSource>,
             network,
         )
         .map_err(|e| {
@@ -567,11 +572,8 @@ unsafe fn fixed_provider_parts(
         })?,
     );
     Ok(FixedProviderParts {
-        provider: Arc::clone(&adaptive) as Arc<dyn ContextProvider>,
+        provider: adaptive as Arc<dyn ContextProvider>,
         trusted: Some(trusted),
-        spv_source_slot: Some(adaptive.source_slot()),
-        adaptive: Some(adaptive),
-        local_contracts,
     })
 }
 
@@ -696,22 +698,11 @@ pub unsafe extern "C" fn dash_sdk_get_inner_sdk_ptr(
     &wrapper.sdk as *const dash_sdk::Sdk as *const std::os::raw::c_void
 }
 
-/// The SPV source slot of an SDK built with a fixed SPV-capable provider, if
-/// any. The returned `Arc` shares the slot with the provider.
-///
-/// # Safety
-/// `sdk_handle` must be a valid SDK handle for the duration of this call.
-pub unsafe fn dash_sdk_spv_source_slot(
-    sdk_handle: *mut SDKHandle,
-) -> Result<Option<Arc<SpvSourceSlot>>, String> {
-    if sdk_handle.is_null() {
-        return Err("SDK handle is null".to_string());
-    }
-    let wrapper = &*(sdk_handle as *const SDKWrapper);
-    Ok(wrapper.spv_source_slot.clone())
-}
-
-/// Set the adaptive quorum routing mode without replacing the SDK provider.
+/// Set the quorum mode of the SDK's current context provider: Auto, SPV or
+/// Trusted, see `ContextProviderMode`. Only a provider that switches between
+/// quorum sources has one, such as the adaptive provider
+/// `dash_sdk_create_adaptive` builds; any other refuses the change with
+/// `InvalidParameter`, including the adaptive provider's replacement.
 ///
 /// # Safety
 /// `sdk_handle` must be a valid SDK handle for the duration of this call.
@@ -736,47 +727,49 @@ pub unsafe extern "C" fn dash_sdk_set_context_provider_mode(
         }
     };
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    match &wrapper.adaptive_provider {
-        Some(provider) => {
-            provider.set_mode(mode);
-            DashSDKResult::success(std::ptr::null_mut())
-        }
-        None => DashSDKResult::error(DashSDKError::new(
+    let changed = match wrapper.sdk.context_provider() {
+        Some(provider) => provider.set_quorum_mode(mode).map_err(|e| e.to_string()),
+        None => Err("SDK has no context provider".to_string()),
+    };
+    match changed {
+        Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
+        Err(message) => DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
-            "SDK does not use an adaptive context provider".to_string(),
+            message,
         )),
     }
 }
 
-/// The source answering `wrapper`'s quorum lookups now: an adaptive
-/// provider's live routing choice, else the one source a trusted or strict
-/// SPV SDK has. `None` for a provider this crate did not build.
-pub(crate) fn quorum_source(wrapper: &SDKWrapper) -> Option<AdaptiveContextProviderSource> {
-    if let Some(provider) = &wrapper.adaptive_provider {
-        // Evaluate readiness inside the SDK's multi-thread runtime so callers
-        // outside Tokio (including Swift UI code) receive the live Auto source.
-        Some(wrapper.runtime.block_on(async { provider.active_source() }))
-    } else if wrapper.trusted_provider.is_some() {
-        Some(AdaptiveContextProviderSource::Trusted)
-    } else if wrapper.spv_source_slot.is_some() {
-        Some(AdaptiveContextProviderSource::Spv)
-    } else {
-        None
-    }
+/// What `dash_sdk_get_context_provider_source` returns for a provider that
+/// does not say where its quorum keys come from.
+const CUSTOM_QUORUM_SOURCE: u8 = 2;
+
+/// The source answering `wrapper`'s quorum lookups now, as the SDK's current
+/// context provider reports it. `None` for a provider that does not say.
+pub(crate) fn quorum_source(wrapper: &SDKWrapper) -> Option<QuorumKeySource> {
+    let provider = wrapper.sdk.context_provider()?;
+    // Evaluate readiness inside the SDK's multi-thread runtime so callers
+    // outside Tokio (including Swift UI code) receive the live Auto source.
+    wrapper.runtime.block_on(async { provider.quorum_source() })
 }
 
-/// Return the currently selected quorum source for UI diagnostics. A
-/// provider this crate did not build reports `Trusted`.
+/// Return the source the SDK's current context provider answers quorum
+/// lookups from, for UI diagnostics: `0` trusted, `1` SPV, `2` a provider that
+/// does not say, or a null handle.
 ///
 /// # Safety
 /// `sdk_handle` must be a valid SDK handle for the duration of this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_context_provider_source(sdk_handle: *const SDKHandle) -> u8 {
     if sdk_handle.is_null() {
-        return AdaptiveContextProviderSource::Trusted as u8;
+        return CUSTOM_QUORUM_SOURCE;
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    quorum_source(wrapper).unwrap_or(AdaptiveContextProviderSource::Trusted) as u8
+    match quorum_source(wrapper) {
+        Some(QuorumKeySource::Trusted) => 0,
+        Some(QuorumKeySource::Spv) => 1,
+        None => CUSTOM_QUORUM_SOURCE,
+    }
 }
 
 /// Register global context provider callbacks
@@ -890,16 +883,18 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> FFINe
     wrapper.sdk.network.into()
 }
 
-/// Add known contracts to the SDK's local contract cache
+/// Add known contracts to the SDK's context provider
 ///
-/// This preloads data contracts into the cache the SDK's context provider
-/// reads, avoiding network calls for these contracts. A contract older than
-/// the cached one with the same id is ignored, so a stale stored copy cannot
-/// replace a newer contract.
+/// This registers data contracts with the SDK's current context provider
+/// (`ContextProvider::register_data_contract`), so proofs over them verify
+/// without network calls. The providers `dash_sdk_create_trusted`,
+/// `dash_sdk_create_spv` and `dash_sdk_create_adaptive` build ignore a
+/// contract older than the one they hold under the same id, so a stale stored
+/// copy cannot replace a newer contract. A provider that keeps no contracts
+/// ignores them all, and the call still succeeds.
 ///
 /// # Safety
-/// - `handle` must be a valid SDK handle created with `dash_sdk_create_trusted`,
-///   `dash_sdk_create_spv` or `dash_sdk_create_adaptive`
+/// - `handle` must be a valid SDK handle
 /// - `contract_ids` must be a valid comma-separated list of contract IDs
 /// - `serialized_contracts` must be a valid pointer to an array of serialized contract data
 /// - `contract_lengths` must be a valid pointer to an array of contract data lengths
@@ -928,14 +923,11 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
 
     let wrapper = &*(handle as *const SDKWrapper);
 
-    let local_contracts = match &wrapper.local_contracts {
-        Some(local_contracts) => Arc::clone(local_contracts),
-        None => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidState,
-                "SDK has no local contract cache. Create it with dash_sdk_create_trusted, dash_sdk_create_spv or dash_sdk_create_adaptive.".to_string(),
-            ));
-        }
+    let Some(provider) = wrapper.sdk.context_provider() else {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidState,
+            "SDK has no context provider".to_string(),
+        ));
     };
 
     // Parse contract IDs
@@ -990,10 +982,12 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
     }
 
     // Add all contracts to the provider
-    local_contracts.add_known_contracts(contracts);
+    for contract in contracts {
+        provider.register_data_contract(Arc::new(contract));
+    }
 
     eprintln!(
-        "✅ Added {} known contracts to the local contract cache",
+        "✅ Registered {} known contracts with the SDK's context provider",
         contract_count
     );
 
@@ -1110,11 +1104,13 @@ mod trusted_provider_tests {
 mod fixed_provider_tests {
     use super::*;
     use crate::dash_sdk_error_free;
+    use dash_context_provider::ContextProviderError;
     use dash_sdk::dpp::data_contract::accessors::v0::{
         DataContractV0Getters, DataContractV0Setters,
     };
+    use dash_sdk::dpp::data_contract::TokenConfiguration;
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-    use dash_sdk::dpp::prelude::{DataContract, Identifier};
+    use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
     use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dash_sdk::dpp::version::PlatformVersion;
@@ -1159,24 +1155,28 @@ mod fixed_provider_tests {
     }
 
     /// Strict SPV never asks the trusted quorum service, so building it must
-    /// not need one: a devnet SDK without a quorum URL builds, and it holds no
-    /// trusted provider.
+    /// not need one: a devnet SDK without a quorum URL builds, it holds no
+    /// trusted provider, and its provider has the SPV slot a wallet manager
+    /// publishes into.
     #[test]
     fn should_build_a_strict_spv_sdk_without_a_quorum_service() {
         let handle = strict_spv_sdk_without_a_quorum_service();
         let wrapper = unsafe { &*(handle as *const SDKWrapper) };
         assert!(wrapper.trusted_provider.is_none());
-        assert!(wrapper.spv_source_slot.is_some());
-        assert!(wrapper.local_contracts.is_some());
+        assert_eq!(wrapper.provider_kind, Some(FixedContextProviderKind::Spv));
+        let provider = wrapper.sdk.context_provider().expect("provider");
+        assert!(provider.spv_source_slot().is_some());
+        assert_eq!(provider.quorum_source(), Some(QuorumKeySource::Spv));
         unsafe { dash_sdk_destroy(handle) };
     }
 
-    /// Contracts preloaded through the FFI and contracts the provider verifies
-    /// proofs with must be one set, for every provider kind; otherwise a
-    /// preloaded contract is invisible to proof verification, and a contract
-    /// the SDK registers is invisible to the document FFIs.
+    /// The contracts registered with a provider, which is how
+    /// `dash_sdk_add_known_contracts` and the SDK add them, and the contracts
+    /// it verifies proofs and answers the document FFIs with must be one set,
+    /// for every provider kind; otherwise a preloaded contract is invisible
+    /// to proof verification.
     #[test]
-    fn should_share_one_contract_cache_between_preloading_and_proofs() {
+    fn should_serve_every_contract_registered_with_the_provider() {
         let dapi = CString::new("http://127.0.0.1:1").expect("address");
         let quorum_url = CString::new("http://127.0.0.1:1").expect("quorum url");
         for kind in [
@@ -1190,27 +1190,16 @@ mod fixed_provider_tests {
                 panic!("{kind:?} provider failed to build");
             };
 
-            let preloaded = app_contract(0x61);
-            let preloaded_id = preloaded.id();
-            parts.local_contracts.add_known_contract(preloaded);
-            assert!(
-                parts
-                    .provider
-                    .get_data_contract(&preloaded_id, PlatformVersion::latest())
-                    .expect("lookup")
-                    .is_some(),
-                "{kind:?} provider must see a preloaded contract"
-            );
-
             let registered = Arc::new(app_contract(0x62));
             let registered_id = registered.id();
             parts.provider.register_data_contract(registered);
             assert!(
                 parts
-                    .local_contracts
-                    .get_known_contract(&registered_id)
+                    .provider
+                    .get_data_contract(&registered_id, PlatformVersion::latest())
+                    .expect("lookup")
                     .is_some(),
-                "{kind:?} local cache must see a registered contract"
+                "{kind:?} provider must serve a registered contract"
             );
         }
     }
@@ -1248,6 +1237,220 @@ mod fixed_provider_tests {
             .get_data_contract(&id, version)
             .expect("lookup")
             .is_some());
+        unsafe { dash_sdk_destroy(handle) };
+    }
+
+    /// A provider that says nothing about where its quorum keys come from.
+    struct Silent;
+
+    impl ContextProvider for Silent {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::QuorumSourceUnavailable(
+                "no quorum keys".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// An adaptive SDK on regtest. The DAPI address is only parsed, and the
+    /// trusted provider's quorum prefetch fails against the loopback quorum
+    /// URL; no test waits on it.
+    fn adaptive_sdk() -> *mut SDKHandle {
+        let dapi = CString::new("http://127.0.0.1:1").expect("address");
+        let quorum_url = CString::new("http://127.0.0.1:1").expect("quorum url");
+        let config = config(Network::Regtest, &dapi, Some(&quorum_url));
+        let result = unsafe { dash_sdk_create_adaptive(&config) };
+        assert!(result.error.is_null(), "adaptive SDK failed to build");
+        result.data as *mut SDKHandle
+    }
+
+    /// Replace the provider of the SDK behind `handle` the way native code
+    /// can: through the inner `Sdk` the handle hands out.
+    fn replace_provider<C: ContextProvider + 'static>(handle: *mut SDKHandle, provider: C) {
+        let sdk = unsafe { &*(dash_sdk_get_inner_sdk_ptr(handle) as *const Sdk) };
+        sdk.set_context_provider(provider)
+            .expect("a provider the SDK accepts");
+    }
+
+    /// Set `mode` through the FFI: `Ok` once applied, else the refusal's code.
+    fn set_mode(handle: *mut SDKHandle, mode: ContextProviderMode) -> Result<(), DashSDKErrorCode> {
+        let result = unsafe { dash_sdk_set_context_provider_mode(handle, mode as u8) };
+        if result.error.is_null() {
+            return Ok(());
+        }
+        let code = unsafe { (*result.error).code };
+        unsafe { dash_sdk_error_free(result.error) };
+        Err(code)
+    }
+
+    /// Once native code replaces the provider an adaptive SDK was built with,
+    /// the source the FFI reports is the replacement's. An adaptive SDK left
+    /// in SPV mode must not keep reporting SPV while trusted keys verify its
+    /// proofs, and a provider that names no source is reported as custom,
+    /// not as trusted.
+    #[test]
+    fn should_report_the_source_of_a_provider_set_after_build() {
+        let handle = adaptive_sdk();
+        assert_eq!(set_mode(handle, ContextProviderMode::Spv), Ok(()));
+        assert_eq!(unsafe { dash_sdk_get_context_provider_source(handle) }, 1);
+
+        let trusted =
+            build_trusted_provider(Network::Regtest, Some("http://127.0.0.1:1".to_string()))
+                .unwrap_or_else(|_| panic!("offline trusted provider"));
+        replace_provider(handle, trusted);
+        assert_eq!(unsafe { dash_sdk_get_context_provider_source(handle) }, 0);
+
+        replace_provider(handle, Silent);
+        assert_eq!(unsafe { dash_sdk_get_context_provider_source(handle) }, 2);
+        unsafe { dash_sdk_destroy(handle) };
+    }
+
+    /// A mode change applies to the SDK's current provider. Once the adaptive
+    /// provider is replaced by one with a single source, the change is
+    /// refused: reporting success while changing the discarded provider
+    /// would let a caller believe proofs now fail closed on SPV.
+    #[test]
+    fn should_refuse_a_mode_change_once_the_adaptive_provider_is_replaced() {
+        let handle = adaptive_sdk();
+        let trusted =
+            build_trusted_provider(Network::Regtest, Some("http://127.0.0.1:1".to_string()))
+                .unwrap_or_else(|_| panic!("offline trusted provider"));
+        replace_provider(handle, trusted);
+
+        assert_eq!(
+            set_mode(handle, ContextProviderMode::Spv),
+            Err(DashSDKErrorCode::InvalidParameter),
+            "a single-source provider has no mode to change"
+        );
+        assert_eq!(unsafe { dash_sdk_get_context_provider_source(handle) }, 0);
+        unsafe { dash_sdk_destroy(handle) };
+    }
+
+    /// Preloaded contracts go to the provider that verifies the SDK's proofs
+    /// now. Preloading into the cache the FFI built would leave the
+    /// replacement unable to verify proofs over them.
+    #[test]
+    fn should_preload_contracts_into_a_provider_set_after_build() {
+        let handle = adaptive_sdk();
+        let replacement_contracts = Arc::new(LocalContextResolver::new());
+        replace_provider(
+            handle,
+            SpvContextProvider::new(
+                Arc::clone(&replacement_contracts) as Arc<dyn ContractSource>,
+                Network::Regtest,
+            ),
+        );
+        let version = unsafe { &*(dash_sdk_get_inner_sdk_ptr(handle) as *const Sdk) }.version();
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, version).expect("DPNS contract");
+        contract.set_id(Identifier::new([0x64; 32]));
+        let id = contract.id();
+        let bytes = contract
+            .serialize_to_bytes_with_platform_version(version)
+            .expect("serialized contract");
+        let ids = CString::new(id.to_string(Encoding::Base58)).expect("contract id");
+        let pointers = [bytes.as_ptr()];
+        let lengths = [bytes.len()];
+
+        let added = unsafe {
+            dash_sdk_add_known_contracts(
+                handle,
+                ids.as_ptr(),
+                pointers.as_ptr(),
+                lengths.as_ptr(),
+                1,
+            )
+        };
+        assert!(added.error.is_null(), "preloading must succeed");
+        assert!(
+            replacement_contracts
+                .data_contract(&id, version)
+                .expect("lookup")
+                .is_some(),
+            "the contract must reach the provider set after build"
+        );
+        unsafe { dash_sdk_destroy(handle) };
+    }
+
+    /// A strict SPV SDK has no mode: every change, Trusted included, is
+    /// refused, so nothing reaching it through the FFI can turn it onto
+    /// trusted quorum keys.
+    #[test]
+    fn should_refuse_every_mode_change_on_a_strict_spv_sdk() {
+        let handle = strict_spv_sdk_without_a_quorum_service();
+        for mode in [
+            ContextProviderMode::Auto,
+            ContextProviderMode::Spv,
+            ContextProviderMode::Trusted,
+        ] {
+            assert_eq!(
+                set_mode(handle, mode),
+                Err(DashSDKErrorCode::InvalidParameter),
+                "{mode:?}"
+            );
+        }
+        assert_eq!(unsafe { dash_sdk_get_context_provider_source(handle) }, 1);
+        unsafe { dash_sdk_destroy(handle) };
+    }
+
+    /// Preloading into a provider that keeps no contracts, such as a callback
+    /// or mock provider, succeeds and changes nothing: its own lookups decide
+    /// what it serves.
+    #[test]
+    fn should_succeed_preloading_into_a_provider_that_keeps_no_contracts() {
+        let wrapper = SDKWrapper::new_mock();
+        let version = wrapper.sdk.version();
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, version).expect("DPNS contract");
+        contract.set_id(Identifier::new([0x65; 32]));
+        let id = contract.id();
+        let bytes = contract
+            .serialize_to_bytes_with_platform_version(version)
+            .expect("serialized contract");
+        let handle = Box::into_raw(Box::new(wrapper)) as *mut SDKHandle;
+        replace_provider(handle, Silent);
+        let ids = CString::new(id.to_string(Encoding::Base58)).expect("contract id");
+        let pointers = [bytes.as_ptr()];
+        let lengths = [bytes.len()];
+
+        let added = unsafe {
+            dash_sdk_add_known_contracts(
+                handle,
+                ids.as_ptr(),
+                pointers.as_ptr(),
+                lengths.as_ptr(),
+                1,
+            )
+        };
+        assert!(added.error.is_null(), "preloading must succeed");
+        let wrapper = unsafe { &*(handle as *const SDKWrapper) };
+        assert!(
+            matches!(wrapper.data_contract(&id), Err(FFIError::InternalError(_))),
+            "a provider that keeps no contracts serves none"
+        );
         unsafe { dash_sdk_destroy(handle) };
     }
 }
