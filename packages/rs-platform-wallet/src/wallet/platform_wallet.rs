@@ -964,7 +964,7 @@ impl PlatformWallet {
                 .keys()
                 .filter(|id| {
                     id.wallet_id == self.wallet_id
-                        && super::shielded::is_shielded_tip_account(id.account_index)
+                        && super::shielded::is_shielded_identity_account(id.account_index)
                 })
                 .map(|id| id.account_index),
         );
@@ -1091,7 +1091,7 @@ impl PlatformWallet {
                 .keys()
                 .filter(|id| {
                     id.wallet_id == self.wallet_id
-                        && super::shielded::is_shielded_tip_account(id.account_index)
+                        && super::shielded::is_shielded_identity_account(id.account_index)
                 })
                 .map(|id| id.account_index),
         );

@@ -1,7 +1,7 @@
-//! Dedicated DashPay tip accounts. Account selection is wallet policy, not
+//! Dedicated DashPay identity shielded accounts. Account selection is wallet policy, not
 //! consensus: external Orchard addresses remain valid profile values.
 //!
-//! Reserve the upper half of the ZIP-32 account space for tips. A wallet-owned
+//! Reserve the upper half of the ZIP-32 account space for identities. A wallet-owned
 //! identity at index i uses account 0x40000000 + i. Ordinary accounts use the
 //! lower half. This mapping never depends on a username, the current profile,
 //! or local allocation history: identity discovery followed by shielded bind
@@ -22,19 +22,19 @@ pub(crate) struct PreparedTipAccount {
     clear_generation: u64,
 }
 
-pub const SHIELDED_TIP_ACCOUNT_BASE: u32 = 0x4000_0000;
+pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;
 
-pub fn shielded_tip_account_index(identity_index: u32) -> Result<u32, PlatformWalletError> {
-    if identity_index >= SHIELDED_TIP_ACCOUNT_BASE {
+pub fn shielded_identity_account_index(identity_index: u32) -> Result<u32, PlatformWalletError> {
+    if identity_index >= SHIELDED_IDENTITY_ACCOUNT_BASE {
         return Err(PlatformWalletError::ShieldedKeyDerivation(
-            "Identity index exceeds the dedicated tip account range".to_string(),
+            "Identity index exceeds the identity shielded account range".to_string(),
         ));
     }
-    Ok(SHIELDED_TIP_ACCOUNT_BASE + identity_index)
+    Ok(SHIELDED_IDENTITY_ACCOUNT_BASE + identity_index)
 }
 
-pub fn is_shielded_tip_account(account: u32) -> bool {
-    (SHIELDED_TIP_ACCOUNT_BASE..0x8000_0000).contains(&account)
+pub fn is_shielded_identity_account(account: u32) -> bool {
+    (SHIELDED_IDENTITY_ACCOUNT_BASE..0x8000_0000).contains(&account)
 }
 
 /// The account a tip is paid from.
@@ -99,7 +99,7 @@ impl PlatformWallet {
             .managed_identities()
             .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
             .filter_map(|identity| identity.identity_index)
-            .filter_map(|index| shielded_tip_account_index(index).ok())
+            .filter_map(|index| shielded_identity_account_index(index).ok())
             .collect())
     }
 
@@ -108,7 +108,7 @@ impl PlatformWallet {
     /// callers can publish the returned address. Repeated calls are idempotent.
     /// Requires an existing shielded bind so preparing a tip account cannot
     /// silently replace the host's ordinary account configuration.
-    pub async fn prepare_shielded_tip_address(
+    pub async fn prepare_shielded_identity_address(
         &self,
         seed: &[u8],
         identity_id: &Identifier,
@@ -207,7 +207,7 @@ impl PlatformWallet {
             )
         })?;
         verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
-        shielded_tip_account_index(index)
+        shielded_identity_account_index(index)
     }
 
     /// The account `source` spends. An identity spends the tip account of
@@ -224,7 +224,7 @@ impl PlatformWallet {
             ShieldedTipSource::Identity(identity_id) => {
                 self.verified_tip_account(seed, &identity_id).await
             }
-            ShieldedTipSource::Account(account) if is_shielded_tip_account(account) => {
+            ShieldedTipSource::Account(account) if is_shielded_identity_account(account) => {
                 let wm = self.wallet_manager.read().await;
                 let info = wm.get_wallet_info(&self.wallet_id()).ok_or_else(|| {
                     PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id()))
@@ -233,7 +233,7 @@ impl PlatformWallet {
                     .identity_manager
                     .wallet_identities
                     .get(&self.wallet_id())
-                    .and_then(|bucket| bucket.get(&(account - SHIELDED_TIP_ACCOUNT_BASE)));
+                    .and_then(|bucket| bucket.get(&(account - SHIELDED_IDENTITY_ACCOUNT_BASE)));
                 match occupant {
                     Some(owner) => Err(PlatformWalletError::InvalidIdentityData(format!(
                         "Account {account} is the tip account of identity {}; \
@@ -247,13 +247,13 @@ impl PlatformWallet {
         }
     }
 
-    /// Refuse to publish one of this wallet's dedicated tip addresses unless
+    /// Refuse to publish one of this wallet's shielded addresses unless
     /// preparation, in this session, proved with the seed that `identity_id`
     /// holds the slot selecting that account, and the identity still holds
     /// it. Discovery can move an identity whose keys derive at several
     /// indices, and a restored placeholder index is not proof of a slot.
-    /// Addresses of ordinary accounts and of other wallets are the owner's
-    /// choice. Only bound accounts are recognised; preparation binds the
+    /// Ordinary accounts cannot be published; addresses of other wallets are
+    /// the owner's choice. Only bound accounts are recognised; preparation binds the
     /// account it hands out. Callers hold the placement lock through the
     /// profile write.
     pub(crate) async fn check_tip_address_publication(
@@ -270,7 +270,6 @@ impl PlatformWallet {
             let keys = self.shielded_keys.read().await;
             keys.as_ref().and_then(|keys| {
                 keys.iter()
-                    .filter(|(account, _)| is_shielded_tip_account(**account))
                     .find(|(_, views)| views.full_viewing_key.scope_for_address(&address).is_some())
                     .map(|(account, _)| *account)
             })
@@ -278,6 +277,13 @@ impl PlatformWallet {
         let Some(owning_account) = owning_account else {
             return Ok(());
         };
+        if !is_shielded_identity_account(owning_account) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
         let prepared = self
             .prepared_tip_accounts
             .lock()
@@ -295,7 +301,7 @@ impl PlatformWallet {
             .and_then(|info| info.identity_manager.managed_identity(identity_id))
             .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
             .and_then(|identity| identity.identity_index)
-            .and_then(|index| shielded_tip_account_index(index).ok());
+            .and_then(|index| shielded_identity_account_index(index).ok());
         if prepared && current == Some(owning_account) {
             Ok(())
         } else {
@@ -340,6 +346,12 @@ impl PlatformWallet {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "The tip recipient changed; review and confirm the payment again".to_string(),
             ));
+        }
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id(),
+            )));
         }
         let _placement = self.identity.identity_placement.read().await;
         let account = self.tip_source_account(seed, source).await?;
@@ -448,18 +460,18 @@ mod tests {
     fn should_derive_distinct_recoverable_tip_accounts() {
         let seed = [42u8; 64];
         let ordinary = OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
-        let index = shielded_tip_account_index(0).unwrap();
+        let index = shielded_identity_account_index(0).unwrap();
         let tip = OrchardKeySet::from_seed(&seed, Network::Testnet, index).unwrap();
         let restored = OrchardKeySet::from_seed(
             &seed,
             Network::Testnet,
-            shielded_tip_account_index(0).unwrap(),
+            shielded_identity_account_index(0).unwrap(),
         )
         .unwrap();
         let other = OrchardKeySet::from_seed(
             &seed,
             Network::Testnet,
-            shielded_tip_account_index(1).unwrap(),
+            shielded_identity_account_index(1).unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -474,8 +486,8 @@ mod tests {
             tip.full_viewing_key.to_bytes(),
             restored.full_viewing_key.to_bytes()
         );
-        assert!(!is_shielded_tip_account(0));
-        assert!(is_shielded_tip_account(index));
-        assert!(shielded_tip_account_index(SHIELDED_TIP_ACCOUNT_BASE).is_err());
+        assert!(!is_shielded_identity_account(0));
+        assert!(is_shielded_identity_account(index));
+        assert!(shielded_identity_account_index(SHIELDED_IDENTITY_ACCOUNT_BASE).is_err());
     }
 }

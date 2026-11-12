@@ -16,8 +16,8 @@ package org.dashfoundation.dashsdk.ffi
  * non-shielded build throws [UnsatisfiedLinkError].
  */
 internal object FundingNative {
-    external fun tipAccountIndex(identityIndex: Int): Int
-    external fun prepareShieldedTipAddress(
+    external fun identityAccountIndex(identityIndex: Int): Int
+    external fun prepareShieldedIdentityAddress(
         manager: Long, walletId: ByteArray, resolver: Long, identityId: ByteArray,
     ): ByteArray
     external fun resolveShieldedTip(wallet: Long, username: String): ByteArray

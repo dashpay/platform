@@ -1260,9 +1260,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
-/// Dedicated tip account preparation; returns the complete raw Orchard address.
+/// Dedicated identity shielded account preparation; returns the complete raw Orchard address.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepareShieldedTipAddress(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepareShieldedIdentityAddress(
     mut env: JNIEnv,
     _class: JClass,
     manager: jlong,
@@ -1279,7 +1279,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepare
         };
         let mut address = [0; 43];
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_manager_prepare_shielded_tip_address(
+            platform_wallet_ffi::platform_wallet_manager_prepare_shielded_identity_address(
                 manager as Handle,
                 wid.as_ptr(),
                 resolver as *mut MnemonicResolverHandle,
@@ -1407,7 +1407,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_tipAccountIndex(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_identityAccountIndex(
     mut env: JNIEnv,
     _class: JClass,
     identity_index: jint,
@@ -1419,7 +1419,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_tipAcco
         }
         let mut account = 0;
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_shielded_tip_account_index(
+            platform_wallet_ffi::platform_wallet_shielded_identity_account_index(
                 identity_index as u32,
                 &mut account,
             )

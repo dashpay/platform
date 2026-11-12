@@ -284,9 +284,9 @@ fn shield_memo_round_trips_through_ovk_recovery() {
 
 #[test]
 fn should_restore_tip_notes_without_exposing_personal_notes_to_tip_viewing_key() {
-    use crate::wallet::shielded::shielded_tip_account_index;
+    use crate::wallet::shielded::shielded_identity_account_index;
     let seed = [0x67; 64];
-    let tip_index = shielded_tip_account_index(0).unwrap();
+    let tip_index = shielded_identity_account_index(0).unwrap();
     let tips = OrchardKeySet::from_seed(&seed, Network::Testnet, tip_index).unwrap();
     let restored = OrchardKeySet::from_seed(&seed, Network::Testnet, tip_index).unwrap();
     let personal = OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
