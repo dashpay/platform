@@ -85,7 +85,7 @@ class QuorumSourceFfiTest {
                 val refusal = second.exceptionOrNull()
                 assertTrue(
                     "expected the SDK's SPV slot to be taken, got $refusal",
-                    refusal?.message?.contains("SPV") == true,
+                    refusal?.message?.contains("another SPV client") == true,
                 )
             }
         } finally {

@@ -4,15 +4,14 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.SdkNative`.
 
 use crate::results::{unwrap_handle, unwrap_void};
-use crate::support::guard;
+use crate::support::{guard, net_from_ord};
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
     dash_sdk_create_adaptive, dash_sdk_create_trusted, dash_sdk_destroy, dash_sdk_enable_logging,
     dash_sdk_get_context_provider_source, dash_sdk_get_network, dash_sdk_init,
-    dash_sdk_set_context_provider_mode, dash_sdk_version, DashSDKConfig, DashSDKResult, FFINetwork,
-    SDKHandle,
+    dash_sdk_set_context_provider_mode, dash_sdk_version, DashSDKConfig, DashSDKResult, SDKHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -137,12 +136,7 @@ fn create(
         let dapi = to_c_string(env, &settings.dapi_addresses);
         let quorum = to_c_string(env, &settings.quorum_url);
         let config = DashSDKConfig {
-            network: match settings.network {
-                0 => FFINetwork::Mainnet,
-                2 => FFINetwork::Devnet,
-                3 => FFINetwork::Regtest,
-                _ => FFINetwork::Testnet,
-            },
+            network: net_from_ord(settings.network),
             dapi_addresses: dapi.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             skip_asset_lock_proof_verification: settings.skip_asset_lock_proof_verification
                 == JNI_TRUE,

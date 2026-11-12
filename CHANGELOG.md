@@ -34,8 +34,9 @@
 
 - **kotlin-sdk:** `Sdk.create(config)` builds the adaptive context provider in Auto mode
   instead of the trusted one, as the Swift SDK does; `Sdk.create(config,
-  Sdk.ContextProviderKind.TRUSTED)` keeps the trusted provider. `Sdk.setQuorumMode` and
-  `Sdk.quorumSource` change and read the quorum mode. A `PlatformWalletManager` built on
+  Sdk.ContextProviderKind.TRUSTED)` keeps the trusted provider. `Sdk.setQuorumMode(mode)`
+  changes the quorum mode, and `Sdk.quorumSource()` reports the source proof verification
+  asks first. A `PlatformWalletManager` built on
   an adaptive SDK serves it the quorum keys of its own SPV client, and only one manager
   serves an SDK: building a second on it while the first is open throws, so close the old
   manager first.
