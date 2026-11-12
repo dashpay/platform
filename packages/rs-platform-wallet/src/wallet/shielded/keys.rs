@@ -224,12 +224,18 @@ impl AccountViewingKeys {
     ///
     /// Returns an error when the OS CSPRNG fails.
     pub fn fresh_address(&self) -> Result<PaymentAddress, PlatformWalletError> {
-        use dpp::secp256k1::rand::rngs::OsRng;
-        use dpp::secp256k1::rand::TryRngCore;
+        self.fresh_address_from(&mut dpp::secp256k1::rand::rngs::OsRng)
+    }
 
+    /// [`Self::fresh_address`] with the index drawn from `rng`, so tests can
+    /// script the index-0 redraw and a randomness failure.
+    fn fresh_address_from<R: dpp::secp256k1::rand::TryRngCore>(
+        &self,
+        rng: &mut R,
+    ) -> Result<PaymentAddress, PlatformWalletError> {
         let mut index = [0u8; 11];
         while index == [0u8; 11] {
-            OsRng.try_fill_bytes(&mut index).map_err(|_| {
+            rng.try_fill_bytes(&mut index).map_err(|_| {
                 PlatformWalletError::ShieldedKeyDerivation(
                     "shielded fresh address: randomness unavailable".to_string(),
                 )
@@ -474,6 +480,67 @@ mod tests {
         assert_ne!(a, b, "two fresh addresses must differ");
         assert_ne!(a, default_raw, "a fresh address must not be the default");
         assert_ne!(b, default_raw, "a fresh address must not be the default");
+    }
+
+    /// A randomness source that hands out scripted 11-byte draws, then fails.
+    struct ScriptedRng(Vec<[u8; 11]>);
+
+    impl dpp::secp256k1::rand::TryRngCore for ScriptedRng {
+        type Error = &'static str;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Err("unused")
+        }
+
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Err("unused")
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            if self.0.is_empty() {
+                return Err("exhausted");
+            }
+            dst.copy_from_slice(&self.0.remove(0));
+            Ok(())
+        }
+    }
+
+    /// G1.2: a drawn index 0 is redrawn, and the next index is used.
+    #[test]
+    fn fresh_address_redraws_index_zero() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        let mut next = [0u8; 11];
+        next[0] = 7;
+        let mut rng = ScriptedRng(vec![[0u8; 11], next]);
+
+        let address = views.fresh_address_from(&mut rng).expect("fresh address");
+        assert!(rng.0.is_empty(), "both draws were taken");
+        assert_eq!(
+            address.to_raw_address_bytes(),
+            views
+                .full_viewing_key
+                .address_at(zip32::DiversifierIndex::from(next), Scope::External)
+                .to_raw_address_bytes(),
+            "the address is the one at the redrawn index"
+        );
+    }
+
+    /// A randomness failure is an error, not an address.
+    #[test]
+    fn fresh_address_reports_a_randomness_failure() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        assert!(matches!(
+            views.fresh_address_from(&mut ScriptedRng(vec![])),
+            Err(PlatformWalletError::ShieldedKeyDerivation(_))
+        ));
+        assert!(matches!(
+            views.fresh_address_from(&mut ScriptedRng(vec![[0u8; 11]])),
+            Err(PlatformWalletError::ShieldedKeyDerivation(_))
+        ));
     }
 
     /// G2.1 / G2.2: own for the default and fresh addresses of the same

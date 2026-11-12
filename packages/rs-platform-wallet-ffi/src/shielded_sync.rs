@@ -796,7 +796,7 @@ pub unsafe extern "C" fn platform_wallet_manager_is_own_shielded_address(
 
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
-    let address = std::slice::from_raw_parts(address_bytes, address_len).to_vec();
+    let address = std::slice::from_raw_parts(address_bytes, address_len);
 
     enum Outcome {
         WalletMissing,
@@ -808,7 +808,7 @@ pub unsafe extern "C" fn platform_wallet_manager_is_own_shielded_address(
         runtime().block_on(async {
             match manager.get_wallet(&wallet_id).await {
                 None => Outcome::WalletMissing,
-                Some(w) => match w.is_own_shielded_address(account, &address).await {
+                Some(w) => match w.is_own_shielded_address(account, address).await {
                     Some(is_own) => Outcome::Bound(is_own),
                     None => Outcome::Unbound,
                 },
@@ -1459,6 +1459,14 @@ mod fresh_address_tests {
             let fresh = fresh_address(handle, &wallet_id);
             assert!(is_own(handle, &wallet_id, &fresh), "own fresh address");
             assert!(!is_own(handle, &wallet_id, &foreign), "foreign address");
+            let mut long = [0u8; 44];
+            long[..43].copy_from_slice(&fresh);
+            for len in [0, 42, 44] {
+                assert!(
+                    !is_own(handle, &wallet_id, &long[..len]),
+                    "{len} bytes is malformed, so not own"
+                );
+            }
             assert_eq!(
                 crate::platform_wallet_manager_destroy(handle).code,
                 PlatformWalletFFIResultCode::Success

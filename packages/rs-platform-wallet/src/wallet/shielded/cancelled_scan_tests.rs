@@ -117,7 +117,7 @@ impl RecordingPersistence {
     }
 }
 
-pub(super) fn tree_path() -> PathBuf {
+fn tree_path() -> PathBuf {
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
     let sequence = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
