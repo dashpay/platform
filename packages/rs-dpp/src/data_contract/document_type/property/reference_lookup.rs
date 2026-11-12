@@ -848,9 +848,8 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        // The storage layer refuses to delete a document whose type keeps history. A full
-        // parse, the only one this check runs under, already refuses such a type that allows
-        // deletion; the rule is kept here too, as `ttl` and moderator deletion keep theirs
+        // Consume deletes through the read-delete path, which refuses a keep-history type;
+        // consuming would bypass the explicit delete and erase lifecycle.
         if self.consume && referenced.documents_keep_history() {
             return Some(format!(
                 "consume deletes the found document, which the storage layer refuses for \
