@@ -867,7 +867,19 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     name, where generation 1, which protocol v14 keeps, compares them whole. Protocol
 ///     v14 keeps generation 0 of `canonical_contested_index_values`.
 ///
-/// 40. **Low-S signatures where the key is recovered**: an ECDSA signature checked by
+/// 40. **A multiple choice proposal pays a processing fee**: a `multipleChoiceProposal` of
+///     the decision proposals contract opens no poll (its first choice does, note 37), so
+///     its create prefunds no votes. `FEE_VERSION4` charges it
+///     `multiple_choice_proposal_processing_fee` (0.2 Dash, in `VoteResolutionFundFees`)
+///     instead: the execution event of a document batch adds it to the batch's processing
+///     fee once for each such proposal the batch creates, read off the transitions as state
+///     validation left them, so a create that is refused pays its gas alone. It goes to the
+///     processing fee pools with the rest of the processing fee, the create does not state
+///     it, and a payer whose balance does not cover it is refused
+///     (`IdentityInsufficientBalanceError`). The fee schedules of protocol v14 and earlier
+///     carry 0, and the contract does not exist there, so nothing is charged.
+///
+/// 41. **Low-S signatures where the key is recovered**: an ECDSA signature checked by
 ///     recovering its public key and comparing the key's HASH160 (an identity-signed
 ///     transition's ECDSA_HASH160 key, masternode votes included; a P2PKH address witness;
 ///     the one-time key of an asset lock funding an identity create, a top-up, an address
@@ -895,7 +907,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature checked by key recovery (note 40)
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature checked by key recovery (note 41)
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
         contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15)
         document_versions: DOCUMENT_VERSIONS_V4,
@@ -907,7 +919,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
-    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25)
+    fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
     system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

@@ -15,7 +15,11 @@ use grovedb_commitment_tree::{
     FullViewingKey, IncomingViewingKey, OutgoingViewingKey, PaymentAddress,
     PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
 };
-use zip32::AccountId;
+use platform_encryption::{
+    is_shielded_contact_index, shielded_contact_index, shielded_contact_index_key,
+    SHIELDED_DIVERSIFIER_INDEX_LEN,
+};
+use zip32::{AccountId, DiversifierIndex};
 
 use crate::error::PlatformWalletError;
 
@@ -213,9 +217,11 @@ impl AccountViewingKeys {
         Ok(Self::from_full_viewing_key(fvk))
     }
 
-    /// An external-scope payment address at a uniformly random 11-byte
-    /// diversifier index drawn from the OS CSPRNG. Index 0 (the default
-    /// address) is redrawn, so the result is never the default address.
+    /// An external-scope payment address at a uniformly random diversifier
+    /// index below 2^87, drawn from the OS CSPRNG. Index 0 (the default
+    /// address) and every index of 2^87 or above (reserved for
+    /// [`Self::contact_address`]) are redrawn, so the result is never the
+    /// default address or a contact address.
     /// Every 11-byte Orchard diversifier index yields a valid address, so
     /// no other retry is needed. Writes no state: the scan finds notes to
     /// the returned address through the IVK, whatever its index.
@@ -228,13 +234,13 @@ impl AccountViewingKeys {
     }
 
     /// [`Self::fresh_address`] with the index drawn from `rng`, so tests can
-    /// script the index-0 redraw and a randomness failure.
+    /// script the redraws and a randomness failure.
     fn fresh_address_from<R: dpp::secp256k1::rand::TryRngCore>(
         &self,
         rng: &mut R,
     ) -> Result<PaymentAddress, PlatformWalletError> {
         let mut index = [0u8; 11];
-        while index == [0u8; 11] {
+        while index == [0u8; 11] || is_shielded_contact_index(&index) {
             rng.try_fill_bytes(&mut index).map_err(|_| {
                 PlatformWalletError::ShieldedKeyDerivation(
                     "shielded fresh address: randomness unavailable".to_string(),
@@ -263,6 +269,49 @@ impl AccountViewingKeys {
             return false;
         };
         self.incoming_viewing_key.diversifier_index(&addr).is_some()
+    }
+
+    /// The shielded payment address this account gives the contact of one DashPay
+    /// contact request: the external address at the diversifier index that the
+    /// request's unique key (`owner_id`, `to_user_id`, `account_reference`) hashes to
+    /// under this account's full viewing key ([`shielded_contact_index`]).
+    ///
+    /// The same request always gives the same address on every device holding the
+    /// seed, with no allocation stored. Two requests share an address only if their
+    /// 87-bit indices collide, which is negligible but not impossible: before sending
+    /// a request the caller compares its index with those already given to other
+    /// contacts and, on a match, sends it under another `account_reference` (see
+    /// [`shielded_contact_index`]). `owner_id` is the identity that sends the request
+    /// and owns this account, and `account_reference` the value the request publishes.
+    pub fn contact_address(
+        &self,
+        owner_id: &[u8; 32],
+        to_user_id: &[u8; 32],
+        account_reference: u64,
+    ) -> PaymentAddress {
+        let index_key = shielded_contact_index_key(&self.to_fvk_bytes());
+        let index = shielded_contact_index(&index_key, owner_id, to_user_id, account_reference);
+        self.full_viewing_key
+            .address_at(DiversifierIndex::from(index), Scope::External)
+    }
+
+    /// The diversifier index a payment address sits at in this account, when it lies
+    /// in the range per-contact addresses use: `None` for an address of another
+    /// account and for one below that range, such as the profile address.
+    ///
+    /// The index belongs to a contact only if [`Self::contact_address`] gives it for
+    /// one of this account's contact requests; [`Self::fresh_address`] never returns
+    /// an address in the range. A payment on a matching address is attributed to
+    /// that contact, which is not proof of who paid: anyone who has learned the
+    /// address can pay it.
+    pub fn contact_index_of(
+        &self,
+        address: &PaymentAddress,
+    ) -> Option<[u8; SHIELDED_DIVERSIFIER_INDEX_LEN]> {
+        self.incoming_viewing_key
+            .diversifier_index(address)
+            .map(|index| *index.as_bytes())
+            .filter(is_shielded_contact_index)
     }
 }
 
@@ -527,6 +576,40 @@ mod tests {
         );
     }
 
+    /// A drawn index in the half of the index space kept for contact requests is
+    /// redrawn, so a fresh address is never read as a contact's.
+    #[test]
+    fn should_redraw_a_fresh_index_in_the_contact_range() {
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], Network::Testnet, 0)
+            .expect("derivation succeeds")
+            .viewing_keys();
+        // 2^87, the first index of the range, then its last, then the last below it.
+        let mut first = [0u8; 11];
+        first[10] = 0x80;
+        let mut below = [0xFFu8; 11];
+        below[10] = 0x7F;
+        let mut rng = ScriptedRng(vec![first, [0xFFu8; 11], below]);
+
+        let address = views.fresh_address_from(&mut rng).expect("fresh address");
+        assert!(rng.0.is_empty(), "all three draws were taken");
+        assert_eq!(
+            address.to_raw_address_bytes(),
+            views
+                .full_viewing_key
+                .address_at(zip32::DiversifierIndex::from(below), Scope::External)
+                .to_raw_address_bytes(),
+            "the address is the one at the first index drawn below the range"
+        );
+        assert_eq!(views.contact_index_of(&address), None);
+        assert!(views.is_own_recipient(&address.to_raw_address_bytes()));
+
+        // Nothing the OS randomness gives lands in the range either.
+        for _ in 0..64 {
+            let fresh = views.fresh_address().expect("fresh address");
+            assert_eq!(views.contact_index_of(&fresh), None);
+        }
+    }
+
     /// A randomness failure is an error, not an address.
     #[test]
     fn fresh_address_reports_a_randomness_failure() {
@@ -568,5 +651,115 @@ mod tests {
             !views.is_own_recipient(&[0xFFu8; 43]),
             "off-curve pk_d is malformed"
         );
+    }
+
+    // The vectors of the DashPay shielded payment addresses DIP: the BIP-39 seed of
+    // "abandon ... about" with an empty passphrase, and the shielded account of the
+    // identity at index 0 (account 0x40000000).
+    const DIP_SEED: &str = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1\
+         9a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4";
+    const DIP_IDENTITY_ACCOUNT: u32 = 0x4000_0000;
+    const DIP_OWNER: [u8; 32] = [0x11; 32];
+    const DIP_BOB: [u8; 32] = [0x22; 32];
+    const DIP_CAROL: [u8; 32] = [0x33; 32];
+
+    fn dip_account(network: Network, account: u32) -> AccountViewingKeys {
+        let seed = hex::decode(DIP_SEED).expect("the seed is hex");
+        OrchardKeySet::from_seed(&seed, network, account)
+            .expect("the account derives")
+            .viewing_keys()
+    }
+
+    #[test]
+    fn should_derive_the_identity_shielded_accounts_of_the_dip_vectors() {
+        for (network, account, fvk, profile_address) in [
+            (
+                Network::Mainnet,
+                DIP_IDENTITY_ACCOUNT,
+                "c0120eb660f8dd2f769e199bcc540476fec169b60f3e7508ffd42a21bd274337\
+                 b2301310b489575eb68a8adacfed66b88fd07b961d1ca366c7e7e6e619b29a2b\
+                 fce2cf9cb05a6439997f6f7ad4d9eb4b3d5a0672e571036cff9c8a600439063d",
+                "e126993647eb0c9a4b476e2823380ead099e803ea52c980146e6fa42cfeb9d2ef8f7b1d6e764821d706397",
+            ),
+            (
+                Network::Mainnet,
+                DIP_IDENTITY_ACCOUNT + 1,
+                "5317987e38a2dd272cebe41d317c33980e53d77c14ed166abc097aaaa1612837\
+                 d315ce0f5dc87a85557ce30362cd330aaf0396b51c4970e2ddd7e7861dc06922\
+                 4581992d96f19f367bff3f7bbfee475fd5f61e8edccc550d98d9e2f98f7fdb0c",
+                "936389bea5f4472a82d8c933ce9763f88ce0d8955ebc61b0cbe42914350f1c9b38978c673e4a1247b890ba",
+            ),
+            (
+                Network::Testnet,
+                DIP_IDENTITY_ACCOUNT,
+                "e82418aaf0c953565e04048cedfecb0fcd0bd1f9a5ab05be2d36a4fbcc5cd404\
+                 6aecdbc3837ace5abf1b727bded47346872cdee34bdd36521ae81031fd92f00e\
+                 cfd073865caa1e41baae4f378be748672b77c55e631f2ac2e7ccb2d205095c35",
+                "335feafaef3927edd1dffc09b7af7f2d14be582f5ba3a4501c691f044a4af5a881ddd3951496c6a877c32f",
+            ),
+        ] {
+            let keys = dip_account(network, account);
+            assert_eq!(hex::encode(keys.to_fvk_bytes()), fvk);
+            assert_eq!(
+                hex::encode(keys.default_address.to_raw_address_bytes()),
+                profile_address
+            );
+        }
+    }
+
+    #[test]
+    fn should_give_each_contact_request_the_address_of_the_dip_vectors() {
+        let keys = dip_account(Network::Mainnet, DIP_IDENTITY_ACCOUNT);
+        for (to_user_id, account_reference, index, address) in [
+            (
+                DIP_BOB,
+                0x0123_4567,
+                "f90d5349d8530cf76835d0",
+                "25611685f1aa7c3b7a2f7a758ea2f98ca16e32e20e0d3b403a1d81421f1185d67f47054ae98e55e05e839c",
+            ),
+            (
+                DIP_CAROL,
+                0x0123_4567,
+                "a5ca8646a33e3db572ca94",
+                "a7a566b9a2ff0c79c3155371ca1936c6e0ccfd19d772e290cbf9cfb35c763f5cee6733e89c300960ade0a7",
+            ),
+            // The same contact under the next DIP-15 version: another address.
+            (
+                DIP_BOB,
+                0x1123_4567,
+                "4d2ff123168ee0a07ff5b2",
+                "8b9e1e782d79eae3c6d4420caf1bd38ef3385383d88f1a87a69a4b048f8602964e5be3b9de6fa8f289c527",
+            ),
+        ] {
+            let derived = keys.contact_address(&DIP_OWNER, &to_user_id, account_reference);
+            assert_eq!(hex::encode(derived.to_raw_address_bytes()), address);
+            // The account's incoming viewing key finds the index the address sits at.
+            assert_eq!(
+                keys.contact_index_of(&derived).map(hex::encode),
+                Some(index.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn should_find_a_contact_index_only_for_this_accounts_contact_addresses() {
+        let keys = dip_account(Network::Mainnet, DIP_IDENTITY_ACCOUNT);
+        let to_bob = keys.contact_address(&DIP_OWNER, &DIP_BOB, 0x0123_4567);
+
+        // The profile address and a wallet-local one lie below the contact range.
+        assert_eq!(keys.contact_index_of(&keys.default_address), None);
+        let wallet_local = keys.full_viewing_key.address_at(7u32, Scope::External);
+        assert_eq!(keys.contact_index_of(&wallet_local), None);
+
+        // Another identity's account derives another address for the same request and
+        // does not recognise this one.
+        let other = dip_account(Network::Mainnet, DIP_IDENTITY_ACCOUNT + 1);
+        assert_ne!(
+            other
+                .contact_address(&DIP_OWNER, &DIP_BOB, 0x0123_4567)
+                .to_raw_address_bytes(),
+            to_bob.to_raw_address_bytes()
+        );
+        assert_eq!(other.contact_index_of(&to_bob), None);
     }
 }
