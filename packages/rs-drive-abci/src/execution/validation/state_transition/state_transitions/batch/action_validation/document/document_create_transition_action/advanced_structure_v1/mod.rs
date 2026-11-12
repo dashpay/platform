@@ -21,6 +21,21 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 
+/// How the poll a contested create names is compared with the poll its document type expects
+/// of its data.
+#[derive(Clone, Copy)]
+pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation)
+enum ContestPollComparison {
+    /// The whole polls, index values included: version 1.
+    Whole,
+    /// What names the index: the contract, the document type and the index name. Version 2,
+    /// where a contender joining a contest opened at an earlier protocol version has its index
+    /// values written as that version wrote them
+    /// (`Drive::fetch_contest_opening_protocol_version`), which the expected poll, written by
+    /// the block's protocol version, does not.
+    ByIndex,
+}
+
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStructureValidationV1 {
     fn validate_structure_v1(
         &self,
@@ -29,13 +44,44 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+
+    /// Version 1's checks, comparing the poll a contested create names with the expected one
+    /// as `contest_poll_comparison` tells.
+    fn validate_structure_v1_comparing_contest_polls(
+        &self,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        network: Network,
+        contest_poll_comparison: ContestPollComparison,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTransitionAction {
+    // In place, a refactor with the same output: the body moved, unchanged, to
+    // `validate_structure_v1_comparing_contest_polls`, which compares the polls whole here as
+    // this did.
     fn validate_structure_v1(
         &self,
         owner_id: Identifier,
         block_info: &BlockInfo,
         network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        self.validate_structure_v1_comparing_contest_polls(
+            owner_id,
+            block_info,
+            network,
+            ContestPollComparison::Whole,
+            platform_version,
+        )
+    }
+
+    fn validate_structure_v1_comparing_contest_polls(
+        &self,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        network: Network,
+        contest_poll_comparison: ContestPollComparison,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let contract_fetch_info = self.base().data_contract_fetch_info();
@@ -78,18 +124,15 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     // indexes, so the contest would be funded, resolved and cleaned up under a
                     // vote poll that does not describe the contest that was actually created.
                     let provided: ContestedDocumentResourceVotePoll = provided.into();
-                    // In place: the polls are compared by what names the index, where they were
-                    // compared whole. The index values of both are read from this document's
-                    // data, so wherever both are written by the block's protocol version, as
-                    // they always are before protocol version 15, polls of one index are
-                    // equal. From 15 a contender joining a contest opened at an earlier
-                    // protocol version writes its values as that version did
-                    // (`Drive::fetch_contest_opening_protocol_version`), and the expected poll
-                    // does not.
-                    if provided.contract_id != expected.contract_id
-                        || provided.document_type_name != expected.document_type_name
-                        || provided.index_name != expected.index_name
-                    {
+                    let names_another_poll = match contest_poll_comparison {
+                        ContestPollComparison::Whole => provided != expected,
+                        ContestPollComparison::ByIndex => {
+                            provided.contract_id != expected.contract_id
+                                || provided.document_type_name != expected.document_type_name
+                                || provided.index_name != expected.index_name
+                        }
+                    };
+                    if names_another_poll {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DocumentContestIndexMismatchError::new(
                                 self.base().id(),

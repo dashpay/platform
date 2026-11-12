@@ -5,6 +5,7 @@
 //! values it sends. A contest opened at an earlier protocol version keeps the poll it was
 //! opened under: a contender joining it later writes its values as that version did.
 
+use crate::config::PlatformConfig;
 use crate::execution::validation::state_transition::state_transitions::tests::{
     setup_identity, setup_masternode_voting_identity,
 };
@@ -19,6 +20,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::{
@@ -57,9 +59,26 @@ const INTEGER_CONTRACT: &str =
     "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-integer.json";
 /// The same fixture with the contested index resolved without locking.
 const NO_LOCKING_INTEGER_CONTRACT: &str = "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-no-locking-with-integer.json";
+/// The same fixture with `rank` a number.
+const NUMBER_CONTRACT: &str =
+    "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-with-number.json";
 const NAME: &str = "quantum";
 
 type IdentityInfo = (Identity, SimpleSigner, IdentityPublicKey);
+
+/// A platform starting at `protocol_version`, on mainnet: on testnet a contested create's poll
+/// is not checked against its document before epoch 2080.
+fn platform_at(protocol_version: u32) -> TempPlatform<MockCoreRPCLike> {
+    TestPlatformBuilder::new()
+        .with_config(PlatformConfig {
+            network: Network::Mainnet,
+            ..Default::default()
+        })
+        .with_initial_protocol_version(protocol_version)
+        .build_with_mock_rpc()
+        .with_no_core_masternodes()
+        .set_genesis_state()
+}
 
 fn block(time_ms: TimestampMillis, epoch_index: u16) -> BlockInfo {
     BlockInfo {
@@ -358,10 +377,7 @@ struct Contest {
 }
 
 async fn open_contest(platform_version: &PlatformVersion) -> Contest {
-    let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
-        .build_with_mock_rpc()
-        .set_genesis_state();
+    let mut platform = platform_at(platform_version.protocol_version);
     let mut rng = StdRng::seed_from_u64(0x5EED_0F02);
     let owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let contender_a = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
@@ -509,11 +525,7 @@ async fn join_after_the_upgrade_a_contest_opened_at_protocol_version_14(
 ) {
     let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
     let latest = PlatformVersion::latest();
-    let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(14)
-        .build_with_mock_rpc()
-        .with_no_core_masternodes()
-        .set_genesis_state();
+    let mut platform = platform_at(14);
     let mut rng = StdRng::seed_from_u64(0x5EED_0F03);
     let owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let contender_a = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
@@ -539,11 +551,11 @@ async fn join_after_the_upgrade_a_contest_opened_at_protocol_version_14(
         .dpp
         .validation
         .voting
-        .allow_other_contenders_time_testing_ms;
+        .allow_other_contenders_time_mainnet_ms;
     let poll_duration = latest
         .dpp
         .voting_versions
-        .default_vote_poll_time_duration_test_network_ms;
+        .default_vote_poll_time_duration_mainnet_ms;
 
     let start: TimestampMillis = 1_000_000;
     let a = contender_transition(
@@ -629,4 +641,41 @@ async fn should_keep_the_poll_of_a_contest_without_locking_opened_before_the_upg
         true,
     )
     .await;
+}
+
+/// Protocol version 14 compares the poll a contested create names with the poll its document
+/// type expects as whole values, and a poll holding a NaN is not equal to itself: such a create
+/// is refused with `DocumentContestIndexMismatchError`, and stays so.
+#[tokio::test]
+async fn should_refuse_a_contested_create_with_a_nan_index_value_as_protocol_version_14_does() {
+    let version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let mut platform = platform_at(14);
+    let mut rng = StdRng::seed_from_u64(0x5EED_0F04);
+    let owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let contender = setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+    let contract = setup_contract(
+        &platform.drive,
+        NUMBER_CONTRACT,
+        None,
+        Some(owner.0.id().to_buffer()),
+        None::<fn(&mut DataContract)>,
+        None,
+        Some(version_14),
+    );
+
+    let create = contender_transition(
+        &contract,
+        &contender,
+        Value::Float(f64::NAN),
+        &mut rng,
+        version_14,
+    )
+    .await;
+    assert_matches!(
+        process(&platform, &[create], 1_000_000, 0, version_14).as_slice(),
+        [StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentContestIndexMismatchError(_)),
+            ..
+        }]
+    );
 }
