@@ -8615,11 +8615,11 @@ mod spend_plan_tests {
     #[tokio::test]
     async fn should_check_the_plan_at_the_spends_captured_protocol_version() {
         let captured = PlatformVersion::get(13).expect("v13");
-        let notes: Vec<ShieldedNote> = (0..13).map(|i| note(i, NOTE)).collect();
-        let amount = 11 * NOTE + 1;
+        let notes: Vec<ShieldedNote> = (0..6).map(|i| note(i, NOTE)).collect();
+        let amount = 4 * NOTE + 1;
         assert_ne!(
-            compute_minimum_shielded_fee(12, captured).expect("fee"),
-            compute_minimum_shielded_fee(12, sdk().version()).expect("fee"),
+            compute_minimum_shielded_fee(5, captured).expect("fee"),
+            compute_minimum_shielded_fee(5, sdk().version()).expect("fee"),
             "the two versions price the spend differently"
         );
         let store = store_with(&notes).await;

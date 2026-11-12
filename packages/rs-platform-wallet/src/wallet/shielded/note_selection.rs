@@ -11,7 +11,7 @@ use dpp::shielded::{
     compute_minimum_shielded_fee, compute_private_document_create_from_shielded_pool_fee,
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
-    is_allowed_identity_create_denomination,
+    is_allowed_identity_create_denomination, max_shielded_actions_per_transition,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -170,7 +170,7 @@ pub fn select_notes(
 /// the largest-first prefixes are tried in turn and the first whose sum covers `amount` plus the
 /// fee for its own action count (at least `min_actions`) is selected.
 ///
-/// One transition spends at most `max_shielded_transition_actions` notes: an amount that only
+/// One transition spends at most [`max_shielded_actions_per_transition`] notes: an amount that only
 /// more notes than that would cover is refused with
 /// [`PlatformWalletError::ShieldedSpendTooManyNotes`].
 ///
@@ -239,13 +239,10 @@ fn spendable_largest_first(
     Ok(sorted)
 }
 
-/// How many notes one shielded transition spends at most: one action per note.
+/// How many notes one shielded transition spends at most: one action per note, as many as fit
+/// the transition size limit.
 fn max_notes_per_transition(platform_version: &PlatformVersion) -> usize {
-    usize::from(
-        platform_version
-            .system_limits
-            .max_shielded_transition_actions,
-    )
+    usize::from(max_shielded_actions_per_transition(platform_version))
 }
 
 /// The most a sweep of `unspent` can send: over the largest-first prefixes one transition can
@@ -1164,16 +1161,12 @@ mod tests {
         );
     }
 
-    /// One transition spends at most `max_shielded_transition_actions` notes: a sweep of 17
-    /// equal notes sweeps 16 of them.
+    /// One transition spends at most `max_shielded_actions_per_transition` notes: a sweep of
+    /// one note more sweeps that many.
     #[test]
     fn should_sweep_no_more_notes_than_one_transition_spends() {
         let platform_version = PlatformVersion::latest();
-        let max = usize::from(
-            platform_version
-                .system_limits
-                .max_shielded_transition_actions,
-        );
+        let max = usize::from(max_shielded_actions_per_transition(platform_version));
         let notes: Vec<ShieldedNote> = (0..=max as u64).map(|i| test_note(NOTE, i)).collect();
 
         for kind in [
@@ -1196,11 +1189,7 @@ mod tests {
     #[test]
     fn should_refuse_an_amount_that_needs_more_notes_than_one_transition_spends() {
         let platform_version = PlatformVersion::latest();
-        let max = usize::from(
-            platform_version
-                .system_limits
-                .max_shielded_transition_actions,
-        );
+        let max = usize::from(max_shielded_actions_per_transition(platform_version));
         let notes: Vec<ShieldedNote> = (0..=max as u64).map(|i| test_note(NOTE, i)).collect();
         let too_many = max as u64 * NOTE;
 
@@ -1248,6 +1237,68 @@ mod tests {
             )
             .expect("fits one transition");
             assert_eq!(fits.note_count(), max, "{kind:?}");
+        }
+    }
+
+    /// The 20 KiB transition-size limit, not the action cap, bounds a spend: an amount that
+    /// needs 7 notes is refused with a maximum of 6.
+    #[test]
+    fn should_refuse_an_amount_that_needs_more_notes_than_fit_the_transition_size() {
+        let platform_version = PlatformVersion::latest();
+        let notes: Vec<ShieldedNote> = (0..10).map(|i| test_note(NOTE, i)).collect();
+
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let planned = plan_spend(
+                &notes,
+                kind,
+                ShieldedSpendAmount::Exact(6 * NOTE),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    planned,
+                    Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed: 7, max: 6 })
+                ),
+                "{kind:?}: got {planned:?}"
+            );
+            let selected = select_notes_with_fee(
+                &notes,
+                6 * NOTE,
+                SPEND_MIN_ACTIONS,
+                kind.fee_kind(),
+                platform_version,
+            );
+            assert!(
+                matches!(
+                    selected,
+                    Err(PlatformWalletError::ShieldedSpendTooManyNotes { needed: 7, max: 6 })
+                ),
+                "{kind:?}: got {:?}",
+                selected.map(|(notes, ..)| notes.len())
+            );
+        }
+    }
+
+    /// A sweep of 10 equal notes plans the 6 that fit one transition.
+    #[test]
+    fn should_sweep_no_more_notes_than_fit_the_transition_size() {
+        let platform_version = PlatformVersion::latest();
+        let notes: Vec<ShieldedNote> = (0..10).map(|i| test_note(NOTE, i)).collect();
+
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal,
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let plan = plan_spend(&notes, kind, ShieldedSpendAmount::Sweep, platform_version)
+                .expect("plans");
+            assert_eq!(plan.note_count(), 6, "{kind:?}");
         }
     }
 }

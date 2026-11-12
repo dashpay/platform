@@ -12,10 +12,9 @@
 //! it submits a series of `ShieldFromAssetLock` (Type 18) transitions,
 //! each carrying one real note to the wallet's own default shielded
 //! address plus up to 5 **zero-value anonymity-set filler** outputs
-//! (`dummy_outputs`). Each batch publishes up to 6 Orchard actions — NOT
-//! the 16-action consensus cap (`max_shielded_transition_actions`), but
-//! the most that fits the 20 KiB transaction-size limit; see
-//! [`MAX_ACTIONS_PER_BATCH`]. Inbound transitions (Type 15 Shield, Type
+//! (`dummy_outputs`). Each batch publishes as many Orchard actions as fit
+//! the 20 KiB transaction-size limit (6 today), not the 16-action consensus
+//! cap (`max_shielded_transition_actions`); see [`max_actions_per_batch`]. Inbound transitions (Type 15 Shield, Type
 //! 18 ShieldFromAssetLock) are NOT subject to the 250-note minimum, so
 //! seeding runs against an empty pool.
 //!
@@ -31,6 +30,8 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::types::shielded::fetch_shielded_notes_count;
 use dpp::address_funds::OrchardAddress;
 use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::shielded::max_shielded_actions_per_transition;
+use dpp::version::PlatformVersion;
 
 use crate::wallet::asset_lock::orchestration::{AssetLockFunding, CL_FALLBACK_TIMEOUT};
 use crate::wallet::shielded::fund_from_asset_lock::shield_from_asset_lock_num_actions;
@@ -38,20 +39,15 @@ use crate::wallet::shielded::CachedOrchardProver;
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 
-/// Maximum Orchard actions per seeding batch.
-///
-/// The binding constraint is NOT the 16-action consensus cap
-/// (`max_shielded_transition_actions`) but the 20 KiB transaction-size
-/// limit (`system_limits.max_state_transition_size`, mirrored by
-/// tenderdash's `mempool.max-tx-bytes = 20480`): the Halo 2 proof grows
-/// with the action count, ~2,681 bytes per action on the wire. Measured
-/// serialized `ShieldFromAssetLock` sizes (signing_tests size probe):
-/// 2 actions → 8,294 B, 6 → 19,018 B, 7 → 21,699 B (rejected by
-/// tenderdash as "Tx too large"). 6 actions is the largest batch that
-/// fits, with ~1.4 KiB headroom for asset-lock-proof variants. Pinned by
-/// `seed_pool_batch_fits_max_state_transition_size` in dpp's
-/// shield_from_asset_lock signing tests.
-const MAX_ACTIONS_PER_BATCH: usize = 6;
+/// Maximum Orchard actions per seeding batch: the most actions one shielded transition carries
+/// on `platform_version`, which is bounded by the transition size limit
+/// (`system_limits.max_state_transition_size`, mirrored by tenderdash's
+/// `mempool.max-tx-bytes = 20480`) and not by the consensus action cap, because the Halo 2
+/// proof grows with the action count. See [`max_shielded_actions_per_transition`] for the
+/// measured sizes.
+fn max_actions_per_batch(platform_version: &PlatformVersion) -> u64 {
+    u64::from(max_shielded_actions_per_transition(platform_version))
+}
 
 /// Default total pool-note target. Matches the consensus 250-note
 /// anonymity-set minimum the seeding exists to satisfy.
@@ -104,7 +100,7 @@ pub struct SeedPoolOutcome {
 impl PlatformWallet {
     /// Seed the shielded pool up to `target_total_notes` by submitting a
     /// series of `ShieldFromAssetLock` (Type 18) batches, each adding up
-    /// to [`MAX_ACTIONS_PER_BATCH`] notes (1 real + up to 5 zero-value
+    /// to [`max_actions_per_batch`] notes (1 real + up to 5 zero-value
     /// anonymity-set fillers).
     ///
     /// Devnet/testnet-only: hard-errors on `Network::Mainnet` (the mainnet
@@ -182,11 +178,9 @@ impl PlatformWallet {
             ))
         })?;
 
-        let batches_total_estimate = estimate_batches(
-            start_notes,
-            target_total_notes,
-            MAX_ACTIONS_PER_BATCH as u64,
-        );
+        let max_batch_actions = max_actions_per_batch(sdk.version());
+        let batches_total_estimate =
+            estimate_batches(start_notes, target_total_notes, max_batch_actions);
 
         // Already satisfied — nothing to do.
         if start_notes >= target_total_notes {
@@ -222,8 +216,7 @@ impl PlatformWallet {
             // Notes this batch adds: 1 real + `dummy_outputs` fillers,
             // capped at the per-transition action limit. On the final
             // stretch, only add as many as still needed.
-            let notes_this_batch =
-                std::cmp::min(remaining, MAX_ACTIONS_PER_BATCH as u64).max(1) as usize;
+            let notes_this_batch = std::cmp::min(remaining, max_batch_actions).max(1) as usize;
             // `notes_this_batch` includes the real note; the rest are
             // fillers. (`max(1, ..)` above guarantees `>= 1`.)
             let dummy_outputs = notes_this_batch - 1;
@@ -373,7 +366,7 @@ impl PlatformWallet {
     }
 }
 
-/// Estimate the number of [`MAX_ACTIONS_PER_BATCH`]-note batches needed to
+/// Estimate the number of [`max_actions_per_batch`]-note batches needed to
 /// move the pool count from `current` to `target`, given `per_batch` notes
 /// per batch. Returns `0` when already at/above target. Pure arithmetic so
 /// it can be unit-tested without a wallet/SDK.
@@ -406,10 +399,10 @@ mod tests {
     #[test]
     fn batch_size_math_matches_action_count() {
         // The loop computes notes_this_batch =
-        // min(remaining, MAX_ACTIONS_PER_BATCH).max(1), dummy_outputs =
+        // min(remaining, max_actions_per_batch).max(1), dummy_outputs =
         // notes_this_batch - 1, and the on-wire action count must equal
         // max(1 + dummy_outputs, 2). Verify the coupling across the
-        // boundary cases the loop hits (MAX_ACTIONS_PER_BATCH == 6).
+        // boundary cases the loop hits (max_actions_per_batch == 6).
         for (remaining, expected_notes, expected_actions) in [
             (250u64, 6usize, 6usize), // full batch
             (6, 6, 6),                // exactly a full batch
@@ -418,7 +411,8 @@ mod tests {
             (1, 1, 2),                // 1 real, 0 fillers -> Orchard MIN_ACTIONS=2
         ] {
             let notes_this_batch =
-                std::cmp::min(remaining, MAX_ACTIONS_PER_BATCH as u64).max(1) as usize;
+                std::cmp::min(remaining, max_actions_per_batch(PlatformVersion::latest())).max(1)
+                    as usize;
             assert_eq!(notes_this_batch, expected_notes, "remaining={remaining}");
             let dummy_outputs = notes_this_batch - 1;
             assert_eq!(
