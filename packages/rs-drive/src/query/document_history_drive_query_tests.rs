@@ -489,6 +489,33 @@ fn should_refuse_lifecycle_metadata_that_disagrees_with_retained_history() {
 }
 
 #[test]
+fn should_report_an_empty_history_tree_without_a_record_as_absent() {
+    use super::{DocumentHistoryLifecycleTimes, DocumentHistoryState};
+
+    let fixture = Fixture::new();
+    for filter in [
+        DocumentHistoryFilter::StartAtTime(0),
+        DocumentHistoryFilter::Revision(1),
+        DocumentHistoryFilter::StartAtRevision(1),
+    ] {
+        let result = fixture
+            .decode(
+                &fixture.query(filter, None),
+                vec![fixture.metadata_row(
+                    DOCUMENT_HISTORY_TREE_KEY,
+                    Some(Element::ProvableCountTree(None, 0, None)),
+                )],
+            )
+            .expect("an empty history tree without a lifecycle record is absent");
+        assert!(result.entries.is_empty());
+        let lifecycle = result.lifecycle.expect("authenticated absence metadata");
+        assert_eq!(lifecycle.state, DocumentHistoryState::Absent);
+        assert_eq!(lifecycle.remaining_revisions, 0);
+        assert_eq!(lifecycle.times, DocumentHistoryLifecycleTimes::default());
+    }
+}
+
+#[test]
 fn should_reject_a_lifecycle_record_without_retained_history() {
     use dpp::document::lifecycle::DocumentLifecycleRecord;
     use dpp::serialization::PlatformSerializable;

@@ -346,7 +346,7 @@ impl DocumentHistoryDriveQuery {
         {
             return Err(corrupt("current document and retained history disagree"));
         }
-        if count == Some(0) {
+        if record.is_some() && count == Some(0) {
             return Err(corrupt("an empty history tree must not remain in storage"));
         }
         if record.is_some() && count.unwrap_or_default() == 0 {
