@@ -181,8 +181,13 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    escape or a percent escape, is refused here
 ///    (`DataContractMaxDepthExceedError` or `InvalidJsonSchemaRefError`), the
 ///    check now seeing the schema the validators walk; a `$ref` pointer holding
-///    none of those resolves and is measured as before. The parser is generation
-///    3 at both versions, and loading a stored contract runs no schema check.
+///    none of those resolves and is measured as before. It also holds an array
+///    to the maximum depth as it does a map, where generation 1 checked only
+///    maps, so a schema whose array nesting alone exceeds the maximum depth,
+///    such as a deeply nested `const` or `enum` value, is now refused at
+///    registration and update (`DataContractMaxDepthExceedError`). The parser
+///    is generation 3 at both versions, and loading a stored contract runs no
+///    schema check.
 ///    Protocol v14 and earlier keep `check_document_type_schema` 0 and
 ///    `validate_max_depth` 1.
 ///
