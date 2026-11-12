@@ -64,10 +64,11 @@ impl<C> Platform<C> {
         check_validation_result_with_data!(query
             .validate()
             .map_err(|error| QueryError::InvalidArgument(error.to_string())));
-        let fetched = self
-            .drive
-            .fetch_contract(contract_id, None, None, None, platform_version)
-            .value?;
+        // Through the contract cache, as `getDataContract` reads: a contract stored as its
+        // schemas is parsed, every pattern it holds compiled, each time it is read from state
+        let fetched =
+            self.drive
+                .get_contract_with_fetch_info(contract_id, true, None, platform_version)?;
         let fetched = check_validation_result_with_data!(
             fetched.ok_or_else(|| QueryError::NotFound("data contract not found".to_owned()))
         );

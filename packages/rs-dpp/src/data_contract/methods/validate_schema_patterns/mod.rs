@@ -52,7 +52,7 @@ impl DataContract {
     }
 
     /// What a mempool holds a contract's patterns to: the bound of
-    /// [`Self::validate_schema_patterns`], at every protocol version, and no `format: regex`.
+    /// [`Self::validate_schema_patterns`], at every protocol version.
     ///
     /// A protocol version that predates the rule has no bound in consensus, and its blocks
     /// must keep accepting what they accepted. Its mempool applies generation 0 of the rule
@@ -63,25 +63,23 @@ impl DataContract {
     /// a pattern is refused with a `$ref` that is not `#/$defs/` and a definition's name, or
     /// an `$id` that is not a plain name. It also compiles each key of a `patternProperties`,
     /// wherever the document meta-schema leaves a schema unchecked, so that is refused there.
-    ///
-    /// A schema declaring `format: regex` is refused at every protocol version: each value of
-    /// such a property is compiled as a pattern when a document is checked, under no bound a
-    /// contract can be held to. This is the one thing a mempool refuses that a block of a
-    /// protocol version with the rule accepts, and it is to go once document validation checks
-    /// such a value without compiling it.
+    /// And it compiles each value of a property declaring `format: regex` when a document is
+    /// checked, under no bound a contract can be held to, so a schema declaring one is refused
+    /// there too. A protocol version with the rule checks such a value's syntax without
+    /// compiling it, and its mempool refuses nothing its blocks accept.
     pub fn validate_schema_patterns_for_mempool(
         document_schemas: &BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let definitions_count = match platform_version
+        let (definitions_count, refuse_regex_format) = match platform_version
             .dpp
             .contract_versions
             .methods
             .validate_schema_patterns
         {
-            None => DefinitionsCount::OncePerReference,
-            Some(0) => DefinitionsCount::OncePerDocumentType,
+            None => (DefinitionsCount::OncePerReference, true),
+            Some(0) => (DefinitionsCount::OncePerDocumentType, false),
             Some(version) => {
                 return Err(ProtocolError::UnknownVersionMismatch {
                     method: "DataContract::validate_schema_patterns_for_mempool".to_string(),
@@ -94,7 +92,7 @@ impl DataContract {
             document_schemas,
             schema_defs,
             definitions_count,
-            true,
+            refuse_regex_format,
             platform_version,
         ))
     }
@@ -347,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_a_regex_format_out_of_the_mempool_and_leave_it_to_consensus() {
+    fn should_keep_a_regex_format_out_of_the_mempool_only_before_the_rule() {
         let document_schemas = schemas(platform_value!({
             "type": "object",
             "properties": {
@@ -361,15 +359,19 @@ mod tests {
             "additionalProperties": false,
         }));
 
-        for platform_version in [before_the_rule(), PlatformVersion::latest()] {
-            let message = refusal_message(validate_for_mempool(
-                &document_schemas,
-                None,
-                platform_version,
-            ));
-            assert!(message.contains("`format: regex`"), "{message}");
-            assert!(validate(&document_schemas, None, platform_version).is_valid());
-        }
+        // The JSON Schema validator compiles every value of such a property
+        let message = refusal_message(validate_for_mempool(
+            &document_schemas,
+            None,
+            before_the_rule(),
+        ));
+        assert!(message.contains("`format: regex`"), "{message}");
+        assert!(validate(&document_schemas, None, before_the_rule()).is_valid());
+
+        // The native validator checks a value's syntax without compiling it
+        let platform_version = PlatformVersion::latest();
+        assert!(validate_for_mempool(&document_schemas, None, platform_version).is_valid());
+        assert!(validate(&document_schemas, None, platform_version).is_valid());
     }
 
     /// `count` document types, each with one property that is a `$ref` to `definition`.

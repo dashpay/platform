@@ -20,6 +20,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use assert_matches::assert_matches;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
@@ -614,13 +615,48 @@ async fn should_refuse_a_pattern_over_the_compiled_size_limit_with_a_paid_consen
 /// The block refuses the contract for its patterns too, and charges for it.
 #[tokio::test]
 async fn should_refuse_field_matches_over_the_bound_in_check_tx_before_the_parse_compiles_them() {
+    let registration = register_contract_with_schema_and_balance(
+        field_matches_before_an_unknown_index_key_schema(one_pattern_too_many(), r"\w{200}"),
+        PlatformVersion::latest().protocol_version,
+        // A contested index costs a registration fee the default balance does not cover
+        dash_to_credits!(2.0),
+    )
+    .await;
+
+    assert_paid_contract_structure_error(&registration.outcome, TOO_MANY_PATTERNS_MESSAGE, 1);
+}
+
+/// The balance pre-check estimates the registration fee before the contract is parsed.
+/// `check_tx` holds the patterns to the bound before it, so an owner who cannot pay is refused
+/// for the patterns. The block's estimate bills the contested index by its keys, without
+/// compiling a field match, and refuses the owner, unpaid, for the balance.
+#[tokio::test]
+async fn should_refuse_field_matches_over_the_bound_before_the_balance_pre_check() {
     let registration = register_contract_with_schema(
         field_matches_before_an_unknown_index_key_schema(one_pattern_too_many(), r"\w{200}"),
         PlatformVersion::latest().protocol_version,
     )
     .await;
+    let outcome = &registration.outcome;
 
-    assert_paid_contract_structure_error(&registration.outcome, TOO_MANY_PATTERNS_MESSAGE, 1);
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::ContractError(
+            DataContractError::InvalidContractStructure(message)
+        ))]) if message.contains(TOO_MANY_PATTERNS_MESSAGE),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+            StateError::IdentityInsufficientBalanceError(_)
+        )),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(outcome.nonce_after, outcome.nonce_before);
+    assert_eq!(outcome.balance_after, outcome.balance_before);
 }
 
 /// Protocol version 14 has no pattern bound in consensus, so a block still registers what it
@@ -644,20 +680,30 @@ async fn should_keep_registering_patterns_over_the_bound_at_protocol_version_14_
     }
 }
 
-/// Every value of a `format: regex` property is compiled as a pattern when a document is
-/// checked, so `check_tx` keeps a contract declaring one out of the mempool; a block registers
-/// it as before.
+/// Before protocol version 15 every value of a `format: regex` property is compiled as a
+/// pattern when a document is checked, so `check_tx` keeps a contract declaring one out of the
+/// mempool, and a block registers it as before. From 15 a value's syntax is checked without
+/// compiling it, and the mempool admits the contract.
 #[tokio::test]
-async fn should_keep_a_regex_format_out_of_the_mempool_and_register_it_in_a_block() {
-    for protocol_version in [14, PlatformVersion::latest().protocol_version] {
-        let registration =
-            register_contract_with_schema(regex_format_schema(), protocol_version).await;
+async fn should_keep_a_regex_format_out_of_the_mempool_before_protocol_version_15() {
+    let registration = register_contract_with_schema(regex_format_schema(), 14).await;
+    assert_kept_out_of_the_mempool_and_executed_in_block(&registration.outcome, "`format: regex`");
 
-        assert_kept_out_of_the_mempool_and_executed_in_block(
-            &registration.outcome,
-            "`format: regex`",
-        );
-    }
+    let registration = register_contract_with_schema(
+        regex_format_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+    assert_matches!(
+        registration.outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        registration.outcome.check_tx
+    );
+    assert_matches!(
+        registration.outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
 }
 
 #[tokio::test]
