@@ -12,7 +12,7 @@
 //!   * bytes `[4..36]` — a 32-byte payload whose meaning depends on
 //!     `kind`.
 //!
-//! Two kinds are defined today; unknown kinds round-trip verbatim as
+//! Three kinds are defined today; unknown kinds round-trip verbatim as
 //! [`ShieldedMemo::Other`] so a future writer's memo is never
 //! corrupted by an older reader.
 
@@ -28,6 +28,8 @@ pub const MEMO_PAYLOAD_SIZE: usize = MEMO_SIZE - 4;
 const KIND_EMPTY: u32 = 0;
 /// `kind` tag for a UTF-8 text memo (zero-padded payload).
 const KIND_TEXT: u32 = 1;
+/// `kind` tag for a payment reference (zero-padded payload).
+const KIND_PAYMENT_REF: u32 = 2;
 
 /// A decoded shielded note memo.
 ///
@@ -42,6 +44,13 @@ pub enum ShieldedMemo {
     Empty,
     /// A UTF-8 text memo whose byte length is at most [`MEMO_PAYLOAD_SIZE`].
     Text(String),
+    /// A payment reference: what the payment is for, in a value the payee chose and
+    /// gave to the payer, such as an invoice or order number, padded on the right with
+    /// zero bytes. The payee matches all 32 bytes against its own records.
+    ///
+    /// It never says who paid. Anyone who has seen a reference can attach it to a
+    /// payment, so the payee checks the amount it received against the request.
+    PaymentRef([u8; MEMO_PAYLOAD_SIZE]),
     /// Any memo whose `kind` this version does not interpret (or a
     /// structurally-invalid known kind). Retained verbatim so it
     /// round-trips unchanged.
@@ -67,6 +76,37 @@ impl ShieldedMemo {
         Ok(ShieldedMemo::Text(s))
     }
 
+    /// Build a payment reference memo from the reference the payee supplied, of 1 to
+    /// [`MEMO_PAYLOAD_SIZE`] bytes, padded on the right with zero bytes. A payee whose
+    /// own identifier is longer issues a 32-byte hash of it.
+    ///
+    /// An empty or all-zero reference is refused: 32 zero bytes are no reference.
+    pub fn payment_ref(reference: &[u8]) -> Result<Self, ProtocolError> {
+        if reference.len() > MEMO_PAYLOAD_SIZE {
+            return Err(ProtocolError::Generic(format!(
+                "shielded payment reference is {} bytes, exceeds the {MEMO_PAYLOAD_SIZE}-byte limit",
+                reference.len()
+            )));
+        }
+        if reference.iter().all(|&byte| byte == 0) {
+            return Err(ProtocolError::Generic(
+                "shielded payment reference is empty or all zero bytes".to_string(),
+            ));
+        }
+        let mut payload = [0u8; MEMO_PAYLOAD_SIZE];
+        payload[..reference.len()].copy_from_slice(reference);
+        Ok(ShieldedMemo::PaymentRef(payload))
+    }
+
+    /// A payment reference as text, when it is valid UTF-8 once its zero padding is
+    /// removed. A reference that is not, a hash for example, is shown in hexadecimal.
+    pub fn payment_ref_text(reference: &[u8; MEMO_PAYLOAD_SIZE]) -> Option<&str> {
+        let end = reference.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+        std::str::from_utf8(&reference[..end])
+            .ok()
+            .filter(|text| !text.is_empty())
+    }
+
     /// Encode to the on-chain 36-byte memo layout.
     pub fn to_bytes(&self) -> [u8; MEMO_SIZE] {
         let mut out = [0u8; MEMO_SIZE];
@@ -82,6 +122,7 @@ impl ShieldedMemo {
                 payload[..n].copy_from_slice(&bytes[..n]);
                 (KIND_TEXT, payload)
             }
+            ShieldedMemo::PaymentRef(reference) => (KIND_PAYMENT_REF, *reference),
             ShieldedMemo::Other { kind, payload } => (*kind, *payload),
         };
         out[0..4].copy_from_slice(&kind.to_le_bytes());
@@ -92,7 +133,8 @@ impl ShieldedMemo {
     /// Decode from the on-chain 36-byte memo layout.
     ///
     /// Decoding is total: a `KIND_TEXT` memo whose payload is not valid
-    /// UTF-8, or a `KIND_EMPTY` memo with a non-zero payload, falls back
+    /// UTF-8, a `KIND_EMPTY` memo with a non-zero payload, or a
+    /// `KIND_PAYMENT_REF` memo with an all-zero payload falls back
     /// to [`Self::Other`] so the raw bytes are preserved rather than lost.
     pub fn from_bytes(bytes: &[u8; MEMO_SIZE]) -> Self {
         let kind = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
@@ -116,6 +158,10 @@ impl ShieldedMemo {
                     Ok(s) => ShieldedMemo::Text(s.to_string()),
                     Err(_) => ShieldedMemo::Other { kind, payload },
                 }
+            }
+            // 32 zero bytes are no reference, so that memo is not read as one.
+            KIND_PAYMENT_REF if payload != [0u8; MEMO_PAYLOAD_SIZE] => {
+                ShieldedMemo::PaymentRef(payload)
             }
             _ => ShieldedMemo::Other { kind, payload },
         }
@@ -197,6 +243,68 @@ mod tests {
             ShieldedMemo::text(s).is_err(),
             "a 36-byte multibyte memo must be rejected"
         );
+    }
+
+    #[test]
+    fn should_encode_a_payment_reference_padded_to_32_bytes() {
+        // The vector of the DashPay shielded payment addresses DIP.
+        let memo = ShieldedMemo::payment_ref(b"INV-2026-0042").expect("a 13-byte reference");
+        let bytes = memo.to_bytes();
+        let mut expected = [0u8; MEMO_SIZE];
+        expected[0] = 2;
+        expected[4..17].copy_from_slice(b"INV-2026-0042");
+        assert_eq!(bytes, expected);
+        assert_eq!(ShieldedMemo::from_bytes(&bytes), memo);
+
+        let ShieldedMemo::PaymentRef(reference) = memo else {
+            panic!("expected a payment reference");
+        };
+        assert_eq!(
+            ShieldedMemo::payment_ref_text(&reference),
+            Some("INV-2026-0042")
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_32_byte_payment_reference_that_is_not_text() {
+        // A hash: every byte used, not UTF-8, ending in a zero byte that is part of it.
+        let mut reference = [0xF5u8; MEMO_PAYLOAD_SIZE];
+        reference[31] = 0;
+        let memo = ShieldedMemo::payment_ref(&reference).expect("a 32-byte reference");
+        assert_eq!(memo, ShieldedMemo::PaymentRef(reference));
+        assert_eq!(ShieldedMemo::from_bytes(&memo.to_bytes()), memo);
+        assert_eq!(ShieldedMemo::payment_ref_text(&reference), None);
+    }
+
+    #[test]
+    fn should_read_references_that_differ_only_in_trailing_zero_bytes_as_one() {
+        assert_eq!(
+            ShieldedMemo::payment_ref(&[1]).expect("a reference"),
+            ShieldedMemo::payment_ref(&[1, 0]).expect("a reference")
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_payment_reference_that_is_empty_all_zero_or_too_long() {
+        assert!(ShieldedMemo::payment_ref(&[]).is_err());
+        assert!(ShieldedMemo::payment_ref(&[0; 5]).is_err());
+        assert!(ShieldedMemo::payment_ref(&[0; MEMO_PAYLOAD_SIZE]).is_err());
+        assert!(ShieldedMemo::payment_ref(&[1; MEMO_PAYLOAD_SIZE + 1]).is_err());
+    }
+
+    #[test]
+    fn should_not_read_an_all_zero_payload_as_a_payment_reference() {
+        let mut bytes = [0u8; MEMO_SIZE];
+        bytes[0..4].copy_from_slice(&KIND_PAYMENT_REF.to_le_bytes());
+        assert_eq!(
+            ShieldedMemo::from_bytes(&bytes),
+            ShieldedMemo::Other {
+                kind: KIND_PAYMENT_REF,
+                payload: [0u8; MEMO_PAYLOAD_SIZE],
+            }
+        );
+        // The bytes survive the round trip.
+        assert_eq!(ShieldedMemo::from_bytes(&bytes).to_bytes(), bytes);
     }
 
     #[test]
