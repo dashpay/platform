@@ -413,8 +413,10 @@ fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<
             document.insert.add_document_to_primary_storage,
         ),
         (
+            // 3 differs from 2 only for a document whose time range buckets
+            // have expired, which a document created now has none of.
             "add_indices_for_top_index_level_for_contract_operations",
-            &[2][..],
+            &[2, 3][..],
             document
                 .insert
                 .add_indices_for_top_index_level_for_contract_operations,
