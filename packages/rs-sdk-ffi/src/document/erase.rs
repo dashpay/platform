@@ -14,7 +14,6 @@ use dash_sdk::platform::documents::transitions::{
     DocumentEraseResult, DocumentEraseTransitionBuilder,
 };
 use dash_sdk::platform::IdentityPublicKey;
-use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use tracing::{debug, error, info};
@@ -103,25 +102,8 @@ pub unsafe extern "C" fn dash_sdk_document_erase(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Resolve the contract through the SDK's current context provider.
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -285,25 +267,8 @@ pub unsafe extern "C" fn dash_sdk_document_erase_and_wait(
         let contract_id = Identifier::from_string(contract_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InternalError(format!("Invalid contract ID: {}", e)))?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Resolve the contract through the SDK's current context provider.
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let settings = crate::identity::convert_put_settings(put_settings);
@@ -378,10 +343,67 @@ mod tests {
     use crate::test_utils::test_utils::*;
     use crate::DashSDKErrorCode;
 
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dash_sdk::platform::IdentityPublicKey;
 
     use std::ffi::{CStr, CString};
     use std::ptr;
+
+    fn assert_erase_uses_current_context_provider(wait_for_result: bool, expected_context: &str) {
+        let contract = create_mock_data_contract();
+        let contract_id = CString::new(contract.id().to_string(Encoding::Base58)).unwrap();
+        let sdk_handle = create_mock_sdk_handle_with_current_contracts(vec![*contract]);
+        let document_id =
+            CString::new(Identifier::new([2; 32]).to_string(Encoding::Base58)).unwrap();
+        let owner_id = CString::new(Identifier::new([1; 32]).to_string(Encoding::Base58)).unwrap();
+        let document_type_name = CString::new("missing_document_type").unwrap();
+        let public_key = create_mock_identity_public_key();
+        let signer = create_mock_signer();
+        let erase = if wait_for_result {
+            dash_sdk_document_erase_and_wait
+        } else {
+            dash_sdk_document_erase
+        };
+
+        let result = unsafe {
+            erase(
+                sdk_handle,
+                document_id.as_ptr(),
+                owner_id.as_ptr(),
+                contract_id.as_ptr(),
+                document_type_name.as_ptr(),
+                ptr::from_ref(public_key.as_ref()).cast(),
+                ptr::from_ref(signer.as_ref()).cast(),
+                ptr::null(),
+                ptr::null(),
+            )
+        };
+        assert!(!result.error.is_null());
+        let (code, message) = unsafe {
+            let error = &*result.error;
+            let details = (
+                error.code,
+                CStr::from_ptr(error.message).to_string_lossy().into_owned(),
+            );
+            crate::dash_sdk_error_free(result.error);
+            details
+        };
+        destroy_mock_sdk_handle(sdk_handle);
+
+        assert_eq!(code, DashSDKErrorCode::InternalError);
+        assert!(message.contains(expected_context), "{message}");
+        assert!(message.contains("document type not found"), "{message}");
+    }
+
+    #[test]
+    fn should_sign_erase_using_the_current_context_provider() {
+        assert_erase_uses_current_context_provider(false, "Failed to create erase transition");
+    }
+
+    #[test]
+    fn should_erase_and_wait_using_the_current_context_provider() {
+        assert_erase_uses_current_context_provider(true, "Failed to erase document and wait");
+    }
 
     #[test]
     fn test_erase_with_null_sdk_handle() {

@@ -903,7 +903,7 @@ class Documents internal constructor(private val sdk: Sdk) {
      * lifecycle block (see [DocumentLifecycle]); returns the JSON object
      * `{"entries":[{"time_ms","revision","document"}],"lifecycle":{…}}` or
      * null when the response is missing. [contractId] is base58 and is
-     * resolved through the SDK's trusted contract provider. Exactly one
+     * resolved through the SDK's current context provider. Exactly one
      * [filter] applies; [limit] is at most ten, 0 for the default. Needs the
      * protocol-15 history layout: a page served from the earlier layout has no
      * lifecycle block and the FFI refuses it.

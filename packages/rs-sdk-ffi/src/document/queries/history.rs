@@ -14,7 +14,6 @@ use dash_sdk::platform::documents::document_history_query::{
 };
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryState};
-use drive_proof_verifier::ContextProvider;
 use serde::Serialize;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uint};
@@ -121,7 +120,7 @@ fn document_history_to_json(history: DocumentHistory) -> Result<String, FFIError
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `contract_id`: Base58-encoded contract ID (resolved through the trusted context provider)
+/// - `contract_id`: Base58-encoded contract ID (resolved through the SDK's current context provider)
 /// - `document_type`: Name of a keep-history document type in that contract
 /// - `document_id`: Base58-encoded document ID
 /// - `filter`: A `DashSDKDocumentHistoryFilter` value (0..=3); decides how `time_ms` and `revision` are used
@@ -201,27 +200,9 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
         let document_id = Identifier::from_string(document_id_str, Encoding::Base58)
             .map_err(|e| FFIError::InvalidParameter(format!("Invalid document ID: {e}")))?;
 
-        // Resolve the contract through the trusted context provider, as the
-        // other document reads do, so the document type is checked before the
-        // request goes out and the proof verifier finds the contract cached.
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Check the document type in a pre-flight lookup through the SDK's
+        // current context provider. Fetch also uses it to verify the history.
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         data_contract
             .document_type_for_name(document_type_str)
@@ -270,6 +251,44 @@ mod tests {
     use drive_proof_verifier::types::{DocumentHistoryEntry, DocumentHistoryLifecycle};
     use std::collections::BTreeMap;
     use std::ptr;
+
+    #[test]
+    fn should_fetch_history_using_the_current_context_provider() {
+        let contract = create_mock_data_contract();
+        let contract_id = CString::new(contract.id().to_string(Encoding::Base58)).unwrap();
+        let sdk_handle = create_mock_sdk_handle_with_current_contracts(vec![*contract]);
+        let document_id =
+            CString::new(Identifier::new([2; 32]).to_string(Encoding::Base58)).unwrap();
+        let document_type = CString::new("missing_document_type").unwrap();
+
+        let result = unsafe {
+            dash_sdk_document_fetch_history(
+                sdk_handle,
+                contract_id.as_ptr(),
+                document_type.as_ptr(),
+                document_id.as_ptr(),
+                DashSDKDocumentHistoryFilter::HistoryStartAtTime as c_uint,
+                0,
+                0,
+                1,
+            )
+        };
+        assert!(!result.error.is_null());
+        let (code, message) = unsafe {
+            let error = &*result.error;
+            let details = (
+                error.code,
+                CStr::from_ptr(error.message).to_string_lossy().into_owned(),
+            );
+            crate::dash_sdk_error_free(result.error);
+            details
+        };
+        destroy_mock_sdk_handle(sdk_handle);
+
+        assert_eq!(code, DashSDKErrorCode::NotFound, "{message}");
+        assert!(message.contains("Document type not found"), "{message}");
+        assert!(message.contains("document type not found"), "{message}");
+    }
 
     fn revision_document(revision: u64) -> Document {
         let mut properties = BTreeMap::new();
