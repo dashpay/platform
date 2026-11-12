@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.queries.DocumentLifecycle
 import org.dashfoundation.dashsdk.queries.DocumentLifecycleState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,10 +24,14 @@ class EraseAndDescribeTest {
     private fun lifecycle(state: DocumentLifecycleState, remaining: Long) = DocumentLifecycle(
         state = state,
         remainingRevisions = remaining.toULong(),
-        deletedAtMs = 1_700_000_000_001uL,
+        deletedAtMs = if (state == DocumentLifecycleState.DELETED || state == DocumentLifecycleState.ERASING) {
+            1_700_000_000_001uL
+        } else {
+            0uL
+        },
         erasingStartedAtMs = if (state == DocumentLifecycleState.ERASING) 1_700_000_000_002uL else 0uL,
-        erasingFromTimeMs = 1_700_000_000_000uL,
-        erasingFromRevision = 7uL,
+        erasingFromTimeMs = if (state == DocumentLifecycleState.ERASING) 1_700_000_000_000uL else 0uL,
+        erasingFromRevision = if (state == DocumentLifecycleState.ERASING) 7uL else 0uL,
     )
 
     @Test
@@ -42,6 +47,10 @@ class EraseAndDescribeTest {
             assertEquals("no post-broadcast read is needed", 1, reads)
             assertTrue(message, message.startsWith("Erase not submitted"))
             assertTrue(message, message.contains(state.name))
+            if (state == DocumentLifecycleState.ABSENT) {
+                assertTrue(message, message.contains("No retained revisions exist"))
+                assertFalse(message, message.contains("Erasure complete"))
+            }
         }
     }
 

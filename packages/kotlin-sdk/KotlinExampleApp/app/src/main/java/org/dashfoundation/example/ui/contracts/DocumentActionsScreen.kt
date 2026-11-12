@@ -659,7 +659,7 @@ fun DocumentActionsScreen(
                 Text(
                     "This removes up to 100 retained revisions of the deleted document " +
                         "${truncateMiddle(documentIdText.trim(), 8, 6)}. " +
-                        "Signing identity: ${actingIdentity?.let { Base58.encode(it.identityId) }}. " +
+                        "Signing identity: $actingB58. " +
                         "This cannot be undone.",
                 )
             },
@@ -712,6 +712,9 @@ fun DocumentActionsScreen(
  * it and the one read after. Extracted from [DocumentActionsScreen] so the
  * failure split is unit-testable.
  *
+ * An ACTIVE or ABSENT lifecycle read returns without invoking [erase]. ABSENT
+ * means no retained revisions exist; it does not establish a completed erase.
+ *
  * Only [erase] decides whether the submission succeeded. The erase result
  * itself observes only that the document is absent from ordinary reads, which
  * it already was, so the lifecycle is the account of what was removed — but it
@@ -734,7 +737,12 @@ internal suspend fun eraseAndDescribe(
 
     val before = observe()
     if (before?.state == DocumentLifecycleState.ACTIVE || before?.state == DocumentLifecycleState.ABSENT) {
-        return "Erase not submitted. Lifecycle: ${before.state}. " + describeEraseProgress(before, before)
+        val progress = if (before.state == DocumentLifecycleState.ABSENT) {
+            "No retained revisions exist."
+        } else {
+            describeEraseProgress(before, before)
+        }
+        return "Erase not submitted. Lifecycle: ${before.state}. $progress"
     }
     erase()
     val after = observe()
