@@ -55,8 +55,16 @@ final class DocumentHistoryLifecycleTests: XCTestCase {
         XCTAssertNil(try lifecycle(fromJSON: json(remainingRevisions: "-1")))
     }
 
+    func testPreservesTheFullUInt64RangeFromRustJSON() throws {
+        for value in ["9007199254740993", "9223372036854775808", "18446744073709551615"] {
+            let parsed = try XCTUnwrap(lifecycle(fromJSON: json(remainingRevisions: value)))
+            XCTAssertEqual(parsed.remainingRevisions, UInt64(value))
+        }
+    }
+
     func testRejectsANumberOutsideUInt64() throws {
         XCTAssertNil(try lifecycle(fromJSON: json(remainingRevisions: "1e40")))
+        XCTAssertNil(try lifecycle(fromJSON: json(remainingRevisions: "18446744073709551616")))
     }
 
     func testRejectsANumberSentAsAString() throws {
