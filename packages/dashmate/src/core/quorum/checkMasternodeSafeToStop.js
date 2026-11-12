@@ -65,11 +65,12 @@ async function hasWorkBlocksOf(rpcClient, dkgInfo, height) {
  * so the tip is read before and after the DKG calls; if a block connected in
  * between, they may describe different tips and are discarded.
  *
- * Core in initial block download takes no part in DKGs, and stays in it only
- * while it connects blocks older than its maximum tip age, 6 hours: catching
- * up on DKGs the network ran hours ago. Its state is then kept however far the
- * tip moved, as long as the chain read last still has the work blocks Core's
- * answers came from.
+ * Core in initial block download takes no part in DKGs. Unless it is
+ * reindexing, it leaves it once its tip is less than 6 hours old (its default
+ * maximum tip age), so while it syncs it is usually catching up on DKGs the
+ * network ran hours ago. Its state is then kept however far the tip moved, as
+ * long as the chain read last still has the work blocks Core's answers came
+ * from.
  *
  * With `ancestorHeight`, also reads the hash of the chain's block at that
  * height, after the tip, so that it describes the chain the snapshot reports.
