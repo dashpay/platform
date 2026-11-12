@@ -320,10 +320,12 @@ unsafe fn read_plan_digest(digest: *const u8) -> [u8; 32] {
 /// `core_fee_per_byte` is the Core fee rate of a withdrawal (kind `2`) and is
 /// ignored for the other kinds. A withdrawal's `amount` is the reserve for
 /// Core, of which the Core fee is taken: the plan's `recipient_amount` is what
-/// reaches the Core address. The amount must lie within the protocol bounds
-/// for that rate (a withdrawal sweep is capped at the maximum), else
-/// `ErrorShieldedWithdrawalAmountOutOfRange`; a rate above the protocol cap
-/// returns `ErrorWalletOperation`. Run the withdraw export with the same
+/// reaches the Core address, the reserve truncated to whole duffs minus the
+/// Core fee. The amount must lie within the protocol bounds for that rate (a
+/// withdrawal sweep is capped at the maximum), else
+/// `ErrorShieldedWithdrawalAmountOutOfRange`; a rate the protocol refuses (zero,
+/// not a Fibonacci number, or above the cap from protocol 14) returns
+/// `ErrorWalletOperation`. Run the withdraw export with the same
 /// rate: another rate refuses with `ErrorShieldedPlanChanged`.
 ///
 /// Writes the plan to `out_plan`. Run it with the spend's `_with_plan` export

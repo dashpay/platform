@@ -6,6 +6,8 @@
 
 use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_private_document_create_from_shielded_pool_fee,
@@ -14,9 +16,7 @@ use dpp::shielded::{
     is_allowed_identity_create_denomination, max_shielded_actions_per_transition,
 };
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::{
-    core_fee_in_credits, min_withdrawal_amount_with_core_fee, validate_core_fee_per_byte_cap,
-};
+use dpp::withdrawal::preflight_shielded_withdrawal;
 use dpp::ProtocolError;
 use sha2::{Digest, Sha256};
 
@@ -357,8 +357,9 @@ pub struct ShieldedSpendPlan {
     /// What the spend reserves for the recipient: the amount sent, or for a withdrawal the
     /// reserve for Core, of which the Core fee is taken.
     pub amount: Credits,
-    /// What the recipient receives. The amount, except for a withdrawal from protocol version
-    /// 14, where it is the reserve minus the Core fee at the kind's rate.
+    /// What the recipient receives. The amount, except for a withdrawal: there the output DPP
+    /// pays for the reserve, in credits: the reserve truncated to whole duffs, minus the Core
+    /// fee at the kind's rate from protocol version 14.
     pub recipient_amount: Credits,
     /// The exact fee for the selected notes.
     pub fee: Credits,
@@ -392,52 +393,34 @@ fn spend_digest(
     hasher.finalize().into()
 }
 
-/// The bounds of a withdrawal's `reserve` for Core at `core_fee_per_byte`, from the DPP helpers
-/// consensus validates with: `(minimum, maximum, Core fee)`. From protocol version 14 (the
-/// versions that cap the Core fee rate) the Core fee is carved out of the reserve and the minimum
-/// leaves the protocol floor above it; before, the fee is drawn from the Core credit pool on top
-/// of the reserve, so the minimum is the floor and the fee is 0. A rate above the cap is refused,
-/// as consensus refuses it.
-fn withdrawal_bounds(
-    core_fee_per_byte: u32,
-    platform_version: &PlatformVersion,
-) -> Result<(Credits, Credits, Credits), PlatformWalletError> {
-    let limits = &platform_version.system_limits;
-    if limits.max_core_fee_per_byte.is_none() {
-        return Ok((
-            limits.min_withdrawal_amount,
-            limits.max_withdrawal_amount,
-            0,
-        ));
-    }
-    let capped = validate_core_fee_per_byte_cap(core_fee_per_byte, platform_version);
-    if let Some(error) = capped.first_error() {
-        return Err(PlatformWalletError::ShieldedBuildError(error.to_string()));
-    }
-    let core_fee = core_fee_in_credits(core_fee_per_byte).ok_or_else(|| {
-        PlatformWalletError::ShieldedBuildError("the Core fee overflows credits".to_string())
-    })?;
-    Ok((
-        min_withdrawal_amount_with_core_fee(core_fee_per_byte, platform_version),
-        limits.max_withdrawal_amount,
-        core_fee,
-    ))
-}
-
-/// Refuse a withdrawal `amount` (the reserve for Core) outside what the protocol accepts at
-/// `core_fee_per_byte`, as [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. Returns
-/// what the recipient receives. Store-free, so callers can run it before reserving any note.
+/// Refuse a withdrawal `amount` (the reserve for Core) that DPP's shared preflight refuses at
+/// `core_fee_per_byte` and `platform_version`: a rate that cannot execute, or a reserve outside
+/// the bounds ([`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]). Returns what the
+/// recipient receives, the rounded output DPP pays; the reserve itself stays the gross debit.
+/// Store-free, so callers can run it before reserving any note.
 pub(crate) fn ensure_withdrawal_amount_in_range(
     amount: Credits,
     core_fee_per_byte: u32,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, PlatformWalletError> {
-    let (min, max, core_fee) = withdrawal_bounds(core_fee_per_byte, platform_version)?;
-    if amount < min || amount > max {
-        return Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { amount, min, max });
+    match preflight_shielded_withdrawal(amount, core_fee_per_byte, platform_version) {
+        Ok(reserve) => Ok(reserve.output_credits()),
+        Err(ConsensusError::BasicError(BasicError::WithdrawalBelowMinAmountError(error))) => {
+            Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange {
+                amount,
+                min: error.min_amount(),
+                max: error.max_amount(),
+            })
+        }
+        Err(ConsensusError::BasicError(
+            BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(error),
+        )) => Err(PlatformWalletError::ShieldedWithdrawalAmountOutOfRange {
+            amount,
+            min: error.min_amount(),
+            max: error.max_amount(),
+        }),
+        Err(error) => Err(PlatformWalletError::ShieldedBuildError(error.to_string())),
     }
-    // In range, so at least the minimum, which is above the Core fee.
-    Ok(amount - core_fee)
 }
 
 impl ShieldedSpendPlan {
@@ -480,10 +463,10 @@ impl ShieldedSpendPlan {
 /// their fee ([`sweep_amount`]); the plan selects exactly those notes. A withdrawal sweep is
 /// capped at the largest withdrawal the protocol accepts.
 ///
-/// A withdrawal's amount must lie within the protocol bounds for its Core fee rate
-/// ([`ensure_withdrawal_amount_in_range`]), else
-/// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]; the plan's `recipient_amount` is
-/// what reaches Core after the Core fee.
+/// A withdrawal must pass DPP's shared preflight ([`ensure_withdrawal_amount_in_range`]): a rate
+/// that cannot execute is refused, and an amount outside the protocol bounds is
+/// [`PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`]. The plan's `recipient_amount` is
+/// the rounded output DPP pays; its `amount` stays the gross reserve.
 pub fn plan_spend(
     unspent: &[ShieldedNote],
     kind: ShieldedSpendKind,
@@ -497,9 +480,8 @@ pub fn plan_spend(
             let sweep = sweep_amount(unspent, fee_kind, platform_version)?;
             match kind {
                 // Capped at the largest withdrawal, so the plan stays executable.
-                ShieldedSpendKind::Withdrawal { core_fee_per_byte } => {
-                    let (_, max, _) = withdrawal_bounds(core_fee_per_byte, platform_version)?;
-                    sweep.min(max)
+                ShieldedSpendKind::Withdrawal { .. } => {
+                    sweep.min(platform_version.system_limits.max_withdrawal_amount)
                 }
                 _ => sweep,
             }
@@ -1579,5 +1561,89 @@ mod tests {
             matches!(planned, Err(PlatformWalletError::ShieldedBuildError(_))),
             "got {planned:?}"
         );
+    }
+
+    /// The recipient gets what DPP's conversion pays: the reserve truncated to whole duffs, then
+    /// the Core fee. The plan keeps the gross reserve as `amount` and debits it.
+    #[test]
+    fn should_report_the_rounded_output_dpp_pays_for_a_non_duff_aligned_exact_amount() {
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let notes = vec![test_note(NOTE, 0)];
+        let plan = plan_spend(
+            &notes,
+            withdrawal(1),
+            ShieldedSpendAmount::Exact(1_000_000_001),
+            v14,
+        )
+        .expect("plans");
+        assert_eq!(plan.amount, 1_000_000_001);
+        assert_eq!(plan.recipient_amount, 999_810_000);
+        assert_eq!(plan.total_debited(), 1_000_000_001 + plan.fee);
+    }
+
+    /// A sweep's reserve is whatever the notes leave after the fee, rarely duff aligned.
+    #[test]
+    fn should_report_the_rounded_output_for_a_non_duff_aligned_sweep() {
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let fee = compute_shielded_withdrawal_fee(2, v14).expect("fee");
+        let plan = plan_spend(
+            &[test_note(fee + 2_000_000_999, 0)],
+            withdrawal(1),
+            ShieldedSpendAmount::Sweep,
+            v14,
+        )
+        .expect("plans");
+        assert_eq!(plan.amount, 2_000_000_999);
+        assert_eq!(plan.recipient_amount, (2_000_000 - 190) * 1_000);
+    }
+
+    /// Before the carve-out the output is still the reserve's whole duffs.
+    #[test]
+    fn should_round_a_withdrawal_reserve_to_whole_duffs_below_the_core_fee_carve_out() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        let plan = plan_spend(
+            &[test_note(NOTE, 0)],
+            withdrawal(5),
+            ShieldedSpendAmount::Exact(1_000_000_999),
+            v13,
+        )
+        .expect("plans");
+        assert_eq!(plan.amount, 1_000_000_999);
+        assert_eq!(plan.recipient_amount, 1_000_000_000);
+    }
+
+    /// A zero or non-Fibonacci rate cannot execute at any protocol version, so it plans at none,
+    /// exact or sweep.
+    #[test]
+    fn should_refuse_a_zero_or_non_fibonacci_withdrawal_rate_before_and_after_the_cap() {
+        for version in [13, 14] {
+            let platform_version = PlatformVersion::get(version).expect("protocol version");
+            let notes = vec![test_note(NOTE, 0)];
+            for rate in [0, 4] {
+                for amount in [
+                    ShieldedSpendAmount::Exact(NOTE / 2),
+                    ShieldedSpendAmount::Sweep,
+                ] {
+                    let planned = plan_spend(&notes, withdrawal(rate), amount, platform_version);
+                    assert!(
+                        matches!(planned, Err(PlatformWalletError::ShieldedBuildError(_))),
+                        "v{version} rate {rate} {amount:?}: got {planned:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The cap refuses only from the version that has one.
+    #[test]
+    fn should_refuse_a_withdrawal_rate_above_the_cap_only_from_the_version_that_caps_it() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        plan_spend(
+            &[test_note(NOTE, 0)],
+            withdrawal(10_946),
+            ShieldedSpendAmount::Exact(NOTE / 2),
+            v13,
+        )
+        .expect("protocol 13 has no cap");
     }
 }

@@ -111,8 +111,9 @@ public struct ShieldedSpendPlan: Sendable, Equatable {
     /// What the spend reserves for the recipient: the amount sent, or for a
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     public let amount: UInt64
-    /// What the recipient receives: `amount`, except for a withdrawal from
-    /// protocol version 14, where it is `amount` minus the Core fee.
+    /// What the recipient receives: `amount`, except for a withdrawal, where
+    /// it is the output the protocol pays: `amount` truncated to whole duffs,
+    /// minus the Core fee from protocol version 14.
     public let recipientAmount: UInt64
     /// The exact fee for the selected notes.
     public let fee: UInt64
@@ -749,7 +750,7 @@ extension PlatformWalletManager {
     /// `coreFeePerByte` is the Core fee rate of a `.withdrawal`, required for
     /// it and ignored for the other kinds. A withdrawal's amount is the
     /// reserve for Core: the plan's `recipientAmount` is what reaches the Core
-    /// address after the Core fee, and the withdrawal must run with the same
+    /// address: the reserve's whole duffs minus the Core fee, and the withdrawal must run with the same
     /// rate (another rate throws `shieldedPlanChanged`). A withdrawal sweep is
     /// capped at the protocol's largest withdrawal.
     ///

@@ -101,8 +101,9 @@ pub struct ShieldedSpendPlanFFI {
     /// What the spend reserves for the recipient: the amount sent, or for a
     /// withdrawal the reserve for Core, of which the Core fee is taken.
     pub amount: u64,
-    /// What the recipient receives: `amount`, except for a withdrawal from
-    /// protocol version 14, where it is `amount` minus the Core fee.
+    /// What the recipient receives: `amount`, except for a withdrawal, where
+    /// it is the output the protocol pays: `amount` truncated to whole duffs,
+    /// minus the Core fee from protocol version 14.
     pub recipient_amount: u64,
     /// The exact fee for the selected notes.
     pub fee: u64,
