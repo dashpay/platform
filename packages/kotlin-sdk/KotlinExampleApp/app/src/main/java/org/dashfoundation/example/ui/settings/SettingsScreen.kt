@@ -146,8 +146,11 @@ fun SettingsScreen(navController: NavHostController) {
                     selected = quorumMode,
                     optionLabel = { it.label },
                     testTag = "settings.quorumMode",
+                    // The SDK a rebuild is creating takes the mode it read
+                    // before publishing; a pick meanwhile would miss it.
+                    enabled = !isLoading,
                 ) { selected ->
-                    scope.launch { appState.setQuorumMode(selected) }
+                    appState.setQuorumMode(selected)
                 }
                 Text(
                     "Which quorum public-key source to use for Platform proof verification, " +
@@ -162,7 +165,7 @@ fun SettingsScreen(navController: NavHostController) {
                 LabeledContent(
                     label = "Proof Quorum Source",
                     value = when (quorumSource) {
-                        Sdk.QuorumSource.SPV -> "SPV (trustless)"
+                        Sdk.QuorumSource.SPV -> "SPV"
                         Sdk.QuorumSource.TRUSTED -> "Trusted (HTTP)"
                         Sdk.QuorumSource.CUSTOM -> "Custom"
                     },

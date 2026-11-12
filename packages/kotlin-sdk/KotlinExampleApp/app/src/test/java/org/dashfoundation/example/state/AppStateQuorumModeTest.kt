@@ -12,6 +12,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -38,6 +39,7 @@ class AppStateQuorumModeTest {
         val file = File(temporaryFolder.root, "app.preferences_pb")
         val first = newSession(file)
         first.appState.setQuorumMode(AppState.QuorumMode.SPV)
+        advanceUntilIdle()
         first.close()
 
         val relaunched = newSession(file)

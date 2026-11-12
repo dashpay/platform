@@ -212,20 +212,26 @@ class AppState(
     /**
      * Pick the quorum source — port of the Swift `AppState.quorumMode`
      * `didSet`: persist it, apply it to the current SDK and refresh the
-     * indicator. A refusal is reported through [errorMessage].
+     * indicator, on this object's scope so leaving the screen does not cut
+     * that short. Each apply reads the latest pick, so quick successive picks
+     * leave the SDK in the last one. A refusal is reported through
+     * [errorMessage].
      */
-    suspend fun setQuorumMode(mode: QuorumMode) {
+    fun setQuorumMode(mode: QuorumMode) {
         _quorumMode.value = mode
-        dataStore.edit { it[KEY_QUORUM_MODE] = mode.rawValue }
-        val sdk = _sdk.value ?: return
-        try {
-            sdk.setQuorumMode(mode.sdkMode)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            _errorMessage.value = "Failed to apply quorum mode: ${e.message}"
+        scope.launch {
+            val picked = _quorumMode.value
+            dataStore.edit { it[KEY_QUORUM_MODE] = picked.rawValue }
+            val sdk = _sdk.value ?: return@launch
+            try {
+                sdk.setQuorumMode(picked.sdkMode)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to apply quorum mode: ${e.message}"
+            }
+            refreshQuorumSource()
         }
-        refreshQuorumSource()
     }
 
     /**
@@ -233,7 +239,8 @@ class AppState(
      * the Swift `AppState.refreshQuorumSource`. In Auto the adaptive
      * provider follows SPV readiness by itself, so SPV progress needs only
      * this refresh, not a mode change. An SDK a rebuild closed meanwhile is
-     * skipped: the rebuild refreshes for its replacement.
+     * skipped, as is a failed read: the indicator keeps its last value, and a
+     * rebuild refreshes for its replacement.
      */
     suspend fun refreshQuorumSource() {
         val sdk = _sdk.value ?: return
@@ -241,7 +248,7 @@ class AppState(
             sdk.quorumSource()
         } catch (e: CancellationException) {
             throw e
-        } catch (_: IllegalStateException) {
+        } catch (_: Exception) {
             return
         }
         if (_sdk.value === sdk) _quorumSource.value = source

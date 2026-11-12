@@ -202,8 +202,10 @@ class AppContainer(private val context: Context) {
         spvOverlayJob = applicationScope.launch {
             publisher.progress.collect { p ->
                 // In Auto the SDK's quorum source follows SPV readiness
-                // (← QuorumSourceRefresh in SwiftExampleAppApp.swift).
-                appState.refreshQuorumSource()
+                // (← QuorumSourceRefresh in SwiftExampleAppApp.swift). Its
+                // own coroutine: the read can wait on the SPV client, and the
+                // overlay must not.
+                applicationScope.launch { appState.refreshQuorumSource() }
                 syncOverlayState.publish(
                     org.dashfoundation.example.state.SpvProgress(
                         phaseTitle = p.phaseTitle,
