@@ -1265,6 +1265,17 @@ struct TransitionDetailView: View {
       dataContractId: contractId, documentType: documentType, documentId: documentId
     )
 
+    if let before, before.state == .active || before.state == .absent {
+      return [
+        "message": "Erase not submitted",
+        "lifecycle": before.state.rawValue,
+        "remainingRevisions": before.remainingRevisions,
+        "progress": before.state == .absent
+          ? "No retained revisions exist."
+          : DocumentHistoryLifecycle.describeEraseProgress(before: before, after: before)
+      ]
+    }
+
     try await sdk.documentErase(
       contractId: contractId,
       documentType: documentType,

@@ -917,7 +917,7 @@ struct EraseDocumentView: View {
                         DetailRow(label: "Revisions retained", value: String(lifecycle.remainingRevisions))
                     }
                 } footer: {
-                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. Erasing a document that is still active is rejected by consensus and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
+                    Text("Removes up to 100 retained revisions of a document that has already been deleted on Platform. The document type must allow erasure, and only the owner may start it. If the initial lifecycle read fails, an erase may still be submitted for an active document; consensus rejects it and still charges a fee. A broadcast only observes that the document is absent from ordinary reads; the lifecycle read after it says what remains. This cannot be undone.")
                 }
                 if submissions > 0 || progress != nil {
                     Section {
@@ -1034,9 +1034,9 @@ struct EraseDocumentView: View {
                 if let before, before.state == .active || before.state == .absent {
                     await MainActor.run {
                         lifecycle = before
-                        progress = "Erase not submitted. " + DocumentHistoryLifecycle.describeEraseProgress(
-                            before: before, after: before
-                        )
+                        progress = "Erase not submitted. " + (before.state == .absent
+                            ? "No retained revisions exist."
+                            : DocumentHistoryLifecycle.describeEraseProgress(before: before, after: before))
                         isSubmitting = false
                     }
                     return
