@@ -114,7 +114,8 @@ its own, named by its document id.
 - when the vote ends (two weeks after the first choice on mainnet), the choice
   with the most votes is stored and the others are removed, unless the lock
   votes outnumber it, in which case none is stored. A tie goes to the earliest
-  choice.
+  choice, and among choices entered in the same block to the lower document
+  id.
 
 See [the protocol guide](../../docs/protocol/decision-proposals.md) for
 details.

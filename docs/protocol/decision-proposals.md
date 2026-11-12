@@ -311,7 +311,10 @@ must be the proposal's owner; a choice anyone else enters is refused
   40307).
 - **The result.** The choice with the most votes is stored as an ordinary
   document and the other choices are removed. A tie goes to the earliest
-  choice, so a vote in which nobody votes keeps the first choice entered. When
+  choice: by creation time, then block height, then core block height.
+  Choices entered in the same block share all three, and among them the lower
+  document id wins, whichever was entered first. A vote in which nobody votes
+  is a tie among every choice, so it keeps the earliest by that order. When
   the lock votes outnumber the leading choice, no choice is stored, and no
   choice can be entered for that proposal again
   (`DocumentContestCurrentlyLockedError`, 40110). The vote runs its full
