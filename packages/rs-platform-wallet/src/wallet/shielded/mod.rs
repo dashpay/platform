@@ -42,6 +42,8 @@ mod balance_tests;
 mod cancelled_scan_tests;
 pub mod coordinator;
 pub mod file_store;
+#[cfg(test)]
+mod fresh_address_scan_tests;
 pub mod fund_from_asset_lock;
 pub mod keys;
 pub mod note_selection;

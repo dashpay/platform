@@ -235,25 +235,29 @@ describe('Decision Proposals Contract', () => {
   });
 
   describe('multipleChoiceProposal', () => {
-    const rawQuestion = () => ({
+    // The description is a document of another contract: its id, that contract's id and
+    // the name of its document type
+    const rawQuestion = async () => ({
       title: 'Which block time should Platform target?',
-      description: 'Enter the answer you would have the network give.',
+      descriptionId: await generateRandomIdentifier(),
+      descriptionContractId: await generateRandomIdentifier(),
+      descriptionDocumentType: 'post',
       url: 'https://www.dash.org/forum/threads/block-time.1/',
       open: true,
     });
 
-    it('should be valid', () => {
-      expect(validateType('multipleChoiceProposal', rawQuestion()).isValid()).to.be.true();
+    it('should be valid', async () => {
+      expect(validateType('multipleChoiceProposal', await rawQuestion()).isValid()).to.be.true();
     });
 
-    it('should not need a url', () => {
-      const raw = rawQuestion();
+    it('should not need a url', async () => {
+      const raw = await rawQuestion();
       delete raw.url;
 
       expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
     });
 
-    it('should keep its text editable for two hours, every version, and never be deleted', () => {
+    it('should keep its text and its description editable for two hours, every version, and never be deleted', () => {
       const { multipleChoiceProposal } = decisionProposalsContractDocumentsSchema;
 
       expect(multipleChoiceProposal.documentsMutable).to.be.true();
@@ -261,28 +265,93 @@ describe('Decision Proposals Contract', () => {
       expect(multipleChoiceProposal.canBeDeleted).to.be.false();
       expect(multipleChoiceProposal.immutable).to.deep.equal([
         'open',
-        ...['title', 'description', 'url'].map((property) => ({
+        ...[
+          'title',
+          'descriptionId',
+          'descriptionContractId',
+          'descriptionDocumentType',
+          'url',
+        ].map((property) => ({
           property,
           when: { greaterThan: [{ subtract: ['$updatedAt', '$createdAt'] }, 7200000] },
         })),
       ]);
     });
 
-    it('should say whether it is open', () => {
+    it('should take its description from a moderated document of an elected contract', () => {
+      const { properties } = decisionProposalsContractDocumentsSchema.multipleChoiceProposal;
+
+      expect(properties.description).to.be.undefined();
+
+      const takenWithTheDocument = {
+        allOf: [
+          { not: { contains: ['$moderatorAbilities.deleteKeepsFields', '$property'] } },
+          { not: { contains: ['$moderatorAbilities.changeFields', '$property'] } },
+        ],
+      };
+
+      expect(properties.descriptionId.refersTo).to.deep.equal({
+        type: 'moderatedDocument',
+        contractId: '$self.descriptionContractId',
+        documentType: '$self.descriptionDocumentType',
+        documentTypeRequirements: {
+          // The contract's elected team may delete documents of the type, at any time
+          when: {
+            allOf: [
+              { contains: ['$electedAbilities', { const: 'deleteDocuments' }] },
+              {
+                anyOf: [
+                  { absent: '$moderatorAbilities.deleteWithin' },
+                  {
+                    allOf: [
+                      { present: '$moderatorAbilities.deleteSettled' },
+                      { absent: '$moderatorAbilities.deleteSettled.approversPredateDocument' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          properties: {
+            body: { name: '$any', type: 'string', when: takenWithTheDocument },
+            bodyBytes: {
+              name: '$any', type: 'array', byteArray: true, when: takenWithTheDocument,
+            },
+          },
+          require: { anyOf: ['body', 'bodyBytes'] },
+        },
+      });
+      expect(properties.descriptionContractId.refersTo).to.deep.equal({
+        type: 'contract',
+        contractRequirements: { moderation: 'elected', ownerProtected: false },
+      });
+    });
+
+    it('should refuse a description document type of 65 characters', async () => {
+      const raw = await rawQuestion();
+      raw.descriptionDocumentType = 'a'.repeat(65);
+
+      const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
+
+      expect(error.keyword).to.equal('maxLength');
+    });
+
+    it('should say whether it is open', async () => {
       const { multipleChoiceProposal } = decisionProposalsContractDocumentsSchema;
 
       expect(multipleChoiceProposal.properties.open.type).to.equal('boolean');
 
+      const question = await rawQuestion();
+
       [true, false].forEach((open) => {
-        const raw = rawQuestion();
-        raw.open = open;
+        const raw = { ...question, open };
 
         expect(validateType('multipleChoiceProposal', raw).isValid()).to.be.true();
       });
     });
 
-    it('should refuse an open that is not a boolean', () => {
-      const raw = rawQuestion();
+    it('should refuse an open that is not a boolean', async () => {
+      const raw = await rawQuestion();
       raw.open = 'yes';
 
       const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
@@ -297,9 +366,15 @@ describe('Decision Proposals Contract', () => {
       indices.forEach(({ unique }) => expect(unique).to.be.undefined());
     });
 
-    ['title', 'description', 'open'].forEach((property) => {
-      it(`should require ${property}`, () => {
-        const raw = rawQuestion();
+    [
+      'title',
+      'descriptionId',
+      'descriptionContractId',
+      'descriptionDocumentType',
+      'open',
+    ].forEach((property) => {
+      it(`should require ${property}`, async () => {
+        const raw = await rawQuestion();
         delete raw[property];
 
         const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
@@ -309,8 +384,8 @@ describe('Decision Proposals Contract', () => {
       });
     });
 
-    it('should not have additional properties', () => {
-      const raw = rawQuestion();
+    it('should not have additional properties', async () => {
+      const raw = await rawQuestion();
       raw.choices = ['one', 'two'];
 
       const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
@@ -319,8 +394,8 @@ describe('Decision Proposals Contract', () => {
       expect(error.params.additionalProperties).to.deep.equal(['choices']);
     });
 
-    it('should refuse a title of 129 characters', () => {
-      const raw = rawQuestion();
+    it('should refuse a title of 129 characters', async () => {
+      const raw = await rawQuestion();
       raw.title = 'a'.repeat(129);
 
       const error = expectJsonSchemaError(validateType('multipleChoiceProposal', raw));
