@@ -11,6 +11,10 @@ mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "spv-context")]
+mod spv_quorums;
+#[cfg(feature = "spv-context")]
+pub use spv_quorums::claim_spv_quorum_lease;
 pub mod startup;
 pub mod txo_reconcile;
 mod wallet_lifecycle;
@@ -519,6 +523,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+    /// The SDK provider slot this manager serves SPV quorum keys into, held
+    /// from [`Self::serve_spv_quorums`] until [`Self::shutdown`].
+    #[cfg(feature = "spv-context")]
+    pub(super) spv_quorum_lease: std::sync::Mutex<Option<dash_context_provider::SpvSourceLease>>,
     /// The host TXO-store reconcile's steady-state edge, runs in flight and
     /// per-wallet cadence — see [`txo_reconcile`]. A `std::sync::Mutex`,
     /// never held across an await.
@@ -703,6 +711,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sync_fault,
             durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            #[cfg(feature = "spv-context")]
+            spv_quorum_lease: std::sync::Mutex::new(None),
             txo_reconcile_schedule: Arc::default(),
         }
     }
@@ -1306,6 +1316,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        // Stop serving SPV quorum keys before SPV stops, whether or not the
+        // stop is clean: a stopping client must not answer proof lookups.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
+
         // SPV first: it is the event source feeding everything below. Its
         // `stop` bounds the wait for teardown but never aborts it, so a
         // timeout means SPV work is still live. Its outcome lands in the
@@ -1468,6 +1483,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// fields can no longer be moved out.
 impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
     fn drop(&mut self) {
+        // As in `shutdown`: stop serving SPV quorum keys first. Until the lease
+        // goes, the SDK's slot keeps this manager's SPV runtime alive.
+        #[cfg(feature = "spv-context")]
+        self.withdraw_spv_quorums();
         // Cancel and detach, never `abort`: the task observes the token at its
         // next `recv` and exits after committing whatever its drain claimed the
         // persister for. Aborting stops it at whatever await it is parked on,

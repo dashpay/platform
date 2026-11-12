@@ -532,6 +532,11 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    needs_protocol_version: |request| match &request.version {
+        // A 5.0 node does not know V1, and every node before protocol 15 refuses it.
+        Some(platform_proto::get_document_history_request::Version::V1(_)) => Some(PROTOCOL_VERSION_OF_5_1),
+        Some(platform_proto::get_document_history_request::Version::V0(_)) | None => None,
+    };
     platform_proto::GetDocumentHistoryRequest,
     platform_proto::GetDocumentHistoryResponse,
     PlatformGrpcClient,

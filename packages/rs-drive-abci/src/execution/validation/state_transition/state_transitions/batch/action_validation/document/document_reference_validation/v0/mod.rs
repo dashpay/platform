@@ -973,10 +973,10 @@ struct RevealedValue<'a> {
 /// The recursion is as deep as the expression, which registration keeps
 /// within `SystemLimits::max_reference_expression_depth`.
 ///
-/// In place in generation 0, which every table selects: its callers, the
-/// document create and replace state validations, reach it from protocol
-/// version 14 only, and only that version's parser produces an expression, so
-/// every earlier write goes straight to the leaf check it always ran.
+/// In place in generation 0: its callers, the document create and replace
+/// state validations, reach it from protocol version 14 only, and only that
+/// version's parser produces an expression, so every earlier write goes
+/// straight to the leaf check it always ran.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v0(
     contract: &DataContract,
@@ -1577,10 +1577,10 @@ fn validate_reference_target_v0(
                             // differing value would be.
                             (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
                         };
-                    // In place in generation 0, which every table selects: a
-                    // `where` only parses from protocol version
-                    // 14 (`apply_property_reference` 0), so before it no
-                    // document type carries a pair to reach this comparison
+                    // In place in generation 0: a `where` only parses from
+                    // protocol version 14 (`apply_property_reference` 0), so
+                    // before it no document type carries a pair to reach this
+                    // comparison
                     if !referring_value.same_scalar_data(&referenced_value) {
                         return Ok(mismatch());
                     }
@@ -2527,10 +2527,10 @@ fn validate_key_id_reference_v0(
         // may add a property carrying this reference to such a type, so a
         // replace setting the key id of an old document names no identity,
         // and is refused as a key id set while its identity property is not.
-        // In place in generation 0, which every table selects: its callers,
-        // the document create and replace state validations, reach it from
-        // protocol version 14 only, the only version whose parser produces a
-        // key reference, so no earlier write gets here
+        // In place in generation 0: its callers, the document create and
+        // replace state validations, reach it from protocol version 14 only,
+        // the only version whose parser produces a key reference, so no
+        // earlier write gets here
         KeyReferenceIdentityProperty::CreatorId => match creator_id {
             Some(creator_id) => creator_id,
             None => {

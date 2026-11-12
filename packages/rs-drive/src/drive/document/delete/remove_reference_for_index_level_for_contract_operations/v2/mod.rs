@@ -9,7 +9,7 @@ use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::document_reference_size;
+use crate::drive::document::document_reference_size_v1;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only::{index_only_member_key, index_only_terminal_max_key_size};
 use crate::drive::document::{index_only_entry_payload_max_size, INDEX_ONLY_ROW_COMMITMENT_SIZE};
@@ -37,6 +37,8 @@ impl Drive {
     /// layer as subtrees, so a batch that inserts a document under an index value and deletes
     /// another under the same one (a create consuming a document of its own type) described
     /// the layer two ways, and its estimate kept the cheaper subtree description.
+    /// Keep-history references use the 42-byte primary pointer instead of v1's
+    /// 44-byte reference into the legacy history layout.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_reference_for_index_level_for_contract_operations_v2(
@@ -114,7 +116,7 @@ impl Drive {
         // A reference the index stores, sized as GroveDB prices it: a `ReferenceWithSumItem`
         // under a summable index, a plain `Reference` otherwise.
         let reference_sizes = |key_size: u8| {
-            let reference_size = document_reference_size(document_type);
+            let reference_size = document_reference_size_v1();
             let flags_size = storage_flags.map(|s| s.serialized_size());
             if index_type.summable.is_some() {
                 AllReferencesWithSumItem(key_size, reference_size, flags_size)

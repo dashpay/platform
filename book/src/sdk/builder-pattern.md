@@ -39,7 +39,7 @@ pub struct SdkBuilder {
     core_password: Zeroizing<String>,
     proofs: bool,
     version: &'static PlatformVersion,
-    context_provider: Option<Box<dyn ContextProvider>>,
+    context_provider: Option<Arc<dyn ContextProvider>>,
     metadata_height_tolerance: Option<u64>,
     metadata_time_tolerance_ms: Option<u64>,
     cancel_token: CancellationToken,
@@ -107,7 +107,7 @@ impl SdkBuilder {
         mut self,
         context_provider: C,
     ) -> Self {
-        self.context_provider = Some(Box::new(context_provider));
+        self.context_provider = Some(Arc::new(context_provider));
         self
     }
 
@@ -185,7 +185,7 @@ pub struct Sdk {
     inner: SdkInstance,
     proofs: bool,
     internal_cache: Arc<InternalSdkCache>,
-    context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
+    context_provider: Arc<ArcSwap<Arc<dyn ContextProvider>>>,
     metadata_last_seen_height: Arc<atomic::AtomicU64>,
     metadata_height_tolerance: Option<u64>,
     metadata_time_tolerance_ms: Option<u64>,
@@ -219,9 +219,13 @@ does not know (or care) whether it is talking to a real network or a mock.
 
 ### Thread Safety
 
-`Sdk` is `Clone` and thread-safe. It uses `Arc` for shared state and `ArcSwapOption`
-for the context provider (which allows lock-free reads). The mock mode uses `tokio::Mutex`
-for the mock client since mock state is modified in async contexts.
+`Sdk` is `Clone` and thread-safe. It uses `Arc` for shared state and an `ArcSwap`,
+shared by all clones, for the context provider (which allows lock-free reads).
+`build()` and `Sdk::set_context_provider` refuse a provider for another network or
+one that requires proofs while proofs are off. The setter replaces the provider for
+every clone at once; a proof verification already running finishes with the one it
+started with. The mock mode uses `tokio::Mutex` for the mock client since mock state
+is modified in async contexts.
 
 ### Nonce Management
 

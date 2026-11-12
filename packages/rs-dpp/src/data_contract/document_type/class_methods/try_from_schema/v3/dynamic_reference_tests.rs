@@ -7,6 +7,8 @@
 use super::reference_test_helpers::{
     assert_refused, assert_refused_by_the_parser, contract, contract_on, identifier, CONTRACT_ID,
 };
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;
@@ -24,6 +26,7 @@ use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
 };
+use crate::ProtocolError;
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
@@ -412,23 +415,37 @@ fn should_refuse_what_cannot_sit_beside_a_dynamic_target() {
 
     // The contract and the document type both come from the document: not one of them
     // from the schema, whether it is given there or left out
-    for (key, value) in [
-        ("documentType", json!("post")),
-        (
+    let mut without_document_type = text_or_bytes();
+    without_document_type
+        .as_object_mut()
+        .expect("an object")
+        .remove("documentType");
+    for declaration in [
+        with("documentType", json!("post")),
+        note_contract(without_document_type),
+    ] {
+        assert_refused_by_the_parser(
+            declaration,
+            "reads both contractId and documentType from it: documentType must be",
+        );
+    }
+    // A contractId the schema gives, or leaves out, is one version 0 reads, with the
+    // documentType beside it a document type name: registration refuses the declaration, and
+    // a stored one reads as it was stored
+    // (`should_load_a_stored_document_reference_whose_document_type_alone_is_written_self_as_it_did`)
+    let mut without_contract_id = text_or_bytes();
+    without_contract_id
+        .as_object_mut()
+        .expect("an object")
+        .remove("contractId");
+    for declaration in [
+        with(
             "contractId",
             json!(Identifier::from(CONTRACT_ID).to_string(Encoding::Base58)),
         ),
+        note_contract(without_contract_id),
     ] {
-        assert_refused_by_the_parser(
-            with(key, value),
-            &format!("reads both contractId and documentType from it: {key} must be"),
-        );
-        let mut missing = text_or_bytes();
-        missing.as_object_mut().expect("an object").remove(key);
-        assert_refused_by_the_parser(
-            note_contract(missing),
-            &format!("reads both contractId and documentType from it: {key} must be"),
-        );
+        assert_refused_at_registration(contract(declaration), "contractId");
     }
     // Requirements describe a type the schema does not name: registration refuses them
     // beside one it names (what a stored contract carrying them reads as is tested apart)
@@ -1697,6 +1714,175 @@ fn should_read_a_stored_reference_naming_its_target_in_the_schema_as_it_was_regi
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
         )
     ));
+}
+
+/// Registration refused the contract with the schema check, a consensus error, naming
+/// `fragment` in its message or in the path of what it refused.
+fn assert_refused_at_registration(result: Result<DataContract, ProtocolError>, fragment: &str) {
+    let error = result.expect_err("registration should refuse it");
+    let ProtocolError::ConsensusError(consensus_error) = &error else {
+        panic!("expected a consensus error, got {error}");
+    };
+    let ConsensusError::BasicError(BasicError::JsonSchemaError(schema_error)) =
+        consensus_error.as_ref()
+    else {
+        panic!("expected a schema error, got {error}");
+    };
+    let described = format!("{error} at {}", schema_error.instance_path());
+    assert!(
+        described.contains(fragment),
+        "expected {fragment:?} in: {described}"
+    );
+}
+
+/// `contract_value` stored as protocol version 14 reads it, then loaded at the latest
+/// protocol version: the contract as each reads it.
+fn stored_and_loaded(contract_value: serde_json::Value) -> (DataContract, DataContract) {
+    let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
+    let stored = contract_on(contract_value, false, platform_version_14)
+        .expect("protocol version 14 reads it");
+    let bytes = stored
+        .serialize_to_bytes_with_platform_version(platform_version_14)
+        .expect("the contract should serialize");
+    let loaded =
+        DataContract::versioned_deserialize_untrusted(&bytes, false, PlatformVersion::latest())
+            .unwrap_or_else(|error| {
+                panic!("the stored contract should load at the latest protocol version: {error}")
+            });
+    (stored, loaded)
+}
+
+/// The `note` type of `loaded` reads every reference as the `note` type of `stored` does.
+fn assert_note_read_alike(stored: &DataContract, loaded: &DataContract) {
+    let note = |contract: &DataContract| {
+        let note = contract.document_type_for_name("note").expect("note");
+        (note.properties().clone(), note.owner_reference().cloned())
+    };
+    assert_eq!(note(loaded), note(stored));
+}
+
+/// A `note` contract whose `descriptionId` declares `refers_to`, whose `subjectId` refers to
+/// `subject_refers_to`, and whose type declares `owner_refers_to` (left out when `None`).
+fn note_contract_with(
+    refers_to: serde_json::Value,
+    subject_refers_to: serde_json::Value,
+    owner_refers_to: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut contract_value = note_contract(refers_to);
+    let mut subject_id = identifier(5);
+    subject_id["refersTo"] = subject_refers_to;
+    contract_value["documentSchemas"]["note"]["properties"]["subjectId"] = subject_id;
+    if let Some(owner_refers_to) = owner_refers_to {
+        contract_value["documentSchemas"]["note"]["ownerRefersTo"] = owner_refers_to;
+    }
+    contract_value
+}
+
+/// `declaration` with `contractId` and `documentType` written `"$self.<property>"`, as a
+/// reference naming its target through the referring document writes them.
+fn with_self_target_keys(mut declaration: serde_json::Value) -> serde_json::Value {
+    declaration["contractId"] = json!("$self.descriptionContractId");
+    declaration["documentType"] = json!("$self.descriptionDocumentType");
+    declaration
+}
+
+/// A contract stored before protocol version 15 with these keys on a non-document reference
+/// loads as it did. Version 0 of `apply_property_reference` never read `contractId` or
+/// `documentType` on an `identity`, `contract` or `token` reference, so a stored declaration
+/// may carry anything under them, `"$self."` strings included: they stay unread, on a
+/// property, in an operand of a reference expression and in `ownerRefersTo`. Registration
+/// refuses them.
+#[test]
+fn should_load_a_stored_non_document_reference_with_self_target_keys_as_it_did() {
+    let identity = || json!({ "type": "identity" });
+    let a_post = json!({ "type": "permanentDocument", "documentType": "post" });
+    let plain_subject = json!({ "anyOf": [identity(), a_post.clone()] });
+
+    // Each stored contract, with where registration refuses it: only a document kind names
+    // its target through the referring document
+    let mut stored_contracts = Vec::new();
+    // On a property, of each reference kind that reads neither key
+    for reference_type in ["identity", "contract", "token"] {
+        stored_contracts.push((
+            note_contract_with(
+                with_self_target_keys(json!({ "type": reference_type })),
+                plain_subject.clone(),
+                None,
+            ),
+            "/properties/descriptionId/refersTo/type",
+        ));
+    }
+    // In an operand of a reference expression
+    stored_contracts.push((
+        note_contract_with(
+            identity(),
+            json!({ "anyOf": [with_self_target_keys(identity()), a_post.clone()] }),
+            None,
+        ),
+        "/properties/subjectId/refersTo/anyOf/0/type",
+    ));
+    // In the writer's reference
+    stored_contracts.push((
+        note_contract_with(
+            identity(),
+            plain_subject.clone(),
+            Some(with_self_target_keys(identity())),
+        ),
+        "/ownerRefersTo/type",
+    ));
+
+    for (contract_value, refused_at) in stored_contracts {
+        let (stored, loaded) = stored_and_loaded(contract_value.clone());
+        assert_note_read_alike(&stored, &loaded);
+        assert_refused_at_registration(
+            contract(contract_value),
+            &format!(
+                "is not one of [\"permanentDocument\",\"moderatedDocument\"], path: {refused_at}"
+            ),
+        );
+    }
+}
+
+/// A document reference of a contract stored before protocol version 15 whose `documentType`
+/// alone is written `"$self."`, its `contractId` left out or an id, loads as it did: version
+/// 0 reads that `documentType` as a document type name. Only a declaration version 0 cannot
+/// read at all, one whose `contractId` is written `"$self."` or whose `type` lists kinds,
+/// takes the reading protocol version 15 adds. Registration refuses it.
+#[test]
+fn should_load_a_stored_document_reference_whose_document_type_alone_is_written_self_as_it_did() {
+    let identity = json!({ "type": "identity" });
+    let mut stored_contracts = Vec::new();
+    for reference_type in ["permanentDocument", "moderatedDocument"] {
+        for contract_id in [
+            None,
+            Some(Identifier::from([9; 32]).to_string(Encoding::Base58)),
+        ] {
+            let mut declaration = json!({
+                "type": reference_type,
+                "documentType": "$self.descriptionDocumentType"
+            });
+            if let Some(contract_id) = &contract_id {
+                declaration["contractId"] = json!(contract_id);
+            }
+            stored_contracts.push(note_contract_with(declaration, identity.clone(), None));
+        }
+    }
+    // In an operand of a reference expression
+    stored_contracts.push(note_contract_with(
+        identity.clone(),
+        json!({ "anyOf": [identity.clone(), {
+            "type": "permanentDocument",
+            "documentType": "$self.descriptionDocumentType"
+        }] }),
+        None,
+    ));
+
+    for contract_value in stored_contracts {
+        let (stored, loaded) = stored_and_loaded(contract_value.clone());
+        assert_note_read_alike(&stored, &loaded);
+        // which reads both from the referring document or neither
+        assert_refused_at_registration(contract(contract_value), "contractId");
+    }
 }
 
 /// A `when` is held to its nodes and to the length of its strings, so what one adds to a
