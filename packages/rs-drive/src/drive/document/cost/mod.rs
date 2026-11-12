@@ -395,6 +395,9 @@ pub fn document_create_cost(
 
 /// Refuses a platform version whose insert methods are not the ones the
 /// estimate mirrors: another version of any of them may write other elements.
+/// Primary-storage generation 1 uses the per-type history layout, which the
+/// layout-based estimate mirrors. Index-reference generation 1 also describes
+/// summable entries with their sum items in Drive's fee estimate.
 fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
     let document = &platform_version.drive.methods.document;
     for (method, known, received) in [

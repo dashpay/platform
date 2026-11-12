@@ -44,8 +44,6 @@ use dpp::version::PlatformVersion;
 use grovedb::element::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Element;
-#[cfg(feature = "server")]
-use grovedb::EstimatedLayerSizes;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeSet;
 
@@ -668,30 +666,6 @@ fn document_reference_size_v1() -> u32 {
 }
 
 #[cfg(feature = "server")]
-fn document_reference_estimated_layer_sizes_v1(
-    key_size: u8,
-    flags_size: Option<u32>,
-    summable: bool,
-) -> EstimatedLayerSizes {
-    if summable {
-        EstimatedLayerSizes::AllReferencesWithSumItem(
-            key_size,
-            document_reference_size_v1(),
-            flags_size,
-        )
-    } else {
-        EstimatedLayerSizes::AllReference(key_size, document_reference_size_v1(), flags_size)
-    }
-}
-
-#[cfg(feature = "server")]
-fn document_reference_estimated_value_size_v1(flags_size: u32, summable: bool) -> u32 {
-    const SUM_ITEM_SIZE: u32 = 10;
-
-    document_reference_size_v1() + flags_size + if summable { SUM_ITEM_SIZE } else { 0 }
-}
-
-#[cfg(feature = "server")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
 }
@@ -702,10 +676,7 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use super::{
-        document_reference_estimated_layer_sizes_v1, document_reference_estimated_value_size_v1,
-        document_reference_size_v1, uses_current_document_history_layout,
-    };
+    use super::uses_current_document_history_layout;
     use crate::drive::Drive;
     use crate::error::drive::DriveError;
     use crate::error::Error;
@@ -716,7 +687,6 @@ pub(crate) mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
-    use grovedb::EstimatedLayerSizes::{AllReference, AllReferencesWithSumItem};
 
     #[test]
     fn should_keep_legacy_history_layout_when_primary_writer_changes() {
@@ -772,30 +742,6 @@ pub(crate) mod tests {
                     && actual == received
             ));
         }
-    }
-
-    #[test]
-    fn summable_document_reference_estimates_include_the_sum_item() {
-        assert_eq!(
-            document_reference_estimated_layer_sizes_v1(32, Some(17), true),
-            AllReferencesWithSumItem(32, document_reference_size_v1(), Some(17))
-        );
-        assert_eq!(
-            document_reference_estimated_value_size_v1(17, true),
-            document_reference_size_v1() + 17 + 10
-        );
-    }
-
-    #[test]
-    fn plain_document_reference_estimates_remain_unchanged() {
-        assert_eq!(
-            document_reference_estimated_layer_sizes_v1(32, Some(17), false),
-            AllReference(32, document_reference_size_v1(), Some(17))
-        );
-        assert_eq!(
-            document_reference_estimated_value_size_v1(17, false),
-            document_reference_size_v1() + 17
-        );
     }
 
     /// Setup Dashpay

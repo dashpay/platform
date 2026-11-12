@@ -29,7 +29,7 @@ mod kinds;
 /// Static checks of the description
 pub mod lint;
 #[cfg(test)]
-mod shape;
+pub(crate) mod shape;
 #[cfg(test)]
 mod tests;
 

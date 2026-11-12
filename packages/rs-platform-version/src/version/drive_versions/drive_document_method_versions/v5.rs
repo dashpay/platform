@@ -15,12 +15,13 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   `prove_private_document_entries` are `Some(0)` too (`None` before): a page of a store's
 ///   entries can be read and proved, and `append_private_document_entries_operations` is
 ///   `Some(0)` (`None` before): a `PrivateDocumentCreateFromShieldedPool` appends entries to one.
-/// * `insert.add_reference_for_index_level_for_contract_operations` is 1: summable index
-///   entries use `AllReferencesWithSumItem` for every type, as delete v2 does, so estimates
-///   also change for summable types without history.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
-///   the insert's does, including the primary-pointer and summable reference shapes.
+///   the insert's does, not as subtrees, and under a summable index that layer and the deleted
+///   reference as references with sum items.
+/// * `insert.add_reference_for_index_level_for_contract_operations` is 1: an insert's estimate
+///   describes a summable index's entries for a value as references with sum items, not plain
+///   references.
 /// * `estimation_costs.stateless_delete_of_non_tree_for_costs` is 1: a delete's estimate prices
 ///   each height of the climb with the layer GroveDB deletes in there, not the one above it.
 /// * Retained-history writers, readers and estimators use the per-type revision layout.
@@ -46,7 +47,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document_to_primary_storage: 1,
-            add_reference_for_index_level_for_contract_operations: 1,
+            add_reference_for_index_level_for_contract_operations: 1, // changed: summable entries are described with their sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
         insert_empty_private_document_store_operation: Some(0), // changed: a private document type's store is created with it
@@ -54,7 +55,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
-            remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
+            remove_reference_for_index_level_for_contract_operations: 2, // changed: entries and deleted references include their sum items
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
