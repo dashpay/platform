@@ -141,10 +141,10 @@ public enum DocumentHistoryFilter: Sendable {
 
     var ffiValue: UInt32 {
         switch self {
-        case .startAtTime: return 0
-        case .startAfter: return 1
-        case .startAtRevision: return 2
-        case .revision: return 3
+        case .startAtTime: return HistoryStartAtTime.rawValue
+        case .startAfter: return HistoryStartAfter.rawValue
+        case .startAtRevision: return HistoryStartAtRevision.rawValue
+        case .revision: return HistoryRevision.rawValue
         }
     }
 
@@ -183,13 +183,13 @@ public struct DocumentHistoryLifecycle: Sendable {
     public let state: DocumentLifecycleState
     /// Exact count of revisions still retained (zero when absent).
     public let remainingRevisions: UInt64
-    /// Zero unless the document has been deleted.
+    /// Deletion time while deleted or erasing; zero otherwise.
     public let deletedAtMs: UInt64
-    /// Zero unless an authorized erasure has begun.
+    /// Erase start time while erasing; zero otherwise.
     public let erasingStartedAtMs: UInt64
-    /// Timestamp of the newest revision retained when the erasure began.
+    /// Newest retained revision's time when erasure began; zero unless erasing.
     public let erasingFromTimeMs: UInt64
-    /// History sequence number of that revision.
+    /// History sequence number of that revision; zero unless erasing.
     public let erasingFromRevision: UInt64
 
     /// Parses the `lifecycle` dictionary of a `documentGetHistory`
