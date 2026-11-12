@@ -185,6 +185,85 @@ pub struct PendingRedrive {
     /// automatic retries and permit separately authorized new payments.
     /// This is never a proof of failure and is always false for note spends.
     pub identity_user_abandoned: bool,
+    /// What the spend was priced and built for, checked again before any recovery
+    /// broadcast of [`Self::st_bytes`]: see [`SpendContext`]. `None` for a record saved
+    /// without one (by a build before contexts were kept, or a spend with no fee model of
+    /// its own to check), which recovery re-broadcasts as it always did.
+    pub spend_context: Option<SpendContext>,
+}
+
+/// The protocol context a note-consuming spend was selected, confirmed and built in, saved
+/// with its recovery record so that no recovery path, in this process or after a restart,
+/// broadcasts the saved transition once the network applies something else than it was
+/// priced for: the fee a transition carries is metered at the protocol version the network
+/// runs when it executes, so a transition built for one version pays out differently at
+/// another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpendContext {
+    /// The protocol version the spend was priced and built at: the SDK's operation version.
+    pub operation_version: u32,
+    /// The network protocol version the SDK had verified when the record was saved, if any.
+    pub network_version: Option<u32>,
+    /// The fee model the spend's fee follows.
+    pub fee_kind: super::note_selection::ShieldedFeeKind,
+    /// The fee the spend was selected, confirmed and built for.
+    pub planned_fee: u64,
+}
+
+impl SpendContext {
+    /// The version of [`Self::to_bytes`]'s layout, its first byte. A reader refuses any other.
+    const FORMAT: u8 = 1;
+    const LEN: usize = 1 + 4 + 4 + 1 + 4 + 8;
+
+    /// The bytes the file store keeps it as: the format byte, then the operation version,
+    /// the network version (0 when unknown), the fee model's tag and parameter and the
+    /// planned fee, little-endian. `None` for a fee model with no layout (a private
+    /// document create, which has no such context).
+    pub(super) fn to_bytes(self) -> Option<[u8; Self::LEN]> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        let (tag, parameter) = match self.fee_kind {
+            Kind::Base => (0u8, 0u32),
+            Kind::Unshield => (1, 0),
+            Kind::Withdrawal => (2, 0),
+            Kind::IdentityCreate { num_keys } => (3, u32::try_from(num_keys).ok()?),
+            Kind::IdentityTopUp => (4, 0),
+            Kind::PrivateDocumentCreate { .. } => return None,
+        };
+        let mut bytes = [0u8; Self::LEN];
+        bytes[0] = Self::FORMAT;
+        bytes[1..5].copy_from_slice(&self.operation_version.to_le_bytes());
+        bytes[5..9].copy_from_slice(&self.network_version.unwrap_or(0).to_le_bytes());
+        bytes[9] = tag;
+        bytes[10..14].copy_from_slice(&parameter.to_le_bytes());
+        bytes[14..].copy_from_slice(&self.planned_fee.to_le_bytes());
+        Some(bytes)
+    }
+
+    /// The context [`Self::to_bytes`] wrote, or `None` for other bytes.
+    pub(super) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        use super::note_selection::ShieldedFeeKind as Kind;
+        if bytes.len() != Self::LEN || bytes[0] != Self::FORMAT {
+            return None;
+        }
+        let parameter = u32::from_le_bytes(bytes[10..14].try_into().ok()?);
+        let fee_kind = match bytes[9] {
+            0 => Kind::Base,
+            1 => Kind::Unshield,
+            2 => Kind::Withdrawal,
+            3 => Kind::IdentityCreate {
+                num_keys: usize::try_from(parameter).ok()?,
+            },
+            4 => Kind::IdentityTopUp,
+            _ => return None,
+        };
+        let network_version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+        Some(Self {
+            operation_version: u32::from_le_bytes(bytes[1..5].try_into().ok()?),
+            network_version: (network_version != 0).then_some(network_version),
+            fee_kind,
+            planned_fee: u64::from_le_bytes(bytes[14..].try_into().ok()?),
+        })
+    }
 }
 
 /// The DashPay private contact request a saved spend pays for: which identity
@@ -2034,6 +2113,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
 
@@ -2431,6 +2511,7 @@ mod tests {
             attempts: 7,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let note_spend = PendingRedrive {
@@ -2441,6 +2522,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         store.arm_redrive(id, identity_guard.clone()).unwrap();

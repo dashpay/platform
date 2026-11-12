@@ -31,7 +31,7 @@ use super::note_selection::{
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
-    SubwalletId,
+    SpendContext, SubwalletId,
 };
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
@@ -1020,6 +1020,7 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                spend_context: None,
                 anchor_height: None,
             },
         )
@@ -3224,6 +3225,7 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
         reservation,
         st,
         IDENTITY_CREATE_OPERATION,
+        None,
         || Ok(()),
         || broadcast_identity_create(sdk, st, identity_id, submitted_public_keys),
     )
@@ -3749,12 +3751,12 @@ fn ensure_version_unchanged(
     note_count: usize,
     expected_plan: Option<&[u8; 32]>,
 ) -> Result<(), PlatformWalletError> {
-    let current = sdk.version();
-    let network = sdk.protocol_version_info().verified_version;
     let captured = platform_version.protocol_version;
-    if current.protocol_version == captured && !matches!(network, Some(n) if n != captured) {
+    if network_applies_version(sdk, captured) {
         return Ok(());
     }
+    let current = sdk.version();
+    let network = sdk.protocol_version_info().verified_version;
     // What the network applies: its verified version when the SDK has one, else the SDK's.
     let applied_version = match network {
         Some(n) => PlatformVersion::get(n).map_err(|_| {
@@ -3777,6 +3779,31 @@ fn ensure_version_unchanged(
         fresh_fee,
         fresh_note_count: note_count,
     })
+}
+
+/// Whether the protocol version the network applies is `captured`: the SDK builds at it, and
+/// the network version it last verified, if any, is it ([`ensure_version_unchanged`]).
+fn network_applies_version(sdk: &Arc<dash_sdk::Sdk>, captured: u32) -> bool {
+    sdk.version().protocol_version == captured
+        && !matches!(sdk.protocol_version_info().verified_version, Some(n) if n != captured)
+}
+
+/// Whether the `context` a saved spend of `note_count` notes was priced and built in still
+/// holds, for a recovery broadcast of it: the network applies the version it was built at
+/// ([`network_applies_version`]), the network version it was saved under was that one, and the
+/// fee at it is the planned one. A saved context is never overridden or repaired: a spend
+/// whose context does not hold is not broadcast.
+fn recovery_context_holds(
+    sdk: &Arc<dash_sdk::Sdk>,
+    context: &SpendContext,
+    note_count: usize,
+) -> bool {
+    network_applies_version(sdk, context.operation_version)
+        && !matches!(context.network_version, Some(n) if n != context.operation_version)
+        && context
+            .fee_kind
+            .compute(note_count.max(SPEND_MIN_ACTIONS), sdk.version())
+            .is_ok_and(|fee| fee == context.planned_fee)
 }
 
 /// Refuse to plan a spend, whose fee is priced at the SDK's version, when the SDK has verified
@@ -3844,6 +3871,17 @@ struct DispatchCheck<'a> {
 }
 
 impl DispatchCheck<'_> {
+    /// What the spend's recovery record keeps of this check, so that no recovery broadcast
+    /// dispatches the saved transition once it no longer holds ([`SpendContext`]).
+    fn spend_context(&self) -> SpendContext {
+        SpendContext {
+            operation_version: self.platform_version.protocol_version,
+            network_version: self.sdk.protocol_version_info().verified_version,
+            fee_kind: self.fee_kind,
+            planned_fee: self.selected_fee,
+        }
+    }
+
     /// The SDK's version is the captured one, and the fee the network applies at it is the
     /// selected and built one, so the recipient receives the amount that was confirmed.
     fn ensure_holds(&self) -> Result<(), PlatformWalletError> {
@@ -4271,6 +4309,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
         reservation,
         state_transition,
         operation,
+        Some(dispatch_check.spend_context()),
         || dispatch_check.ensure_holds(),
         || broadcast_shielded_spend_classified(sdk, state_transition, operation, wait),
     )
@@ -4289,6 +4328,10 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 /// is refused with nothing broadcast, and `reservation` still owns the notes:
 /// the caller releases them ([`settle_failed_spend`]), and so does a spend
 /// dropped while a save waits for the store.
+///
+/// The record carries `context`, when the spend has one, so that a recovery broadcast of it
+/// ([`redrive_pending_spends`]) holds to the same check: it is dispatchable by recovery from
+/// the moment it is saved, before `still_dispatchable` has run, and after a restart.
 ///
 /// Right after the record is saved, `still_dispatchable` is the last check before dispatch:
 /// a spend that no longer matches what it was built and confirmed for is refused with nothing
@@ -4310,6 +4353,7 @@ async fn save_spend_then_broadcast<S, R, B, Fut, T>(
     reservation: &mut NoteReservation<S>,
     state_transition: &StateTransition,
     operation: &'static str,
+    context: Option<SpendContext>,
     still_dispatchable: R,
     broadcast: B,
 ) -> Result<T, SpendFailure>
@@ -4320,7 +4364,7 @@ where
     Fut: Future<Output = Result<T, SpendFailure>>,
 {
     arm_pending_release(store, id, anchor, anchor_height, pending_entry, notes).await?;
-    arm_redrive_before_broadcast(
+    arm_redrive_with_context(
         store,
         id,
         pending_entry.as_ref().map(|entry| entry.id),
@@ -4331,6 +4375,7 @@ where
         None,
         None,
         anchor_height,
+        context,
     )
     .await?;
     // The last check, after every write awaited above: what the spend was built and
@@ -4476,6 +4521,38 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
     payment_started: Option<&PaymentStarted>,
     anchor_recorded_at: u64,
 ) -> Result<(), PlatformWalletError> {
+    arm_redrive_with_context(
+        store,
+        id,
+        activity_id,
+        anchor,
+        nullifiers,
+        state_transition,
+        operation,
+        private_contact,
+        payment_started,
+        anchor_recorded_at,
+        None,
+    )
+    .await
+}
+
+/// [`arm_redrive_before_broadcast`], keeping `spend_context` with the record
+/// ([`PendingRedrive::spend_context`]).
+#[allow(clippy::too_many_arguments)]
+async fn arm_redrive_with_context<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: Option<[u8; 32]>,
+    anchor: [u8; 32],
+    nullifiers: Vec<[u8; 32]>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+    private_contact: Option<PrivateContactPayment>,
+    payment_started: Option<&PaymentStarted>,
+    anchor_recorded_at: u64,
+    spend_context: Option<SpendContext>,
+) -> Result<(), PlatformWalletError> {
     use dpp::serialization::PlatformSerializable;
 
     let activity_id = activity_id.ok_or_else(|| {
@@ -4510,6 +4587,7 @@ pub(crate) async fn arm_redrive_before_broadcast<S: ShieldedStore>(
         attempts: 0,
         identity_nonce_finalized: false,
         identity_user_abandoned: false,
+        spend_context,
         anchor_height: Some(anchor_recorded_at),
     };
     let mut store = store.write().await;
@@ -4901,6 +4979,21 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         // exhausted budget means we've said our three pieces.
         if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
             continue;
+        }
+        // A record saved with the context it was priced and built in is re-broadcast only
+        // while that still holds. It is kept, unclaimed, never retired from here: whether
+        // the foreground spend dispatched it before the context changed is not known, and
+        // the spend that saved it settles it as it ends, or the scan or the prune backstop
+        // resolves it.
+        if let Some(context) = &redrive.spend_context {
+            if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) {
+                warn!(
+                    saved = ?context,
+                    "redrive: the context the spend was priced in no longer holds; keeping the \
+                     record without re-broadcasting it"
+                );
+                continue;
+            }
         }
         let st = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
             Ok(st) => st,
@@ -5307,6 +5400,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: true,
+            spend_context: None,
             anchor_height: None,
         };
         store.arm_redrive(id, archived.clone()).unwrap();
@@ -5358,6 +5452,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -5431,6 +5526,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -5460,6 +5556,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -5572,6 +5669,7 @@ mod redrive_tests {
                     attempts: MAX_REDRIVE_ATTEMPTS,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -5947,6 +6045,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
                 payment,
@@ -6630,6 +6729,7 @@ mod redrive_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
@@ -6667,6 +6767,7 @@ mod redrive_tests {
             attempts,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -6727,6 +6828,7 @@ mod redrive_tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -7098,6 +7200,7 @@ mod redrive_tests {
             &mut reservation,
             &transition,
             "transfer",
+            None,
             || Ok(()),
             || {
                 // Nothing is dispatched before the record is on the file.
@@ -7232,6 +7335,7 @@ mod redrive_tests {
                 &mut spend.reservation,
                 &transition,
                 "transfer",
+                None,
                 || Ok(()),
                 || async {
                     dispatched.store(true, Ordering::SeqCst);
@@ -7357,6 +7461,18 @@ mod redrive_tests {
                 );
                 let saved = store.pending_redrives(id).expect("the records");
                 assert_eq!(saved.len(), 1, "{spend_path:?}");
+                assert_eq!(
+                    saved[0].spend_context.map(|context| context.planned_fee),
+                    match spend_path {
+                        SpendPath::Shared => Some(
+                            ShieldedFeeKind::Base
+                                .compute(SPEND_MIN_ACTIONS, sdk_handle.version())
+                                .expect("a fee")
+                        ),
+                        SpendPath::IdentityCreate => None,
+                    },
+                    "{spend_path:?}: the record keeps the context its spend was checked against"
+                );
                 assert_eq!(
                     saved[0].st_bytes,
                     transition.serialize_to_bytes().expect("serializes"),
@@ -7905,6 +8021,235 @@ mod redrive_tests {
             shield_status(&store, id, &activity_id).await,
             ShieldedActivityStatus::Failed
         );
+    }
+
+    // ── A saved spend is re-broadcast only while its captured context holds ──
+
+    /// A mock SDK pinned to v13, and a handle to it.
+    fn pinned_v13_sdk() -> (dash_sdk::Sdk, Arc<dash_sdk::Sdk>) {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(13).expect("v13"))
+            .build()
+            .expect("mock sdk");
+        let handle = Arc::new(sdk.clone());
+        (sdk, handle)
+    }
+
+    /// The context of a one-note transfer priced and built at `version`, whose fee is the
+    /// fee at `version` plus `fee_drift`.
+    fn transfer_context(version: u32, network: Option<u32>, fee_drift: u64) -> SpendContext {
+        SpendContext {
+            operation_version: version,
+            network_version: network,
+            fee_kind: ShieldedFeeKind::Base,
+            planned_fee: ShieldedFeeKind::Base
+                .compute(
+                    SPEND_MIN_ACTIONS,
+                    PlatformVersion::get(version).expect("a version"),
+                )
+                .expect("a fee")
+                + fee_drift,
+        }
+    }
+
+    fn saved_transfer(
+        attempts: u32,
+        spend_context: Option<SpendContext>,
+    ) -> (StateTransition, PendingRedrive) {
+        let transition = SpendPath::Shared.transition();
+        let record = PendingRedrive {
+            activity_id: [0x7D; 32],
+            anchor: SPEND_ANCHOR,
+            nullifiers: vec![spend_note().nullifier],
+            st_bytes: transition.serialize_to_bytes().expect("serializes"),
+            attempts,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            spend_context,
+            anchor_height: Some(SPEND_ANCHOR_HEIGHT),
+        };
+        (transition, record)
+    }
+
+    /// The recovery pass re-broadcasts a saved spend only while the context it was priced and
+    /// built in still holds: the SDK builds at the captured version, the network it verified
+    /// runs that version, and the fee at it is the planned one. Otherwise (the network moved
+    /// to another version, the SDK's version differs from the captured one, or the fee is not
+    /// the planned one) nothing is sent, the attempt is not claimed and the record stays with
+    /// its notes, as a spend that was claimed before stays as it was. A record with no
+    /// context is re-broadcast as ever.
+    #[tokio::test]
+    async fn should_not_rebroadcast_a_saved_spend_whose_captured_context_no_longer_holds() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        // The case, the saved context, the network version the SDK verified, the attempts
+        // already claimed, and whether recovery re-broadcasts.
+        #[allow(clippy::type_complexity)]
+        let cases: [(&str, Option<SpendContext>, Option<u32>, u32, bool); 7] = [
+            ("holds", Some(transfer_context(13, None, 0)), None, 0, true),
+            (
+                "holds, the network verified the same version",
+                Some(transfer_context(13, Some(13), 0)),
+                Some(13),
+                0,
+                true,
+            ),
+            ("no context", None, None, 0, true),
+            (
+                "the network verified another version",
+                Some(transfer_context(13, None, 0)),
+                Some(PlatformVersion::latest().protocol_version),
+                0,
+                false,
+            ),
+            (
+                "claimed before, the network verified another version",
+                Some(transfer_context(13, None, 0)),
+                Some(PlatformVersion::latest().protocol_version),
+                1,
+                false,
+            ),
+            (
+                "captured at another operation version",
+                Some(transfer_context(14, None, 0)),
+                None,
+                0,
+                false,
+            ),
+            (
+                "the fee is not the planned one",
+                Some(transfer_context(13, None, 1)),
+                None,
+                0,
+                false,
+            ),
+        ];
+        for (name, context, verified, attempts, rebroadcast) in cases {
+            let (mut sdk, handle) = pinned_v13_sdk();
+            if let Some(network) = verified {
+                handle
+                    .mock_verified_protocol_version(network)
+                    .expect("a mock SDK");
+            }
+            let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+            let id = SubwalletId::new([0x5E; 32], 0);
+            let (transition, record) = saved_transfer(attempts, context);
+            store.write().await.arm_redrive(id, record).expect("armed");
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+            redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+            let request = transition
+                .broadcast_request_for_state_transition()
+                .expect("serializes");
+            let sent = sdk.mock().request_count(&request).await;
+            let left = store.read().await.pending_redrives(id).expect("records");
+            assert_eq!(left.len(), 1, "{name}: the record stays");
+            if rebroadcast {
+                assert!(sent > 0, "{name}: re-broadcast");
+                assert_eq!(left[0].attempts, attempts + 1, "{name}");
+            } else {
+                assert_eq!(sent, 0, "{name}: nothing is sent");
+                assert_eq!(left[0].attempts, attempts, "{name}: no attempt is claimed");
+            }
+        }
+    }
+
+    /// A spend whose context stopped holding right after its record was saved is refused as
+    /// never delivered, and the process exits before that settles it: the record is still in
+    /// the store a restart opens, with its context, and the redrive pass of the restarted
+    /// wallet does not broadcast it once the network it verifies runs another version.
+    #[tokio::test]
+    async fn should_not_redrive_after_a_restart_a_spend_refused_right_after_its_record_was_saved() {
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+        use std::task::{Context, Waker};
+
+        let id = SubwalletId::new([0x74; 32], 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let ReservedSpend {
+            store,
+            notes,
+            mut reservation,
+            entry,
+        } = ReservedSpend::at(&path, id, [0x7E; 32]).await;
+        let transition = SpendPath::Shared.transition();
+        let context = transfer_context(13, None, 0);
+        let moved = PlatformWalletError::ShieldedPlanChanged {
+            fresh_fee: 1,
+            fresh_note_count: 1,
+        };
+
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut spend = Box::pin(save_spend_then_broadcast(
+            &store,
+            id,
+            &entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &notes,
+            &mut reservation,
+            &transition,
+            "transfer",
+            Some(context),
+            // The network moved after the record was saved.
+            || Err(moved),
+            || async {
+                Err::<(), SpendFailure>(
+                    PlatformWalletError::ShieldedBuildError("dispatched".to_string()).into(),
+                )
+            },
+        ));
+        let std::task::Poll::Ready(Err(failure)) = spend.as_mut().poll(&mut cx) else {
+            panic!("the spend is refused when its record is saved");
+        };
+        assert!(failure.never_delivered);
+        // The process exits before the failure settles: nothing runs, not even the
+        // reservation's drop, which would release the notes and their record.
+        drop(spend);
+        std::mem::forget(reservation);
+        drop(store);
+
+        let (mut restarted_sdk, restarted_handle) = pinned_v13_sdk();
+        restarted_handle
+            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+            .expect("a mock SDK");
+        let restarted = Arc::new(RwLock::new(restarted_store(&path, id)));
+        assert_eq!(
+            restarted
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")[0]
+                .spend_context,
+            Some(context),
+            "the record kept its context across the restart"
+        );
+
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+        redrive_pending_spends(
+            &restarted_handle,
+            &restarted,
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            restarted_sdk.mock().request_count(&request).await,
+            0,
+            "the redrive does not broadcast it"
+        );
+        let left = restarted
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records");
+        assert_eq!((left.len(), left[0].attempts), (1, 0), "kept, unclaimed");
     }
 }
 

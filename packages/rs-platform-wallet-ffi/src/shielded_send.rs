@@ -2873,6 +2873,7 @@ mod tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: true,
+                    spend_context: None,
                     anchor_height: None,
                 },
             )
