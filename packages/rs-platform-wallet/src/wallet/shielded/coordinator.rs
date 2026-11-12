@@ -1598,6 +1598,13 @@ impl NetworkShieldedCoordinator {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
         }
 
+        // Identity creates held for their outcome read with no node kept for them: scheduled
+        // from the record journal, whatever reservations are left.
+        if !cancelled {
+            self.redrive_unkept_identity_creates(&subwallets, cancel)
+                .await;
+        }
+
         // Identity creates held for their outcome read: the scan kept their
         // records and did not confirm their rows, as their notes spent do not
         // show whether the identity was created. Each whose notes this scan
@@ -1907,6 +1914,35 @@ impl NetworkShieldedCoordinator {
                         continue;
                     }
                 };
+                // An identity create whose outcome is proven keeps its notes reserved and its
+                // record until the sync pass replays its spent notes and row and the host
+                // holds them: releasing them here would hand back spent notes.
+                let proven_held = match store.pending_redrives(id) {
+                    Ok(records) => records.iter().any(|record| {
+                        record
+                            .identity_outcome
+                            .is_some_and(super::store::IdentityCreateOutcome::is_proven)
+                            && record.nullifiers.contains(&nullifier)
+                    }),
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: pending_redrives failed; skipping entry"
+                        );
+                        continue;
+                    }
+                };
+                if proven_held {
+                    tracing::debug!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        nullifier = %hex::encode(nullifier),
+                        "shielded reservation release: a proven identity create holds it; kept"
+                    );
+                    continue;
+                }
                 if !still_same {
                     // Resolved (landed and reconciled, result-wait
                     // confirmed) or re-armed by a retry while this pass
@@ -2549,6 +2585,32 @@ impl NetworkShieldedCoordinator {
             }
             super::operations::retire_settled_identity_creates(&self.store, id, &activity_ids)
                 .await;
+        }
+    }
+
+    /// Re-broadcast each held identity create of `subwallets` that has no node kept for it to one
+    /// node, kept for its outcome read ([`super::operations::redrive_unkept_identity_creates`]).
+    /// Scheduled from the record journal on every completed pass, not from reservations or
+    /// recorded anchors: a scan that saw a create's notes spent cleared its reservations but kept
+    /// its record.
+    async fn redrive_unkept_identity_creates(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        cancel: &CancellationToken,
+    ) {
+        for (id, _) in subwallets {
+            if cancel.is_cancelled() {
+                break;
+            }
+            let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
+            super::operations::redrive_unkept_identity_creates(
+                &self.sdk,
+                &self.store,
+                persister.as_ref(),
+                *id,
+                cancel,
+            )
+            .await;
         }
     }
 
@@ -3717,6 +3779,9 @@ mod tests {
             .derive_activity_into_changeset(&subwallets, &mut changeset)
             .await
             .unwrap();
+        coordinator
+            .redrive_unkept_identity_creates(&subwallets, &CancellationToken::new())
+            .await;
         let settled = coordinator
             .settle_held_identity_creates(&subwallets, &mut changeset, &CancellationToken::new())
             .await;
@@ -4409,6 +4474,45 @@ mod tests {
         assert_eq!(
             create_row(&coordinator, id).await,
             (ShieldedActivityStatus::Pending, None)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A held create whose node was never kept, after a scan saw its notes spent and so cleared
+    /// their reservations: no reservation or recorded anchor schedules it any more. The pass
+    /// schedules it from its record, sends it to one node, keeps that node, and proves its outcome
+    /// there.
+    #[tokio::test]
+    async fn should_settle_a_held_identity_create_with_no_node_once_its_reservations_are_gone() {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+
+        let dir = temp_dir("held_no_node_spent");
+        let coordinator = coordinator_on(&dir, sdk_reading_held_create(false).await).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        arm_identity_create(&coordinator, id, false).await;
+        {
+            let mut store = coordinator.store().write().await;
+            let mut record = store.pending_redrives(id).unwrap().remove(0);
+            record.identity_outcome = Some(IdentityCreateOutcome::Awaiting);
+            store.arm_redrive(id, record).unwrap();
+        }
+        scan_sees_identity_create(&coordinator, id, 40).await;
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .stale_pending_spends(id)
+                .unwrap()
+                .is_empty(),
+            "no reservation is left to schedule it"
+        );
+
+        post_scan_steps(&coordinator, id).await;
+
+        assert_eq!(
+            create_row(&coordinator, id).await,
+            (ShieldedActivityStatus::InputsConsumed, Some(0))
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -5678,6 +5782,47 @@ mod tests {
             }
         }
 
+        // An identity create proven unable to execute, restored with its reservation and
+        // record but not its row, so its settlement waits: its anchor is pruned like the first
+        // spend's, in the same pass that would settle it.
+        let proven = ([0x41; 32], [0x42; 32], [0x43; 32], SET_HEIGHT - 5);
+        {
+            let mut store = coordinator.store().write().await;
+            let (nullifier, anchor, activity, anchor_height) = proven;
+            let note = ShieldedNote {
+                position: 2,
+                cmx: [0x4F; 32],
+                nullifier,
+                block_height: 1,
+                is_spent: false,
+                value: 1_000,
+                note_data: vec![0u8; 115],
+            };
+            store.save_note(id, &note).expect("note");
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, activity, Some(anchor_height))
+                .expect("anchored");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        outcome_endpoint: Some("http://127.0.0.1:3010".to_string()),
+                        identity_outcome: Some(IdentityCreateOutcome::InputsConsumed {
+                            consumed_by_height: 7,
+                        }),
+                        activity_id: activity,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: vec![0xDE, 0xAD],
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(anchor_height),
+                    },
+                )
+                .expect("record");
+        }
         sdk.mock()
             .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
         coordinator.sync(true, &CancellationToken::new()).await;
@@ -5691,6 +5836,11 @@ mod tests {
             state(&store, spends[1].0, spends[1].2),
             held,
             "an anchor read above the set may be newer than it"
+        );
+        assert_eq!(
+            state(&store, proven.0, proven.2),
+            (true, true, None),
+            "a proven identity create keeps its record and spent note for its settlement"
         );
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);

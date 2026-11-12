@@ -2928,35 +2928,16 @@ where
 
     match result {
         Ok((identity_id, identity)) => {
-            // It executed: the outcome owns the notes, which it marks spent.
-            reservation.hand_over();
-            record_activity_status(
+            settle_created_identity_create(
                 store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
-                ShieldedActivityStatus::Confirmed,
-                None,
+                reservation,
+                &selected_notes,
             )
             .await;
-            // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
-            // local balance reflects the exit immediately; any drift heals on the next nullifier
-            // sync. The on-chain nullifier set — not this local mark — is the authoritative
-            // no-reuse guarantee.
-            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
-            {
-                warn!(
-                    account,
-                    error = %e,
-                    "IdentityCreateFromShieldedPool broadcast succeeded but local spent-state \
-                     update failed; will heal on next sync"
-                );
-            }
-            // A create held for its outcome read keeps its record when its notes are marked
-            // spent (`PendingRedrive::identity_outcome`); its outcome is known now.
-            retire_identity_create_record(store, id, pending_entry.as_ref().map(|entry| &entry.id))
-                .await;
             info!(
                 account,
                 denomination,
@@ -2980,6 +2961,51 @@ where
             derived_identity_id,
         )
         .await),
+    }
+}
+
+/// Settle the notes, saved record and activity row of an identity create whose result wait
+/// proved it executed: its `notes` are marked spent and its row confirmed, and its proven outcome
+/// ([`IdentityCreateOutcome::Created`]) is kept with its record until the host holds both
+/// durably: the sync pass replays them and retires the record then
+/// ([`settle_held_identity_creates`]).
+async fn settle_created_identity_create<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    mut reservation: NoteReservation<S>,
+    notes: &[ShieldedNote],
+) {
+    // It executed: the outcome owns the notes, which it marks spent.
+    reservation.hand_over();
+    record_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        pending_entry,
+        ShieldedActivityStatus::Confirmed,
+        None,
+    )
+    .await;
+    // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
+    // local balance reflects the exit immediately; any drift heals on the next nullifier
+    // sync. The on-chain nullifier set — not this local mark — is the authoritative
+    // no-reuse guarantee.
+    if let Err(e) = finalize_pending(store, persister, wallet_id, id, notes).await {
+        warn!(
+            error = %e,
+            "IdentityCreateFromShieldedPool broadcast succeeded but local spent-state \
+             update failed; will heal on next sync"
+        );
+    }
+    // Its record is kept, with its outcome, until the host holds this row and these
+    // spent notes durably: the sync pass replays both and retires it then
+    // ([`settle_held_identity_creates`]).
+    if let Some(entry) = pending_entry.as_ref() {
+        keep_identity_outcome(store, id, &entry.id, IdentityCreateOutcome::Created).await;
     }
 }
 
@@ -3199,13 +3225,21 @@ async fn broadcast_identity_create<S: ShieldedStore>(
             // node we hit, so retry a few times with a short, fixed backoff before concluding
             // it's truly absent: long enough to ride out routine indexing/replica lag, short
             // enough not to wedge the caller's UI for minutes.
-            let mut identity = match fetch_identity_with_retries(&reader, identity_id).await {
+            // Each fallback read goes to the node through its own scoped SDK: a node the
+            // failed wait banned is banned only in the wait's copy, so it is asked again.
+            let fallback_reader = || match &endpoint {
+                Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
+                None => Arc::clone(&reader),
+            };
+            let mut identity = match fetch_identity_with_retries(&fallback_reader(), identity_id)
+                .await
+            {
                 Some(identity) => identity,
                 // No node is known to hold the transition: nothing may be asked about it.
                 None if endpoint.is_none() => return Err(unconfirmed(wait_err.to_string())),
                 // Not found: proven reads tell a create that can no longer execute from an
                 // unknown outcome.
-                None => match probe_identity_create(&reader, st, identity_id).await {
+                None => match probe_identity_create(&fallback_reader(), st, identity_id).await {
                     IdentityCreateProbe::Created(identity) => identity,
                     IdentityCreateProbe::InputsConsumed { consumed_by_height } => {
                         warn!(
@@ -3455,13 +3489,12 @@ pub(super) async fn settle_inputs_consumed_identity_create<S: ShieldedStore>(
     .await;
 }
 
-/// Drop the recovery record `activity_id` of an identity create whose outcome is known. Two
-/// callers: the result wait, for a create whose identity it proved created, whose row it
-/// confirms itself; and, for a create held for its outcome read
-/// ([`PendingRedrive::held_for_identity_outcome`]), the sync pass once the host holds that
-/// create's row and spent notes durably ([`retire_settled_identity_creates`]). A create proven
-/// unable to execute is never dropped where its outcome is learnt. A failure is logged: the
-/// record stays, and the next pass settles it again from its kept outcome.
+/// Drop the recovery record `activity_id` of an identity create whose outcome is known. Its one
+/// caller is the sync pass, once the host holds that create's row and spent notes durably
+/// ([`retire_settled_identity_creates`]): a create's outcome, proven where it is learnt (the
+/// result wait, a redrive, the sync pass), is kept with its record until then, whichever it is.
+/// A failure is logged: the record stays, and the next pass settles it again from its kept
+/// outcome.
 async fn retire_identity_create_record<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     id: SubwalletId,
@@ -5121,8 +5154,6 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     recorded: &std::collections::HashSet<[u8; 32]>,
     cancel: &CancellationToken,
 ) {
-    use dpp::serialization::PlatformDeserializableTrusted;
-
     let redrives = match store.read().await.pending_redrives(id) {
         Ok(r) => r,
         Err(e) => {
@@ -5133,7 +5164,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
             return;
         }
     };
-    for mut redrive in redrives {
+    for redrive in redrives {
         // A stop ends the pass between records: no new re-broadcast starts
         // once cancelled. One already submitted is left to finish and is
         // classified as usual — its outcome handling stays conservative.
@@ -5151,107 +5182,159 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
             continue;
         }
-        let st = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
-            Ok(st) => st,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    "redrive: stored transition failed to deserialize; keeping the record \
-                     without re-broadcasting it (the prune backstop still frees the notes)"
-                );
-                continue;
-            }
-        };
-        // A held identity create whose outcome is proven is the sync pass's to settle.
-        if redrive
-            .identity_outcome
-            .is_some_and(IdentityCreateOutcome::is_proven)
+        redrive_one(sdk, store, persister, id, redrive).await;
+    }
+}
+
+/// Sync-time recovery of `id`'s held identity creates (Type 20) no node was kept for: each is
+/// re-broadcast to one node, kept with its record ([`redrive_one`]), so the sync pass can read its
+/// outcome there ([`settle_held_identity_creates`]). Scheduled from the record journal on every
+/// completed pass, whatever reservations or recorded anchors are left: a scan that saw a create's
+/// notes spent cleared its reservations but kept its record.
+pub(super) async fn redrive_unkept_identity_creates<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    id: SubwalletId,
+    cancel: &CancellationToken,
+) {
+    let redrives = match store.read().await.pending_redrives(id) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(error = %e, "held identity creates: pending_redrives failed; skipping subwallet");
+            return;
+        }
+    };
+    // No node to send to: nothing is sent, and no attempt is spent.
+    if sdk.address_list().get_live_address().is_none() {
+        return;
+    }
+    for redrive in redrives {
+        if cancel.is_cancelled() {
+            return;
+        }
+        if redrive.identity_outcome != Some(IdentityCreateOutcome::Awaiting)
+            || redrive.outcome_endpoint.is_some()
+            || redrive.nullifiers.is_empty()
+            || redrive.attempts >= MAX_REDRIVE_ATTEMPTS
         {
             continue;
         }
-        // A held identity create goes only to the node that holds it.
-        let held_at = match redrive.outcome_endpoint.as_deref() {
-            Some(endpoint) => match endpoint.parse::<dash_sdk::sdk::Address>() {
-                Ok(endpoint) => Some(endpoint),
-                Err(e) => {
-                    warn!(error = %e, "redrive: a held record's node does not read; not re-broadcast");
-                    continue;
-                }
-            },
-            None => None,
-        };
-        if held_at.is_some() && notes_seen_spent(store, id, &redrive.nullifiers).await {
-            continue;
+        redrive_one(sdk, store, persister, id, redrive).await;
+    }
+}
+
+/// Re-broadcast `redrive`'s stored transition once and classify the answer, for
+/// [`redrive_pending_spends`] and [`redrive_unkept_identity_creates`], which choose the records.
+async fn redrive_one<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    id: SubwalletId,
+    mut redrive: PendingRedrive,
+) {
+    use dpp::serialization::PlatformDeserializableTrusted;
+
+    let st = match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+        Ok(st) => st,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "redrive: stored transition failed to deserialize; keeping the record \
+                 without re-broadcasting it (the prune backstop still frees the notes)"
+            );
+            return;
         }
-        // A held identity create no node was kept for goes to one node, kept with its record
-        // once the dispatch may have reached it, so its outcome can be read there.
-        let unkept_node = match &held_at {
-            None if redrive.held_for_identity_outcome() => sdk.address_list().get_live_address(),
-            _ => None,
-        };
-        let broadcaster = match held_at.as_ref().or(unkept_node.as_ref()) {
-            Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
-            None => Arc::clone(sdk),
-        };
-        let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
-            continue;
-        };
-        let broadcast_result = st.broadcast(&broadcaster, None).await;
-        let held_at = match unkept_node {
-            Some(endpoint) if !matches!(&broadcast_result, Err(e) if refused_before_sending(e)) => {
-                keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await;
-                redrive.outcome_endpoint = Some(endpoint.to_string());
-                Some(endpoint)
+    };
+    // A held identity create whose outcome is proven is the sync pass's to settle.
+    if redrive
+        .identity_outcome
+        .is_some_and(IdentityCreateOutcome::is_proven)
+    {
+        return;
+    }
+    // A held identity create goes only to the node that holds it.
+    let held_at = match redrive.outcome_endpoint.as_deref() {
+        Some(endpoint) => match endpoint.parse::<dash_sdk::sdk::Address>() {
+            Ok(endpoint) => Some(endpoint),
+            Err(e) => {
+                warn!(error = %e, "redrive: a held record's node does not read; not re-broadcast");
+                return;
             }
-            _ => held_at,
-        };
-        let err_display = broadcast_result
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        match classify_redrive_broadcast(&broadcast_result) {
-            RedriveBroadcastOutcome::Accepted => {
-                info!(
-                    attempts,
-                    max = MAX_REDRIVE_ATTEMPTS,
-                    "redrive: re-broadcast accepted; the next scan detects the landing"
-                );
+        },
+        None => None,
+    };
+    if held_at.is_some() && notes_seen_spent(store, id, &redrive.nullifiers).await {
+        return;
+    }
+    // A held identity create no node was kept for goes to one node, kept with its record
+    // once the dispatch may have reached it, so its outcome can be read there.
+    let unkept_node = match &held_at {
+        None if redrive.held_for_identity_outcome() => sdk.address_list().get_live_address(),
+        _ => None,
+    };
+    let broadcaster = match held_at.as_ref().or(unkept_node.as_ref()) {
+        Some(endpoint) => Arc::new(sdk.scoped_to_address(endpoint.clone())),
+        None => Arc::clone(sdk),
+    };
+    let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
+        return;
+    };
+    let broadcast_result = st.broadcast(&broadcaster, None).await;
+    let held_at = match unkept_node {
+        Some(endpoint) if !matches!(&broadcast_result, Err(e) if refused_before_sending(e)) => {
+            keep_outcome_endpoint(store, id, &redrive.activity_id, &endpoint).await;
+            redrive.outcome_endpoint = Some(endpoint.to_string());
+            Some(endpoint)
+        }
+        _ => held_at,
+    };
+    let err_display = broadcast_result
+        .as_ref()
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    match classify_redrive_broadcast(&broadcast_result) {
+        RedriveBroadcastOutcome::Accepted => {
+            info!(
+                attempts,
+                max = MAX_REDRIVE_ATTEMPTS,
+                "redrive: re-broadcast accepted; the next scan detects the landing"
+            );
+        }
+        RedriveBroadcastOutcome::AlreadyExecuted => {
+            // A held identity create's notes spent do not show its identity created:
+            // read its outcome at its node.
+            if held_at.is_some()
+                && matches!(
+                    classify_held_identity_create(sdk, store, persister, id, &redrive).await,
+                    HeldIdentityCreate::Proven(_)
+                )
+            {
+                return;
             }
-            RedriveBroadcastOutcome::AlreadyExecuted => {
-                // A held identity create's notes spent do not show its identity created:
-                // read its outcome at its node.
-                if held_at.is_some()
-                    && matches!(
-                        classify_held_identity_create(sdk, store, persister, id, &redrive).await,
-                        HeldIdentityCreate::Proven(_)
-                    )
-                {
-                    continue;
-                }
-                // Success signal, but the attempt still counts: the scan
-                // normally confirms the landing and drops the record, and
-                // if it lags, this arm must not re-broadcast unboundedly
-                // on every pass. The cap parks the record for the scan /
-                // prune passes to settle.
-                info!(
-                    attempts,
-                    max = MAX_REDRIVE_ATTEMPTS,
-                    "redrive: transition already executed on-chain; the next scan confirms \
-                     the notes spent"
-                );
-            }
-            RedriveBroadcastOutcome::Inconclusive => {
-                // `AlreadyExists` (still in a mempool after a lost-ACK
-                // retry) or transport noise: inconclusive; counts toward
-                // the cap.
-                debug!(
-                    attempts,
-                    max = MAX_REDRIVE_ATTEMPTS,
-                    error = %err_display,
-                    "redrive: re-broadcast inconclusive"
-                );
-            }
+            // Success signal, but the attempt still counts: the scan
+            // normally confirms the landing and drops the record, and
+            // if it lags, this arm must not re-broadcast unboundedly
+            // on every pass. The cap parks the record for the scan /
+            // prune passes to settle.
+            info!(
+                attempts,
+                max = MAX_REDRIVE_ATTEMPTS,
+                "redrive: transition already executed on-chain; the next scan confirms \
+                 the notes spent"
+            );
+        }
+        RedriveBroadcastOutcome::Inconclusive => {
+            // `AlreadyExists` (still in a mempool after a lost-ACK
+            // retry) or transport noise: inconclusive; counts toward
+            // the cap.
+            debug!(
+                attempts,
+                max = MAX_REDRIVE_ATTEMPTS,
+                error = %err_display,
+                "redrive: re-broadcast inconclusive"
+            );
         }
     }
 }
@@ -8600,6 +8683,62 @@ mod redrive_tests {
                 })
             );
         }
+    }
+
+    /// The result wait proves an identity create executed: its note is marked spent and its row
+    /// confirmed, but its record is kept, with its outcome, across a restart too, until the sync
+    /// pass has the host hold both durably.
+    #[tokio::test]
+    async fn should_keep_a_created_identity_create_s_record_until_its_settlement_is_durable() {
+        let wallet_id = [0x78; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x81; 32];
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+        let transition = identity_create_spending(&spend.notes);
+        save_spend_then_broadcast(
+            &spend.store,
+            id,
+            &spend.entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &spend.notes,
+            &mut spend.reservation,
+            &transition,
+            IDENTITY_CREATE_OPERATION,
+            || async { Ok::<(), SpendFailure>(()) },
+        )
+        .await
+        .unwrap_or_else(|_| panic!("dispatched"));
+        let ReservedSpend {
+            store,
+            reservation,
+            entry,
+            notes,
+        } = spend;
+
+        settle_created_identity_create(&store, None, wallet_id, id, &entry, reservation, &notes)
+            .await;
+
+        assert_eq!(
+            spent_nullifiers(&store, id).await,
+            vec![spend_note().nullifier]
+        );
+        assert_eq!(
+            activity_row(&store, id, &activity_id).await.status,
+            ShieldedActivityStatus::Confirmed
+        );
+        drop(store);
+        let records = FileBackedShieldedStore::open_path(&path, 100)
+            .expect("reopened")
+            .pending_redrives(id)
+            .expect("records");
+        assert_eq!(records.len(), 1, "kept for the sync pass to settle");
+        assert_eq!(
+            records[0].identity_outcome,
+            Some(IdentityCreateOutcome::Created)
+        );
     }
 
     /// An identity create whose saved record is the only thing left of it
