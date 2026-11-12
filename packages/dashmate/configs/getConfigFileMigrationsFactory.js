@@ -1870,7 +1870,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '5.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             // From protocol version 15 Drive reads, with protx info, the operator payout of a
             // masternode whose operator key changed. Core refuses the method to the consensus
             // user until its whitelist names it, and loads the whitelist only when Core itself
@@ -1879,6 +1879,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const whitelist = options.core?.rpc?.users?.drive_consensus?.whitelist;
             if (Array.isArray(whitelist) && !whitelist.includes('protxinfo')) {
               whitelist.push('protxinfo');
+            }
+
+            // Move nodes from the Core 23 image earlier releases stored to the Core
+            // image this release ships. `dashpay/dashd:23` is the only Core 23 tag a
+            // release stored, so any other image is the operator's choice and is left
+            // alone.
+            //
+            // Only public networks, and the preset new local networks are set up
+            // from, move. Core 24 discards the sporks Core 23 stored, and on a local
+            // network or devnet whose nodes all move at once no peer has them
+            // anymore; dashmate signs local sporks only while setting the network up.
+            const isPublicNetwork = [NETWORK_MAINNET, NETWORK_TESTNET].includes(options.network);
+            const coreDocker = options.core?.docker;
+            if ((isPublicNetwork || name === 'local') && coreDocker?.image === 'dashpay/dashd:23') {
+              coreDocker.image = base.getStored('core.docker.image');
             }
           });
 
