@@ -404,6 +404,14 @@ pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
 /// Erase returns no document body, so there is no JSON out-param; the
 /// lifecycle state and the number of revisions still retained are read
 /// from the document's history.
+///
+/// # Safety
+/// `owner_identity_id`, `contract_id`, and `document_id` must each point to
+/// 32 readable bytes. `document_type_name` must be a valid NUL-terminated
+/// string. `signer_handle` must refer to a live signer whose callbacks and
+/// context remain valid for this blocking call. `out_document_id` must
+/// point to 32 writable bytes. The buffers must not be mutated concurrently
+/// and the output buffer must not overlap any input.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_document_erase(
