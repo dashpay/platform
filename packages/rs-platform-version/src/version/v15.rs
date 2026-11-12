@@ -150,7 +150,14 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    pattern. This accepts a value that parses but that the engine does not
 ///    compile, and one that names a Unicode property the engine holds no
 ///    character class for; a value that is not valid regular-expression syntax
-///    is still refused. A document type whose schema the validation
+///    is still refused. A schema's `pattern` is checked for its syntax when
+///    the validation schema is built, and compiled the first time a value
+///    reaches it. A type registered through protocol v14 can hold a pattern
+///    that parses but does not compile only where a `$ref` alone reaches it,
+///    in a value no registration check read as a schema: a string reaching it
+///    is refused with a `format` violation naming it as a `regex`, as protocol
+///    v14 refuses it, and a `contains` element reaching it matches nothing.
+///    A document type whose schema the validation
 ///    schema does not represent has its documents refused
 ///    (`InvalidContractStructure`): no document is checked through the
 ///    `jsonschema` crate. Protocol v14 and earlier keep `validate_document` 1.
@@ -173,7 +180,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    system property (`InvalidContractStructure`, note 21),
 ///    and refuses a document type the typed validation schema does not represent
 ///    (`InvalidContractStructure`), so every type registered from this version
-///    has its documents checked natively (note 6). It also selects
+///    has its documents checked natively (note 6), and compiles every
+///    `pattern` of the type, one only a `$ref` reaches included, refusing one
+///    that does not compile under the `regex` crate's default size limit
+///    (`InvalidContractStructure`). It also selects
 ///    `validate_max_depth` 2, the depth and cycle check run at registration and
 ///    update, which reads a `$ref` pointer by RFC 6901, as the validators do,
 ///    where generation 1 read it as a `.`-separated path: so a `$ref` the two
@@ -216,6 +226,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    no state validation, hold a contract update to it through
 ///    `DRIVE_ABCI_VALIDATION_VERSIONS_V11`'s `transform_into_action` 1, with the contract's
 ///    time fields at their widest: a bound on what a block measures.
+///    Measuring the compiled bytes builds each type's validation schema, which
+///    checks every `pattern`'s syntax and compiles none (note 6).
 ///    Protocol v14 and earlier keep format version 1 (0 before v9) and
 ///    `apply_contract_with_serialization` 0.
 ///

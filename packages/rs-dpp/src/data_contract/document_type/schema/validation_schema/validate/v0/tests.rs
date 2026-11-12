@@ -781,3 +781,111 @@ fn should_not_refuse_a_value_whose_container_nesting_equals_the_limit() {
         "{error:?}"
     );
 }
+
+/// A pattern that parses but that the `regex` crate does not compile under its default size
+/// limit.
+const PATTERN_BEYOND_THE_SIZE_LIMIT: &str = "^\\p{L}{400}$";
+
+/// Building the validator compiles none of its patterns: it compiles each the first time a
+/// value reaches it, and keeps it.
+#[test]
+fn should_compile_a_pattern_only_when_a_value_first_reaches_it() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "string", "pattern": "^a+$" },
+            "b": { "type": "string", "pattern": "^b+$" },
+        },
+    }));
+    assert_eq!(validator.attempted_patterns(), 0);
+
+    assert!(first_violation(&validator, &json!({ "a": "aa" })).is_none());
+    assert_eq!(validator.attempted_patterns(), 1);
+
+    let violation = first_violation(&validator, &json!({ "a": "aa", "b": "c" }))
+        .expect("expected `b` not to match");
+    assert_eq!(violation.keyword(), "pattern");
+    assert_eq!(validator.attempted_patterns(), 2);
+}
+
+/// A string reaching a pattern the `regex` crate does not compile is refused as the JSON
+/// Schema validator refuses a value reaching a `$ref` target that holds one: with a `format`
+/// violation naming the pattern as a `regex` it does not compile. A value that never reaches
+/// the pattern is checked as usual.
+#[test]
+fn should_refuse_a_string_reaching_a_pattern_that_does_not_compile() {
+    let validator = validator_of(&with_value(
+        &json!({ "type": "string", "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT }),
+    ));
+    assert!(first_violation(&validator, &json!({})).is_none());
+    assert_eq!(validator.attempted_patterns(), 0);
+
+    let violation =
+        first_violation(&validator, &json!({ "value": "a" })).expect("expected a refusal");
+    assert_eq!(violation.keyword(), "format");
+    assert_eq!(
+        violation.params(),
+        &Value::from(json!({ "format": "regex" }))
+    );
+    assert_eq!(
+        violation.error_summary(),
+        format!(
+            "{} is not a \"regex\"",
+            json!(PATTERN_BEYOND_THE_SIZE_LIMIT)
+        )
+    );
+    assert_eq!(violation.schema_path(), "/properties/value/pattern");
+
+    // The result is kept, and refuses the next string reaching the pattern too
+    assert_eq!(validator.attempted_patterns(), 1);
+    assert_eq!(
+        first_violation(&validator, &json!({ "value": "b" })).map(|v| v.keyword().to_string()),
+        Some("format".to_string())
+    );
+
+    // A value of another type fails `type` before it reaches the pattern
+    assert_eq!(
+        first_violation(&validator, &json!({ "value": 1 })).map(|v| v.keyword().to_string()),
+        Some("type".to_string())
+    );
+}
+
+/// Matching an element against `contains` only asks whether it matches, so a pattern the
+/// `regex` crate does not compile matches no element, as a `$ref` target holding one matches
+/// none under the JSON Schema validator: the array fails `contains`, with no other error.
+#[test]
+fn should_match_no_element_against_a_contains_pattern_that_does_not_compile() {
+    let validator = validator_of(&with_value(&json!({
+        "type": "array",
+        "contains": { "type": "string", "pattern": PATTERN_BEYOND_THE_SIZE_LIMIT },
+    })));
+    assert!(first_violation(&validator, &json!({})).is_none());
+    let violation =
+        first_violation(&validator, &json!({ "value": ["a"] })).expect("expected a refusal");
+    assert_eq!(violation.keyword(), "contains");
+}
+
+/// A pattern is compiled as the JSON Schema validator compiles it, with its ECMA escapes
+/// rewritten: `\d` is an ASCII digit and `\cA` the control character U+0001.
+#[test]
+fn should_compile_a_pattern_with_its_ecma_escapes_rewritten() {
+    let validator = validator_of(&json!({
+        "type": "object",
+        "properties": {
+            "digit": { "type": "string", "pattern": "^\\d$" },
+            "control": { "type": "string", "pattern": "^\\cA$" },
+        },
+    }));
+    for (document, accepted) in [
+        (json!({ "digit": "3" }), true),
+        (json!({ "digit": "\u{663}" }), false),
+        (json!({ "control": "\u{1}" }), true),
+        (json!({ "control": "A" }), false),
+    ] {
+        assert_eq!(
+            first_violation(&validator, &document).is_none(),
+            accepted,
+            "{document}"
+        );
+    }
+}
