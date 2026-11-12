@@ -999,6 +999,7 @@ mod tests {
     use dpp::prelude::{DataContract, Identifier};
     use dpp::version::PlatformVersion;
     use std::ffi::{CStr, CString};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
         0
@@ -1372,6 +1373,126 @@ mod tests {
         let result = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
         unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk_handle) };
+    }
+
+    /// Persistence and event vtables whose contexts count their releases in
+    /// `persistence` and `events`.
+    fn counted_callbacks(
+        persistence: &AtomicUsize,
+        events: &AtomicUsize,
+    ) -> (PersistenceCallbacks, EventHandlerCallbacks) {
+        let mut persistence_callbacks = persistence_callbacks();
+        persistence_callbacks.context = persistence as *const AtomicUsize as *mut c_void;
+        persistence_callbacks.release_fn = Some(counting_release);
+        let mut event_callbacks = event_callbacks();
+        event_callbacks.context = events as *const AtomicUsize as *mut c_void;
+        event_callbacks.release_fn = Some(counting_release);
+        (persistence_callbacks, event_callbacks)
+    }
+
+    /// Only one manager serves an SDK's SPV quorum keys. A second create on
+    /// the same SDK is refused before it reads the callback vtables, so Rust
+    /// never owns that caller's contexts: Swift releases the contexts it
+    /// retained for a failed create, and a release from Rust as well would
+    /// free them twice. Destroying the first manager frees the SDK for
+    /// another.
+    #[test]
+    fn should_refuse_a_second_manager_on_one_sdk_without_releasing_its_contexts() {
+        let sdk = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+        let (first_persistence, first_events) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let (second_persistence, second_events) = (AtomicUsize::new(0), AtomicUsize::new(0));
+
+        let (persistence, events) = counted_callbacks(&first_persistence, &first_events);
+        let mut first = 0;
+        assert_eq!(
+            create_with_sdk(sdk, &persistence, &events, &mut first).0,
+            PlatformWalletFFIResultCode::Success
+        );
+
+        let (persistence, events) = counted_callbacks(&second_persistence, &second_events);
+        let mut second = 0;
+        let (code, message) = create_with_sdk(sdk, &persistence, &events, &mut second);
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a second manager must not serve the same SDK"
+        );
+        assert!(message.contains("already serves"), "{message}");
+        assert_eq!(
+            (
+                second_persistence.load(Ordering::SeqCst),
+                second_events.load(Ordering::SeqCst)
+            ),
+            (0, 0),
+            "a refused create must not release the caller's contexts"
+        );
+
+        let result = unsafe { platform_wallet_manager_destroy(first) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            (
+                first_persistence.load(Ordering::SeqCst),
+                first_events.load(Ordering::SeqCst)
+            ),
+            (1, 1)
+        );
+
+        let mut third = 0;
+        assert_eq!(
+            create_with_sdk(
+                sdk,
+                &persistence_callbacks(),
+                &event_callbacks(),
+                &mut third
+            )
+            .0,
+            PlatformWalletFFIResultCode::Success,
+            "destroying the first manager must free the SDK for another"
+        );
+        let result = unsafe { platform_wallet_manager_destroy(third) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk) };
+    }
+
+    /// A create refused after it claimed the SDK's slot, here for a borrowed
+    /// callback context or a null out pointer, must leave the slot free: a
+    /// slot held by a create that failed would refuse every later manager on
+    /// that SDK.
+    #[test]
+    fn should_free_the_slot_when_a_create_fails_after_claiming_it() {
+        let sdk = regtest_sdk_handle(rs_sdk_ffi::dash_sdk_create_spv);
+
+        let mut borrowed = persistence_callbacks();
+        borrowed.context = 0xC0FFEEusize as *mut c_void;
+        let mut handle = 0;
+        let (code, message) = create_with_sdk(sdk, &borrowed, &event_callbacks(), &mut handle);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("release_fn"), "{message}");
+        assert_eq!(
+            create_with_sdk(
+                sdk,
+                &persistence_callbacks(),
+                &event_callbacks(),
+                std::ptr::null_mut()
+            )
+            .0,
+            PlatformWalletFFIResultCode::ErrorNullPointer
+        );
+
+        let (code, message) = create_with_sdk(
+            sdk,
+            &persistence_callbacks(),
+            &event_callbacks(),
+            &mut handle,
+        );
+        assert_eq!(
+            code,
+            PlatformWalletFFIResultCode::Success,
+            "the refused creates must have left the slot free: {message}"
+        );
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        unsafe { rs_sdk_ffi::dash_sdk_destroy(sdk) };
     }
 
     fn query(handle: Handle) -> PersistenceCapabilitiesFFI {
