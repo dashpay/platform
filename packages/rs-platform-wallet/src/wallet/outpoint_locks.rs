@@ -419,8 +419,8 @@ mod tests {
     use super::*;
     use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletPersistence};
     use crate::test_support::{
-        funded_wallet_manager_with_outputs, masternode_registration, NoopTestEventHandler,
-        WalletSigner, MASTERNODE_COLLATERAL_DUFFS,
+        coin_worth, funded_wallet_manager_with_outputs, masternode_registration,
+        NoopTestEventHandler, WalletSigner, MASTERNODE_COLLATERAL_DUFFS,
     };
     use crate::wallet::platform_wallet::WalletId;
 
@@ -618,7 +618,7 @@ mod tests {
             &[MASTERNODE_COLLATERAL_DUFFS, 5 * DASH],
         )
         .await;
-        let collateral = crate::test_support::coin_worth(
+        let collateral = coin_worth(
             &manager,
             &wallet_id,
             StandardAccountType::BIP44Account,
@@ -828,7 +828,7 @@ mod tests {
             &[MASTERNODE_COLLATERAL_DUFFS, 5 * DASH],
         )
         .await;
-        let collateral = crate::test_support::coin_worth(
+        let collateral = coin_worth(
             &manager,
             &wallet_id,
             StandardAccountType::BIP44Account,
