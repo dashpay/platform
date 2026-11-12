@@ -765,11 +765,8 @@ pub unsafe extern "C" fn dash_sdk_get_context_provider_source(sdk_handle: *const
         return CUSTOM_QUORUM_SOURCE;
     }
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    match quorum_source(wrapper) {
-        Some(QuorumKeySource::Trusted) => 0,
-        Some(QuorumKeySource::Spv) => 1,
-        None => CUSTOM_QUORUM_SOURCE,
-    }
+    // `QuorumKeySource` is `#[repr(u8)]` with the values documented above.
+    quorum_source(wrapper).map_or(CUSTOM_QUORUM_SOURCE, |source| source as u8)
 }
 
 /// Register global context provider callbacks
