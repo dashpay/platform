@@ -1740,13 +1740,13 @@ extension ManagedPlatformWallet {
 }
 
 extension PlatformWalletManager {
-    /// Prepare the dedicated tip account. Publication is a separate profile update.
-    public func prepareShieldedTipAddress(walletId: Data, identityId: Data, resolver: MnemonicResolver) async throws -> Data {
+    /// Prepare the identity's dedicated shielded account. Publication is a separate profile update.
+    public func prepareShieldedIdentityAddress(walletId: Data, identityId: Data, resolver: MnemonicResolver) async throws -> Data {
         guard walletId.count == 32, identityId.count == 32, let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter("Expected wallet/identity IDs and mnemonic resolver")
         }
         // Admitted, so `shutdown()` waits for this call before destroying the handle.
-        try admitNativeOp("prepareShieldedTipAddress")
+        try admitNativeOp("prepareShieldedIdentityAddress")
         defer { finishNativeOp() }
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) {
@@ -1754,7 +1754,7 @@ extension PlatformWalletManager {
                 var address = [UInt8](repeating: 0, count: 43)
                 try walletId.withUnsafeBytes { wallet in
                     try identityId.withUnsafeBytes { identity in
-                        try platform_wallet_manager_prepare_shielded_tip_address(
+                        try platform_wallet_manager_prepare_shielded_identity_address(
                             handle, wallet.baseAddress!.assumingMemoryBound(to: UInt8.self), resolverHandle,
                             identity.baseAddress!.assumingMemoryBound(to: UInt8.self), &address
                         ).check()
@@ -1797,15 +1797,15 @@ extension PlatformWalletManager {
 }
 
 extension PlatformWalletManager {
-    public static func shieldedTipAccountIndex(identityIndex: UInt32) throws -> UInt32 {
+    public static func shieldedIdentityAccountIndex(identityIndex: UInt32) throws -> UInt32 {
         var account: UInt32 = 0
-        try platform_wallet_shielded_tip_account_index(identityIndex, &account).check()
+        try platform_wallet_shielded_identity_account_index(identityIndex, &account).check()
         return account
     }
 }
 
 extension PlatformWalletManager {
-    public static func isShieldedTipAccount(_ account: UInt32) -> Bool {
-        platform_wallet_is_shielded_tip_account(account)
+    public static func isShieldedIdentityAccount(_ account: UInt32) -> Bool {
+        platform_wallet_is_shielded_identity_account(account)
     }
 }

@@ -2381,10 +2381,10 @@ pub(crate) fn resolve_shielded_coordinator(
     }
 }
 
-/// Derive and register the identity's dedicated tip account, without publishing it.
+/// Derive and register the identity's dedicated shielded account, without publishing it.
 /// All ID pointers must reference 32 bytes; `out_address` must reference 43 writable bytes.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
+pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_identity_address(
     handle: Handle,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
@@ -2409,7 +2409,7 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
     // output write happens outside it, only on success, so a panic leaves the
     // zeroed buffer untouched.
     let mut address = [0u8; 43];
-    let result = catch_query_panic("shielded tip address preparation", || {
+    let result = catch_query_panic("shielded identity address preparation", || {
         let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
             Ok(value) => value,
             Err(e) => return e,
@@ -2424,7 +2424,7 @@ pub unsafe extern "C" fn platform_wallet_manager_prepare_shielded_tip_address(
         match block_on_worker(async move {
             maybe_inject_tip_worker_panic();
             wallet
-                .prepare_shielded_tip_address(seed.as_ref(), &identity_id, &coordinator)
+                .prepare_shielded_identity_address(seed.as_ref(), &identity_id, &coordinator)
                 .await
         }) {
             Ok(bytes) => {
@@ -2620,15 +2620,15 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     })
 }
 
-/// Return the dedicated ZIP-32 tip account for a wallet identity derivation index.
+/// Return the dedicated ZIP-32 shielded account for a wallet identity derivation index.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_shielded_tip_account_index(
+pub unsafe extern "C" fn platform_wallet_shielded_identity_account_index(
     identity_index: u32,
     out_account: *mut u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_account);
     *out_account = 0;
-    match platform_wallet::wallet::shielded::tips::shielded_tip_account_index(identity_index) {
+    match platform_wallet::wallet::shielded::tips::shielded_identity_account_index(identity_index) {
         Ok(account) => {
             *out_account = account;
             PlatformWalletFFIResult::ok()
@@ -2637,10 +2637,10 @@ pub unsafe extern "C" fn platform_wallet_shielded_tip_account_index(
     }
 }
 
-/// Whether an account is reserved for explicitly selected DashPay tip activity.
+/// Whether an account is reserved for a wallet identity's shielded activity.
 #[no_mangle]
-pub extern "C" fn platform_wallet_is_shielded_tip_account(account: u32) -> bool {
-    platform_wallet::wallet::shielded::is_shielded_tip_account(account)
+pub extern "C" fn platform_wallet_is_shielded_identity_account(account: u32) -> bool {
+    platform_wallet::wallet::shielded::is_shielded_identity_account(account)
 }
 
 #[cfg(test)]
@@ -3307,7 +3307,7 @@ mod tests {
                 )
             };
             let prepare = unsafe {
-                platform_wallet_manager_prepare_shielded_tip_address(
+                platform_wallet_manager_prepare_shielded_identity_address(
                     handle,
                     wallet_id.as_ptr(),
                     &mut resolver,
@@ -3331,7 +3331,7 @@ mod tests {
         );
         let message = message_of(&prepare);
         assert!(
-            message.contains("shielded tip address preparation panicked"),
+            message.contains("shielded identity address preparation panicked"),
             "{message}"
         );
         assert_eq!(out_address, [0u8; 43]);
@@ -3400,7 +3400,7 @@ mod tests {
         // Non-spending exports: a retryable failure with the outputs left zeroed.
         let mut out_address = [0xAAu8; 43];
         let mut prepare = unsafe {
-            platform_wallet_manager_prepare_shielded_tip_address(
+            platform_wallet_manager_prepare_shielded_identity_address(
                 handle,
                 wallet_id.as_ptr(),
                 &mut resolver,

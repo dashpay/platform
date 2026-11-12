@@ -704,7 +704,7 @@ DashPay profiles can publish `shieldedAddress`, a complete 43-byte raw Orchard
 address. `DashPayProfileUpdate` uses `.keep`, `.set(Data)`, and `.remove` for
 payment address changes; unrelated profile edits preserve the published address.
 Wallet-generated tip addresses use a dedicated shielded account for each local
-identity. Call `prepareShieldedTipAddress` and then explicitly publish the returned
+identity. Call `prepareShieldedIdentityAddress` and then explicitly publish the returned
 address through a signed profile update. External receiving addresses may also be
 published; their funds are managed and recovered by the external wallet.
 

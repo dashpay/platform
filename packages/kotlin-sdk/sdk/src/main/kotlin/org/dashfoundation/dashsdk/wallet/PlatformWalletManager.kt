@@ -2028,10 +2028,10 @@ class PlatformWalletManager(
     // until a later shielded sync resolves them).
 
     /** Dedicated account index derived by Rust's wallet convention. */
-    fun shieldedTipAccountIndex(identityIndex: Int): Int = mapNativeErrors { FundingNative.tipAccountIndex(identityIndex) }
+    fun shieldedIdentityAccountIndex(identityIndex: Int): Int = mapNativeErrors { FundingNative.identityAccountIndex(identityIndex) }
 
-    suspend fun prepareShieldedTipAddress(walletId: ByteArray, identityId: ByteArray): ByteArray = teardownGate.op {
-        mapNativeErrors { FundingNative.prepareShieldedTipAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
+    suspend fun prepareShieldedIdentityAddress(walletId: ByteArray, identityId: ByteArray): ByteArray = teardownGate.op {
+        mapNativeErrors { FundingNative.prepareShieldedIdentityAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
     }
 
     /** Send only if fresh resolution still matches the recipient shown in confirmation. */
