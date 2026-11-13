@@ -2,12 +2,14 @@
 //! through `check_tx` and block processing.
 
 use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
-    add_ref_dag_document_type, add_token_with_trade_mode, assert_paid_contract_structure_error,
+    add_ref_dag_document_type, add_token_with_trade_mode,
+    assert_kept_out_of_the_mempool_and_executed_in_block, assert_paid_contract_structure_error,
     assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
-    expiring_summed_schema, resign_with_contract, summed_u64_schema,
-    terminal_without_index_only_schema, Outcome, EXPIRING_UNBOUNDED_SUM_MESSAGE,
-    SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+    expiring_summed_schema, one_pattern_too_many, patterned_schema, resign_with_contract,
+    summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    EXPIRING_UNBOUNDED_SUM_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE,
+    TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, TOO_MANY_PATTERNS_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -384,4 +386,26 @@ async fn should_admit_an_update_adding_a_token_that_is_not_tradeable_at_protocol
         "check_tx: {:?}",
         outcome.check_tx
     );
+}
+
+#[tokio::test]
+async fn should_refuse_an_update_adding_more_patterns_than_a_contract_may_hold() {
+    let outcome = update_contract_adding_schema(
+        patterned_schema(one_pattern_too_many(), SMALL_PATTERN),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_paid_contract_structure_error(&outcome, TOO_MANY_PATTERNS_MESSAGE, UPDATE_NONCE);
+}
+
+/// Protocol version 14 has no pattern bound in consensus, so a block still applies the update,
+/// while `check_tx` keeps it out of the mempool.
+#[tokio::test]
+async fn should_keep_applying_an_update_adding_patterns_over_the_bound_at_protocol_version_14() {
+    let outcome =
+        update_contract_adding_schema(patterned_schema(one_pattern_too_many(), SMALL_PATTERN), 14)
+            .await;
+
+    assert_kept_out_of_the_mempool_and_executed_in_block(&outcome, TOO_MANY_PATTERNS_MESSAGE);
 }
