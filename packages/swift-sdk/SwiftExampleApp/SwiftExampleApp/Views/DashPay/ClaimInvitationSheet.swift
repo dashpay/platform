@@ -340,11 +340,17 @@ struct ClaimInvitationSheet: View {
 
     /// One past the highest used registration index on this wallet, else 0.
     /// Registration keys aren't gap-limited, so "next unused" is `max + 1`.
+    /// A slot held by an in-flight registration counts as used: its identity
+    /// row only lands after Platform accepts it, and reusing the slot would
+    /// register the same keys twice.
     private func nextUnusedIdentityIndex() -> UInt32 {
-        let used = identities
+        let recorded = identities
             .filter { $0.wallet?.walletId == walletId }
             .map(\.identityIndex)
-        guard let highest = used.max() else { return 0 }
+        let held = walletManager.registrationCoordinator.controllers.keys
+            .filter { $0.walletId == walletId }
+            .map(\.identityIndex)
+        guard let highest = (recorded + held).max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
     }
 }
