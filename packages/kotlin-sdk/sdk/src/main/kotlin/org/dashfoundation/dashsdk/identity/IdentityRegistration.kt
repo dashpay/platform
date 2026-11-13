@@ -464,6 +464,24 @@ class IdentityRegistration internal constructor(
     }
 
     /**
+     * Load the identity registered for this wallet at [identityIndex] and
+     * record it like discovery does. Returns its 32-byte id, or `null` when
+     * no identity is registered there; throws when Platform does not
+     * answer. Mirrors Swift `ManagedPlatformWallet.loadIdentity(atIndex:)`.
+     */
+    suspend fun loadIdentityAtIndex(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        identityIndex: Int,
+    ): ByteArray? = gate.op {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        val id = mapNativeErrors {
+            IdentityNative.loadIdentityAtIndex(walletHandle, mnemonicResolverHandle, identityIndex)
+        }
+        id.takeIf { it.size == 32 }
+    }
+
+    /**
      * Scan the wallet for registered identities (gap-limit walk). Returns
      * the discovered 32-byte identity ids.
      *
