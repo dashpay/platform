@@ -477,6 +477,12 @@ pub struct PlatformWallet {
     /// handles share them.
     #[cfg(feature = "shielded")]
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
+    /// The manager-owned network coordinator slot. Wallet operations resolve
+    /// the configured coordinator through this slot so callers cannot pair a
+    /// wallet with a different same-network coordinator.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_coordinator:
+        Option<Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>>,
 }
 
 impl PlatformWallet {
@@ -792,6 +798,36 @@ impl PlatformWallet {
         sync_fault: Arc<std::sync::atomic::AtomicBool>,
         durable_cursors: crate::changeset::DurableCursors,
     ) -> Self {
+        Self::new_with_coordinator_slot(
+            sdk,
+            wallet_id,
+            wallet_manager,
+            generation,
+            lock_notify,
+            persister,
+            broadcaster,
+            sync_fault,
+            durable_cursors,
+            #[cfg(feature = "shielded")]
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_coordinator_slot(
+        sdk: Arc<dash_sdk::Sdk>,
+        wallet_id: WalletId,
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        generation: Arc<WalletGeneration>,
+        lock_notify: Arc<tokio::sync::Notify>,
+        persister: Arc<dyn PlatformWalletPersistence>,
+        broadcaster: Arc<SpvBroadcaster>,
+        sync_fault: Arc<std::sync::atomic::AtomicBool>,
+        durable_cursors: crate::changeset::DurableCursors,
+        #[cfg(feature = "shielded")] shielded_coordinator: Option<
+            Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+        >,
+    ) -> Self {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
         // (currently just `AssetLockManager` — see Item 8 sub-step 1a).
@@ -882,7 +918,38 @@ impl PlatformWallet {
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
+            #[cfg(feature = "shielded")]
+            shielded_coordinator,
         }
+    }
+
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn resolve_shielded_coordinator(
+        &self,
+        supplied: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    ) -> Result<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>, PlatformWalletError> {
+        if supplied.network() != self.network() {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                supplied.network(),
+                self.network(),
+            )));
+        }
+        if let Some(slot) = &self.shielded_coordinator {
+            let configured = slot.read().await.clone().ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "shielded support is not configured on this wallet manager".to_string(),
+                )
+            })?;
+            if !Arc::ptr_eq(&configured, supplied) {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "the supplied shielded coordinator is not owned by this wallet manager"
+                        .to_string(),
+                ));
+            }
+            return Ok(configured);
+        }
+        Ok(Arc::clone(supplied))
     }
 
     /// Bind a shielded (Orchard) sub-wallet to this `PlatformWallet`.
@@ -918,13 +985,7 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
-        if coordinator.network() != self.network() {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "the shielded coordinator is for {:?}, this wallet for {:?}",
-                coordinator.network(),
-                self.network(),
-            )));
-        }
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
         // Fence generation teardown across attachment validation, host
         // viewing-key persistence, and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
@@ -1071,13 +1132,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
-        if coordinator.network() != self.network() {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "the shielded coordinator is for {:?}, this wallet for {:?}",
-                coordinator.network(),
-                self.network(),
-            )));
-        }
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
         // Keep the generation alive from attachment validation through the
         // persisted snapshot read and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
@@ -3040,6 +3095,8 @@ impl Clone for PlatformWallet {
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_coordinator: self.shielded_coordinator.clone(),
         }
     }
 }

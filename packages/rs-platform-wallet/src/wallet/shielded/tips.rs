@@ -121,6 +121,7 @@ impl PlatformWallet {
         identity_id: &Identifier,
         coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> Result<[u8; 43], PlatformWalletError> {
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
         // Do not publish a key from a mis-associated mnemonic. A first bind
         // has no persisted FVK against which to detect a wrong seed.
         let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
@@ -144,7 +145,11 @@ impl PlatformWallet {
                 self.wallet_id(),
             )));
         }
+        let clear_generation = coordinator.clear_generation();
         let _operation = coordinator.operation_guard().await;
+        if coordinator.clear_generation() != clear_generation {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         // Held until the address is returned, so the identity cannot move to
         // another slot between the check below and the bind of the account
         // that slot selects. Publication rechecks it (see
@@ -156,7 +161,6 @@ impl PlatformWallet {
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
-        let clear_generation = coordinator.clear_generation();
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
@@ -358,6 +362,7 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        let coordinator = self.resolve_shielded_coordinator(coordinator).await?;
         {
             let _placement = self.identity.identity_placement.read().await;
             self.tip_source_account(seed, source).await?;
