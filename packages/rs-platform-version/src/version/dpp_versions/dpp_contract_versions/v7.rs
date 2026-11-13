@@ -46,7 +46,10 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   format version 1;
 /// - `canonical_contested_index_values`, `Some(1)` rather than `Some(0)`: every index value
 ///   of a contest is written the one way its property's type keys it, so the values of one
-///   contest name one poll; 0 wrote only identifiers one way.
+///   contest name one poll; 0 wrote only identifiers one way;
+/// - `max_size`, 1 rather than 0: a string of 16384 or more characters without `maxBytes`
+///   counts as `u16::MAX` bytes toward a document type's largest size rather than failing it
+///   with an overflow. Only the erase of retained revisions, new in this version, reads it.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -91,6 +94,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: every index value of a contest is written the one way its property's
             // type keys it, where 0 wrote only identifiers one way
             canonical_contested_index_values: Some(1),
+            // changed: a string bound past `u16::MAX` bytes is held there, not an overflow
+            max_size: 1,
             ..CONTRACT_VERSIONS_V6.document_type_versions.methods
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

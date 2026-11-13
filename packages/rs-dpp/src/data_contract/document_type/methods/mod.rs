@@ -1129,9 +1129,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .max_size
         {
             0 => self.max_size_v0(platform_version),
+            1 => self.max_size_v1(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "max_size".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -1697,6 +1698,87 @@ mod tests {
                 .expect("estimated")
                 + CONTRACT_VERSION_STAMP_MAX_SIZE
         );
+    }
+
+    // --------------------------------------------------------------
+    // DocumentTypeV0Methods::max_size
+    // --------------------------------------------------------------
+
+    /// A string of 20000 characters without `maxBytes` counts as `u16::MAX`
+    /// bytes toward the largest size, as a string without `maxLength` does,
+    /// from protocol version 15. Generation 0, which protocol version 14
+    /// selects, fails on the overflow.
+    #[test]
+    fn should_hold_a_string_past_16383_characters_at_u16_max_in_the_largest_size() {
+        let platform_version = PlatformVersion::latest();
+        let long = build_doc_type("note", note_schema(long_text()));
+        let unbounded = build_doc_type(
+            "note",
+            note_schema(platform_value!({"type": "string", "position": 0})),
+        );
+        assert_eq!(
+            long.as_ref()
+                .max_size(platform_version)
+                .expect("the long string is sized"),
+            u16::MAX
+        );
+        assert_eq!(
+            unbounded
+                .as_ref()
+                .max_size(platform_version)
+                .expect("the unbounded string is sized"),
+            u16::MAX
+        );
+
+        let platform_version_14 = PlatformVersion::get(14).expect("expected version 14");
+        let long_14 = build_doc_type_at("note", note_schema(long_text()), platform_version_14);
+        assert!(matches!(
+            long_14.as_ref().max_size(platform_version_14),
+            Err(ProtocolError::Overflow(_))
+        ));
+    }
+
+    /// Below the cap both generations size every property alike, an object's
+    /// members and a typed array's elements included.
+    #[test]
+    fn should_size_bounded_properties_as_protocol_version_14_does() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected version 14");
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "minLength": 3, "maxLength": 100, "position": 0},
+                "count": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1},
+                "data": {"type": "array", "byteArray": true, "maxItems": 64, "position": 2},
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "maxLength": 10, "position": 0},
+                        "rank": {"type": "integer", "minimum": 0, "maximum": 9, "position": 1},
+                    },
+                    "additionalProperties": false,
+                    "position": 3,
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string", "maxLength": 10},
+                    "maxItems": 4,
+                    "position": 4,
+                },
+            },
+            "additionalProperties": false,
+        });
+        let at_latest = build_doc_type("doc", schema.clone());
+        let at_14 = build_doc_type_at("doc", schema, platform_version_14);
+        let size = at_latest
+            .as_ref()
+            .max_size(PlatformVersion::latest())
+            .expect("sized");
+        assert_eq!(
+            size,
+            at_14.as_ref().max_size(platform_version_14).expect("sized")
+        );
+        // The title alone is 400 bytes, and nothing comes near the cap
+        assert!(size > 400 && size < 1024, "{size}");
     }
 
     // --------------------------------------------------------------

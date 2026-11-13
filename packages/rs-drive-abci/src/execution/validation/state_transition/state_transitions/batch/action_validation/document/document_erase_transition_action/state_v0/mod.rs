@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -7,6 +8,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::state::fetch_keep_history_document_lifecycle::fetch_keep_history_document_lifecycle;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTypeError,
 };
@@ -20,7 +22,11 @@ use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::lifecycle::DocumentLifecycleState;
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
@@ -140,4 +146,66 @@ impl DocumentEraseTransitionActionStateValidationV0 for DocumentEraseTransitionA
             )),
         }
     }
+}
+
+/// What check tx reserves, on top of the estimated fee of `action`, for the
+/// erases of a batch whose state it does not validate: for every erase, the
+/// work its refunds cause for other identities
+/// ([`Drive::erase_refund_recipient_cost`]), which state validation 0 bills on
+/// every path an erase takes. Nothing for anything else. Without it, a signer
+/// covering an erase's estimated fee but not that work would be admitted, then
+/// refused unpaid in a block, its nonce left to replay the work. A state
+/// validation generation that bills an erase otherwise has to reserve what it
+/// bills, so any other generation is refused here.
+pub(in crate::execution::validation::state_transition) fn erase_refund_recipient_reservation(
+    action: &StateTransitionAction,
+    drive: &Drive,
+    epoch: &Epoch,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<ValidationOperation>, Error> {
+    let StateTransitionAction::BatchAction(batch) = action else {
+        return Ok(Vec::new());
+    };
+    let erases = batch
+        .transitions()
+        .iter()
+        .filter(|transition| {
+            matches!(
+                transition,
+                BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(_))
+            )
+        })
+        .count();
+    if erases == 0 {
+        return Ok(Vec::new());
+    }
+    match platform_version
+        .drive_abci
+        .validation_and_processing
+        .state_transitions
+        .batch_state_transition
+        .document_erase_transition_state_validation
+    {
+        Some(0) => {}
+        Some(version) => {
+            return Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "erase_refund_recipient_reservation".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }))
+        }
+        None => {
+            return Err(Error::Execution(ExecutionError::VersionNotActive {
+                method: "erase_refund_recipient_reservation".to_string(),
+                known_versions: vec![0],
+            }))
+        }
+    }
+    let cost = drive
+        .erase_refund_recipient_cost(epoch, platform_version)
+        .map_err(Error::Drive)?;
+    Ok(vec![
+        ValidationOperation::PrecalculatedOperation(cost);
+        erases
+    ])
 }

@@ -892,7 +892,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     deletion time, and an erasing or erased document is absent at every requested time.
 ///     Parser 4 admits `canBeErased` with meta-schema 3; compiled type storage keeps generation
 ///     0 and its existing non-lifecycle bytes. Protocols through 14 retain their handlers,
-///     limits and wire bounds, and cannot admit an erase.
+///     limits and wire bounds, and cannot admit an erase. An erase sizes the revisions it may
+///     remove with `max_size` 1 (`CONTRACT_VERSIONS_V7`), which counts a string of 16384 or
+///     more characters without `maxBytes` as `u16::MAX` bytes where generation 0 fails on the
+///     overflow.
 /// 42. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
 ///     `validate_schema_patterns` 0. Contract registration and update refuse a contract whose
 ///     document schemas and `$defs` hold more than 32 patterns
@@ -931,7 +934,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2,
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); max_size 1 holds a string bound past u16::MAX bytes there for the erase (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)

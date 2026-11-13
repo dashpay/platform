@@ -21,6 +21,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::choose_first_reservation;
+use crate::execution::validation::state_transition::batch::erase_refund_recipient_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -533,14 +534,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             }
 
             // A create choosing the first of the commitments to its values reads up to its scan's
-            // budget of competitors in a block; its state was not validated here, so the signer
-            // is held to that budget too
+            // budget of competitors in a block, and an erase is billed for the work its refunds
+            // cause; their state was not validated here, so the signer is held to both too
             if !validates_state {
-                reserve_choose_first_scans(
+                reserve_unvalidated_state_work(
                     &action,
+                    platform,
                     &mut state_transition_execution_context,
                     platform_version,
-                );
+                )?;
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -741,13 +743,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
-                // As on the first check: the budget of a scan whose state was not validated
+                // As on the first check: the budget of a scan and the refund work of an erase
+                // whose state was not validated
                 if !relies_on_gas_sponsor_to_pay {
-                    reserve_choose_first_scans(
+                    reserve_unvalidated_state_work(
                         &action,
+                        platform,
                         &mut state_transition_execution_context,
                         platform_version,
-                    );
+                    )?;
                 }
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -771,18 +775,26 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     }
 }
 
-/// Reserves, on top of the estimated fee of `action`, what the `chooseFirst` checks of its
-/// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
-/// competitor scan's budget), for an action whose state check tx did not validate. Fee
+/// Reserves, on top of the estimated fee of `action`, what state validation bills in a block
+/// for an action whose state check tx did not validate: what the `chooseFirst` checks of its
+/// creates may bill (see `choose_first_reservation`: their two hashes and the competitor scan's
+/// budget) and the work the refunds of its erases cause for other identities (see
+/// `erase_refund_recipient_reservation`), priced at the epoch check tx estimates in. Fee
 /// validation then admits only a signer who could pay for them.
-fn reserve_choose_first_scans(
+fn reserve_unvalidated_state_work<C>(
     action: &StateTransitionAction,
+    platform: &PlatformRef<C>,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
-) {
-    for operation in choose_first_reservation(action, platform_version) {
-        execution_context.add_operation(operation);
-    }
+) -> Result<(), Error> {
+    execution_context.add_operations(choose_first_reservation(action, platform_version));
+    execution_context.add_operations(erase_refund_recipient_reservation(
+        action,
+        platform.drive,
+        platform.state.last_committed_block_epoch_ref(),
+        platform_version,
+    )?);
+    Ok(())
 }
 
 #[cfg(test)]
