@@ -71,7 +71,7 @@ data class DocumentLifecycle(
             null
         }
 
-        private fun fromLifecycleObject(obj: JsonObject): DocumentLifecycle? {
+        internal fun fromLifecycleObject(obj: JsonObject): DocumentLifecycle? {
             val state = obj["state"]?.jsonPrimitive?.takeIf { it.isString }?.content
                 ?.let { name -> DocumentLifecycleState.entries.firstOrNull { it.name == name } }
                 ?: return null
