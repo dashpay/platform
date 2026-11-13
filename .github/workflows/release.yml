@@ -321,7 +321,7 @@ jobs:
           - package_type: deb
             os: ubuntu-24.04
           - package_type: macos
-            os: macos-14
+            os: macos-15
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -416,7 +416,7 @@ jobs:
           - package_type: deb
             os: ubuntu-24.04
           - package_type: macos
-            os: macos-14
+            os: macos-15
     steps:
       # Treat finished installers as data. This job never installs or runs
       # package code and never restores caches from the build jobs. The macOS
