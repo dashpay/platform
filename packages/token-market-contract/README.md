@@ -5,7 +5,9 @@ marketplace: the listings (`ask`) holders make to sell a tradeable token at a
 price, and the offers (`bid`) anyone makes to buy one. It activates at protocol
 version 15, registered at genesis by chains born at 15 and inserted by the
 upgrade to 15, and has the same ID on every network:
-`AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e`.
+`AE6yYq65VdfGCg2MSyV9vV7cWGiFWjbwBuy7THesDh4e`. It holds no orders under
+protocol version 15: tokens become tradeable, and orders can be placed, from
+protocol version 16.
 
 Only the token marketplace transitions write these documents. Users cannot
 create them (`creationRestrictionMode` 2), and a replace or delete sent as a

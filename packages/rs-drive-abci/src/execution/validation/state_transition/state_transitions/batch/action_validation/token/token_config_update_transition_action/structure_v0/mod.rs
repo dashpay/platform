@@ -29,7 +29,8 @@ impl TokenConfigUpdateTransitionActionStructureValidationV0 for TokenConfigUpdat
     /// which Drive refuses for a read-only one. An update that is not performed yet, a group
     /// member's vote, is refused too, as the group action it opens or joins could never close.
     ///
-    /// Then the marketplace rules of the trade mode the update proposes (protocol version 15): a
+    /// Then the marketplace rules of the trade mode the update proposes (reached with a tradeable
+    /// mode from protocol version 16, the first whose `is_allowed` gate lets one through): a
     /// `MarketplaceTradeMode` item can make a token tradeable only if the token is transferable
     /// (`NonTransferableTokenTradeableError`, 10281), the rule contract create and update apply to
     /// the configuration they carry. `transferable` is fixed at creation and no other item changes

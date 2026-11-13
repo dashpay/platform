@@ -1,7 +1,9 @@
 # Token Marketplace
 
-From protocol version 15 a token can be tradeable: its holders can sell it to each other on
-Platform at a price they set, and anyone can make an offer for it. Nobody has to trust the other
+From protocol version 16 a token can be tradeable: its holders can sell it to each other on
+Platform at a price they set, and anyone can make an offer for it. Protocol version 15 prepares
+the state the market uses (the escrow trees and the token market contract below) and admits no
+tradeable token yet. Nobody has to trust the other
 side. The tokens a seller lists and the credits a buyer offers are held in escrow until the order
 is filled or cancelled, so a fill always delivers what the order promised.
 
@@ -43,8 +45,8 @@ created tradeable becomes tradeable only if its issuer kept the right to change 
 
 | Rule | Refused with | Where |
 |---|---|---|
-| `Tradeable` before protocol version 15 | `StateTransitionNotActiveError` (10603), as `TokenTradeModeTradeable` on a contract and `TokenConfigUpdateMarketplaceTradeModeTradeable` on an update | Contract create and update, and the batch carrying the update, before anything is charged. Software older than protocol version 15 cannot decode the mode, so this is the refusal it gives too |
-| `Tradeable` on a [non-transferable token](non-transferable-tokens.md) | `NonTransferableTokenTradeableError` (10281) | Contract create and update before anything is charged, and the advanced structure validation of a `TokenConfigUpdate`, which charges the signer and runs in check_tx too, so the mempool refuses the update |
+| `Tradeable` before protocol version 16 | `StateTransitionNotActiveError` (10603), as `TokenTradeModeTradeable` on a contract and `TokenConfigUpdateMarketplaceTradeModeTradeable` on an update | Contract create and update, and the batch carrying the update, before anything is charged. Software older than protocol version 15 cannot decode the mode, so this is the refusal it gives too. Protocol version 15 decodes the mode and gives the same refusal: it has no transitions that place or fill an order, so no contract stores the mode before they exist |
+| `Tradeable` on a [non-transferable token](non-transferable-tokens.md), from protocol version 16 | `NonTransferableTokenTradeableError` (10281) | Contract create and update before anything is charged, and the advanced structure validation of a `TokenConfigUpdate`, which charges the signer and runs in check_tx too, so the mempool refuses the update |
 
 A non-transferable token cannot be tradeable because filling a listing or an offer moves the token
 from the seller to the buyer, which is the transfer the token refuses. `transferable` is fixed
@@ -77,7 +79,8 @@ different scales. After a token changes its decimals, the orders placed before t
 under the old decimals until they close; a client showing them alongside the new ones queries both
 and scales each by its `decimals`.
 
-Only the marketplace transitions write orders. A document transition cannot create one
+Only the marketplace transitions write orders, and protocol version 15 has none: the two types
+and the escrow trees stay empty until protocol version 16. A document transition cannot create one
 (`creationRestrictionMode` 2), and a replace or a delete of one is refused by a data trigger. The
 types stay mutable and deletable so the documents carry a revision and storage flags: the order's
 owner pays its storage and gets it back when the order closes.

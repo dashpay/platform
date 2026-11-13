@@ -128,13 +128,17 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    consensus reads the total as it reads any other. `parse_property_constraints`
 ///    0 (protocol version 14) reads such a binding as an integer and refuses it.
 ///
-/// 5. **Tradeable tokens**: `TokenTradeMode::Tradeable`
-///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`) lets a token's holders list it and make
-///    offers for it. Before this version a contract whose token is tradeable, and a
-///    `TokenConfigUpdate` that makes a token tradeable, are refused unpaid as not active
-///    (`StateTransitionNotActiveError`, 10603), the refusal older software gives by failing to
-///    decode the mode. A tradeable token must be transferable (`NonTransferableTokenTradeableError`,
-///    10281): contract create and update refuse it unpaid, and the batch `advanced_structure` 2
+/// 5. **Tradeable tokens, decoded and not yet admitted**: `TokenTradeMode::Tradeable` lets a
+///    token's holders list it and make offers for it. This version decodes the mode and admits
+///    no token that has it: a contract whose token is tradeable, and a `TokenConfigUpdate` that
+///    makes a token tradeable, are refused unpaid as not active (`StateTransitionNotActiveError`,
+///    10603) below `TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION` (16), the refusal
+///    software older than this version gives by failing to decode the mode. The transitions
+///    that place and fill orders come with protocol version 16, and the stored form of the mode
+///    is not final before them, so no contract stores it under this version. The rules a
+///    tradeable token is held to are in place for the version that admits one: it must be
+///    transferable (`NonTransferableTokenTradeableError`, 10281), which contract create and
+///    update refuse unpaid, and the batch `advanced_structure` 2
 ///    (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) checks the trade mode an update proposes against the
 ///    contract the action carries, charged, so check_tx refuses the update too. Protocol v14 and
 ///    earlier keep the batch `advanced_structure` 1.
@@ -449,7 +453,9 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     genesis from this version and
 ///     stored without storage flags by `transition_to_version_15`. Users cannot write them:
 ///     `creationRestrictionMode` 2 refuses a create, and the data trigger `bindings` 3
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete.
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuse a replace or a delete. Nothing writes this
+///     state under this version: it admits no tradeable token (note 5) and has no order
+///     transitions, so the escrow trees and the two types stay empty.
 ///
 /// 18. **Core fork activations recorded in state**: `update_core_info` 1
 ///     (`DRIVE_ABCI_METHOD_VERSIONS_V11`) asks Core, in a block that moves the chain locked

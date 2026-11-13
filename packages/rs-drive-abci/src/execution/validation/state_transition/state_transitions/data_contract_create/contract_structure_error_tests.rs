@@ -559,6 +559,22 @@ async fn should_refuse_a_contract_with_a_tradeable_token_unpaid_at_protocol_vers
     assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
 }
 
+/// Protocol version 15 decodes the trade mode and creates the marketplace's state, and refuses a
+/// tradeable token as protocol version 13 does: nothing can trade one before protocol version 16,
+/// so no contract stores the mode before then.
+#[tokio::test]
+async fn should_refuse_a_contract_with_a_tradeable_token_unpaid_at_protocol_version_15() {
+    let outcome = register_contract_with(
+        |contract| add_token_with_trade_mode(contract, TokenTradeMode::Tradeable),
+        15,
+        dash_to_credits!(1.0),
+    )
+    .await
+    .outcome;
+
+    assert_refused_unpaid_as_not_active(&outcome, "TokenTradeModeTradeable");
+}
+
 /// The same contract with a token that is not tradeable registers.
 #[tokio::test]
 async fn should_register_a_contract_with_a_token_that_is_not_tradeable_at_protocol_version_13() {
