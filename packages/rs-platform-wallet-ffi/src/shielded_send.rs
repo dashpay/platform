@@ -627,6 +627,9 @@ pub(crate) fn map_spend_result(
         // fee: refused before anything was armed or broadcast, code 39 with the
         // figures in the stable JSON detail.
         | Err(e @ PlatformWalletError::InsufficientIdentityCredits { .. })
+        // No balance for the identity on Platform yet (right after
+        // registration): refused before anything was armed, code 58, retry.
+        | Err(e @ PlatformWalletError::IdentityBalanceUnavailable(..))
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
@@ -3147,6 +3150,16 @@ mod tests {
         assert!(
             message_of(&result).contains("try again shortly"),
             "no-recorded-anchor message must be the retryable guidance"
+        );
+
+        // No identity balance on Platform yet (the identity shield's
+        // precheck): its own retryable code, not the generic failure.
+        let no_balance: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::IdentityBalanceUnavailable([7; 32].into()),
+        );
+        assert_eq!(
+            map_spend_result(no_balance, "shielded shield from identity").code,
+            PlatformWalletFFIResultCode::ErrorIdentityBalanceUnavailable
         );
 
         let other: Result<(), PlatformWalletError> =
