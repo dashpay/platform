@@ -3,6 +3,8 @@ package org.dashfoundation.dashsdk
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.ffi.CreditsNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
@@ -159,6 +161,27 @@ class FfiSmokeTest {
         assertThrows(DashSDKException::class.java) {
             WalletManagerNative.syncFaultDetected(0L)
         }
+    }
+
+    /**
+     * The external identity top-up's `CreditsNative` symbol binds with the
+     * descriptor Kotlin declares, and reaches its own export: a 31-byte
+     * identity id is refused by the JNI argument check (code 1) before any
+     * handle is read or anything is signed. The top-up itself is covered by
+     * the platform-wallet and platform-wallet-ffi external-identity tests.
+     */
+    @Test
+    fun externalIdentityTopUpSymbolBindsAndRejectsInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val error = assertThrows(DashSDKException::class.java) {
+            CreditsNative.topUpExternalIdentityFromAddresses(
+                0L,
+                ByteArray(31),
+                FundingInput.encode(emptyList()),
+                0L,
+            )
+        }
+        assertEquals(1, error.code)
     }
 
     /**
