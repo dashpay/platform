@@ -568,13 +568,16 @@ impl PlatformWallet {
     /// wallet's `PlatformWalletInfo` (with `DerefMut`).
     /// Holds the identity-placement write lock first, so replacing the manager
     /// or removing/re-adding an identity cannot race a tip operation.
-    pub async fn state_mut(&self) -> WalletStateWriteGuard<'_> {
+    /// Returns `WalletNotFound` if this handle's generation is no longer current.
+    pub async fn state_mut(&self) -> Result<WalletStateWriteGuard<'_>, PlatformWalletError> {
         let placement = self.identity.identity_placement.write().await;
-        WalletStateWriteGuard {
-            guard: self.wallet_manager.write().await,
+        let mut guard = self.wallet_manager.write().await;
+        self.identity.current_wallet_info_mut(&mut guard)?;
+        Ok(WalletStateWriteGuard {
+            guard,
             wallet_id: self.wallet_id,
             _placement: placement,
-        }
+        })
     }
 
     /// Blocking read-lock.
@@ -592,13 +595,16 @@ impl PlatformWallet {
     /// called from within a tokio async context. Exists so sync
     /// callers (e.g. SPV-driven transaction processing) can reach
     /// mutation methods that require the wallet-manager write lock.
-    pub fn state_mut_blocking(&self) -> WalletStateWriteGuard<'_> {
+    /// Returns `WalletNotFound` if this handle's generation is no longer current.
+    pub fn state_mut_blocking(&self) -> Result<WalletStateWriteGuard<'_>, PlatformWalletError> {
         let placement = self.identity.identity_placement.blocking_write();
-        WalletStateWriteGuard {
-            guard: self.wallet_manager.blocking_write(),
+        let mut guard = self.wallet_manager.blocking_write();
+        self.identity.current_wallet_info_mut(&mut guard)?;
+        Ok(WalletStateWriteGuard {
+            guard,
             wallet_id: self.wallet_id,
             _placement: placement,
-        }
+        })
     }
 
     // -----------------------------------------------------------------
@@ -755,18 +761,18 @@ impl PlatformWallet {
     }
 
     /// Non-blocking write-lock. Returns `None` if the lock is currently
-    /// held by any reader or writer, or identity placement is in use. Same safety properties as
+    /// held by any reader or writer, identity placement is in use, or this handle's
+    /// generation is no longer current. Same safety properties as
     /// [`try_state`]: never panics, never blocks.
     pub fn try_state_mut(&self) -> Option<WalletStateWriteGuard<'_>> {
         let placement = self.identity.identity_placement.try_write().ok()?;
-        self.wallet_manager
-            .try_write()
-            .ok()
-            .map(|guard| WalletStateWriteGuard {
-                guard,
-                wallet_id: self.wallet_id,
-                _placement: placement,
-            })
+        let mut guard = self.wallet_manager.try_write().ok()?;
+        self.identity.current_wallet_info_mut(&mut guard).ok()?;
+        Some(WalletStateWriteGuard {
+            guard,
+            wallet_id: self.wallet_id,
+            _placement: placement,
+        })
     }
 
     /// Construct a PlatformWallet from a WalletManager that already contains
@@ -2897,8 +2903,8 @@ impl PlatformWallet {
     /// `Wallet::add_account`.
     ///
     /// Returns [`ApplyError::WalletNotFound`](crate::wallet::ApplyError::WalletNotFound)
-    /// if the wallet has been removed from the manager between handle
-    /// acquisition and this call.
+    /// if this handle's wallet has been removed or replaced in the manager
+    /// between handle acquisition and this call.
     ///
     /// Consumes the changeset by value — `apply_changeset` drains
     /// every map straight into the wallet maps with no clones.
@@ -2927,9 +2933,10 @@ impl PlatformWallet {
                 None
             };
             let mut wm = self.wallet_manager.write().await;
-            let (wallet, info) = wm
-                .get_wallet_mut_and_info_mut(&self.wallet_id)
-                .ok_or(crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
+            let (wallet, info) = self
+                .identity
+                .current_wallet_and_info_mut(&mut wm)
+                .map_err(|_| crate::wallet::ApplyError::WalletNotFound(self.wallet_id))?;
             info.apply_changeset(wallet, changeset)?;
         }
 
@@ -3681,6 +3688,72 @@ fn check_recipient_hrp(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod state_generation_tests {
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWalletManager;
+    use dashcore::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    struct NoopEvents;
+    impl EventHandler for NoopEvents {}
+    impl PlatformEventHandler for NoopEvents {}
+
+    #[tokio::test]
+    async fn should_reject_mutations_from_a_removed_wallet_generation() {
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        );
+        let old = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let id = old.wallet_id();
+        manager.remove_wallet(&id).await.unwrap();
+        assert!(matches!(
+            old.state_mut().await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        let current = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        assert_eq!(current.wallet_id(), id);
+        assert!(matches!(
+            old.state_mut().await,
+            Err(PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(old.try_state_mut().is_none());
+        let blocking_old = Arc::clone(&old);
+        assert!(tokio::task::spawn_blocking(move || matches!(
+            blocking_old.state_mut_blocking(),
+            Err(PlatformWalletError::WalletNotFound(_))
+        ))
+        .await
+        .unwrap());
+        assert!(
+            matches!(old.apply(PlatformWalletChangeSet::default()).await,
+            Err(crate::wallet::ApplyError::WalletNotFound(wallet_id)) if wallet_id == id)
+        );
+        assert!(current.state_mut().await.is_ok());
+        assert!(current.try_state_mut().is_some());
+    }
 }
 
 #[cfg(all(test, feature = "shielded"))]

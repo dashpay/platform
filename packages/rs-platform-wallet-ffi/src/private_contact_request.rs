@@ -1697,7 +1697,7 @@ mod tests {
             PLATFORM_WALLET_STORAGE
                 .with_item(wallet_handle, |wallet| {
                     runtime().block_on(async {
-                        let mut state = wallet.state_mut().await;
+                        let mut state = wallet.state_mut().await.expect("live wallet state");
                         let manager = &mut state.identity_manager;
                         manager
                             .add_identity(bob.clone(), 0, wallet.wallet_id(), wallet.persister())
@@ -1825,7 +1825,7 @@ mod tests {
             revision: 0,
         });
         runtime().block_on(async {
-            let mut state = wallet.state_mut().await;
+            let mut state = wallet.state_mut().await.expect("live wallet state");
             state
                 .identity_manager
                 .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())

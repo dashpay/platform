@@ -246,11 +246,7 @@ impl IdentityWallet {
         {
             let _placement = self.identity_placement.write().await;
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info_mut(&mut wm)?;
             // The probe at `identity_index` proved the index: add the identity
             // there, or move an identity known from elsewhere into that slot;
             // either is stored below, with its verified keys, as one changeset.
@@ -300,11 +296,7 @@ impl IdentityWallet {
         match self.fetch_owned_dpns_names(identity_id, None).await {
             Ok((names, fetch)) => {
                 let mut wm = self.wallet_manager.write().await;
-                let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                    crate::error::PlatformWalletError::WalletNotFound(
-                        "Wallet info not found in wallet manager".to_string(),
-                    )
-                })?;
+                let info = self.current_wallet_info_mut(&mut wm)?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                     managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                 }
@@ -416,11 +408,7 @@ impl IdentityWallet {
             match self.fetch_owned_dpns_names(identity_id, None).await {
                 Ok((names, fetch)) => {
                     let mut wm = self.wallet_manager.write().await;
-                    let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                        crate::error::PlatformWalletError::WalletNotFound(
-                            "Wallet info not found in wallet manager".to_string(),
-                        )
-                    })?;
+                    let info = self.current_wallet_info_mut(&mut wm)?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
                         managed.apply_fetched_dpns_names(names, fetch, &self.persister);
@@ -481,11 +469,7 @@ impl IdentityWallet {
         // don't know the wallet index and cannot sign).
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
+            let info = self.current_wallet_info_mut(&mut wm)?;
             info.identity_manager
                 .add_out_of_wallet_identity(identity.clone(), &self.persister)?;
         }

@@ -9306,7 +9306,7 @@ mod tests {
 
         let held = |id: Identifier, index: u32| {
             runtime().block_on(async {
-                let mut state = wallet.state_mut().await;
+                let mut state = wallet.state_mut().await.expect("live wallet state");
                 let identities = &mut state.identity_manager;
                 identities
                     .add_identity(

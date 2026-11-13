@@ -444,14 +444,7 @@ impl IdentityWallet {
                         // Placement lock first; see `identity_placement`.
                         let placement_guard = self.identity_placement.write().await;
                         let mut wm_guard = self.wallet_manager.write().await;
-                        let info_guard =
-                            wm_guard
-                                .get_wallet_info_mut(&self.wallet_id)
-                                .ok_or_else(|| {
-                                    crate::error::PlatformWalletError::WalletNotFound(
-                                        "Wallet info not found in wallet manager".to_string(),
-                                    )
-                                })?;
+                        let info_guard = self.current_wallet_info_mut(&mut wm_guard)?;
                         // The key hash at `identity_index` proved the index: add
                         // the identity there, or move an identity known from
                         // elsewhere into that slot (stored below, with its
@@ -619,14 +612,7 @@ impl IdentityWallet {
             match self.fetch_owned_dpns_names(identity_id, None).await {
                 Ok((names, fetch)) => {
                     let mut wm_guard = self.wallet_manager.write().await;
-                    let info_guard =
-                        wm_guard
-                            .get_wallet_info_mut(&self.wallet_id)
-                            .ok_or_else(|| {
-                                crate::error::PlatformWalletError::WalletNotFound(
-                                    "Wallet info not found in wallet manager".to_string(),
-                                )
-                            })?;
+                    let info_guard = self.current_wallet_info_mut(&mut wm_guard)?;
                     if let Some(managed) = info_guard
                         .identity_manager
                         .managed_identity_mut(&identity_id)
@@ -672,11 +658,11 @@ impl IdentityWallet {
         // own verdict instead would drop the gaps the fold carried forward.
         let recorded = {
             let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&wallet_id) {
-                Some(info) => info
+            match self.current_wallet_info_mut(&mut wm) {
+                Ok(info) => info
                     .identity_manager
                     .record_identity_scan(wallet_id, verdict),
-                None => {
+                Err(_) => {
                     tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         "identity scan finished for a wallet that is no longer managed; \

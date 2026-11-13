@@ -2233,7 +2233,7 @@ async fn should_order_public_identity_manager_replacement_after_tip_spending() {
         matches!(error, crate::PlatformWalletError::ShieldedBuildError(ref message) if message.starts_with("amount must be > 0")),
         "{error:?}"
     );
-    let mut state = replacing.await;
+    let mut state = replacing.await.unwrap();
     let mut replacement = state.identity_manager.clone();
     let identity = replacement
         .remove_identity(&id, wallet.persister())
@@ -2254,7 +2254,7 @@ async fn should_order_blocking_public_state_mutation_against_identity_placement(
         let wallet = wallet.clone();
         tokio::task::spawn_blocking(move || {
             started_tx.send(()).unwrap();
-            let mut state = wallet.state_mut_blocking();
+            let mut state = wallet.state_mut_blocking().unwrap();
             let identity = state
                 .identity_manager
                 .remove_identity(&id, wallet.persister())
@@ -2470,8 +2470,8 @@ mod tip_lifecycle_tests {
         }
     }
 
-    async fn fund(wallet: &PlatformWallet, coordinator: &NetworkShieldedCoordinator) {
-        let keys = OrchardKeySet::from_seed(&SEED, Network::Testnet, 0).unwrap();
+    async fn fund(wallet: &PlatformWallet, coordinator: &NetworkShieldedCoordinator, account: u32) {
+        let keys = OrchardKeySet::from_seed(&SEED, Network::Testnet, account).unwrap();
         let rho = Rho::from_bytes(&[1; 32]).into_option().unwrap();
         let rseed = RandomSeed::from_bytes([2; 32], &rho).into_option().unwrap();
         let note = Note::from_parts(
@@ -2500,7 +2500,7 @@ mod tip_lifecycle_tests {
         store.append_commitment(&note.cmx, true).unwrap();
         store.checkpoint_tree(1).unwrap();
         store
-            .save_note(SubwalletId::new(wallet.wallet_id(), 0), &note)
+            .save_note(SubwalletId::new(wallet.wallet_id(), account), &note)
             .unwrap();
         let anchor = store.tree_anchor().unwrap();
         drop(store);
@@ -2515,7 +2515,7 @@ mod tip_lifecycle_tests {
     async fn assert_teardown_waits_for_tip_proving(clear: bool) {
         let (_dir, manager, wallet, coordinator) = fixture().await;
         let recipient = mock_tip_recipient(&wallet).await;
-        fund(&wallet, &coordinator).await;
+        fund(&wallet, &coordinator, 0).await;
         let (reached_tx, reached_rx) = oneshot::channel();
         let (resume_tx, resume_rx) = std::sync::mpsc::channel();
         let prover = PausedProver {
@@ -2591,6 +2591,161 @@ mod tip_lifecycle_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn should_hold_clear_until_tip_proving_returns() {
         assert_teardown_waits_for_tip_proving(true).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_refuse_stale_mutations_while_replacement_tip_source_is_locked() {
+        use crate::changeset::IdentityChangeSet;
+        use crate::wallet::identity::network::{
+            derive_identity_auth_key_hash_from_master, IdentityDiscoveryOptions, MASTER_KEY_INDEX,
+        };
+        use dash_sdk::platform::types::identity::PublicKeyHash;
+        use dpp::identity::{Identity, IdentityV0};
+        use dpp::prelude::Identifier;
+
+        let (_dir, manager, old, coordinator) = fixture().await;
+        manager.remove_wallet(&old.wallet_id()).await.unwrap();
+        let current = add_wallet(&manager).await;
+        let identity_id = Identifier::from([0x66; 32]);
+        let identity = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys: seed_master_key(&SEED, 2),
+            balance: 0,
+            revision: 0,
+        });
+        current
+            .state_mut()
+            .await
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                identity.clone(),
+                2,
+                current.wallet_id(),
+                current.persister(),
+            )
+            .unwrap();
+        current
+            .bind_shielded(&SEED, &[0], &coordinator)
+            .await
+            .unwrap();
+        current
+            .prepare_shielded_identity_address(&SEED, &identity_id, &coordinator)
+            .await
+            .unwrap();
+        fund(
+            &current,
+            &coordinator,
+            crate::shielded_identity_account_index(2).unwrap(),
+        )
+        .await;
+        let recipient = mock_tip_recipient(&current).await;
+        let master =
+            key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &SEED).unwrap();
+        let probe = derive_identity_auth_key_hash_from_master(
+            &master,
+            Network::Testnet,
+            2,
+            MASTER_KEY_INDEX,
+        )
+        .unwrap();
+        let mut sdk = old.sdk().clone();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(identity))
+            .await
+            .unwrap();
+
+        let (reached, resume) = super::super::tips::test_hooks::pause_before_spend(&current);
+        let (proof_reached_tx, proof_reached) = oneshot::channel();
+        let (proof_resume_tx, proof_resume_rx) = std::sync::mpsc::channel();
+        proof_resume_tx.send(()).unwrap();
+        let prover = PausedProver {
+            reached: Mutex::new(Some(proof_reached_tx)),
+            resume: Mutex::new(proof_resume_rx),
+        };
+        let sending = {
+            let current = Arc::clone(&current);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move {
+                AssertUnwindSafe(current.send_shielded_tip(
+                    &coordinator,
+                    &SEED,
+                    ShieldedTipSource::Identity(identity_id),
+                    "Alice.dash",
+                    &recipient,
+                    100_000_000_000,
+                    [0; 36],
+                    prover,
+                ))
+                .catch_unwind()
+                .await
+            })
+        };
+        tokio::time::timeout(Duration::from_secs(10), reached)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            current.try_state_mut().is_none(),
+            "the live placement gate is held"
+        );
+        let before = manager.persister.stored_count();
+        assert!(matches!(
+            old.state_mut().await,
+            Err(crate::PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(old.try_state_mut().is_none());
+        let blocking_old = Arc::clone(&old);
+        assert!(tokio::task::spawn_blocking(move || matches!(
+            blocking_old.state_mut_blocking(),
+            Err(crate::PlatformWalletError::WalletNotFound(_))
+        ))
+        .await
+        .unwrap());
+        let changeset = PlatformWalletChangeSet {
+            identities: Some(IdentityChangeSet {
+                removed: [identity_id].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(matches!(
+            old.apply(changeset).await,
+            Err(crate::wallet::ApplyError::WalletNotFound(_))
+        ));
+        assert!(matches!(
+            old.identity()
+                .load_identity_by_index_from_master(2, &master)
+                .await,
+            Err(crate::PlatformWalletError::WalletNotFound(_))
+        ));
+        assert!(matches!(
+            old.identity()
+                .discover_from_master(
+                    IdentityDiscoveryOptions {
+                        start_index: Some(2),
+                        gap_limit: 1
+                    },
+                    &master,
+                )
+                .await,
+            Err(crate::PlatformWalletError::WalletNotFound(_))
+        ));
+        assert_eq!(manager.persister.stored_count(), before);
+        assert_eq!(
+            current
+                .state()
+                .await
+                .identity_manager
+                .identity_index(&identity_id),
+            Some(2)
+        );
+        resume.send(()).unwrap();
+        proof_reached.await.unwrap();
+        assert!(
+            sending.await.unwrap().is_err(),
+            "the funded transfer reached the test prover"
+        );
     }
 
     #[tokio::test]
