@@ -20,6 +20,13 @@ use std::ffi::c_void;
 /// `(wallet_id, account_index, nullifier)` overwrite the existing
 /// row in place — Orchard nullifiers are globally unique, so a
 /// rescan after a restart shouldn't produce duplicates.
+///
+/// Except `is_spent`: once a row has it set, a re-save must keep it,
+/// whatever the incoming entry says. A sync pass can deliver a note
+/// unspent after a send's round already saved it spent, possibly
+/// before the host had any row for it. A host that can't read the
+/// existing row must fail the round rather than write the entry over
+/// it (`ShieldedChangeSet::notes_saved`).
 #[repr(C)]
 pub struct ShieldedNoteFFI {
     /// 32-byte wallet identifier.
