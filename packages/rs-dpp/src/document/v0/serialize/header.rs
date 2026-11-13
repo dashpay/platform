@@ -38,13 +38,20 @@ impl DocumentV0 {
     ) -> Result<(Identifier, Option<Revision>), ProtocolError> {
         let format: FeatureVersion = serialized_document
             .read_varint()
-            .map_err(|_| header_error("serialization format"))?;
+            .map_err(|error| header_error("serialization format", error))?;
         match format {
             0..=2 => {}
             3 => {
-                let _contract_version: u64 = serialized_document
+                let stamp: u64 = serialized_document
                     .read_varint()
-                    .map_err(|_| header_error("contract version stamp"))?;
+                    .map_err(|error| header_error("contract version stamp", error))?;
+                if stamp > u32::MAX as u64 {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::CorruptedSerialization(
+                            "contract version stamp does not fit in a u32".to_string(),
+                        ),
+                    ));
+                }
             }
             version => {
                 return Err(ProtocolError::UnknownVersionMismatch {
@@ -57,11 +64,11 @@ impl DocumentV0 {
         let mut id = [0; 32];
         serialized_document
             .read_exact(&mut id)
-            .map_err(|_| header_error("id"))?;
+            .map_err(|error| header_error("id", error))?;
         let mut identifier = [0; 32];
         serialized_document
             .read_exact(&mut identifier)
-            .map_err(|_| header_error("owner id"))?;
+            .map_err(|error| header_error("owner id", error))?;
         if format >= 2
             && (document_type.trade_mode() != TradeMode::None
                 || document_type.documents_transferable().is_transferable())
@@ -69,18 +76,18 @@ impl DocumentV0 {
             let mut has_creator_id = [0];
             serialized_document
                 .read_exact(&mut has_creator_id)
-                .map_err(|_| header_error("creator id flag"))?;
+                .map_err(|error| header_error("creator id flag", error))?;
             if has_creator_id[0] > 0 {
                 serialized_document
                     .read_exact(&mut identifier)
-                    .map_err(|_| header_error("creator id"))?;
+                    .map_err(|error| header_error("creator id", error))?;
             }
         }
         let revision = if document_type.requires_revision() {
             Some(
                 serialized_document
                     .read_varint()
-                    .map_err(|_| header_error("revision"))?,
+                    .map_err(|error| header_error("revision", error))?,
             )
         } else {
             None
@@ -89,28 +96,34 @@ impl DocumentV0 {
     }
 }
 
-fn header_error(field: &str) -> ProtocolError {
+fn header_error(field: &str, error: std::io::Error) -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::DecodingDocumentError(
         DecodingError::new(format!(
-            "error reading the {field} from a serialized document's header"
+            "error reading the {field} from a serialized document's header: {error}"
         )),
     ))
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
     use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::errors::DataContractError;
     use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use crate::document::v0::DocumentV0;
     use crate::ProtocolError;
+    use integer_encoding::VarInt;
     use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
-    /// A type with an object property `o` holding `members` in this order,
-    /// configured by `settings` (merged into the type's schema).
+    /// A type with an object property `o` holding `members` in this order and
+    /// an optional `status`, configured by `settings` (merged into the type's
+    /// schema), in a contract with moderators when `settings` gives them
+    /// abilities.
     fn document_type(settings: Value, members: Vec<(&str, Value)>) -> DocumentType {
         let platform_version = PlatformVersion::latest();
         let mut schema = platform_value!({
@@ -126,19 +139,31 @@ mod tests {
                     ),
                     "required": ["b", "c"], "additionalProperties": false,
                 },
+                "status": {"type": "integer", "minimum": 0, "maximum": 3, "position": 1},
             },
             "required": ["o"], "additionalProperties": false,
         });
         let Value::Map(settings) = settings else {
             panic!("type settings are a map");
         };
+        let mut moderated = false;
         for (key, value) in settings {
-            schema
-                .set_value(key.as_text().expect("a setting name"), value)
-                .expect("the schema is a map");
+            let key = key.as_text().expect("a setting name");
+            moderated |= key == "moderatorAbilities";
+            schema.set_value(key, value).expect("the schema is a map");
         }
         let config =
             DataContractConfig::default_for_version(platform_version).expect("a default config");
+        let config = if moderated {
+            config.with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }))
+        } else {
+            config
+        };
         DocumentType::try_from_schema(
             Identifier::new([2; 32]),
             1,
@@ -193,6 +218,13 @@ mod tests {
             ("mutable", platform_value!({"documentsMutable": true})),
             ("immutable", platform_value!({"documentsMutable": false})),
             (
+                "changed by its moderators",
+                platform_value!({
+                    "documentsMutable": false,
+                    "moderatorAbilities": {"changeFields": ["status"]},
+                }),
+            ),
+            (
                 "transferable",
                 platform_value!({"documentsMutable": false, "transferable": 1}),
             ),
@@ -220,10 +252,29 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         for (name, settings) in configurations() {
             let document_type = document_type(settings, members(&["b", "c"]));
+            let moderated = document_type.as_ref().has_moderator_changeable_fields();
+            if moderated {
+                assert!(
+                    !document_type.as_ref().documents_mutable()
+                        && !document_type
+                            .as_ref()
+                            .documents_transferable()
+                            .is_transferable()
+                        && document_type.as_ref().requires_revision(),
+                    "the moderators' fields alone give the {name} type a revision"
+                );
+            }
             let revision = document_type.as_ref().requires_revision().then_some(4);
             for creator_id in [None, Some([3; 32])] {
                 for format in 0..=3 {
-                    let bytes = serialize(&document(revision, creator_id), format, &document_type);
+                    let mut document = document(revision, creator_id);
+                    if moderated && format == 3 {
+                        // The moderation stamp sits in the time fields, after the
+                        // revision; only format 3 has a place for it.
+                        document.moderated_at = Some(2_000);
+                        document.moderated_by = Some(Identifier::new([5; 32]));
+                    }
+                    let bytes = serialize(&document, format, &document_type);
                     let decoded =
                         DocumentV0::from_bytes(&bytes, document_type.as_ref(), platform_version)
                             .expect("bytes the type reads");
@@ -284,6 +335,68 @@ mod tests {
         assert!(matches!(
             DocumentV0::id_and_revision_from_bytes(&[4, 0], document_type.as_ref()),
             Err(ProtocolError::UnknownVersionMismatch { received: 4, .. })
+        ));
+    }
+
+    #[test]
+    fn should_refuse_a_header_cut_inside_its_creator_id_block() {
+        let document_type = document_type(
+            platform_value!({"documentsMutable": false, "transferable": 1}),
+            members(&["b", "c"]),
+        );
+        for format in [2, 3] {
+            let bytes = serialize(&document(Some(4), Some([3; 32])), format, &document_type);
+            // The format, an unset contract version stamp in format 3, the id
+            // and the owner id come before the creator id flag.
+            let flag = if format == 3 { 66 } else { 65 };
+            assert_eq!(bytes[flag], 1, "format {format} marks a creator id");
+            for (end, cut) in [
+                (flag, "before the creator id flag"),
+                (flag + 1, "right after the creator id flag"),
+                (flag + 17, "inside the creator id"),
+                (flag + 33, "before the revision"),
+            ] {
+                assert!(
+                    DocumentV0::id_and_revision_from_bytes(&bytes[..end], document_type.as_ref())
+                        .is_err(),
+                    "format {format} cut {cut} holds no complete header"
+                );
+            }
+            assert_eq!(
+                DocumentV0::id_and_revision_from_bytes(&bytes[..flag + 34], document_type.as_ref())
+                    .expect("a complete header"),
+                (Identifier::new([9; 32]), Some(4)),
+                "format {format}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_contract_version_stamp_the_full_reader_refuses() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = document_type(
+            platform_value!({"documentsMutable": true}),
+            members(&["b", "c"]),
+        );
+        let bytes = serialize(&document(Some(4), None), 3, &document_type);
+        assert_eq!(bytes[1], 0, "an unset stamp is one byte");
+        let with_stamp = |stamp: u64| [&bytes[..1], &stamp.encode_var_vec(), &bytes[2..]].concat();
+        let largest = with_stamp(u32::MAX as u64);
+        assert!(DocumentV0::from_bytes(&largest, document_type.as_ref(), platform_version).is_ok());
+        assert_eq!(
+            DocumentV0::id_and_revision_from_bytes(&largest, document_type.as_ref())
+                .expect("a stamp that fits in a u32"),
+            (Identifier::new([9; 32]), Some(4))
+        );
+        let too_large = with_stamp(u32::MAX as u64 + 1);
+        assert!(
+            DocumentV0::from_bytes(&too_large, document_type.as_ref(), platform_version).is_err()
+        );
+        assert!(matches!(
+            DocumentV0::id_and_revision_from_bytes(&too_large, document_type.as_ref()),
+            Err(ProtocolError::DataContractError(
+                DataContractError::CorruptedSerialization(_)
+            ))
         ));
     }
 }

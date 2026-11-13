@@ -1224,8 +1224,9 @@ fn legacy_mixed_histories() -> (Drive, [DataContract; 2]) {
 }
 
 /// Every element under `path`, by its path below `path`, with each tree's
-/// root key cleared: the root key records the shape of the tree under it,
-/// which depends on how its writes were grouped into batches.
+/// root key cleared and its count and sum kept: the root key records the
+/// shape of the tree under it, which depends on how its writes were grouped
+/// into batches.
 fn stored_elements(
     drive: &Drive,
     path: &[Vec<u8>],
@@ -1246,11 +1247,13 @@ fn stored_elements(
         for (below, element) in stored_elements(drive, &child, transaction) {
             elements.insert([vec![key.clone()], below].concat(), element);
         }
+        let aggregate = AggregateData::CountAndSum(
+            element.count_value_or_default(),
+            element.sum_value_or_default(),
+        );
         elements.insert(
             vec![key],
-            element
-                .reconstruct_with_root_key(None, AggregateData::NoAggregateData)
-                .unwrap(),
+            element.reconstruct_with_root_key(None, aggregate).unwrap(),
         );
     }
     elements
