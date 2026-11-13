@@ -19,6 +19,15 @@ internal fun interface ResumeTopUpNativeCall {
     ): Long
 }
 
+internal fun interface AddressTopUpNativeCall {
+    fun call(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputsBlob: ByteArray,
+        signerHandle: Long,
+    ): Long
+}
+
 /**
  * One Platform-address funding input for an identity top-up — port of the
  * `IdentityAddressInput` tuple the Swift `TopUpIdentityView` packs. Encodes
@@ -81,6 +90,8 @@ class IdentityCredits internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeTopUpNative: ResumeTopUpNativeCall =
         ResumeTopUpNativeCall(CreditsNative::topUpIdentityWithExistingAssetLock),
+    private val externalTopUpNative: AddressTopUpNativeCall =
+        AddressTopUpNativeCall(CreditsNative::topUpExternalIdentityFromAddresses),
 ) {
 
     /**
@@ -223,6 +234,36 @@ class IdentityCredits internal constructor(
     ): Long = gate.op {
         mapNativeErrors {
             CreditsNative.topUpFromAddresses(
+                walletHandle,
+                identityId,
+                FundingInput.encode(inputs),
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Top up [identityId] (32 bytes), an identity this wallet does **not**
+     * manage (someone else's), from the wallet's Platform-address [inputs],
+     * signed via [signerHandle]. Returns the identity's post-transition
+     * balance. ← Swift `ManagedPlatformWallet.topUpExternalIdentityFromAddresses`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
+     *
+     * Rust fetches the identity from Platform and never adds it to the
+     * wallet; the spent addresses' balances are reconciled as for
+     * [topUpFromAddresses]. An identity that does not exist on Platform
+     * fails with [org.dashfoundation.dashsdk.errors.DashSdkError.NotFound]
+     * before anything is signed or broadcast. Rust also owns the input
+     * rules (empty or overflowing inputs are refused there).
+     */
+    suspend fun topUpExternalIdentityFromAddresses(
+        walletHandle: Long,
+        identityId: ByteArray,
+        inputs: List<FundingInput>,
+        signerHandle: Long,
+    ): Long = gate.op {
+        mapNativeErrors {
+            externalTopUpNative.call(
                 walletHandle,
                 identityId,
                 FundingInput.encode(inputs),
