@@ -29,6 +29,7 @@ struct TransitionCategoryView: View {
                 ("documentCreate", "Create Document", "Create a new document"),
                 ("documentReplace", "Replace Document", "Replace an existing document"),
                 ("documentDelete", "Delete Document", "Delete a document"),
+                ("documentErase", "Erase Document", "Erase a deleted keep-history document's revisions"),
                 ("documentTransfer", "Transfer Document", "Transfer document ownership"),
                 ("documentUpdatePrice", "Update Price", "Update document sale price"),
                 ("documentPurchase", "Purchase Document", "Purchase a document")
