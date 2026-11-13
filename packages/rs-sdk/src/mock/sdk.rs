@@ -48,6 +48,9 @@ pub struct MockDashPlatformSdk {
     /// The block time the metadata of a response answered from an expectation reports
     /// ([Self::set_response_time_ms]); 0 unless set.
     response_time_ms: u64,
+    /// The protocol version the metadata of a response answered from an expectation reports
+    /// ([Self::set_response_protocol_version]); the latest unless set.
+    response_protocol_version: u32,
     /// The block height the metadata of a response answered from an expectation reports
     /// ([Self::set_response_height]); 0 unless set.
     response_height: u64,
@@ -90,6 +93,7 @@ impl MockDashPlatformSdk {
             dapi,
             sdk: ArcSwapOption::new(None),
             response_time_ms: 0,
+            response_protocol_version: dpp::version::LATEST_VERSION,
             response_height: 0,
             response_heights_of: BTreeMap::new(),
             response_heights_for: BTreeMap::new(),
@@ -100,6 +104,14 @@ impl MockDashPlatformSdk {
     /// expectation reports, for code under test that reads the time a response was proved at.
     pub fn set_response_time_ms(&mut self, time_ms: u64) -> &mut Self {
         self.response_time_ms = time_ms;
+        self
+    }
+
+    /// Sets the protocol version the metadata of every response answered from an expectation
+    /// reports, for code under test that needs the SDK to learn a newer version at a chosen
+    /// moment: the SDK ratchets to the version of the next response it verifies.
+    pub fn set_response_protocol_version(&mut self, protocol_version: u32) -> &mut Self {
+        self.response_protocol_version = protocol_version;
         self
     }
 
@@ -648,14 +660,14 @@ impl MockDashPlatformSdk {
         let key = Key::new(&request);
 
         let data = match self.from_proof_expectations.get(&key) {
-            // Report the latest protocol version so the proof path's ratchet
+            // Report the latest protocol version unless set, so the proof path's ratchet
             // (`maybe_update_protocol_version`) fires as it would against a real
             // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
                 (
                     Option::<O>::mock_deserialize(self, d),
                     ResponseMetadata {
-                        protocol_version: dpp::version::LATEST_VERSION,
+                        protocol_version: self.response_protocol_version,
                         time_ms: self.response_time_ms,
                         height: self
                             .response_heights_for

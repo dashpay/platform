@@ -181,6 +181,33 @@ pub(crate) async fn broadcast_tracking_delivery(
     sdk: &dash_sdk::Sdk,
     state_transition: &dpp::state_transition::StateTransition,
 ) -> BroadcastDelivery {
+    broadcast_tracking_delivery_checked(sdk, state_transition, || {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .await
+    .unwrap_or_else(|stopped| match stopped.error {})
+}
+
+/// A broadcast that `check` stopped before a dispatch
+/// ([`broadcast_tracking_delivery_checked`]).
+#[derive(Debug)]
+pub(crate) struct DispatchStopped<E> {
+    /// What the check refused with.
+    pub(crate) error: E,
+    /// An earlier dispatch was sent, so the transition may have been delivered and may still
+    /// execute. False when the check refused the very first dispatch: nothing was sent.
+    pub(crate) may_have_been_delivered: bool,
+}
+
+/// [`broadcast_tracking_delivery`], running `check` immediately before every single dispatch,
+/// the first one included. A refusal stops the dispatches: the transition is not sent again,
+/// and the [`DispatchStopped`] says whether an earlier dispatch may have delivered it, which
+/// the caller must not read as "never left the wallet".
+pub(crate) async fn broadcast_tracking_delivery_checked<E>(
+    sdk: &dash_sdk::Sdk,
+    state_transition: &dpp::state_transition::StateTransition,
+    check: impl FnMut() -> Result<(), E>,
+) -> Result<BroadcastDelivery, DispatchStopped<E>> {
     use dash_sdk::dapi_client::RequestSettings;
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
     use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -192,21 +219,48 @@ pub(crate) async fn broadcast_tracking_delivery(
         },
         ..PutSettings::default()
     };
-    track_delivery(state_transition, spend_broadcast_dispatches(sdk), || {
-        state_transition.broadcast(sdk, Some(single_dispatch))
-    })
+    track_delivery_checked(
+        state_transition,
+        spend_broadcast_dispatches(sdk),
+        check,
+        || state_transition.broadcast(sdk, Some(single_dispatch)),
+    )
     .await
 }
 
 /// The classification [`broadcast_tracking_delivery`] makes of
 /// `state_transition`'s broadcast, over the outcomes `dispatch` returns, one
 /// call per single dispatch, at most `dispatches` of them.
+#[cfg(test)]
 async fn track_delivery<F, Fut>(
     state_transition: &dpp::state_transition::StateTransition,
     dispatches: usize,
-    mut dispatch: F,
+    dispatch: F,
 ) -> BroadcastDelivery
 where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
+{
+    track_delivery_checked(
+        state_transition,
+        dispatches,
+        || Ok::<(), std::convert::Infallible>(()),
+        dispatch,
+    )
+    .await
+    .unwrap_or_else(|stopped| match stopped.error {})
+}
+
+/// [`track_delivery`], running `check` before every dispatch
+/// ([`broadcast_tracking_delivery_checked`]).
+async fn track_delivery_checked<E, C, F, Fut>(
+    state_transition: &dpp::state_transition::StateTransition,
+    dispatches: usize,
+    mut check: C,
+    mut dispatch: F,
+) -> Result<BroadcastDelivery, DispatchStopped<E>>
+where
+    C: FnMut() -> Result<(), E>,
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), dash_sdk::Error>>,
 {
@@ -214,9 +268,18 @@ where
 
     let mut maybe_delivered: Option<dash_sdk::Error> = None;
     for _ in 0..dispatches.max(1) {
+        // Immediately before every dispatch, nothing awaited in between: the context the
+        // transition was built in must still hold. Any earlier dispatch that got here was
+        // sent and did not prove the transition left out of every mempool.
+        if let Err(error) = check() {
+            return Err(DispatchStopped {
+                error,
+                may_have_been_delivered: maybe_delivered.is_some(),
+            });
+        }
         let error = match dispatch().await {
-            Ok(()) => return BroadcastDelivery::Admitted,
-            Err(error) if node_holds_transition(&error) => return BroadcastDelivery::Admitted,
+            Ok(()) => return Ok(BroadcastDelivery::Admitted),
+            Err(error) if node_holds_transition(&error) => return Ok(BroadcastDelivery::Admitted),
             Err(error) => error,
         };
         // Refused before anything was sent: no address, or the SDK's own
@@ -234,27 +297,27 @@ where
                 )
         );
         if never_sent {
-            return match maybe_delivered {
+            return Ok(match maybe_delivered {
                 Some(_) => BroadcastDelivery::MaybeDelivered(error),
                 None => BroadcastDelivery::NeverDelivered(error),
-            };
+            });
         }
         // An endpoint's verdict ends the dispatches, and proves nothing. The
         // verdict of a node that is behind does not end them: the same bytes
         // go to the next dispatch's node.
         if carries_consensus_rejection(&error) && !is_address_nonce_ahead(state_transition, &error)
         {
-            return BroadcastDelivery::MaybeDelivered(error);
+            return Ok(BroadcastDelivery::MaybeDelivered(error));
         }
         maybe_delivered = Some(error);
     }
-    match maybe_delivered {
+    Ok(match maybe_delivered {
         Some(error) => BroadcastDelivery::MaybeDelivered(error),
         // Unreachable: every pass sets it or returns.
         None => BroadcastDelivery::MaybeDelivered(dash_sdk::Error::Generic(
             "no broadcast dispatch was made".to_string(),
         )),
-    }
+    })
 }
 
 /// Whether `error` says a node already holds the transition
@@ -815,5 +878,77 @@ mod tests {
             matches!(delivery, BroadcastDelivery::Admitted),
             "{delivery:?}"
         );
+    }
+
+    /// What [`track_delivery_checked`] makes of dispatches that fail as `lost` says, when
+    /// `check` refuses once `moved` is set (which the first dispatch does), and how many
+    /// dispatches it made.
+    async fn tracked_with_moving_check(
+        lost: dash_sdk::Error,
+        moves_at_dispatch: usize,
+    ) -> (Result<BroadcastDelivery, DispatchStopped<String>>, usize) {
+        let dispatched = Mutex::new(0usize);
+        let lost = &lost;
+        let delivery = track_delivery_checked(
+            &withdrawal(),
+            BUDGET,
+            || {
+                if *dispatched.lock().expect("count") > moves_at_dispatch {
+                    Err("the context moved".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            || {
+                *dispatched.lock().expect("count") += 1;
+                std::future::ready(Err(copy(lost)))
+            },
+        )
+        .await;
+        let dispatched = *dispatched.lock().expect("count");
+        (delivery, dispatched)
+    }
+
+    /// The check runs before every dispatch: one that moves after a failed first dispatch stops
+    /// the second, which is not sent, and the stop says the first may have been delivered.
+    #[tokio::test]
+    async fn should_not_send_a_later_dispatch_the_check_stops_and_keep_the_earlier_one_maybe_delivered(
+    ) {
+        for lost in [grpc(Code::Unavailable), grpc(Code::DeadlineExceeded)] {
+            let (delivery, dispatched) = tracked_with_moving_check(lost, 0).await;
+            assert_eq!(dispatched, 1, "the second dispatch is not sent");
+            let Err(stopped) = delivery else {
+                panic!("the check stops the broadcast: {delivery:?}");
+            };
+            assert_eq!(stopped.error, "the context moved");
+            assert!(stopped.may_have_been_delivered);
+        }
+    }
+
+    /// A check that refuses before the first dispatch sends nothing, and the stop says nothing
+    /// could have been delivered.
+    #[tokio::test]
+    async fn should_not_send_anything_when_the_check_refuses_the_first_dispatch() {
+        let (delivery, dispatched) =
+            tracked_with_moving_check(grpc(Code::Unavailable), usize::MAX).await;
+        assert!(delivery.is_ok());
+        assert!(dispatched > 1, "a check that holds changes nothing");
+
+        let dispatched = Mutex::new(0usize);
+        let delivery = track_delivery_checked(
+            &withdrawal(),
+            BUDGET,
+            || Err::<(), _>("moved"),
+            || {
+                *dispatched.lock().expect("count") += 1;
+                std::future::ready(Err(grpc(Code::Unavailable)))
+            },
+        )
+        .await;
+        let Err(stopped) = delivery else {
+            panic!("the check stops the broadcast: {delivery:?}");
+        };
+        assert!(!stopped.may_have_been_delivered);
+        assert_eq!(*dispatched.lock().expect("count"), 0);
     }
 }

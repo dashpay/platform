@@ -188,6 +188,16 @@ the unconditional `clear_pending` defeats the protection it gives: a cleanup
 that runs after a purge, a rebind or a wallet's replacement would release a
 newer attempt's notes or delete its records.
 
+A note spend's saved record also keeps the protocol context the spend was
+priced and built in (`PendingRedrive::spend_context`, a `SpendContext`: the
+operation version, the verified network version, the fee model and the planned
+fee), and `PendingRedrive` struct literals require it. The redrive pass
+re-broadcasts a record only while that context still holds, so a store must
+keep it with the record and give it back unchanged after a restart;
+`FileBackedShieldedStore` keeps it in a versioned `spend_context` column, NULL
+for a record saved before it was kept, which is re-broadcast with nothing
+checked, and keeps without loading a row whose context does not read.
+
 Anchored note reservations and saved records now keep the proved height of
 the anchor set their anchor was read from: `set_pending_spend` takes an
 `anchor_height: Option<u64>`, `StalePendingSpend` carries it as a fourth

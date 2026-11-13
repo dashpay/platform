@@ -2126,6 +2126,7 @@ mod private_payment_hold_tests {
                     attempts: 0,
                     identity_nonce_finalized: false,
                     identity_user_abandoned: false,
+                    spend_context: None,
                     anchor_height: None,
                 },
                 PrivateContactPayment {
