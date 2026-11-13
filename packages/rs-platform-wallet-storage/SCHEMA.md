@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V017) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Eleven tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and `core_transaction_inputs` / `core_transaction_record_originals` (V021) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -439,6 +439,36 @@ held spent and is permanently outside the collector's reach.
   WHERE is_sweep_placeholder = 1` — covers exactly the unmaterialised rows, so
   the collector's per-round scan touches tombstones rather than the
   wallet's full spent history.
+
+### `core_transaction_inputs`
+
+V021 indexes every raw input of each stored transaction, even when its ownership
+is not yet known. New historical TXOs locate affected records through this index.
+The shared wallet accounting rule updates input/output details, net amount and
+direction; it never changes coins, spend claims or finality. Contact-only scripts
+are excluded from wallet ownership.
+
+V021 also indexes and repairs existing mined and unmined records using retained
+TXOs. Unknown historical ownership is filled when later observations supply it.
+No rows are deleted and no sync checkpoint is rewound. The typed backfill uses
+the live record decoder, with immutable V019 fixtures pinning codec compatibility.
+Type, identifier-width and blob-size gates precede materialization. Strict failure
+rolls back the entire migration; Recovery skips an unreadable record without
+changing its bytes or partially indexing it. Each record's repair has a savepoint.
+
+- PK: `(wallet_id, txid, outpoint)`.
+- FK: `(wallet_id, txid) → core_transactions(wallet_id, txid) ON DELETE CASCADE`.
+- Index: `idx_core_transaction_inputs_outpoint(wallet_id, outpoint)`.
+
+### `core_transaction_record_originals`
+
+Append-only archive of the first pre-repair `core_transactions.record_blob`.
+Migration and runtime repairs copy original bytes with `INSERT OR IGNORE` before
+changing accounting. Later repairs cannot replace this recovery copy.
+
+- PK: `(wallet_id, txid)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`. The original survives
+  deletion of its transaction row.
 
 ### `core_instant_locks`
 
@@ -851,3 +881,4 @@ table-rebuild migration, as V004 does.
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
 | V019 | `V019__asset_lock_operation_id.rs` | Adds the nullable `asset_locks.operation_id BLOB` column (CHECK: NULL or exactly 16 bytes) that correlates a wallet-drain operation with its funding outpoint; the lifecycle blob is untouched. Adds the unique partial index `asset_locks_wallet_operation_id` on `(wallet_id, operation_id) WHERE operation_id IS NOT NULL` and the `asset_locks_operation_id_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `operation_id`. Purely additive; existing rows read back NULL. |
 | V020 | `V020__asset_lock_shielded_recipient.rs` | Adds the nullable `asset_locks.shielded_recipient BLOB` column (CHECK: NULL or exactly 43 bytes, the raw Orchard address) recording the recipient a shielded asset-lock funding was built to pay, so a resume after restart pays that recipient and refuses another; the lifecycle blob is untouched. Adds the `asset_locks_shielded_recipient_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `shielded_recipient`. Purely additive; existing rows read back NULL and keep accepting the resuming caller's recipient. |
+| V021 | `V021__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
