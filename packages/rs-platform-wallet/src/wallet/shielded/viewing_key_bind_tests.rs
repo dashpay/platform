@@ -1760,6 +1760,39 @@ async fn should_keep_an_added_account_during_tip_preparation() {
     }
 }
 
+/// The identity account's keys are derived for the wallet's network, so a
+/// coordinator of another network is refused before anything is bound,
+/// stored or recorded as prepared.
+#[tokio::test]
+async fn should_refuse_tip_preparation_on_a_coordinator_of_another_network() {
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("tips_other_network").await;
+    let dir = temp_dir("tips_other_network_mainnet");
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let db_path = dir.join("tree.sqlite");
+    let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+    let mainnet = Arc::new(NetworkShieldedCoordinator::new(
+        Arc::new(dash_sdk::Sdk::new_mock()),
+        Network::Mainnet,
+        db_path,
+        store,
+    ));
+    let bound_before = wallet.shielded_account_indices().await;
+
+    let refused = wallet
+        .prepare_shielded_identity_address(&seed, &id, &mainnet)
+        .await;
+
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, bound_before);
+    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+}
+
 /// A Clear drops the coordinator's state for the account, so the preparation no
 /// longer stands, and a rebind of the ordinary accounts does not bring it back: the
 /// identity's account is proved and prepared again.

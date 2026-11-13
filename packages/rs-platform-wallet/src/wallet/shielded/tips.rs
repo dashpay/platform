@@ -112,6 +112,16 @@ impl PlatformWallet {
         identity_id: &Identifier,
         coordinator: &Arc<NetworkShieldedCoordinator>,
     ) -> Result<[u8; 43], PlatformWalletError> {
+        // The account's keys are derived for this wallet's network. Bound to
+        // a coordinator of another network they would scan the wrong chain,
+        // while the address was handed out and recorded as prepared.
+        if coordinator.network() != self.sdk.network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                coordinator.network(),
+                self.sdk.network
+            )));
+        }
         // Do not publish a key from a mis-associated mnemonic. A first bind
         // has no persisted FVK against which to detect a wrong seed.
         let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
