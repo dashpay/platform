@@ -98,7 +98,10 @@ impl Drive {
     /// credit balance: a document batch's proof is verified strictly as one merged
     /// query, an identity update's through the identity keys verifier's own
     /// composition, and the others as subsets of the merged proof; the outcome
-    /// carries the balance.
+    /// carries the balance. With `producer_executes_token_format_version_1` false (a producer
+    /// whose version does not execute a token transfer or mint of format version 1) such a
+    /// transition is refused, as it is where the caller's version does not execute one.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
@@ -106,6 +109,7 @@ impl Drive {
         known_contracts_provider_fn: &ContractLookupFn,
         carries_owner_balance: bool,
         proof_document_history_layout: u16,
+        producer_executes_token_format_version_1: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         // The balance a document batch's proof carried, set by its arm.
@@ -665,6 +669,8 @@ impl Drive {
                         // whole format (`StateTransition::active_version_range`), whether or not
                         // it names a random minimum: one naming none would otherwise take the
                         // proof of a fixed one of format version 0, which has the same history.
+                        // The producer's version decides where the proof was made, and the
+                        // caller's cannot be lowered by it, so both must execute the format.
                         // A random one executes only in the shape its structure validation
                         // admits too: a random group mint, say, is refused, while a fixed one of
                         // the same owner, nonce, recipient and group action can stand in state
@@ -677,11 +683,12 @@ impl Drive {
                                 | TokenTransition::Mint(TokenMintTransition::V1(_))
                         );
                         if format_version_1
-                            && platform_version
-                                .dpp
-                                .state_transition_serialization_versions
-                                .random_token_amount
-                                .is_none()
+                            && (!producer_executes_token_format_version_1
+                                || platform_version
+                                    .dpp
+                                    .state_transition_serialization_versions
+                                    .random_token_amount
+                                    .is_none())
                         {
                             return Err(Error::Proof(ProofError::InvalidTransition(format!(
                                 "protocol version {} does not execute a token transfer or mint of format version 1",

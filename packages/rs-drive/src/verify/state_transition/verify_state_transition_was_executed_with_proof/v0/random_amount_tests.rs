@@ -486,6 +486,25 @@ impl Fixture {
         )
     }
 
+    /// [`Self::verify`] by a caller at `platform_version` of a proof a producer at
+    /// `query_platform_version` made.
+    fn verify_from_producer(
+        &self,
+        proof: &[u8],
+        transition: &StateTransition,
+        query_platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        Drive::verify_state_transition_was_executed_with_proof_for_query_version(
+            transition,
+            &BlockInfo::default(),
+            proof,
+            &|_| Ok(Some(Arc::new(self.contract.clone()))),
+            query_platform_version,
+            platform_version,
+        )
+    }
+
     /// The genuine random mint, asked for as the proposal of a group action, which a random
     /// mint may not be.
     fn random_group_mint_transition(&self) -> StateTransition {
@@ -736,6 +755,21 @@ fn should_refuse_a_format_version_1_transfer_or_mint_without_a_random_minimum_wh
         fixture
             .verify(&proof, &transition)
             .expect("expected the fixed amount to verify where the format is active");
+
+        // The producer's version decides where the proof was made: a caller whose version
+        // executes the format refuses a proof made where it is inactive, and the other way round
+        let active = random_platform_version();
+        assert_invalid_transition(
+            fixture.verify_from_producer(&proof, &transition, &inactive, &active),
+            "a format version 1 transition proved where the format is inactive",
+        );
+        assert_invalid_transition(
+            fixture.verify_from_producer(&proof, &transition, &active, &inactive),
+            "a format version 1 transition verified where the format is inactive",
+        );
+        fixture
+            .verify_from_producer(&proof, &transition, &active, &active)
+            .expect("expected the fixed amount to verify where both versions execute the format");
     }
 }
 
