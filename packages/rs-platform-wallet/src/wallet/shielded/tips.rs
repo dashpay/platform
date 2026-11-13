@@ -32,6 +32,10 @@ impl PreparedTipAccount {
             .is_some_and(|coordinator| coordinator.clear_generation() == self.clear_generation)
             .then_some(self.account)
     }
+
+    pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
+        self.coordinator.upgrade()
+    }
 }
 
 pub const SHIELDED_IDENTITY_ACCOUNT_BASE: u32 = 0x4000_0000;

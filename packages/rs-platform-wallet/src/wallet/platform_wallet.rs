@@ -930,6 +930,13 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        if coordinator.network() != self.network() {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                coordinator.network(),
+                self.network(),
+            )));
+        }
         // Fence generation teardown across attachment validation, host
         // viewing-key persistence, and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
@@ -1076,6 +1083,13 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        if coordinator.network() != self.network() {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                coordinator.network(),
+                self.network(),
+            )));
+        }
         // Keep the generation alive from attachment validation through the
         // persisted snapshot read and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
@@ -3072,6 +3086,21 @@ impl PlatformWallet {
                 "Shielded address publication requires shielded support".to_string(),
             ));
         }
+        #[cfg(feature = "shielded")]
+        let prepared_coordinator = if sets_shielded {
+            self.prepared_tip_accounts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(identity_id)
+                .and_then(PreparedTipAccount::coordinator)
+        } else {
+            None
+        };
+        #[cfg(feature = "shielded")]
+        let _coordinator_operation = match prepared_coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.operation_guard().await),
+            None => None,
+        };
         let _placement = if sets_shielded {
             Some(self.identity.identity_placement.read().await)
         } else {
