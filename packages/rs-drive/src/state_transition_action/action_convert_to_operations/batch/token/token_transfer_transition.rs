@@ -62,6 +62,7 @@ impl DriveHighLevelBatchOperationConverter for TokenTransferTransitionAction {
                                 sender_id: owner_id,
                                 recipient_id,
                                 identity_contract_nonce,
+                                minimum,
                                 maximum: amount,
                             },
                         ));

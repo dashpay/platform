@@ -242,6 +242,7 @@ impl Fixture {
                     sender_id: OWNER.into(),
                     recipient_id: RECIPIENT.into(),
                     identity_contract_nonce: NONCE,
+                    minimum: MINIMUM,
                     maximum: MAXIMUM,
                 },
                 TokenEvent::Transfer(
@@ -252,7 +253,6 @@ impl Fixture {
                     history_amount,
                 ),
                 RandomTokenRequestKind::Transfer {
-                    sender_id: OWNER.into(),
                     recipient_id: RECIPIENT.into(),
                 },
             ),
@@ -262,6 +262,7 @@ impl Fixture {
                     owner_id: OWNER.into(),
                     recipient_id: RECIPIENT.into(),
                     identity_contract_nonce: NONCE,
+                    minimum: MINIMUM,
                     maximum: MAXIMUM,
                     allow_first_mint: false,
                 },

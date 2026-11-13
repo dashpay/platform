@@ -15,36 +15,18 @@ use grovedb::TransactionArg;
 /// The domain of a random token reservation's id.
 const RANDOM_TOKEN_RESERVATION_DOMAIN: &[u8] = b"random_token_reservation";
 
-/// The key under which the token marketplace escrow of `token_id`
-/// (`[Tokens, TOKEN_ORDER_ESCROW_KEY, token id]`) holds the reservation of the random token
-/// transfer or mint `owner_id` sent with `identity_contract_nonce`:
-/// `hash_double("random_token_reservation" || token_id || owner_id || identity_contract_nonce)`,
-/// the nonce a big-endian `u64`. The block executing the transition writes the entry
-/// (`TokenOperationType::TokenReserveRandomTransfer` and `TokenReserveRandomMint`) and
-/// `Drive::settle_random_token_amounts` removes it. The domain keeps it apart from the order ids
-/// of the marketplace's listings, and the nonce, used once per owner and contract, keeps two
-/// reservations of a block apart.
-pub fn random_token_reservation_id(
-    token_id: &Identifier,
-    owner_id: &Identifier,
-    identity_contract_nonce: IdentityNonce,
-) -> [u8; 32] {
-    let mut preimage = Vec::with_capacity(RANDOM_TOKEN_RESERVATION_DOMAIN.len() + 32 + 32 + 8);
-    preimage.extend_from_slice(RANDOM_TOKEN_RESERVATION_DOMAIN);
-    preimage.extend_from_slice(token_id.as_slice());
-    preimage.extend_from_slice(owner_id.as_slice());
-    preimage.extend_from_slice(&identity_contract_nonce.to_be_bytes());
-    hash_double(preimage)
-}
+/// The tag of a transfer in a random token reservation's id.
+const RANDOM_TOKEN_TRANSFER_TAG: u8 = 0;
+
+/// The tag of a mint in a random token reservation's id.
+const RANDOM_TOKEN_MINT_TAG: u8 = 1;
 
 /// What a random token amount pays out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RandomTokenRequestKind {
-    /// A random token transfer: the block moved the request's maximum from the sender into
-    /// the reservation, and credited the recipient zero.
+    /// A random token transfer: the block moved the request's maximum from the sender, the
+    /// request's owner, into the reservation, and credited the recipient zero.
     Transfer {
-        /// The identity that sent the tokens
-        sender_id: Identifier,
         /// The identity receiving the drawn amount
         recipient_id: Identifier,
     },
@@ -60,12 +42,13 @@ pub enum RandomTokenRequestKind {
 /// maximum the block reserved when it executed the transition
 /// (`TokenOperationType::TokenReserveRandomTransfer` and `TokenReserveRandomMint`): it holds
 /// the maximum in the token marketplace escrow of the token, under
-/// [`random_token_reservation_id`], and gave the recipient a balance (of zero if it had none).
+/// [`RandomTokenRequest::reservation_id`], and gave the recipient a balance (of zero if it had
+/// none).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RandomTokenRequest {
     /// The token
     pub token_id: Identifier,
-    /// The identity that sent the transition
+    /// The identity that sent the transition, and a transfer's sender
     pub owner_id: Identifier,
     /// The identity contract nonce of the transition, which with the token and the owner keys
     /// the draw and the transition's history document
@@ -79,9 +62,38 @@ pub struct RandomTokenRequest {
 }
 
 impl RandomTokenRequest {
-    /// The key of the request's reservation in the token's escrow tree.
+    /// The key under which the token marketplace escrow of the token
+    /// (`[Tokens, TOKEN_ORDER_ESCROW_KEY, token id]`) holds the request's reservation:
+    /// `hash_double("random_token_reservation" || token_id || owner_id ||
+    /// identity_contract_nonce || minimum || maximum || kind || recipient_id)`, the numbers
+    /// big-endian `u64`s and the kind 0 for a transfer, 1 for a mint. The block executing the
+    /// transition writes the entry (`TokenOperationType::TokenReserveRandomTransfer` and
+    /// `TokenReserveRandomMint`) and `Drive::settle_random_token_amounts` removes it.
+    ///
+    /// It hashes every field of the request, so a settlement finds the reservation only from
+    /// the request its transition reserved: one naming another recipient, range or kind finds
+    /// none and pays nothing out, and a transfer's sender is the owner it hashes. The domain
+    /// keeps it apart from the order ids of the marketplace's listings, and the nonce, used
+    /// once per owner and contract, keeps two reservations of a block apart.
     pub fn reservation_id(&self) -> [u8; 32] {
-        random_token_reservation_id(&self.token_id, &self.owner_id, self.identity_contract_nonce)
+        let (kind_tag, recipient_id) = match self.kind {
+            RandomTokenRequestKind::Transfer { recipient_id } => {
+                (RANDOM_TOKEN_TRANSFER_TAG, recipient_id)
+            }
+            RandomTokenRequestKind::Mint { recipient_id } => (RANDOM_TOKEN_MINT_TAG, recipient_id),
+        };
+        let mut preimage = Vec::with_capacity(
+            RANDOM_TOKEN_RESERVATION_DOMAIN.len() + 32 + 32 + 8 + 8 + 8 + 1 + 32,
+        );
+        preimage.extend_from_slice(RANDOM_TOKEN_RESERVATION_DOMAIN);
+        preimage.extend_from_slice(self.token_id.as_slice());
+        preimage.extend_from_slice(self.owner_id.as_slice());
+        preimage.extend_from_slice(&self.identity_contract_nonce.to_be_bytes());
+        preimage.extend_from_slice(&self.minimum.to_be_bytes());
+        preimage.extend_from_slice(&self.maximum.to_be_bytes());
+        preimage.push(kind_tag);
+        preimage.extend_from_slice(recipient_id.as_slice());
+        hash_double(preimage)
     }
 }
 
@@ -93,8 +105,8 @@ impl Drive {
     /// the block reserved. It removes the reservation, the maximum the token marketplace escrow
     /// of the token held, and:
     ///
-    /// - a transfer credits the recipient `v` and gives the sender back the rest of the
-    ///   maximum;
+    /// - a transfer credits the recipient `v` and gives the sender, the request's owner, back
+    ///   the rest of the maximum;
     /// - a mint credits the recipient `v` and takes the rest of the maximum off the token's
     ///   total supply.
     ///

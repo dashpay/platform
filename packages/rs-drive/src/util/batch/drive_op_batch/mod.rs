@@ -1899,6 +1899,7 @@ mod tests {
             sender_id: Identifier::new([from; 32]),
             recipient_id: Identifier::new([to; 32]),
             identity_contract_nonce: 1,
+            minimum: 1,
             maximum: 5,
         })
     }
@@ -1909,6 +1910,7 @@ mod tests {
             owner_id: Identifier::new([9; 32]),
             recipient_id: Identifier::new([to; 32]),
             identity_contract_nonce: 1,
+            minimum: 1,
             maximum: 5,
             allow_first_mint: false,
         })
