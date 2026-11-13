@@ -428,6 +428,47 @@ pub fn load_state(
     Ok(out)
 }
 
+/// One asset lock's status by outpoint, **including** a terminal `Consumed`
+/// row, or `None` when `wallet_id` has no row for it. The point lookup a
+/// host uses to tell a lock this wallet spent from one it never stored:
+/// [`load_unconsumed`] drops a consumed lock without an operation ID, so
+/// absence there proves nothing.
+/// Decoding and status drift follow [`load_state`].
+pub fn status_of(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    outpoint: &OutPoint,
+    ctx: &LoadCtx,
+) -> Result<Option<AssetLockStatus>, WalletStorageError> {
+    let op_bytes = blob::encode_outpoint(outpoint)?;
+    let mut stmt = conn.prepare_cached(
+        "SELECT length(outpoint), outpoint, account_index, length(lifecycle_blob), lifecycle_blob, status, operation_id, shielded_recipient \
+         FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), &op_bytes[..]])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    blob::check_size(row.get::<_, i64>(0)?)?;
+    let op_bytes: Vec<u8> = row.get(1)?;
+    let account_index: i64 = row.get(2)?;
+    blob::check_size(row.get::<_, i64>(3)?)?;
+    let blob_bytes: Vec<u8> = row.get(4)?;
+    let status: String = row.get(5)?;
+    let operation_id: Option<Vec<u8>> = row.get(6)?;
+    let shielded_recipient: Option<Vec<u8>> = row.get(7)?;
+    let (_, _, tracked) = decode_row(
+        &op_bytes,
+        account_index,
+        &blob_bytes,
+        &status,
+        operation_id,
+        shielded_recipient,
+        ctx,
+    )?;
+    Ok(Some(tracked.status))
+}
+
 /// Status-filtered rehydration feed: every asset lock **except** terminal
 /// `Consumed` rows without an operation ID, bucketed by account index.
 /// Consumed wallet-drain locks are non-actionable recovery tombstones: retaining
