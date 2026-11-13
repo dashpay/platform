@@ -52,6 +52,7 @@ use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 #[cfg(feature = "shielded")]
 use crate::wallet::shielded::NetworkShieldedCoordinator;
@@ -772,7 +773,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// not inline, or not atomic) gets no record at all, the same as the
     /// rescan sweep gives it: only an empty one is written — committed with a
     /// `flush` where `store` only buffers — before the wallet is published,
-    /// so a record an earlier run left cannot outlive this one.
+    /// so a record an earlier run left cannot outlive this one. That flush is
+    /// trusted as a wallet's handle trusts its own
+    /// ([`WalletPersister::store_durably`]): not when another flush of the
+    /// wallet id's records may have taken the empty record and failed, in
+    /// which case the wallet is not published.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn settle_published_backfill(
         &self,
@@ -783,7 +788,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         own_cursor: u32,
         snapshot_cursor: u32,
     ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
-        let inline = self.persister.store_commits_inline();
         let durable = persists_backfill_coverage(&*self.persister);
         let predecessor = durable_cursors.contains_key(&wallet_id);
         let held_on_host = !record.is_empty() || dropped;
@@ -827,34 +831,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dashpay_backfill: Some(record.clone()),
             ..PlatformWalletChangeSet::default()
         };
-        self.persister.store(wallet_id, changeset).map_err(|e| {
+        // Stored as a handle of the wallet stores a record it then acts on
+        // (`WalletPersister::store_durably`), in the wallet id's flush ledger,
+        // where every flush of its records is counted. A flush that fails for
+        // good here drops what a handle of an earlier wallet under the id
+        // still had buffered, and that handle learns of it from the ledger.
+        // And a flush that succeeds here is not trusted by itself: a flush
+        // by such a handle may have taken the replacement first and failed,
+        // which the ledger shows, and the wallet is then not published.
+        let persister = WalletPersister::with_flush_ledger(
+            wallet_id,
+            Arc::clone(&self.persister) as Arc<dyn PlatformWalletPersistence>,
+            self.durable_cursors.flush_ledgers.of(wallet_id),
+        );
+        persister.store_durably(changeset).map_err(|not_durable| {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "failed to replace the host's DashPay backfill record; \
+                error = %not_durable,
+                "the replaced DashPay backfill record is not known to be on the host; \
                  the wallet was not published"
             );
-            PlatformWalletError::from_store_failure(&*self.persister, e)
+            persister.classify_not_durable(not_durable)
         })?;
-        if !inline {
-            // Through the wallet id's flush ledger, as every flush of its
-            // records is: one that fails for good here drops what a handle of
-            // an earlier wallet under the id still had buffered, and that
-            // handle learns of it from the ledger.
-            self.durable_cursors
-                .flush_ledgers
-                .of(wallet_id)
-                .flush(&*self.persister, wallet_id)
-                .map_err(|e| {
-                    tracing::error!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "failed to commit the replaced DashPay backfill record; \
-                         the wallet was not published"
-                    );
-                    PlatformWalletError::from_flush_failure(e)
-                })?;
-        }
         if let Some(cursor) = cursor {
             durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
         }
@@ -1507,10 +1505,13 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
 mod tests {
     use super::*;
 
+    use std::sync::OnceLock;
+
     use dash_async::WorkerStatus;
 
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        ClientStartState, FlushLedger, PersistenceError, PersistenceErrorKind,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
 
@@ -1563,10 +1564,8 @@ mod tests {
     impl PlatformEventHandler for NoopEventHandler {}
 
     /// A buffering backend whose flush fails for good, dropping its buffer.
-    #[cfg(feature = "shielded")]
     struct FatalFlushPersister;
 
-    #[cfg(feature = "shielded")]
     impl PlatformWalletPersistence for FatalFlushPersister {
         fn store(
             &self,
@@ -1634,6 +1633,111 @@ mod tests {
             mgr.durable_cursors.flush_ledgers.of(wallet_id),
         );
         assert!(!later.buffered_writes_lost());
+    }
+
+    /// A buffering backend whose every store is taken at once by a flush of
+    /// another handle of the wallet id, as one from another thread would
+    /// take it before the storer's own flush. That flush fails, for good or
+    /// keeping what it took, and the storer's own then succeeds over a buffer
+    /// that does not hold the record.
+    struct OvertakenPersister {
+        /// The ledger the other handle's flush is counted in, once known.
+        ledger: OnceLock<Arc<FlushLedger>>,
+        /// Whether the other flush fails for good.
+        for_good: bool,
+    }
+
+    /// A buffering backend whose flush fails keeping what it took.
+    struct TransientFlushPersister;
+
+    impl PlatformWalletPersistence for TransientFlushPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "the database is locked",
+            ))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    impl PlatformWalletPersistence for OvertakenPersister {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(ledger) = self.ledger.get() {
+                let overtaking = if self.for_good {
+                    ledger.flush(&FatalFlushPersister, wallet_id)
+                } else {
+                    ledger.flush(&TransientFlushPersister, wallet_id)
+                };
+                assert!(overtaking.is_err(), "the other handle's flush fails");
+            }
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// The manager's own flush of the backfill record it replaces succeeding
+    /// is not proof the record is on the host: a flush by a handle of an
+    /// earlier wallet under the id may have taken it first and failed. The
+    /// wallet is then not published, and the error says whether the record
+    /// is gone (the other flush failed for good) or still buffered for a
+    /// later flush (it kept what it took).
+    #[tokio::test]
+    async fn should_not_publish_over_a_backfill_record_another_flush_took() {
+        for for_good in [true, false] {
+            let persister = Arc::new(OvertakenPersister {
+                ledger: OnceLock::new(),
+                for_good,
+            });
+            let mgr = PlatformWalletManager::new(
+                Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+                Arc::clone(&persister),
+                Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+            );
+            let wallet_id: WalletId = [7; 32];
+            persister
+                .ledger
+                .set(mgr.durable_cursors.flush_ledgers.of(wallet_id))
+                .expect("set once");
+
+            // Coverage the wallet about to be published does not hold was
+            // dropped, so the host's record is replaced and flushed.
+            let mut cursors = mgr.durable_cursors.lock().await;
+            let settled = mgr.settle_published_backfill(
+                &mut cursors,
+                wallet_id,
+                DashPayBackfillRecord::default(),
+                true,
+                5,
+                5,
+            );
+
+            match settled {
+                Err(PlatformWalletError::PersisterFlush(error)) => assert_eq!(
+                    error.is_transient(),
+                    !for_good,
+                    "to be tried again only when the record is still buffered"
+                ),
+                other => panic!("the wallet is not published, got {other:?}"),
+            }
+        }
     }
 
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
