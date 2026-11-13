@@ -904,8 +904,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             // Swift lifetimes end at last use, not at scope end — a bare
             // `_ = addressSigner` is no fence. `withExtendedLifetime` pins
             // it across the whole synchronous FFI call (lookup, signing,
-            // broadcast and wait) and its buffer pinning.
-            let result = withExtendedLifetime(addressSigner) {
+            // broadcast and wait) and its buffer pinning. The wallet is
+            // pinned with it: its `deinit` destroys `handle`.
+            let result = withExtendedLifetime((self, addressSigner)) {
                 ffiInputs.withUnsafeBufferPointer { inputsBuf in
                     withUnsafePointer(to: &idTuple) { idPtr in
                         call(
