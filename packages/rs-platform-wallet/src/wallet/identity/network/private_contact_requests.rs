@@ -2742,6 +2742,8 @@ mod tests {
     use crate::wallet::identity::network::contacts::RegisterExternalError;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::persister::NotDurable;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::coordinator::{
@@ -6754,6 +6756,142 @@ mod tests {
             );
         })
         .await;
+    }
+
+    /// A settle that found its request on Platform records it only while its
+    /// own hold still stands. One whose reads came back after another settle
+    /// of the hold recorded the request and released it records nothing: it
+    /// answers that request while it is the one tracked, and nothing once a
+    /// request sent since is, which the older one is not recorded over.
+    #[tokio::test]
+    async fn should_record_nothing_from_a_settle_whose_hold_was_settled_meanwhile() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+
+        for sent_since in [true, false] {
+            let (_manager, alice_wallet, _transition, reference) =
+                unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+            expect_sent_request(
+                &alice_wallet,
+                &alice,
+                &bob,
+                reference,
+                Some(sent_request_document(&alice, &bob, reference)),
+            )
+            .await;
+            let view = alice_wallet.identity().dashpay();
+
+            // Its reads done, the settle waits at the lifecycle gate, here
+            // held as a removal holds it: what follows happens between its
+            // reads and its recording.
+            let gate = alice_wallet.generation().teardown_guard().await;
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            let mut settling =
+                Box::pin(view.settle_unconfirmed_public_request(&alice_id, &bob_id, true));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(300), &mut settling)
+                    .await
+                    .is_err(),
+                "the settle waits at the gate"
+            );
+            {
+                let iw = alice_wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&alice_wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&alice_id)
+                    .expect("the sender");
+                let attempt = managed
+                    .dashpay()
+                    .unconfirmed_public_request(&bob_id)
+                    .expect("held")
+                    .attempt;
+                // As another settle of the hold leaves it.
+                managed
+                    .add_sent_contact_request(
+                        public_request(&alice, &bob, reference),
+                        &iw.persister,
+                    )
+                    .expect("recorded");
+                managed.settle_unconfirmed_public_request(&bob_id, attempt);
+                if sent_since {
+                    // As a send since leaves it: a rotation past that request.
+                    managed
+                        .add_sent_contact_request(
+                            public_request(&alice, &bob, reference + 1),
+                            &iw.persister,
+                        )
+                        .expect("recorded");
+                }
+            }
+            drop(gate);
+
+            let settled = settling.await.expect("the reads");
+            let tracked = if sent_since { reference + 1 } else { reference };
+            assert_eq!(
+                settled.map(|request| request.account_reference),
+                (!sent_since).then_some(reference),
+                "sent since: {sent_since}"
+            );
+            managed(&alice_wallet, ALICE, |managed| {
+                assert_eq!(
+                    managed
+                        .dashpay()
+                        .outgoing_request(&bob_id)
+                        .map(|request| request.account_reference),
+                    Some(tracked),
+                    "sent since: {sent_since}"
+                );
+            })
+            .await;
+        }
+    }
+
+    /// Every flush of the records under a wallet id is counted in one place,
+    /// whichever handle makes it: one through the handle of a wallet removed
+    /// since, failing for good, drops what its same-id successor had
+    /// buffered, and the successor then vouches for nothing it stored. A
+    /// wallet created under the id after that starts from what is on disk.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_count_a_removed_wallets_flush_against_its_successor() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let manager = manager_on(Arc::clone(&persistence)).await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let successor = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(successor.wallet_id(), wallet_id);
+        assert!(!successor.persister().buffered_writes_lost());
+
+        persistence
+            .flush_fails_fatally
+            .store(true, Ordering::SeqCst);
+        assert!(first.flush_persist().is_err());
+        persistence
+            .flush_fails_fatally
+            .store(false, Ordering::SeqCst);
+
+        assert!(
+            successor.persister().buffered_writes_lost(),
+            "the flush dropped the one buffer the id's records share"
+        );
+        assert!(matches!(
+            successor.persister().flush_durably(),
+            Err(NotDurable::Lost)
+        ));
+
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let later = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert!(!later.persister().buffered_writes_lost());
+        assert!(later.persister().flush_durably().is_ok());
     }
 
     /// A handle taken before its wallet was removed and created again under

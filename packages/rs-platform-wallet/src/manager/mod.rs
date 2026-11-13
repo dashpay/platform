@@ -837,15 +837,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             PlatformWalletError::from_store_failure(&*self.persister, e)
         })?;
         if !inline {
-            self.persister.flush(wallet_id).map_err(|e| {
-                tracing::error!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "failed to commit the replaced DashPay backfill record; \
-                     the wallet was not published"
-                );
-                PlatformWalletError::from_flush_failure(e)
-            })?;
+            // Through the wallet id's flush ledger, as every flush of its
+            // records is: one that fails for good here drops what a handle of
+            // an earlier wallet under the id still had buffered, and that
+            // handle learns of it from the ledger.
+            self.durable_cursors
+                .flush_ledgers
+                .of(wallet_id)
+                .flush(&*self.persister, wallet_id)
+                .map_err(|e| {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "failed to commit the replaced DashPay backfill record; \
+                         the wallet was not published"
+                    );
+                    PlatformWalletError::from_flush_failure(e)
+                })?;
         }
         if let Some(cursor) = cursor {
             durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
@@ -1553,6 +1561,80 @@ mod tests {
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A buffering backend whose flush fails for good, dropping its buffer.
+    #[cfg(feature = "shielded")]
+    struct FatalFlushPersister;
+
+    #[cfg(feature = "shielded")]
+    impl PlatformWalletPersistence for FatalFlushPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("the database is corrupt"))
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// The flush the manager makes itself, of the backfill record it replaces
+    /// before a wallet is published, is counted where the handles of that
+    /// wallet id count theirs. One that fails for good dropped what a handle
+    /// of an earlier wallet under the id still had buffered, and that handle
+    /// then vouches for nothing it stored: a flush of its own would succeed
+    /// over an empty buffer.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_count_its_backfill_flush_in_the_wallet_ids_flush_ledger() {
+        use crate::wallet::persister::{NotDurable, WalletPersister};
+
+        let persister = Arc::new(FatalFlushPersister);
+        let mgr = PlatformWalletManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            Arc::clone(&persister),
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        );
+        let wallet_id: WalletId = [7; 32];
+        // As `PlatformWallet::new` makes the handle of a wallet under the id.
+        let earlier = WalletPersister::with_flush_ledger(
+            wallet_id,
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+            mgr.durable_cursors.flush_ledgers.of(wallet_id),
+        );
+        assert!(!earlier.buffered_writes_lost());
+
+        // Coverage the wallet about to be published does not hold was
+        // dropped, so the host's record is replaced and flushed.
+        let mut cursors = mgr.durable_cursors.lock().await;
+        let settled = mgr.settle_published_backfill(
+            &mut cursors,
+            wallet_id,
+            DashPayBackfillRecord::default(),
+            true,
+            5,
+            5,
+        );
+        assert!(settled.is_err(), "the flush failed for good");
+
+        assert!(
+            earlier.buffered_writes_lost(),
+            "the earlier wallet's handle learns of the flush that dropped the buffer"
+        );
+        assert!(matches!(earlier.flush_durably(), Err(NotDurable::Lost)));
+        // A handle made after it starts from what is on disk.
+        let later = WalletPersister::with_flush_ledger(
+            wallet_id,
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+            mgr.durable_cursors.flush_ledgers.of(wallet_id),
+        );
+        assert!(!later.buffered_writes_lost());
+    }
 
     fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));

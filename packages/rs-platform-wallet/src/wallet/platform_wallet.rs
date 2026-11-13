@@ -756,7 +756,11 @@ impl PlatformWallet {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
         // (currently just `AssetLockManager` — see Item 8 sub-step 1a).
-        let wallet_persister = WalletPersister::new(wallet_id, persister);
+        let wallet_persister = WalletPersister::with_flush_ledger(
+            wallet_id,
+            persister,
+            durable_cursors.flush_ledgers.of(wallet_id),
+        );
 
         let core = CoreWallet::new(
             Arc::clone(&sdk),

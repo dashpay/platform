@@ -5,8 +5,6 @@
 //!   a fixed `wallet_id` so callers don't need to pass the ID on every call.
 
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "shielded")]
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -14,7 +12,7 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
+    ClientStartState, DpnsNameStateEntry, FlushLedger, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
@@ -100,21 +98,21 @@ pub struct WalletPersister {
     /// last store or its flush failed. Shared by the clones the wallet and
     /// the coordinator hold. In memory only.
     stored_private_markers: Arc<std::sync::Mutex<BTreeMap<Identifier, bool>>>,
-    /// Whether a flush of this wallet's records failed for good in this
-    /// process, the backend dropping what it buffered: what the wallet tracks
-    /// in memory since may then not be on disk, so nothing is discharged on
-    /// the strength of it alone ([`Self::buffered_writes_lost`]). Shared by
-    /// the clones the wallet and the coordinator hold. In memory only: the
-    /// next process tracks what its load read from disk.
+    /// What is known of the flushes of the records stored under this
+    /// wallet's id: how many are in progress, and how many failed for good,
+    /// the backend dropping what it buffered. Every flush of the id is
+    /// counted in it, this handle's, those of the handles of a wallet removed
+    /// or created under the id since, and the manager's own, as each acts on
+    /// the one buffer ([`FlushLedger`]). In memory only.
+    flush_ledger: Arc<FlushLedger>,
+    /// How many flushes the ledger had counted as failed for good when this
+    /// handle was made. One counted since may have dropped what this wallet
+    /// stored: what it tracks in memory may then not be on disk, so nothing
+    /// is discharged on the strength of it alone
+    /// ([`Self::buffered_writes_lost`]). One counted before dropped nothing
+    /// of this wallet's, which tracks what its load read from disk.
     #[cfg(feature = "shielded")]
-    buffered_writes_lost: Arc<AtomicBool>,
-    /// How many flushes of this wallet's records are in progress: each is
-    /// counted from before it calls the backend until its outcome is
-    /// recorded in `buffered_writes_lost`, so while none is, that flag tells
-    /// of every flush that failed for good ([`Self::flush_durably`]). Shared
-    /// by the clones the wallet and the coordinator hold.
-    #[cfg(feature = "shielded")]
-    flushes_in_flight: Arc<AtomicUsize>,
+    flush_losses_at_start: u64,
     /// The largest size of DashPay's private contact request store a page
     /// this wallet read proved, in this process
     /// ([`Self::private_store_size_proved`]). In memory only.
@@ -173,8 +171,9 @@ struct DischargedPrivateEntries {
 #[cfg(feature = "shielded")]
 #[derive(Debug)]
 pub(crate) enum NotDurable {
-    /// A flush failed for good in this process, the backend dropping what it
-    /// buffered ([`WalletPersister::buffered_writes_lost`]).
+    /// A flush of the wallet id's records failed for good since the handle
+    /// was made, the backend dropping what it buffered
+    /// ([`WalletPersister::buffered_writes_lost`]).
     Lost,
     /// The flush this call made failed.
     Flush(PersistenceError),
@@ -182,28 +181,21 @@ pub(crate) enum NotDurable {
     OtherFlushInFlight,
 }
 
-/// One flush in progress, counted in [`WalletPersister`]'s
-/// `flushes_in_flight` until dropped.
-#[cfg(feature = "shielded")]
-struct FlushInFlight<'a>(&'a AtomicUsize);
-
-#[cfg(feature = "shielded")]
-impl<'a> FlushInFlight<'a> {
-    fn enter(in_flight: &'a AtomicUsize) -> Self {
-        in_flight.fetch_add(1, Ordering::SeqCst);
-        Self(in_flight)
-    }
-}
-
-#[cfg(feature = "shielded")]
-impl Drop for FlushInFlight<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
 impl WalletPersister {
+    /// A handle whose flushes no other handle or manager shares: for a
+    /// backend this handle alone flushes `wallet_id`'s records on.
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
+        Self::with_flush_ledger(wallet_id, inner, Arc::default())
+    }
+
+    /// A handle that counts its flushes in `flush_ledger`, the one every
+    /// flush of `wallet_id`'s records on `inner` is counted in
+    /// ([`FlushLedgers`](crate::changeset::FlushLedgers)).
+    pub fn with_flush_ledger(
+        wallet_id: WalletId,
+        inner: Arc<dyn PlatformWalletPersistence>,
+        flush_ledger: Arc<FlushLedger>,
+    ) -> Self {
         Self {
             wallet_id,
             inner,
@@ -216,9 +208,8 @@ impl WalletPersister {
             private_payments_unrestored: Arc::default(),
             stored_private_markers: Arc::default(),
             #[cfg(feature = "shielded")]
-            buffered_writes_lost: Arc::default(),
-            #[cfg(feature = "shielded")]
-            flushes_in_flight: Arc::default(),
+            flush_losses_at_start: flush_ledger.lost(),
+            flush_ledger,
             private_store_size_proved: Arc::default(),
             private_payment_restore_failure: Arc::default(),
             #[cfg(feature = "shielded")]
@@ -326,11 +317,11 @@ impl WalletPersister {
     /// persister's locks held, so a call during it, from another thread or
     /// the flush itself, neither waits nor loses what it adds.
     ///
-    /// None is noted once a flush of the wallet's records failed for good in
-    /// this process ([`Self::buffered_writes_lost`]): a request read back
-    /// since may be one the wallet tracked before the loss, which a read of
-    /// its entry again finds tracked and stores nothing for, so its record
-    /// may be in memory only. Those journal records stay for the next
+    /// None is noted once a flush of the wallet id's records failed for good
+    /// since this handle was made ([`Self::buffered_writes_lost`]): a request
+    /// read back since may be one the wallet tracked before the loss, which a
+    /// read of its entry again finds tracked and stores nothing for, so its
+    /// record may be in memory only. Those journal records stay for the next
     /// process, whose restoration reads their entries again from what is on
     /// disk.
     #[cfg(feature = "shielded")]
@@ -607,23 +598,17 @@ impl WalletPersister {
         PlatformWalletError::from_store_failure(self.inner.as_ref(), error)
     }
 
+    /// Flush this wallet's records, counted in the ledger of its id
+    /// ([`FlushLedger::flush`]).
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
-        // In progress from before the backend is called until its outcome is
-        // recorded below (`Self::flush_durably`).
-        #[cfg(feature = "shielded")]
-        let _in_flight = FlushInFlight::enter(&self.flushes_in_flight);
-        let flushed = self.inner.flush(self.wallet_id);
-        #[cfg(feature = "shielded")]
-        if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
-            self.buffered_writes_lost.store(true, Ordering::SeqCst);
-        }
-        flushed
+        self.flush_ledger.flush(self.inner.as_ref(), self.wallet_id)
     }
 
     /// Make every record stored for this wallet before the call durable, and
     /// answer `Ok` only once it is: at once for a backend that commits
     /// inline, after a flush that succeeds otherwise, and never once a flush
-    /// failed for good in this process ([`Self::buffered_writes_lost`]).
+    /// of the wallet id's records failed for good since this handle was made
+    /// ([`Self::buffered_writes_lost`]).
     ///
     /// A flush that succeeds proves nothing by itself: one that failed for
     /// good just before it left nothing buffered, so it succeeds over records
@@ -632,7 +617,10 @@ impl WalletPersister {
     /// of flushes in progress. The flush here is therefore trusted only when,
     /// after it, no flush is in progress and none has failed for good, read
     /// in that order: every flush that began before then has recorded its
-    /// outcome. One that fails later drops only what was buffered after this
+    /// outcome. Both are read from the ledger of the wallet's id, which
+    /// counts every flush of its records, whoever made it: this handle, a
+    /// handle of a wallet removed or created under the id since, or the
+    /// manager. One that fails later drops only what was buffered after this
     /// one wrote, so what this call answers for stays durable, and what the
     /// caller does on the strength of it needs no lock held with the flush.
     ///
@@ -646,7 +634,7 @@ impl WalletPersister {
         }
         if !self.store_commits_inline() {
             self.flush().map_err(NotDurable::Flush)?;
-            if self.flushes_in_flight.load(Ordering::SeqCst) != 0 {
+            if self.flush_ledger.in_flight() != 0 {
                 return Err(NotDurable::OtherFlushInFlight);
             }
         }
@@ -656,16 +644,18 @@ impl WalletPersister {
         Ok(())
     }
 
-    /// Whether a flush of this wallet's records failed for good in this
-    /// process (anything but a transient failure, which keeps the buffer):
-    /// what the wallet tracked before it may not be on disk, though it is in
-    /// memory. For the rest of the process no journal record is discharged on
-    /// the strength of a tracked request: no read-back is noted
+    /// Whether a flush of the records under this wallet's id failed for good
+    /// since this handle was made (anything but a transient failure, which
+    /// keeps the buffer), whoever made the flush: what the wallet tracked
+    /// before it may not be on disk, though it is in memory. For the rest of
+    /// the handle's life no journal record is discharged on the strength of a
+    /// tracked request: no read-back is noted
     /// ([`Self::note_read_back_once_durable`]), and a restoration leaves the
-    /// records it finds settled for the next process.
+    /// records it finds settled for a later load, which tracks what it reads
+    /// from disk.
     #[cfg(feature = "shielded")]
     pub(crate) fn buffered_writes_lost(&self) -> bool {
-        self.buffered_writes_lost.load(Ordering::SeqCst)
+        self.flush_ledger.lost() != self.flush_losses_at_start
     }
 
     /// Note that a page this wallet read proved DashPay's private contact

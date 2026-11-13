@@ -700,6 +700,19 @@ fn release_public_claim(
     }
 }
 
+/// Track `request` as sent by `managed`, stored through `persister`.
+fn track_sent_contact_request(
+    managed: &mut ManagedIdentity,
+    request: &ContactRequest,
+    persister: &WalletPersister,
+) -> Result<(), PlatformWalletError> {
+    managed
+        .add_sent_contact_request(request.clone(), persister)
+        .map_err(|e| {
+            PlatformWalletError::Persistence(format!("sent contact request not persisted: {e}"))
+        })
+}
+
 /// Why a public request from `sender` to `recipient` may not go out, from
 /// what the wallet tracks of the pair's private requests: one to the
 /// recipient is reserved, or a private payment the shielded store's journal
@@ -1089,7 +1102,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         sender_identity_id,
                         recipient_identity_id,
                         request,
-                        None,
                         account_index,
                         contact_xpub_ext,
                     )
@@ -1270,7 +1282,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             sender_identity_id,
             recipient_identity_id,
             contact_request,
-            None,
             account_index,
             contact_xpub_ext,
         )
@@ -1279,9 +1290,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Record `request` as sent from `sender` to `recipient` and register our
     /// receiving (friendship) account for the pair from `contact_xpub`, as a
-    /// send that saw its document confirmed does. `settles` is the attempt of
-    /// the unconfirmed public request to the recipient this request settles,
-    /// released in the same lock it is recorded in. Only on this handle's
+    /// send that saw its document confirmed does. Only on this handle's
     /// wallet generation: the caller holds the generation's lifecycle gate.
     ///
     /// Once the request is recorded it is the request sent, whatever becomes
@@ -1294,28 +1303,80 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         sender: &Identifier,
         recipient: &Identifier,
         request: ContactRequest,
-        settles: Option<u64>,
         account_index: u32,
         contact_xpub: ExtendedPubKey,
     ) -> Result<ContactRequest, PlatformWalletError> {
         {
             let mut wm = self.wallet_manager.write().await;
-            let managed = generation_info_mut(&mut wm, &self.wallet_id, &self.generation)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            let managed = self
+                .current_wallet_info_mut(&mut wm)?
                 .identity_manager
                 .managed_identity_mut(sender)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
-            managed
-                .add_sent_contact_request(request.clone(), &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "sent contact request not persisted: {e}"
-                    ))
-                })?;
-            if let Some(attempt) = settles {
-                managed.settle_unconfirmed_public_request(recipient, attempt);
-            }
+            track_sent_contact_request(managed, &request, &self.persister)?;
         }
+        self.register_sent_request_account(sender, recipient, account_index, contact_xpub)
+            .await;
+        Ok(request)
+    }
+
+    /// Record the request a settle found on Platform as sent
+    /// ([`Self::record_sent_contact_request`]) and release the hold it
+    /// settles, `attempt`'s, in one lock, and only while that attempt still
+    /// holds the pair there. `account_index` and `contact_xpub` are the
+    /// hold's.
+    ///
+    /// The settle read Platform with no lock held, so another settle of the
+    /// same hold may have recorded the request and released the hold by now,
+    /// and a request sent since may be the one tracked. Recording the older
+    /// one over it would have the next rotation build from a reference
+    /// already used. So a settle whose hold is gone records nothing: it
+    /// answers the request when that is the one tracked, as the other settle
+    /// recorded it, and `None` otherwise.
+    pub(super) async fn record_settled_public_request(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        request: ContactRequest,
+        attempt: u64,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) -> Result<Option<ContactRequest>, PlatformWalletError> {
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let managed = self
+                .current_wallet_info_mut(&mut wm)?
+                .identity_manager
+                .managed_identity_mut(sender)
+                .ok_or(PlatformWalletError::IdentityNotFound(*sender))?;
+            let dashpay = managed.dashpay();
+            if !dashpay
+                .unconfirmed_public_request(recipient)
+                .is_some_and(|held| held.attempt == attempt)
+            {
+                let tracked = dashpay
+                    .outgoing_request(recipient)
+                    .is_some_and(|tracked| tracked.account_reference == request.account_reference);
+                return Ok(tracked.then_some(request));
+            }
+            track_sent_contact_request(managed, &request, &self.persister)?;
+            managed.settle_unconfirmed_public_request(recipient, attempt);
+        }
+        self.register_sent_request_account(sender, recipient, account_index, contact_xpub)
+            .await;
+        Ok(Some(request))
+    }
+
+    /// Register our receiving (friendship) account for a request recorded as
+    /// sent. A failure is logged and left to the next sync, which registers
+    /// the account ([`Self::record_sent_contact_request`]).
+    async fn register_sent_request_account(
+        &self,
+        sender: &Identifier,
+        recipient: &Identifier,
+        account_index: u32,
+        contact_xpub: ExtendedPubKey,
+    ) {
         if let Err(error) = self
             .register_contact_account(sender, recipient, account_index, contact_xpub)
             .await
@@ -1328,7 +1389,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                  the next sync registers it"
             );
         }
-        Ok(request)
     }
 
     /// Hold the pair `sender`, `recipient` for the public request
@@ -1513,17 +1573,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(None);
         }
         match found {
-            Some(request) => self
-                .record_sent_contact_request(
+            Some(request) => {
+                self.record_settled_public_request(
                     sender,
                     recipient,
                     request,
-                    Some(held.attempt),
+                    held.attempt,
                     held.account_index,
                     held.contact_xpub,
                 )
                 .await
-                .map(Some),
+            }
             None => {
                 let mut wm = self.wallet_manager.write().await;
                 if let Some(managed) =
