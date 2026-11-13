@@ -3024,7 +3024,8 @@ impl PlatformWallet {
     /// shielded address that is one of this wallet's dedicated tip addresses
     /// must have been prepared for this identity at the slot it holds, and
     /// the placement lock is held through a write that sets one, so the slot
-    /// cannot change before it lands.
+    /// cannot change before it lands. Wallet removal waits for the complete
+    /// write; removed or replaced wallet handles cannot publish.
     pub async fn write_dashpay_profile<S>(
         &self,
         identity_id: &Identifier,
@@ -3035,6 +3036,12 @@ impl PlatformWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
         let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
         let _placement = if sets_shielded {
             Some(self.identity.identity_placement.read().await)
@@ -3705,6 +3712,23 @@ mod state_generation_tests {
 
     #[tokio::test]
     async fn should_reject_mutations_from_a_removed_wallet_generation() {
+        async fn assert_profile_write_refused(wallet: &PlatformWallet) {
+            let signer = simple_signer::signer::SimpleSigner::default();
+            for create in [true, false] {
+                assert!(matches!(
+                    wallet
+                        .write_dashpay_profile(
+                            &Identifier::default(),
+                            ProfileUpdate::default(),
+                            &signer,
+                            create,
+                        )
+                        .await,
+                    Err(PlatformWalletError::WalletNotFound(_))
+                ));
+            }
+        }
+
         let manager = PlatformWalletManager::new(
             Arc::new(dash_sdk::Sdk::new_mock()),
             Arc::new(NoPlatformPersistence),
@@ -3721,6 +3745,7 @@ mod state_generation_tests {
             .unwrap();
         let id = old.wallet_id();
         manager.remove_wallet(&id).await.unwrap();
+        assert_profile_write_refused(&old).await;
         assert!(matches!(
             old.state_mut().await,
             Err(PlatformWalletError::WalletNotFound(_))
@@ -3735,6 +3760,7 @@ mod state_generation_tests {
             .await
             .unwrap();
         assert_eq!(current.wallet_id(), id);
+        assert_profile_write_refused(&old).await;
         assert!(matches!(
             old.state_mut().await,
             Err(PlatformWalletError::WalletNotFound(_))

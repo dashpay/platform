@@ -2447,6 +2447,158 @@ mod tip_lifecycle_tests {
         assert_preparation_precedes_host_deletion(false).await;
     }
 
+    #[derive(Debug)]
+    struct PausedProfileSigner {
+        reached: Mutex<Option<oneshot::Sender<()>>>,
+        resume: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for PausedProfileSigner {
+        async fn sign(
+            &self,
+            _: &dpp::identity::IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            panic!("the unavailable signer must prevent publication")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _: &dpp::identity::IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            panic!("profile publication must not create a witness")
+        }
+
+        fn can_sign_with(&self, _: &dpp::identity::IdentityPublicKey) -> bool {
+            self.reached
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(())
+                .unwrap();
+            self.resume
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+            false
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_fence_profile_publication_against_wallet_replacement() {
+        use crate::wallet::identity::network::dashpay_contract;
+        use crate::{PaymentAddressUpdate, PlatformWalletError, ProfileUpdate};
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        use dpp::identity::{Identity, IdentityV0, SecurityLevel};
+        use dpp::prelude::Identifier;
+        use dpp::system_data_contracts::SystemDataContract;
+
+        for create in [true, false] {
+            let (_dir, manager, wallet, coordinator) = fixture().await;
+            let identity_id = Identifier::from([0x66; 32]);
+            let mut public_keys = seed_master_key(&SEED, 2);
+            let mut signing_key = public_keys[&0].clone();
+            signing_key.set_id(1);
+            signing_key.set_security_level(SecurityLevel::CRITICAL);
+            public_keys.insert(1, signing_key);
+            wallet
+                .state_mut()
+                .await
+                .unwrap()
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys,
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    2,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+            let address = wallet
+                .prepare_shielded_identity_address(&SEED, &identity_id, &coordinator)
+                .await
+                .unwrap();
+            let input = ProfileUpdate {
+                shielded_address: PaymentAddressUpdate::Set(address.to_vec()),
+                ..Default::default()
+            };
+            let mut sdk = wallet.sdk().clone();
+            sdk.mock()
+                .expect_fetch(
+                    SystemDataContract::Dashpay.id(),
+                    Some(dashpay_contract().unwrap().as_ref().clone()),
+                )
+                .await
+                .unwrap();
+            let (reached_tx, reached_rx) = oneshot::channel();
+            let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+            let signer = PausedProfileSigner {
+                reached: Mutex::new(Some(reached_tx)),
+                resume: Mutex::new(resume_rx),
+            };
+            let before = manager.persister.stored_count();
+            let publishing = {
+                let wallet = Arc::clone(&wallet);
+                let input = input.clone();
+                tokio::spawn(async move {
+                    wallet
+                        .write_dashpay_profile(&identity_id, input, &signer, create)
+                        .await
+                })
+            };
+            tokio::time::timeout(Duration::from_secs(10), reached_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            let mut replacing = {
+                let manager = Arc::clone(&manager);
+                let wallet_id = wallet.wallet_id();
+                tokio::spawn(async move {
+                    manager.remove_wallet(&wallet_id).await.unwrap();
+                    add_wallet(&manager).await
+                })
+            };
+            let early = tokio::time::timeout(Duration::from_millis(500), &mut replacing).await;
+            resume_tx.send(()).unwrap();
+            let error = publishing.await.unwrap().unwrap_err();
+            assert!(
+                error.to_string().contains("unavailable to signer"),
+                "{error}"
+            );
+            assert!(early.is_err(), "removal must wait for profile publication");
+            let current = replacing.await.unwrap();
+            assert_eq!(wallet.wallet_id(), current.wallet_id());
+            assert!(current.core().is_current_generation().await);
+            assert!(manager.persister.stored.lock().unwrap()[before..]
+                .iter()
+                .all(|changes| changes.dashpay_profiles.is_none()));
+            let after_replacement = manager.persister.stored_count();
+            for stale_input in [input, ProfileUpdate::default()] {
+                assert!(matches!(
+                    wallet
+                        .write_dashpay_profile(&identity_id, stale_input, &NoSigner, create)
+                        .await,
+                    Err(PlatformWalletError::WalletNotFound(_))
+                ));
+            }
+            assert_eq!(manager.persister.stored_count(), after_replacement);
+            assert!(current
+                .state()
+                .await
+                .identity_manager
+                .managed_identity(&identity_id)
+                .is_none());
+        }
+    }
+
     struct PausedProver {
         reached: Mutex<Option<oneshot::Sender<()>>>,
         resume: Mutex<std::sync::mpsc::Receiver<()>>,
