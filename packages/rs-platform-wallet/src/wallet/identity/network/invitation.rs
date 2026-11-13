@@ -105,7 +105,7 @@ impl IdentityWallet {
             ..Default::default()
         };
         let recorded = match self.persister.store_durably(record()) {
-            Err(NotDurable::Lost | NotDurable::OtherFlushInFlight) => {
+            Err(NotDurable::Lost | NotDurable::OtherFlushUnsettled) => {
                 self.persister.store_durably(record())
             }
             recorded => recorded,

@@ -750,7 +750,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 NotDurable::Lost => PlatformWalletError::from_flush_failure(
                     PersistenceError::backend_with_kind(PersistenceErrorKind::Fatal, not_durable),
                 ),
-                NotDurable::OtherFlushInFlight => {
+                NotDurable::OtherFlushUnsettled => {
                     PlatformWalletError::from_flush_failure(PersistenceError::backend_with_kind(
                         PersistenceErrorKind::Transient,
                         not_durable,

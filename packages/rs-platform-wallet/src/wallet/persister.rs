@@ -186,12 +186,15 @@ pub(crate) enum NotDurable {
     /// backend buffered, any other drops it.
     #[error("{0}")]
     Flush(PersistenceError),
-    /// Another flush is in progress, and its outcome is not recorded yet.
+    /// Another flush of the wallet id's records has not returned, or failed
+    /// while the call ran with the backend keeping what it had taken from the
+    /// buffer: either may hold records the call answers for, which a later
+    /// flush writes. A later call answers.
     #[error(
-        "another flush of the wallet's records is in progress, and its outcome is not known \
-         yet"
+        "another flush of the wallet's records is in progress, or failed keeping what it had \
+         taken, so what was flushed may not be everything stored"
     )]
-    OtherFlushInFlight,
+    OtherFlushUnsettled,
 }
 
 impl WalletPersister {
@@ -323,7 +326,8 @@ impl WalletPersister {
     /// inline, after a flush otherwise. Those a transient flush failure left
     /// are kept, with every one kept before, and noted by the next call whose
     /// flush succeeds: an empty one retries them. So are those of a call made
-    /// while another flush is in progress, whose outcome is not known yet.
+    /// while another flush is in progress, whose outcome is not known yet, or
+    /// during which another flush failed and put back what it had taken.
     /// Those any other failure left are dropped, as the backend dropped the
     /// records they rest on. Their journal records, and so the pairs they
     /// hold, stay until noted. The host's flush runs with none of the
@@ -363,11 +367,12 @@ impl WalletPersister {
                 // meanwhile.
                 self.unflushed_read_back_entries().extend(pending);
             }
-            Err(NotDurable::OtherFlushInFlight) => {
+            Err(NotDurable::OtherFlushUnsettled) => {
                 tracing::warn!(
                     kept = pending.len(),
                     "private requests read back while another flush of this wallet's records \
-                     is in progress are not noted yet; a later call notes them"
+                     is in progress, or failed keeping what it took, are not noted yet; a later \
+                     call notes them"
                 );
                 self.unflushed_read_back_entries().extend(pending);
             }
@@ -621,16 +626,18 @@ impl WalletPersister {
     /// Store `changeset` and answer `Ok` only once it is durable: at once for
     /// a backend that commits a store inline, and otherwise after a flush
     /// that succeeds with, after it, no flush of the wallet id's records in
-    /// progress and none failed for good since before the store
-    /// ([`FlushLedger`]), read in that order.
+    /// progress and none failed since before the store ([`FlushLedger`]),
+    /// read in that order.
     ///
     /// The flush succeeding proves nothing by itself: another flush may take
-    /// what the store buffered and fail for good, dropping it, and the one
-    /// here then succeeds over a buffer that no longer holds it. That other
-    /// flush began before this one returned, and it records its failure only
-    /// after the backend returns: so after this flush it shows either as a
-    /// flush in progress, or as one more that failed for good than there
-    /// were before the store.
+    /// what the store buffered and fail, dropping it or putting it back, and
+    /// the one here then succeeds over a buffer that does not hold it. That
+    /// other flush began before this one returned, and it records its failure
+    /// only after the backend returns: so after this flush it shows either as
+    /// a flush in progress, or as one more that failed than there were before
+    /// the store. One that failed for good answers [`NotDurable::Lost`]; one
+    /// in progress, or that put back what it took,
+    /// [`NotDurable::OtherFlushUnsettled`], as a later flush writes it.
     ///
     /// It answers for `changeset` alone, which [`Self::flush_durably`] does
     /// not: a flush that failed for good before the store dropped nothing of
@@ -639,17 +646,20 @@ impl WalletPersister {
         &self,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), NotDurable> {
-        let lost_before = self.flush_ledger.lost();
+        let (lost_before, failed_before) = (self.flush_ledger.lost(), self.flush_ledger.failed());
         self.store(changeset).map_err(NotDurable::Store)?;
         if self.store_commits_inline() {
             return Ok(());
         }
         self.flush().map_err(NotDurable::Flush)?;
         if self.flush_ledger.in_flight() != 0 {
-            return Err(NotDurable::OtherFlushInFlight);
+            return Err(NotDurable::OtherFlushUnsettled);
         }
         if self.flush_ledger.lost() != lost_before {
             return Err(NotDurable::Lost);
+        }
+        if self.flush_ledger.failed() != failed_before {
+            return Err(NotDurable::OtherFlushUnsettled);
         }
         Ok(())
     }
@@ -662,30 +672,42 @@ impl WalletPersister {
     ///
     /// A flush that succeeds proves nothing by itself: one that failed for
     /// good just before it left nothing buffered, so it succeeds over records
-    /// that never reached disk. That failure is recorded only after the
-    /// backend returns, so between the two it shows nowhere but in the count
-    /// of flushes in progress. The flush here is therefore trusted only when,
-    /// after it, no flush is in progress and none has failed for good, read
-    /// in that order: every flush that began before then has recorded its
-    /// outcome. Both are read from the ledger of the wallet's id, which
-    /// counts every flush of its records, whoever made it: this handle, a
-    /// handle of a wallet removed or created under the id since, or the
-    /// manager. One that fails later drops only what was buffered after this
-    /// one wrote, so what this call answers for stays durable, and what the
-    /// caller does on the strength of it needs no lock held with the flush.
+    /// that never reached disk, and one that fails transiently holds what it
+    /// took until it puts it back, so a flush made meanwhile succeeds over a
+    /// buffer those records are not in. A failure is recorded only after the
+    /// backend returns, so until then it shows nowhere but in the count of
+    /// flushes in progress. The flush here is therefore trusted only when,
+    /// after it, no flush is in progress, none has failed for good, and none
+    /// has failed at all since this call began, read in that order: every
+    /// flush that began before then has recorded its outcome. All are read
+    /// from the ledger of the wallet's id, which counts every flush of its
+    /// records, whoever made it: this handle, a handle of a wallet removed or
+    /// created under the id since, or the manager. One that fails later
+    /// takes only what was buffered after this one wrote, so what this call
+    /// answers for stays durable, and what the caller does on the strength of
+    /// it needs no lock held with the flush.
     ///
-    /// While another flush is in progress the answer is
-    /// [`NotDurable::OtherFlushInFlight`], also for a call made from inside
-    /// a backend's own flush: the caller asks again later.
+    /// While another flush is in progress, or when one failed during the call
+    /// and put back what it took, the answer is
+    /// [`NotDurable::OtherFlushUnsettled`], also for a call made from inside
+    /// a backend's own flush: the caller asks again later, and that call's
+    /// flush writes what was put back.
     #[cfg(feature = "shielded")]
     pub(crate) fn flush_durably(&self) -> Result<(), NotDurable> {
         if self.buffered_writes_lost() {
             return Err(NotDurable::Lost);
         }
         if !self.store_commits_inline() {
+            let failed_before = self.flush_ledger.failed();
             self.flush().map_err(NotDurable::Flush)?;
             if self.flush_ledger.in_flight() != 0 {
-                return Err(NotDurable::OtherFlushInFlight);
+                return Err(NotDurable::OtherFlushUnsettled);
+            }
+            if self.buffered_writes_lost() {
+                return Err(NotDurable::Lost);
+            }
+            if self.flush_ledger.failed() != failed_before {
+                return Err(NotDurable::OtherFlushUnsettled);
             }
         }
         if self.buffered_writes_lost() {
@@ -854,7 +876,6 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "shielded")]
     use crate::changeset::PersistenceErrorKind;
     use std::sync::{mpsc, OnceLock};
     use std::time::Duration;
@@ -971,6 +992,111 @@ mod tests {
         }
     }
 
+    /// Buffers what is stored. Its first flush finds the buffer empty:
+    /// another flush, made through the same persister as one from another
+    /// thread, took it before, and fails transiently while the first runs,
+    /// putting back what it took. Later flushes write what is buffered.
+    #[derive(Default)]
+    struct PutBack {
+        persister: OnceLock<WalletPersister>,
+        overlapped: AtomicBool,
+        other_fails: AtomicBool,
+        buffered: AtomicU64,
+        durable: AtomicU64,
+    }
+
+    impl PutBack {
+        /// A persister over a new one, which its first flush overlaps
+        /// through.
+        fn persister() -> (Arc<Self>, WalletPersister) {
+            let backend = Arc::new(Self::default());
+            let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+            let _ = backend.persister.set(persister.clone());
+            (backend, persister)
+        }
+    }
+
+    impl PlatformWalletPersistence for PutBack {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.buffered.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if self.other_fails.load(Ordering::SeqCst) {
+                // The other flush: what it took is buffered again.
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "the disk is busy",
+                ));
+            }
+            if !self.overlapped.swap(true, Ordering::SeqCst) {
+                self.other_fails.store(true, Ordering::SeqCst);
+                let other = self.persister.get().expect("set").flush();
+                self.other_fails.store(false, Ordering::SeqCst);
+                assert!(other.is_err_and(|error| error.is_transient()));
+                // The buffer was empty when this flush took it: nothing
+                // written.
+                return Ok(());
+            }
+            self.durable
+                .fetch_add(self.buffered.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// A store is not answered for on the strength of a flush that succeeded
+    /// while another held what the store buffered, and then failed
+    /// transiently and put it back: the record is buffered still. The next
+    /// flush writes it, and a store made then is answered for.
+    #[test]
+    fn should_not_answer_for_a_store_another_flush_took_and_put_back() {
+        let (backend, persister) = PutBack::persister();
+
+        let stored = persister.store_durably(PlatformWalletChangeSet::default());
+        assert!(
+            matches!(stored, Err(NotDurable::OtherFlushUnsettled)),
+            "{stored:?}"
+        );
+        assert_eq!(backend.durable.load(Ordering::SeqCst), 0, "buffered still");
+
+        let later = persister.store_durably(PlatformWalletChangeSet::default());
+        assert!(later.is_ok(), "{later:?}");
+        assert_eq!(backend.durable.load(Ordering::SeqCst), 2, "both on disk");
+    }
+
+    /// A read-back is not noted on the strength of a flush that succeeded
+    /// while another held the record it rests on, and then failed transiently
+    /// and put it back: the record is buffered still. The notice is kept,
+    /// and noted by the next call, whose flush writes the record.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_note_no_read_back_when_a_flush_puts_back_what_it_took_during_its_own() {
+        let (backend, persister) = PutBack::persister();
+        persister
+            .store(PlatformWalletChangeSet::default())
+            .expect("buffered");
+
+        persister.note_read_back_once_durable([[1; 32]]);
+        assert!(
+            !persister.has_read_back_private_entries(),
+            "its flush wrote nothing of what the other put back"
+        );
+        assert!(persister.read_back_awaiting_flush(&[1; 32]), "kept");
+        assert!(!persister.buffered_writes_lost(), "nothing was dropped");
+        assert_eq!(backend.durable.load(Ordering::SeqCst), 0, "buffered still");
+
+        persister.note_read_back_once_durable([]);
+        assert!(persister.has_read_back_private_entries(), "noted");
+        assert_eq!(backend.durable.load(Ordering::SeqCst), 1, "on disk");
+    }
+
     /// A store is not answered for while another flush of the wallet's
     /// records is still inside the backend: that one may have taken what the
     /// store buffered, and its failure is recorded only once it returns.
@@ -1032,7 +1158,7 @@ mod tests {
         assert!(stalled.join().expect("the first flush returns").is_ok());
 
         assert!(
-            matches!(meanwhile, Err(NotDurable::OtherFlushInFlight)),
+            matches!(meanwhile, Err(NotDurable::OtherFlushUnsettled)),
             "{meanwhile:?}"
         );
         let after = persister.store_durably(PlatformWalletChangeSet::default());

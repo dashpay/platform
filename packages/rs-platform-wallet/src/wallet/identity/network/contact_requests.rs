@@ -1333,6 +1333,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// already used. So a settle whose hold is gone records nothing: it
     /// answers the request when that is the one tracked, as the other settle
     /// recorded it, and `None` otherwise.
+    ///
+    /// A hold that still stands does not make its request the newest either:
+    /// a sweep may have read in a newer one, sent from another device of the
+    /// identity, while it stood. The older request is not recorded over that
+    /// one, as a sweep passes over a replay ([`predates`]): the hold is
+    /// released, as its request is settled, and nothing is recorded.
     pub(super) async fn record_settled_public_request(
         &self,
         sender: &Identifier,
@@ -1358,6 +1364,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     .outgoing_request(recipient)
                     .is_some_and(|tracked| tracked.account_reference == request.account_reference);
                 return Ok(tracked.then_some(request));
+            }
+            let superseded = dashpay
+                .outgoing_request(recipient)
+                .is_some_and(|tracked| predates(&request, tracked));
+            if superseded {
+                managed.settle_unconfirmed_public_request(recipient, attempt);
+                return Ok(None);
             }
             track_sent_contact_request(managed, &request, &self.persister)?;
             managed.settle_unconfirmed_public_request(recipient, attempt);
