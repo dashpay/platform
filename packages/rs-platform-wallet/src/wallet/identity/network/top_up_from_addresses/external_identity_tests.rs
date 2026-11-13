@@ -29,7 +29,7 @@ use dash_sdk::dapi_grpc::platform::v0::{
 };
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::query_types::{AddressInfo, AddressInfos};
+use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::consensus::state::state_error::StateError;
@@ -396,6 +396,37 @@ async fn should_report_empty_inputs_as_an_invalid_parameter_on_both_routes() {
         }
         assert_eq!(fixture.submissions().await, (0, 0, 0));
     }
+}
+
+/// The managed route reads the identity's balance from Platform before
+/// signing, the baseline its growth is measured against: a read that fails
+/// (here no answer to the request) is the not-sent lookup failure, and
+/// Platform not knowing the identity is not-found, both with nothing signed
+/// or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_read_the_managed_identitys_balance_from_platform_before_signing() {
+    let own = Identifier::from(OWN_IDENTITY);
+    let mut fixture = Fixture::new(true).await;
+
+    let unreachable = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&unreachable, Err(PlatformWalletError::IdentityLookupFailed { identity_id, .. })
+            if *identity_id == own),
+        "got {unreachable:?}"
+    );
+
+    fixture
+        .sdk
+        .mock()
+        .expect_fetch::<IdentityBalance, Identifier>(own, None)
+        .await
+        .unwrap();
+    let unknown = fixture.top_up_own_with(vec![(ADDRESS, AMOUNT)]).await;
+    assert!(
+        matches!(&unknown, Err(PlatformWalletError::IdentityNotFound(id)) if *id == own),
+        "got {unknown:?}"
+    );
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
 /// A handle to a wallet removed, or re-created under the same id, since it

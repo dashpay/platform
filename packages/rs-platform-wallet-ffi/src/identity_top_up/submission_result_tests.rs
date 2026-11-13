@@ -17,7 +17,7 @@ use dash_sdk::dapi_grpc::tonic::metadata::MetadataValue;
 use dash_sdk::dapi_grpc::tonic::Status;
 use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::query_types::{AddressInfo, AddressInfos};
+use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 use dash_sdk::{Error as SdkError, RequestSettings, Sdk, SdkBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
@@ -180,6 +180,11 @@ impl Fixture {
                 .map_err(|status| transport_error(&wait_request, status)),
         );
         sdk.mock().load_expectations_sync(directory.path()).unwrap();
+        // The managed route reads Platform's balance before signing.
+        sdk.mock()
+            .expect_fetch::<IdentityBalance, Identifier>(identity.id(), Some(identity.balance()))
+            .await
+            .unwrap();
         sdk.mock()
             .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
                 BTreeSet::from([ADDRESS]),

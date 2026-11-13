@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use dash_sdk::query_types::{AddressInfo, AddressInfos};
+use dash_sdk::query_types::{AddressInfo, AddressInfos, IdentityBalance};
 use dash_sdk::SdkBuilder;
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::{Identity, IdentityV0};
@@ -131,6 +131,11 @@ async fn wallets() -> (Handle, Handle) {
     });
     sdk.mock()
         .expect_fetch::<Identity, _>(Identifier::from(IDENTITY), Some(identity.clone()))
+        .await
+        .unwrap();
+    // The managed route reads Platform's balance before signing.
+    sdk.mock()
+        .expect_fetch::<IdentityBalance, Identifier>(Identifier::from(IDENTITY), Some(0))
         .await
         .unwrap();
     let manager = PlatformWalletManager::new(

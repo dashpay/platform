@@ -16,7 +16,7 @@ use dash_sdk::platform::Fetch;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
-use dash_sdk::query_types::AddressInfos;
+use dash_sdk::query_types::{AddressInfos, IdentityBalance};
 
 use crate::error::{
     preserve_signer_key_unavailable_or, promote_address_nonce_error, PlatformWalletError,
@@ -53,6 +53,14 @@ impl IdentityWallet {
     /// [`PlatformAddressWallet::reconcile_address_infos`]:
     /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
     ///
+    /// The identity is signed for and reconciled as the identity manager
+    /// holds it, but the balance the top-up must grow is read from Platform
+    /// before anything is signed, so a cached balance above Platform's
+    /// cannot make an executed top-up look unconfirmed. A failed read is
+    /// [`PlatformWalletError::IdentityLookupFailed`], and Platform not
+    /// knowing the identity [`PlatformWalletError::IdentityNotFound`], both
+    /// before anything is signed or broadcast.
+    ///
     /// # Arguments
     ///
     /// * `identity_id` - The identity to top up.
@@ -88,9 +96,25 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
+        // The cached balance can sit above Platform's (credits spent from
+        // another device, not yet synced): growth is measured against
+        // Platform's own balance, read before anything is signed.
+        let balance_before = IdentityBalance::fetch(&self.sdk, *identity_id)
+            .await
+            .map_err(|source| PlatformWalletError::IdentityLookupFailed {
+                identity_id: *identity_id,
+                source,
+            })?
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
         let (address_infos, mut new_balance, metadata) = self
-            .submit_top_up_from_addresses(&identity, inputs, address_signer, settings)
+            .submit_top_up_from_addresses(
+                &identity,
+                balance_before,
+                inputs,
+                address_signer,
+                settings,
+            )
             .await?;
 
         let proof_height = metadata.height;
@@ -163,7 +187,13 @@ impl IdentityWallet {
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
         let (address_infos, new_balance, metadata) = self
-            .submit_top_up_from_addresses(&identity, inputs, address_signer, settings)
+            .submit_top_up_from_addresses(
+                &identity,
+                identity.balance(),
+                inputs,
+                address_signer,
+                settings,
+            )
             .await?;
         Ok((address_infos, new_balance, metadata.height))
     }
@@ -175,12 +205,14 @@ impl IdentityWallet {
     /// affects (the identity's balance and the input addresses as of the
     /// proof's block), not that this transition executed. The result stands
     /// only once the proof shows every input address at or past the nonce
-    /// this transition was signed with and the identity balance above the
-    /// one `identity` carries ([`bind_to_submitted_nonces`]); otherwise the
-    /// top-up is reported unconfirmed and nothing is reconciled from it.
+    /// this transition was signed with and the identity balance above
+    /// `balance_before`, Platform's balance of the identity read before
+    /// signing ([`bind_to_submitted_nonces`]); otherwise the top-up is
+    /// reported unconfirmed and nothing is reconciled from it.
     async fn submit_top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
+        balance_before: Credits,
         inputs: BTreeMap<PlatformAddress, Credits>,
         address_signer: &S,
         settings: Option<PutSettings>,
@@ -211,7 +243,7 @@ impl IdentityWallet {
             )
             .await
             .map_err(top_up_error)?;
-        bind_to_submitted_nonces(&submitted, identity.balance(), confirmed)
+        bind_to_submitted_nonces(&submitted, balance_before, confirmed)
     }
 }
 
@@ -396,5 +428,36 @@ mod nonce_binding_tests {
                 "{proved_balance}: {result:?}"
             );
         }
+    }
+
+    /// The baseline is Platform's balance read before signing, not a cached
+    /// one: with the cache above Platform's value (credits spent from
+    /// another device, not yet synced), a top-up that grew the identity
+    /// above Platform's balance stands, where the stale cache as baseline
+    /// would have reported it unconfirmed.
+    #[test]
+    fn should_keep_growth_over_platforms_balance_that_a_stale_cache_hides() {
+        const STALE_CACHE: Credits = 800;
+        const PROVED: Credits = 750;
+        let submitted = BTreeMap::from([(FIRST, 4), (SECOND, 9)]);
+        let proof = || {
+            (
+                proved(&[(FIRST, Some(4)), (SECOND, Some(9))]),
+                PROVED,
+                ResponseMetadata::default(),
+            )
+        };
+
+        let (_, balance, _) = bind_to_submitted_nonces(&submitted, BALANCE_BEFORE, proof())
+            .expect("growth over Platform's balance stands");
+        assert_eq!(balance, PROVED);
+        let against_cache = bind_to_submitted_nonces(&submitted, STALE_CACHE, proof());
+        assert!(
+            matches!(
+                &against_cache,
+                Err(PlatformWalletError::Sdk(e)) if e.is_state_transition_result_unconfirmed()
+            ),
+            "{against_cache:?}"
+        );
     }
 }
