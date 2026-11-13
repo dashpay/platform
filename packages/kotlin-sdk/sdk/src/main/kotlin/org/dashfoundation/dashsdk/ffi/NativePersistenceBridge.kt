@@ -556,6 +556,25 @@ abstract class NativePersistenceBridge {
         dashpayShieldedAddress: ByteArray? = null,
     ): Int = 0
 
+    /** Authoritative profile update, independent of identity ownership or placement. */
+    @Suppress("LongParameterList")
+    open fun onPersistDashpayProfile(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        isPresent: Boolean,
+        displayName: String?,
+        bio: String?,
+        avatarUrl: String?,
+        avatarHash: ByteArray,
+        avatarHashPresent: Boolean,
+        avatarFingerprint: ByteArray,
+        avatarFingerprintPresent: Boolean,
+        publicMessage: String?,
+        corePaymentAddress: ByteArray?,
+        platformPaymentAddress: ByteArray?,
+        shieldedAddress: ByteArray?,
+    ): Int = 0
+
     /** One identity-id removal. Descriptor `([B[B)I`. */
     open fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = 0
 

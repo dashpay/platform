@@ -22,8 +22,8 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{
-    calculate_avatar_hash, calculate_dhash_fingerprint, ContactProfileEntry, DashPayProfile,
-    ProfileUpdate,
+    calculate_avatar_hash, calculate_dhash_fingerprint, normalize_persisted_profile,
+    ContactProfileEntry, DashPayProfile, ProfileUpdate,
 };
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
@@ -55,11 +55,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Fetches through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles) (`In`
     /// queries, not N+1; a failed fetch leaves the cache as is for the next
-    /// sweep), and persists only when the
-    /// fetched profile differs from the cached one — a `None` result clears the
-    /// cache only when a profile is currently stored (both arms guarded so a
-    /// no-change sweep writes nothing). Returns the number of identities whose
-    /// cached profile changed.
+    /// sweep), and persists when the fetched profile differs from the cached
+    /// one or establishes the first confirmed absence this session. Subsequent
+    /// unchanged results emit nothing. Returns the number of identities whose
+    /// profile state was updated. Results for a removed or replaced wallet
+    /// generation are discarded without changing state or persistence.
     pub async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
         // 1. Collect all managed identity IDs under a short read lock.
         let identity_ids: Vec<Identifier> = {
@@ -99,18 +99,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map(|id| (*id, found.get(id).cloned().flatten()))
             .collect();
 
-        // 4. Under the write guard: persist-on-change only (mirror the
-        //    None-arm's is_some guard for both directions).
+        // A first confirmed absence must emit a tombstone even on a cold cache.
         let mut changed = 0u32;
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return Ok(0);
         };
         for (identity_id, profile) in fetched {
             let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
                 continue;
             };
-            if managed.dashpay().profile == profile {
+            if (managed.dashpay().profile_checked || managed.dashpay().profile.is_some())
+                && managed.dashpay().profile == profile
+            {
                 continue;
             }
             managed.set_dashpay_profile(profile, &self.persister);
@@ -344,7 +345,7 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
         .and_then(|v: &Value| v.as_bytes_slice().ok())
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
 
-    DashPayProfile {
+    normalize_persisted_profile(DashPayProfile {
         display_name: text("displayName"),
         bio: public_message.clone(),
         avatar_url: text("avatarUrl"),
@@ -366,7 +367,7 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
             .and_then(|v| v.as_bytes_slice().ok())
             .and_then(crate::validated_shielded_address)
             .map(|bytes| bytes.to_vec()),
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +436,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// are themselves managed identities are skipped (their own
     /// `dashpay_profile` is authoritative). Display-only: a failure never
     /// aborts the sweep. Returns the number of cache entries changed.
+    /// Results for a removed or replaced wallet generation are discarded
+    /// without changing state or persistence.
     ///
     /// Fetching pending senders' profiles is an accepted privacy cost: an
     /// observer could link the `$ownerId In [...]` query to our inbound set,
@@ -528,7 +531,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut written = 0u32;
         {
             let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
                 return Ok(0);
             };
             for (owner_id, owner_results) in results {
@@ -583,6 +586,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .get_profiles(dashpay_contract, owner_ids)
             .await
             .map_err(PlatformWalletError::Sdk)?;
+
+        #[cfg(test)]
+        sync_generation_tests::after_fetch(&self.generation).await;
 
         Ok(docs
             .into_iter()
@@ -1353,5 +1359,380 @@ mod tip_resolution_tests {
             drop(coordinator);
             std::fs::remove_dir_all(dir).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod sync_generation_tests {
+    use super::*;
+    use crate::changeset::{
+        ClientStartState, IdentityChangeSet, IdentityEntry, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::test_support::NoopTestEventHandler;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::ContactRequest;
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::{PlatformWallet, PlatformWalletManager};
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+    use dash_sdk::{platform::DocumentQuery, query_types::Documents, SdkBuilder};
+    use dpp::document::DocumentV0;
+    use dpp::identity::IdentityV0;
+    use dpp::version::PlatformVersion;
+    use key_wallet::{wallet::initialization::WalletAccountCreationOptions, Network};
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+    use std::time::Duration;
+    use tokio::sync::oneshot;
+
+    type FetchPause = (oneshot::Sender<()>, oneshot::Receiver<()>);
+    static FETCH_PAUSES: Mutex<BTreeMap<usize, FetchPause>> = Mutex::new(BTreeMap::new());
+
+    pub(super) async fn after_fetch(generation: &Arc<WalletGeneration>) {
+        let pause = FETCH_PAUSES
+            .lock()
+            .unwrap()
+            .remove(&(Arc::as_ptr(generation) as usize));
+        if let Some((reached, resume)) = pause {
+            reached.send(()).unwrap();
+            resume.await.unwrap();
+        }
+    }
+
+    #[derive(Default)]
+    struct CapturingPersistence(Mutex<Vec<PlatformWalletChangeSet>>);
+
+    impl PlatformWalletPersistence for CapturingPersistence {
+        fn store(
+            &self,
+            _: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.0.lock().unwrap().push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    async fn add_wallet(
+        manager: &PlatformWalletManager<CapturingPersistence>,
+    ) -> Arc<PlatformWallet> {
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn sync(wallet: &PlatformWallet, contacts: bool) -> u32 {
+        if contacts {
+            wallet
+                .identity()
+                .dashpay()
+                .sync_contact_profiles()
+                .await
+                .unwrap()
+        } else {
+            wallet.identity().dashpay().sync_profiles().await.unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_persist_first_observed_profile_absence_once_and_keep_overlay_across_scalars() {
+        use crate::changeset::Merge;
+        let owner = Identifier::from([0x61; 32]);
+        let query = DocumentQuery::new(dashpay_contract().unwrap(), "profile")
+            .unwrap()
+            .with_where(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![owner.into()]),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".into(),
+                ascending: true,
+            })
+            .with_limit(100);
+        let mut sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some(Default::default()),
+            )
+            .await
+            .unwrap();
+        let persistence = Arc::new(CapturingPersistence::default());
+        let manager = PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::clone(&persistence),
+            Arc::new(NoopTestEventHandler),
+        );
+        let wallet = add_wallet(&manager).await;
+        {
+            let mut state = wallet.state_mut().await.unwrap();
+            state
+                .identity_manager
+                .add_out_of_wallet_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: Default::default(),
+                        balance: 123,
+                        revision: 7,
+                    }),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        persistence.0.lock().unwrap().clear();
+        assert_eq!(sync(&wallet, false).await, 1);
+        assert_eq!(sync(&wallet, false).await, 0);
+        let mut merged = {
+            let mut writes = persistence.0.lock().unwrap();
+            assert_eq!(writes.len(), 1);
+            writes.pop().unwrap()
+        };
+        assert_eq!(
+            merged.dashpay_profiles.as_ref().unwrap().get(&owner),
+            Some(&None)
+        );
+        let scalar = merged.identities.clone().unwrap();
+        let mut known = scalar.clone();
+        known.identities.get_mut(&owner).unwrap().dashpay_profile = Some(DashPayProfile {
+            display_name: Some("Retained".into()),
+            ..Default::default()
+        });
+        known.merge(scalar.clone());
+        assert_eq!(
+            known.identities[&owner]
+                .dashpay_profile
+                .as_ref()
+                .unwrap()
+                .display_name
+                .as_deref(),
+            Some("Retained")
+        );
+        merged.merge(scalar.into());
+        assert_eq!(
+            merged.dashpay_profiles.as_ref().unwrap().get(&owner),
+            Some(&None)
+        );
+        let state = wallet.state().await;
+        assert!(
+            state
+                .identity_manager
+                .managed_identity(&owner)
+                .unwrap()
+                .dashpay()
+                .profile_checked
+        );
+    }
+
+    async fn assert_delayed_sync_preserves_replacement(contacts: bool) {
+        for present in [true, false] {
+            let owner = Identifier::from([0x61; 32]);
+            let contact = Identifier::from([0x62; 32]);
+            let target = if contacts { contact } else { owner };
+            let key = orchard::keys::SpendingKey::from_bytes([42; 32]).unwrap();
+            let fvk = orchard::keys::FullViewingKey::from(&key);
+            let fetched_address = fvk
+                .address_at(19u32, orchard::keys::Scope::External)
+                .to_raw_address_bytes()
+                .to_vec();
+            let restored_profile = DashPayProfile {
+                display_name: Some("Restored profile".into()),
+                shielded_address: Some(
+                    fvk.address_at(20u32, orchard::keys::Scope::External)
+                        .to_raw_address_bytes()
+                        .to_vec(),
+                ),
+                ..Default::default()
+            };
+            let contract = dashpay_contract().unwrap();
+            let query = DocumentQuery::new(contract, "profile")
+                .unwrap()
+                .with_where(WhereClause {
+                    field: "$ownerId".into(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![target.into()]),
+                })
+                .with_order_by(OrderClause {
+                    field: "$ownerId".into(),
+                    ascending: true,
+                })
+                .with_limit(100);
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::from([0x63; 32]),
+                owner_id: target,
+                revision: Some(1),
+                properties: [(
+                    "shieldedAddress".into(),
+                    Value::Bytes(fetched_address.clone()),
+                )]
+                .into(),
+                ..Default::default()
+            });
+            let docs: Documents = if present {
+                [(document.id(), Some(document))].into()
+            } else {
+                Default::default()
+            };
+            let mut sdk = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .with_version(PlatformVersion::latest())
+                .build()
+                .unwrap();
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, Documents>(query, Some(docs))
+                .await
+                .unwrap();
+            let persistence = Arc::new(CapturingPersistence::default());
+            let manager = PlatformWalletManager::new(
+                Arc::new(sdk),
+                Arc::clone(&persistence),
+                Arc::new(NoopTestEventHandler),
+            );
+            let old = add_wallet(&manager).await;
+            let mut restored = {
+                let mut state = old.state_mut().await.unwrap();
+                state
+                    .identity_manager
+                    .add_identity(
+                        Identity::V0(IdentityV0 {
+                            id: owner,
+                            public_keys: Default::default(),
+                            balance: 123,
+                            revision: 7,
+                        }),
+                        0,
+                        old.wallet_id(),
+                        old.persister(),
+                    )
+                    .unwrap();
+                let managed = state.identity_manager.managed_identity_mut(&owner).unwrap();
+                if contacts {
+                    managed
+                        .add_incoming_contact_request(
+                            ContactRequest::new(contact, owner, 0, 0, 0, vec![], 0, 0),
+                            old.persister(),
+                        )
+                        .unwrap();
+                }
+                IdentityEntry::from_managed(managed)
+            };
+            restored.dashpay_profile = Some(restored_profile.clone());
+            restored.contact_profiles.insert(
+                contact,
+                ContactProfileEntry {
+                    profile: Some(restored_profile.clone()),
+                    checked_at_ms: 42,
+                },
+            );
+            let (reached_tx, reached_rx) = oneshot::channel();
+            let (resume_tx, resume_rx) = oneshot::channel();
+            FETCH_PAUSES.lock().unwrap().insert(
+                Arc::as_ptr(&old.identity().generation) as usize,
+                (reached_tx, resume_rx),
+            );
+            let syncing = {
+                let old = Arc::clone(&old);
+                tokio::spawn(async move { sync(&old, contacts).await })
+            };
+            tokio::time::timeout(Duration::from_secs(10), reached_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                manager.remove_wallet(&old.wallet_id()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let current = add_wallet(&manager).await;
+            assert_eq!(old.wallet_id(), current.wallet_id());
+            current
+                .apply(
+                    IdentityChangeSet {
+                        identities: [(owner, restored.clone())].into(),
+                        ..Default::default()
+                    }
+                    .into(),
+                )
+                .await
+                .unwrap();
+            if contacts {
+                current
+                    .state_mut()
+                    .await
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .unwrap()
+                    .add_incoming_contact_request(
+                        ContactRequest::new(contact, owner, 0, 0, 0, vec![], 0, 0),
+                        current.persister(),
+                    )
+                    .unwrap();
+            }
+            let before = persistence.0.lock().unwrap().len();
+            resume_tx.send(()).unwrap();
+            assert_eq!(
+                syncing.await.unwrap(),
+                0,
+                "stale synchronization must be discarded"
+            );
+            assert_eq!(
+                persistence.0.lock().unwrap().len(),
+                before,
+                "stale synchronization must not persist through its retained handle"
+            );
+            {
+                let state = current.state().await;
+                let managed = state.identity_manager.managed_identity(&owner).unwrap();
+                assert_eq!(IdentityEntry::from_managed(managed), restored);
+            }
+            assert_eq!(
+                sync(&current, contacts).await,
+                1,
+                "current generation can synchronize"
+            );
+            assert!(persistence.0.lock().unwrap().len() > before);
+            let state = current.state().await;
+            let managed = state.identity_manager.managed_identity(&owner).unwrap();
+            let profile = if contacts {
+                &managed.dashpay().contact_profiles[&contact].profile
+            } else {
+                &managed.dashpay().profile
+            };
+            assert_eq!(
+                profile.as_ref().and_then(|p| p.shielded_address.as_ref()),
+                present.then_some(&fetched_address)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_discard_delayed_own_profile_sync_after_wallet_replacement() {
+        assert_delayed_sync_preserves_replacement(false).await;
+    }
+
+    #[tokio::test]
+    async fn should_discard_delayed_contact_profile_sync_after_wallet_replacement() {
+        assert_delayed_sync_preserves_replacement(true).await;
     }
 }

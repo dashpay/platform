@@ -20,6 +20,7 @@ pub use crate::wallet::identity::types::key_storage::{
     self, DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
+use crate::wallet::identity::DashPayProfile;
 use dpp::identity::Identity;
 
 /// A managed identity that combines an Identity with wallet-specific metadata.
@@ -115,6 +116,12 @@ impl ManagedIdentity {
     /// must persist go through [`Self::set_dashpay_profile`].
     pub fn dashpay_profile_mut(&mut self) -> &mut Option<crate::wallet::identity::DashPayProfile> {
         &mut self.dashpay.profile
+    }
+
+    /// Apply an authoritative profile overlay without emitting another write.
+    pub(crate) fn apply_dashpay_profile(&mut self, profile: Option<DashPayProfile>) {
+        self.dashpay.profile = profile;
+        self.dashpay.profile_checked = true;
     }
 
     /// Mutable access to the DashPay payment-history cache.

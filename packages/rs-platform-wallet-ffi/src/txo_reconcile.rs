@@ -1191,7 +1191,11 @@ mod tests {
         // An engine writer queued behind the guard. With the guard held, a
         // fresh engine read is refused exactly while a writer waits.
         let writer_wallet = Arc::clone(&wallet);
-        let writer = std::thread::spawn(move || drop(writer_wallet.state_mut_blocking()));
+        let writer = std::thread::spawn(move || {
+            writer_wallet
+                .state_mut_blocking()
+                .expect("live wallet state");
+        });
         wait_for("the engine writer never queued behind the guard", || {
             engine.try_read().is_err()
         });

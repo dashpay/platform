@@ -17,6 +17,9 @@ mod token_queries;
 mod validator_queries;
 mod voting;
 
+#[cfg(test)]
+mod contract_cache_tests;
+
 use crate::error::query::QueryError;
 
 use dpp::validation::ValidationResult;

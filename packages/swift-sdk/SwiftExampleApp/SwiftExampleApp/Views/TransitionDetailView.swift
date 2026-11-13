@@ -578,6 +578,9 @@ struct TransitionDetailView: View {
     case "documentDelete":
       return try await executeDocumentDelete(sdk: sdk)
 
+    case "documentErase":
+      return try await executeDocumentErase(sdk: sdk)
+
     case "documentTransfer":
       return try await executeDocumentTransfer(sdk: sdk)
 
@@ -1221,6 +1224,54 @@ struct TransitionDetailView: View {
     _ = signer  // keepalive across the await — see KeychainSigner lifetime contract
 
     return ["message": "Document deleted successfully"]
+  }
+
+  private func executeDocumentErase(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let signingIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+    guard let walletId = signingIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter("Identity has no wallet linkage; cannot erase document history")
+    }
+    guard let contractText = formInputs["contractId"],
+          let contractId = Data.identifier(fromBase58: contractText) else {
+      throw SDKError.invalidParameter("Data contract is required")
+    }
+    guard let documentType = formInputs["documentType"], !documentType.isEmpty else {
+      throw SDKError.invalidParameter("Document type is required")
+    }
+    guard let documentText = formInputs["documentId"],
+          let documentId = Data.identifier(fromBase58: documentText) else {
+      throw SDKError.invalidParameter("Document ID is required")
+    }
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+    let outcome: DocumentEraseOutcome
+    do {
+      outcome = try await wallet.eraseDocumentAndObserve(
+        submittingIdentityId: signingIdentity.identityId,
+        contractId: contractId,
+        documentType: documentType,
+        documentId: documentId,
+        signer: signer
+      )
+    } catch PlatformWalletError.transactionBroadcastUnconfirmed(_) {
+      throw PlatformWalletError.transactionBroadcastUnconfirmed(
+        "Erase outcome unknown; do not resubmit automatically; read history first."
+      )
+    }
+    var result: [String: Any] = ["message": describeDocumentEraseOutcome(outcome)]
+    let observation: DocumentHistoryLifecycle?
+    switch outcome {
+    case .notSubmitted(_, let before): observation = before
+    case .submitted(_, let after): observation = after
+    }
+    if let observation {
+      result["lifecycle"] = observation.state.rawValue
+      result["remainingRevisions"] = observation.remainingRevisions
+    }
+    return result
   }
 
   private func executeDocumentTransfer(sdk: SDK) async throws -> Any {

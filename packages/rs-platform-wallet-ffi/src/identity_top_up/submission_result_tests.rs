@@ -211,6 +211,7 @@ impl Fixture {
         wallet
             .state_mut()
             .await
+            .expect("live wallet state")
             .identity_manager
             .add_identity(identity.clone(), 0, wallet.wallet_id(), wallet.persister())
             .unwrap();

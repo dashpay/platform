@@ -88,12 +88,12 @@ pub use wallet::identity::network::{
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
-    unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
-    DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo, EstablishedContact, IdentityLocation,
-    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PaymentAddressUpdate,
-    PrivateContact, PrivateKeyData, ProfileUpdate, RegistrationIndex, ShieldedTipRecipient,
-    DEFAULT_CONTACT_GAP_LIMIT,
+    derive_contact_payment_addresses, derive_contact_xpub, normalize_persisted_profile,
+    pubkey_binds_expected_key_data, unmask_account_reference, BlockTime, ContactProfileEntry,
+    ContactRequest, ContactXpubData, DashPayProfile, DashPayState, DpnsFetch, DpnsNameInfo,
+    EstablishedContact, IdentityLocation, IdentityManager, IdentityStatus, KeyStorage,
+    ManagedIdentity, PaymentAddressUpdate, PrivateContact, PrivateKeyData, ProfileUpdate,
+    RegistrationIndex, ShieldedTipRecipient, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::masternode_withdrawal::{
     MasternodeWithdrawalKey, MasternodeWithdrawalKeys, MasternodeWithdrawalRequest,

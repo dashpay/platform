@@ -9,9 +9,9 @@
 //! tests pin both halves of that contract:
 //!
 //! 1. A `dashpay_*` write lands in the overlay tables (queryable directly).
-//! 2. Writing ONLY the overlay (no identity blob carrying the same data)
-//!    does not corrupt `load()` — load succeeds and surfaces the wallet's
-//!    other state intact.
+//! 2. Overlay-only writes fold into the canonical identity blob and survive load.
+//! 3. Unknown scalar profile snapshots retain the canonical profile, while
+//!    explicit profile tombstones clear it.
 
 use crate::common;
 
@@ -90,10 +90,7 @@ fn overlay_only_write_does_not_corrupt_load() {
     persister.store(w, overlay_cs).expect("store overlay");
     persister.flush(w).expect("flush overlay");
 
-    // The documented contract: load() reads DashPay from the identities
-    // blob (not the overlay table), so the overlay-only write neither
-    // appears in nor corrupts the loaded state. load() must still
-    // succeed and surface the wallet's core state.
+    // Loading the canonical blob must include the overlay and unrelated core state.
     let state = persister
         .load()
         .expect("load must succeed despite overlay-only write");
@@ -102,7 +99,100 @@ fn overlay_only_write_does_not_corrupt_load() {
         .get(&w)
         .expect("wallet present in loaded state");
     assert_eq!(
+        wallet.identity_manager.out_of_wallet_identities[&Identifier::from(identity)]
+            .dashpay()
+            .profile
+            .as_ref()
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("bob")
+    );
+    assert_eq!(
         wallet.wallet_info.metadata.synced_height, 99,
         "core state must rehydrate intact alongside an unread overlay"
+    );
+}
+
+#[test]
+fn should_preserve_profile_on_unknown_scalar_snapshot_and_apply_explicit_absence() {
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry, Merge};
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xC1);
+    let raw = [0xC2; 32];
+    let id = Identifier::from(raw);
+    ensure_wallet_meta(&persister, &w);
+    ensure_identity(&persister, &raw, Some(&w));
+    let apply_profile = |profile| {
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    dashpay_profiles: Some(BTreeMap::from([(id, profile)])),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister.flush(w).unwrap();
+    };
+    apply_profile(Some(profile("Retained")));
+    let state = persister.load().unwrap();
+    let managed = &state.wallets[&w].identity_manager.out_of_wallet_identities[&id];
+    assert_eq!(
+        managed
+            .dashpay()
+            .profile
+            .as_ref()
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("Retained")
+    );
+    let mut scalar = IdentityEntry::from_managed(managed);
+    scalar.dashpay_profile = None;
+    scalar.balance = 321;
+    let scalar_cs = IdentityChangeSet {
+        identities: BTreeMap::from([(id, scalar)]),
+        ..Default::default()
+    };
+    persister.store(w, scalar_cs.clone().into()).unwrap();
+    persister.flush(w).unwrap();
+    let state = persister.load().unwrap();
+    let managed = &state.wallets[&w].identity_manager.out_of_wallet_identities[&id];
+    assert_eq!(
+        managed
+            .dashpay()
+            .profile
+            .as_ref()
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("Retained")
+    );
+    let mut cleared = PlatformWalletChangeSet {
+        dashpay_profiles: Some(BTreeMap::from([(id, None)])),
+        ..Default::default()
+    };
+    cleared.merge(scalar_cs.into());
+    persister.store(w, cleared).unwrap();
+    persister.flush(w).unwrap();
+    let state = persister.load().unwrap();
+    let managed = &state.wallets[&w].identity_manager.out_of_wallet_identities[&id];
+    assert!(managed.dashpay().profile.is_none());
+    assert_eq!(
+        dpp::identity::accessors::IdentityGettersV0::balance(&managed.identity),
+        321
+    );
+    apply_profile(Some(profile("Restored")));
+    let state = persister.load().unwrap();
+    assert_eq!(
+        state.wallets[&w].identity_manager.out_of_wallet_identities[&id]
+            .dashpay()
+            .profile
+            .as_ref()
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("Restored")
     );
 }

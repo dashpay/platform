@@ -257,7 +257,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(Swift.withUnsafeBytes(of: restored.shielded_address) { Data($0) }, Data(repeating: 3, count: 43))
     }
 
-    func testOwnedProfileAbsentFromWalletIdentitySnapshotIsNotRestored() throws {
+    func testOwnedProfileExplicitAbsenceIsNotRestored() throws {
         // `sync_profiles` clears a profile deleted on Platform; the cached
         // row must not be hydrated back on the next cold start.
         let context = ModelContext(container)
@@ -280,6 +280,12 @@ final class DashPayContactPersistenceTests: XCTestCase {
             avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43)))
         XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
         persist(nil)
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentDashpayProfile>()), 1)
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
+        handler.beginChangeset(walletId: walletId)
+        let cleared = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: nil)])
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: cleared))
 
         let reader = ModelContext(container)
         XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayProfile>()), 0)
@@ -290,6 +296,132 @@ final class DashPayContactPersistenceTests: XCTestCase {
         let buffer = try XCTUnwrap(entries)
         defer { handler.loadWalletListFree(entries: UnsafeRawPointer(buffer)) }
         XCTAssertNil(try XCTUnwrap(buffer[0].identities)[0].dashpay_profile)
+    }
+
+    func testProfileOverlayRequiresIdentityNetworkToMatchCallbackWallet() throws {
+        let otherWalletId = Data(repeating: 0xBB, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: otherWalletId, network: .devnet))
+        try context.save()
+
+        handler.beginChangeset(walletId: otherWalletId)
+        let stored = handler.persistDashpayProfiles(walletId: otherWalletId, profiles: [
+            .init(identityId: ownerId, profile: .init(
+                displayName: "Wrong network", bio: nil, publicMessage: nil, avatarUrl: nil,
+                avatarHash: nil, avatarFingerprint: nil, shieldedAddress: nil
+            ))
+        ])
+        XCTAssertFalse(stored)
+        XCTAssertFalse(handler.endChangeset(walletId: otherWalletId, success: stored))
+
+        let reader = ModelContext(container)
+        XCTAssertTrue(try reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).isEmpty)
+    }
+
+    func testObservedProfileSurvivesAdoptionAndExplicitCallbackCanRemoveIt() throws {
+        let callbacks = handler.makePersistenceCallbacksExtension()
+        let persist = try XCTUnwrap(callbacks.on_persist_dashpay_profiles_fn)
+        let context = Unmanaged.passUnretained(handler!).toOpaque()
+        var row = ContactProfileRowFFI()
+        row.contact_id = Self.tuple32(ownerId)
+        row.is_present = true
+        row.shielded_address_present = true
+        withUnsafeMutableBytes(of: &row.shielded_address) { $0.copyBytes(from: Data(repeating: 3, count: 43)) }
+        handler.beginChangeset(walletId: walletId)
+        let stored = "Observed profile".withCString { name in
+            row.display_name = name
+            return walletId.withUnsafeBytes { wallet in
+                withUnsafePointer(to: &row) { persist(context, wallet.bindMemory(to: UInt8.self).baseAddress, $0, 1) }
+            }
+        }
+        row.display_name = nil
+        XCTAssertEqual(stored, 0)
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: stored == 0))
+        for index in [nil, UInt32(0)] {
+            handler.beginChangeset(walletId: walletId)
+            let kept = handler.persistIdentities(walletId: walletId, upserts: [.init(
+                identityId: ownerId, balance: 42, revision: 1, identityIndex: index,
+                label: nil, status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil,
+                contactProfiles: [])], removed: [])
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: kept))
+            let reader = ModelContext(container)
+            XCTAssertEqual(try reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).first?.displayName, "Observed profile")
+            XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
+        }
+        // A tombstone is authoritative even after placement changes back to observed.
+        handler.beginChangeset(walletId: walletId)
+        let observed = handler.persistIdentities(walletId: walletId, upserts: [.init(
+            identityId: ownerId, balance: 42, revision: 1, identityIndex: nil,
+            label: nil, status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil,
+            contactProfiles: [])], removed: [])
+        row.is_present = false
+        let cleared = walletId.withUnsafeBytes { wallet in
+            withUnsafePointer(to: &row) { persist(context, wallet.bindMemory(to: UInt8.self).baseAddress, $0, 1) }
+        }
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: observed && cleared == 0))
+        let reader = ModelContext(container)
+        XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayProfile>()), 0)
+        XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 0)
+    }
+
+    func testExplicitProfileAbsenceAddressFailureRollsBackProfileAndScalarUpdate() throws {
+        handler.beginChangeset(walletId: walletId)
+        let profile = PlatformWalletPersistenceHandler.DashpayProfileSnapshot(
+            displayName: "Keep me", bio: nil, publicMessage: nil, avatarUrl: nil,
+            avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43))
+        let stored = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: profile)])
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: stored))
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet,
+            modelFetcher: PaymentAddressReadFailure())
+        handler.beginChangeset(walletId: walletId)
+        let updated = handler.persistIdentities(walletId: walletId, upserts: [.init(
+            identityId: ownerId, balance: 999, revision: 4, identityIndex: nil,
+            label: nil, status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil,
+            contactProfiles: [])], removed: [])
+        let cleared = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: nil)])
+        XCTAssertTrue(updated)
+        XCTAssertFalse(cleared)
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: updated && cleared))
+        let reader = ModelContext(container)
+        XCTAssertEqual(try reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).first?.displayName, "Keep me")
+        XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
+        XCTAssertEqual(try reader.fetch(FetchDescriptor<PersistentIdentity>()).first?.balance, 0)
+    }
+
+    func testExplicitProfileAbsenceLaterCallbackFailureRollsBackDeletionAndScalarUpdate() throws {
+        handler.beginChangeset(walletId: walletId)
+        let profile = PlatformWalletPersistenceHandler.DashpayProfileSnapshot(
+            displayName: "Keep me", bio: nil, publicMessage: nil, avatarUrl: nil,
+            avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43))
+        let stored = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: profile)])
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: stored))
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+
+        handler.beginChangeset(walletId: walletId)
+        let updated = handler.persistIdentities(walletId: walletId, upserts: [.init(
+            identityId: ownerId, balance: 999, revision: 4, identityIndex: nil,
+            label: nil, status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil,
+            contactProfiles: [])], removed: [])
+        let cleared = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: nil)])
+        let laterCallback = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: contactId, profile: nil)])
+        XCTAssertTrue(updated)
+        XCTAssertTrue(cleared)
+        XCTAssertFalse(laterCallback)
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: updated && cleared && laterCallback))
+
+        let reader = ModelContext(container)
+        let restoredProfile = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).first)
+        XCTAssertEqual(restoredProfile.displayName, "Keep me")
+        let addresses = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>()).first)
+        XCTAssertEqual(addresses.shieldedAddress, Data(repeating: 3, count: 43))
+        let restoredIdentity = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        XCTAssertEqual(restoredIdentity.balance, 0)
+        XCTAssertEqual(restoredIdentity.revision, 0)
     }
 
     // MARK: Contact-profile tombstone delete

@@ -6,6 +6,9 @@ pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
+    /// Maximum retained revisions removed by one erase, read by
+    /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
+    pub max_document_revisions_erased_per_transition: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
@@ -28,6 +31,19 @@ pub struct SystemLimits {
     /// version 15), which refuses a longer name; the document meta-schema checked before it
     /// admitted 256 characters. Never reached before protocol version 15.
     pub max_index_property_name_bytes: u16,
+    /// Most patterns the document schemas and `$defs` of one contract may hold: every string
+    /// under a `pattern` key, and every `regexPattern` of a contested index's `fieldMatches`,
+    /// one in `$defs` counted once for each document type.
+    /// Each is compiled when the contract is parsed and again for the validator its documents
+    /// are checked with, so this and `max_schema_pattern_compiled_size` bound the work and the
+    /// memory one contract costs every node. Read by `DataContract::validate_schema_patterns`
+    /// 0, which contract registration and update run under full validation from protocol
+    /// version 15 and never before; `check_tx` holds a contract to the same bound at every
+    /// protocol version, as mempool policy where consensus has no such rule.
+    pub max_contract_schema_patterns: u16,
+    /// The `regex` size limit, in bytes, every such pattern must compile within. Read with
+    /// `max_contract_schema_patterns`.
+    pub max_schema_pattern_compiled_size: u32,
     /// Maximum bytes of a contract stored compiled (format version 2, its document types
     /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
     /// `None` in the earlier tables, which store no contract compiled. The format transitions

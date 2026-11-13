@@ -50,6 +50,50 @@ pub struct DashPayProfile {
     pub shielded_address: Option<Vec<u8>>,
 }
 
+/// Normalize profile data loaded from a host-owned persistence row.
+///
+/// Persistence adapters only marshal the row into this model; acceptance of
+/// payment-address bytes belongs to platform-wallet so restore policy cannot
+/// drift between FFI, JNI, Swift, and native callers.
+pub fn normalize_persisted_profile(mut profile: DashPayProfile) -> DashPayProfile {
+    profile.avatar_url = profile
+        .avatar_url
+        .filter(|url| !url.is_empty() && url.len() <= 2048 && url.starts_with("https://"));
+    profile.core_payment_address = profile
+        .core_payment_address
+        .filter(|address| valid_transparent_payment_address(address));
+    profile.platform_payment_address = profile
+        .platform_payment_address
+        .filter(|address| valid_transparent_payment_address(address));
+    profile.shielded_address = profile
+        .shielded_address
+        .and_then(|address| validated_shielded_address(&address).map(|address| address.to_vec()));
+    profile
+}
+
+#[cfg(test)]
+mod normalize_tests {
+    use super::*;
+
+    #[test]
+    fn normalize_persisted_profile_drops_invalid_addresses() {
+        let profile = normalize_persisted_profile(DashPayProfile {
+            avatar_url: Some("http://example.com/avatar.png".to_string()),
+            core_payment_address: Some(vec![5; 21]),
+            platform_payment_address: Some(vec![1; 20]),
+            shielded_address: Some(vec![0xff; 43]),
+            display_name: Some("Alice".to_string()),
+            ..Default::default()
+        });
+
+        assert_eq!(profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(profile.avatar_url, None);
+        assert_eq!(profile.core_payment_address, None);
+        assert_eq!(profile.platform_payment_address, None);
+        assert_eq!(profile.shielded_address, None);
+    }
+}
+
 /// A cached **contact** profile, keyed by the contact's identity id on the
 /// owning [`ManagedIdentity`](crate::wallet::identity::ManagedIdentity).
 ///

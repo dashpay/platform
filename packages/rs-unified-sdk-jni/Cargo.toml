@@ -14,6 +14,8 @@ crate-type = ["cdylib"]
 [dependencies]
 jni = "0.21"
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
+dpp = { path = "../rs-dpp" }
+serde_json = "1.0"
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 log = "0.4"
 zeroize = "1"
@@ -26,9 +28,6 @@ dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }
-# Builds the state-transition fixtures whose parsed blobs are the goldens
-# shared with the Kotlin `StateTransitionParserTest`.
-dpp = { path = "../rs-dpp" }
 
 [features]
 default = ["shielded"]

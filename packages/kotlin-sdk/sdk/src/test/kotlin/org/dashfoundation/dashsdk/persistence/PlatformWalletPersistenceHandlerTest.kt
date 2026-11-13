@@ -941,7 +941,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun shouldDeleteOwnedProfileWhenWalletIdentitySnapshotHasNone() = runTest {
+    fun shouldPreserveUnknownProfileUntilExplicitAbsence() = runTest {
         // `sync_profiles` clears a profile deleted on Platform; the cached
         // row must not be hydrated back on the next cold start.
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
@@ -972,9 +972,76 @@ class PlatformWalletPersistenceHandlerTest {
         )
 
         persistSnapshot(profilePresent = false)
+        assertTrue(ByteArray(43) { 3 }.contentEquals(db.dashpayDao().getProfile(testnet, identityId)!!.shieldedAddress))
+        handler.onChangesetBegin(walletId)
+        assertEquals(0, handler.onPersistDashpayProfile(
+            walletId, identityId, false, null, null, null, ByteArray(32), false,
+            ByteArray(8), false, null, null, null, null,
+        ))
+        handler.onChangesetEnd(walletId, success = true)
         assertNull(db.dashpayDao().getProfile(testnet, identityId))
         assertNotNull(db.dashpayDao().getProfile(otherNetwork, identityId))
         assertNull(handler.onLoadWalletList().single().identities.single().dashpayProfile)
+    }
+
+    @Test
+    fun observedProfileUpdateSurvivesAdoptionAndExplicitAbsenceRemovesIt() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 14 }
+        fun snapshot(owned: Boolean) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistIdentityUpsert(
+                walletId, identityId, 42, 1, owned, 0, 0, owned, walletId,
+                emptyArray(), LongArray(0), false, null, null, null,
+                ByteArray(32), false, ByteArray(8), false, null,
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+        snapshot(false)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistDashpayProfile(
+            walletId, identityId, true, "Observed", null, null, ByteArray(32), false,
+            ByteArray(8), false, null, ByteArray(21) { 1 }, ByteArray(21) { 2 }, ByteArray(43) { 3 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        snapshot(true)
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertEquals("Observed", profile.displayName)
+        assertTrue(ByteArray(21) { 1 }.contentEquals(profile.corePaymentAddress))
+        assertTrue(ByteArray(21) { 2 }.contentEquals(profile.platformPaymentAddress))
+        assertTrue(ByteArray(43) { 3 }.contentEquals(profile.shieldedAddress))
+        snapshot(false)
+        handler.onChangesetBegin(walletId)
+        handler.onPersistDashpayProfile(
+            walletId, identityId, false, null, null, null, ByteArray(32), false,
+            ByteArray(8), false, null, null, null, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        assertNull(db.dashpayDao().getProfile(testnet, identityId))
+    }
+
+    @Test
+    fun profileOverlayRejectsIdentityFromAnotherNetwork() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 15 }
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, true, 0, 0, true, walletId,
+            emptyArray(), LongArray(0), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val otherWalletId = ByteArray(32) { 16 }
+        handler.onPersistWalletMetadata(otherWalletId, testnet + 1, groupId, 0)
+        handler.onChangesetBegin(otherWalletId)
+        val result = handler.onPersistDashpayProfile(
+            otherWalletId, identityId, true, "Wrong network", null, null,
+            ByteArray(32), false, ByteArray(8), false, null, null, null, null,
+        )
+        assertEquals(0, result)
+        assertTrue(handler.onChangesetEnd(otherWalletId, success = true) != 0)
+        assertNull(db.dashpayDao().getProfile(testnet + 1, identityId))
     }
 
     @Test

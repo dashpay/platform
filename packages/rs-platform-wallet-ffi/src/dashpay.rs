@@ -2031,7 +2031,7 @@ mod tests {
             revision: 0,
         });
         runtime().block_on(async {
-            let mut state = wallet.state_mut().await;
+            let mut state = wallet.state_mut().await.expect("live wallet state");
             state
                 .identity_manager
                 .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())

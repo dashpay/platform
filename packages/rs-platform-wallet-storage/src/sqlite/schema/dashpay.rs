@@ -8,18 +8,18 @@
 //! indexed queries. Round-trip pinned by
 //! `tests/integration/sqlite_dashpay_overlay_contract.rs`.
 //!
-//! # …which is why the payment overlay is also PATCHED into `entry_blob`
+//! # Profile and payment overlays are also folded into `entry_blob`
 //!
-//! Because `load()` reads only the identity blob, a payment row that reached
+//! Because `load()` reads only the identity blob, a profile or payment that reached
 //! the overlay table alone is a write that does not survive a restart. The
 //! wallet-event adapter is the single writer of swept sent-payment verdicts
 //! and has no other durable channel for them, so [`apply`] finishes by
-//! folding each overlay row into the owning identity's `entry_blob`.
+//! folding each overlay row into the owning identity's `entry_blob`, including
+//! confirmed-absent profile tombstones.
 //!
-//! The fold is a read-modify-write of ONLY the `(txid -> PaymentEntry)` keys
-//! the overlay names, run inside the persister's own write transaction:
-//! payments the overlay does not mention, and every other field of the
-//! entry, are read back and written out unchanged. That is what distinguishes
+//! The folds modify only the named profile or `(txid -> PaymentEntry)` keys
+//! inside the persister's own write transaction. Payments the overlay does
+//! not mention and every other field of the entry survive unchanged. That is what distinguishes
 //! it from shipping a whole `IdentityEntry` from the caller — a snapshot
 //! captured before the lock was released would wholesale replace the blob and
 //! silently drop any payment another writer committed in between
@@ -93,6 +93,7 @@ pub fn apply(
                     }
                 }
             }
+            patch_profiles_into_entry_blobs(tx, profiles)?;
         }
     }
     if let Some(payments) = payments {
@@ -171,6 +172,39 @@ fn patch_payments_into_entry_blobs(
         for (tx_id, row) in by_tx {
             entry.dashpay_payments.insert(tx_id.clone(), row.clone());
         }
+        let patched = blob::encode(&entry)?;
+        write.execute(params![identity_id.as_slice(), patched])?;
+    }
+    Ok(())
+}
+
+fn patch_profiles_into_entry_blobs(
+    tx: &Transaction<'_>,
+    profiles: &BTreeMap<Identifier, Option<DashPayProfile>>,
+) -> Result<(), WalletStorageError> {
+    let mut read = tx.prepare_cached(
+        "SELECT length(entry_blob), entry_blob, entry_format FROM identities \
+         WHERE identity_id = ?1",
+    )?;
+    let mut write = tx.prepare_cached(
+        "UPDATE identities SET entry_blob = ?2, entry_format = 1 WHERE identity_id = ?1",
+    )?;
+    for (identity_id, profile) in profiles {
+        let stored: Option<(i64, Vec<u8>, i64)> = read
+            .query_row(params![identity_id.as_slice()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })?;
+        let Some((len, payload, format)) = stored else {
+            continue;
+        };
+        blob::check_size(len)?;
+        let mut entry: IdentityEntry = decode_identity(&payload, format)?;
+        entry.dashpay_profile = profile.clone();
         let patched = blob::encode(&entry)?;
         write.execute(params![identity_id.as_slice(), patched])?;
     }

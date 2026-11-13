@@ -40,7 +40,7 @@ impl<C> Platform<C> {
 
         if self
             .drive
-            .get_contract_with_fetch_info(contract_id.to_buffer(), false, None, platform_version)?
+            .get_contract_with_fetch_info(contract_id.to_buffer(), true, None, platform_version)?
             .is_none()
         {
             return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(

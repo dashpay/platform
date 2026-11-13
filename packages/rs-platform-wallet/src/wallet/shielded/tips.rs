@@ -14,6 +14,7 @@ use crate::{PlatformWalletError, ShieldedTipRecipient};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use grovedb_commitment_tree::PaymentAddress;
+use orchard::keys::Scope;
 use std::sync::{Arc, PoisonError, Weak};
 
 pub(crate) struct PreparedTipAccount {
@@ -142,6 +143,13 @@ impl PlatformWallet {
                 "The supplied seed does not belong to this wallet".to_string(),
             ));
         }
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
+        let _operation = coordinator.operation_guard().await;
         // Held until the address is returned, so the identity cannot move to
         // another slot between the check below and the bind of the account
         // that slot selects. Publication rechecks it (see
@@ -161,8 +169,10 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
-        self.bind_shielded_locked(seed, &accounts, coordinator)
+        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator)
             .await?;
+        #[cfg(test)]
+        test_hooks::after_bind(self).await;
         self.persister()
             .flush()
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
@@ -170,8 +180,6 @@ impl PlatformWallet {
             .shielded_default_address(account)
             .await
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        #[cfg(test)]
-        test_hooks::after_bind(self).await;
         if coordinator.clear_generation() != clear_generation {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
@@ -263,7 +271,8 @@ impl PlatformWallet {
     /// holds the slot selecting that account, and the identity still holds
     /// it. Discovery can move an identity whose keys derive at several
     /// indices, and a restored placeholder index is not proof of a slot.
-    /// Ordinary accounts cannot be published; addresses of other wallets are
+    /// Ordinary accounts and internal-scope identity addresses cannot be published;
+    /// this wallet scans external receiving addresses. Addresses of other wallets are
     /// the owner's choice. Only bound accounts are recognised; preparation binds the
     /// account it hands out. Callers hold the placement lock through the
     /// profile write.
@@ -280,17 +289,27 @@ impl PlatformWallet {
         let owning_account = {
             let keys = self.shielded_keys.read().await;
             keys.as_ref().and_then(|keys| {
-                keys.iter()
-                    .find(|(_, views)| views.full_viewing_key.scope_for_address(&address).is_some())
-                    .map(|(account, _)| *account)
+                keys.iter().find_map(|(account, views)| {
+                    views
+                        .full_viewing_key
+                        .scope_for_address(&address)
+                        .map(|scope| (*account, scope))
+                })
             })
         };
-        let Some(owning_account) = owning_account else {
+        let Some((owning_account, scope)) = owning_account else {
             return Ok(());
         };
         if !is_shielded_identity_account(owning_account) {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if matches!(scope, Scope::Internal) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only external receiving addresses from this wallet can be published \
                  in an identity profile"
                     .to_string(),
             ));
@@ -364,6 +383,7 @@ impl PlatformWallet {
                 self.wallet_id(),
             )));
         }
+        let _operation = coordinator.operation_guard().await;
         let _placement = self.identity.identity_placement.read().await;
         let account = self.tip_source_account(seed, source).await?;
         #[cfg(test)]

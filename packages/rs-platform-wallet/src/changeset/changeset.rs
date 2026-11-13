@@ -940,7 +940,8 @@ pub struct IdentityEntry {
     /// the wallet that owns this identity, if known.
     pub wallet_id: Option<[u8; 32]>,
     /// DashPay profile snapshot (display name, bio, avatar, public
-    /// message). `None` until the profile has been fetched or set.
+    /// message). `None` is unknown/no update; confirmed absence is carried
+    /// by `PlatformWalletChangeSet::dashpay_profiles`.
     pub dashpay_profile: Option<DashPayProfile>,
     /// DashPay payment history keyed by transaction id (hex string).
     /// Mutations that don't touch payments still carry the current
@@ -1180,12 +1181,9 @@ impl Merge for IdentityChangeSet {
                     // the first value would flush the stale slot and leave it
                     // occupied for the identity that legitimately owns it.
                     existing.identity_index = entry.identity_index;
-                    // DashPay profile: last-write-wins. Same policy as
-                    // every other Option<T> scalar in this block —
-                    // every mutation snapshot copies the current
-                    // profile via `from_managed`, so LWW converges
-                    // correctly within a single wallet.
-                    existing.dashpay_profile = entry.dashpay_profile.clone();
+                    if entry.dashpay_profile.is_some() {
+                        existing.dashpay_profile = entry.dashpay_profile.clone();
+                    }
                     // DPNS names: last-write-wins wholesale, same policy
                     // as `contested_dpns_names` below. Every emitter
                     // snapshots the complete current list via
@@ -2357,9 +2355,9 @@ pub struct PlatformWalletChangeSet {
     pub token_balances: Option<TokenBalanceChangeSet>,
     /// DashPay profile overlays keyed by identity ID. Applied AFTER
     /// `identities` — updates the `dashpay_profile` field on existing
-    /// `ManagedIdentity` entries without touching other fields. Used
-    /// by the persister load path where only DashPay data is available
-    /// (the identity blob lives in the external `identity` table).
+    /// `ManagedIdentity` entries without touching other fields. A missing key
+    /// is no update; `Some(profile)` is present and `None` is confirmed absent.
+    /// Scalar identity snapshots with no profile do not carry this authority.
     /// Identities not in the wallet are silently skipped.
     pub dashpay_profiles: Option<BTreeMap<Identifier, Option<DashPayProfile>>>,
     /// DashPay payment history overlays keyed by identity ID. Same

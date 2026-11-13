@@ -4978,6 +4978,43 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Rust owns eligibility, key selection, one submission and lifecycle observations.
+    public func eraseDocumentAndObserve(
+        submittingIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signer: KeychainSigner
+    ) async throws -> DocumentEraseOutcome {
+        guard submittingIdentityId.count == 32, contractId.count == 32, documentId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Identifiers must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            var output = DocumentEraseOutcomeFFI()
+            let result = withExtendedLifetime((self, signer)) {
+                submittingIdentityId.withUnsafeBytes { owner in
+                    contractId.withUnsafeBytes { contract in
+                        documentType.withCString { type in
+                            documentId.withUnsafeBytes { document in
+                                platform_wallet_document_erase_and_observe(
+                                    self.handle,
+                                    owner.bindMemory(to: UInt8.self).baseAddress!,
+                                    contract.bindMemory(to: UInt8.self).baseAddress!,
+                                    type,
+                                    document.bindMemory(to: UInt8.self).baseAddress!,
+                                    signer.handle,
+                                    &output
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            try result.check()
+            return try DocumentEraseOutcome(ffi: output)
+        }.value
+    }
+
     /// Transfer + broadcast `documentId` on `contractId`'s
     /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
     /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
