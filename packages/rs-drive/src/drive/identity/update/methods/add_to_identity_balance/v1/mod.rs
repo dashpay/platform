@@ -63,13 +63,11 @@ impl Drive {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
 
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         Ok(fees)
@@ -232,7 +230,6 @@ mod tests {
                 &block_info(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply the batch");
 
@@ -273,7 +270,6 @@ mod tests {
                 &block_info(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply the batch");
 
@@ -325,26 +321,27 @@ mod tests {
 
     #[test]
     fn should_refuse_to_convert_a_debt_repaying_credit_into_a_plain_batch() {
-        let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(None);
-        let identity_id = indebted_identity(&drive, [1; 32], 100, platform_version);
+        for platform_version in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let identity_id = indebted_identity(&drive, [1; 32], 100, platform_version);
 
-        let result = drive.convert_drive_operations_to_grove_operations(
-            vec![DriveOperation::IdentityOperation(
-                IdentityOperationType::AddToIdentityBalance {
-                    identity_id,
-                    added_balance: 300,
-                },
-            )],
-            &block_info(),
-            None,
-            platform_version,
-        );
+            let result = drive.convert_drive_operations_to_grove_operations(
+                vec![DriveOperation::IdentityOperation(
+                    IdentityOperationType::AddToIdentityBalance {
+                        identity_id,
+                        added_balance: 300,
+                    },
+                )],
+                &block_info(),
+                None,
+                platform_version,
+            );
 
-        assert!(matches!(
-            result,
-            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
-        ));
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ));
+        }
     }
 
     #[test]
@@ -378,7 +375,6 @@ mod tests {
                 &block_info(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply the batch");
 
@@ -419,7 +415,6 @@ mod tests {
                 &block_info(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply the batch");
 
@@ -460,7 +455,6 @@ mod tests {
                 &block_info(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to apply the batch");
 

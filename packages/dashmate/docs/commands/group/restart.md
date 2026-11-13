@@ -27,6 +27,9 @@ The restart process happens in two phases:
 
 If the nodes are masternodes participating in quorums, restarting them during a DKG (Distributed Key Generation) session can cause issues.
 Use the `--safe` flag to wait for any current DKG round to complete before stopping the nodes.
+See [Stopping a masternode safely](../stop.md#stopping-a-masternode-safely) for what dashmate checks and what `--safe` shows while it waits.
+Nodes are stopped one at a time, and with `--safe` each waits for its own safe moment, so nodes already stopped stay down while the next one waits.
+If stopping a node fails, the command ends there and the nodes it already stopped stay down until you start the group again.
 
 This command is useful when:
 - You've changed configuration options that require a service restart

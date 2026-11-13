@@ -5,7 +5,7 @@ use crate::drive::document::fixture_contracts::{
     leave_out_optional_indexed_values, leave_out_optional_unique_values, leave_out_skip_properties,
     small_sums, CONTRACTS,
 };
-use crate::drive::document::make_document_reference;
+use crate::drive::document::{make_document_reference, uses_current_document_history_layout};
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -14,6 +14,7 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::setup_contract;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -61,6 +62,24 @@ fn insert_at(
     document: &Document,
     time_ms: u64,
 ) -> Result<FeeResult, Error> {
+    insert_at_version(
+        drive,
+        contract,
+        document_type,
+        document,
+        time_ms,
+        PlatformVersion::latest(),
+    )
+}
+
+fn insert_at_version(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    document: &Document,
+    time_ms: u64,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
     let flags = StorageFlags::new_single_epoch(0, Some(document.owner_id().to_buffer()));
     drive.add_document_for_contract(
         DocumentAndContractInfo {
@@ -75,8 +94,7 @@ fn insert_at(
         BlockInfo::default_with_time(time_ms),
         true,
         None,
-        PlatformVersion::latest(),
-        None,
+        platform_version,
     )
 }
 
@@ -312,6 +330,46 @@ fn should_price_what_drive_charges() {
 }
 
 #[test]
+fn should_include_the_retained_history_root_when_estimating_processing_paths() {
+    let version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({ "note": {
+        "type": "object", "documentsKeepHistory": true, "canBeDeleted": false,
+        "properties": {
+            "tag": { "type": "string", "maxLength": 20, "position": 0 },
+            "code": { "type": "string", "maxLength": 20, "position": 1 },
+            "text": { "type": "string", "maxLength": 60, "position": 2 }
+        },
+        "indices": [
+            { "name": "byTag", "properties": [{ "tag": "asc" }] },
+            { "name": "byCode", "properties": [{ "code": "asc" }] }
+        ],
+        "required": ["tag", "code", "text"], "additionalProperties": false
+    }}));
+    let note = contract.document_type_for_name("note").unwrap();
+    let document = note_document(&contract);
+    let writes = writes_of(&contract, note, &document);
+    let assumptions = CostAssumptions::new(version);
+    let parts = processing_costs(
+        &contract,
+        note,
+        &writes,
+        &vec![false; writes.len()],
+        Scenarios::default(),
+        0,
+        &assumptions,
+        version,
+    )
+    .unwrap();
+    let processing = parts.iter().find(|part| part.code == "writes").unwrap();
+    // Primary storage, retained history and the two index roots make four
+    // entries: the additional root crosses a balanced-tree height boundary.
+    assert_eq!(
+        processing.credits.new_values,
+        write_processing(&writes, &[], 4, &assumptions, version)
+    );
+}
+
+#[test]
 fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
     let platform_version = PlatformVersion::latest();
     let mut ratios = Vec::new();
@@ -321,6 +379,11 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
         for (name, document_type) in contract.document_types() {
             let document_type = document_type.as_ref();
             let type_entries = u64::from(!document_type.index_only())
+                + u64::from(
+                    document_type.documents_keep_history()
+                        && uses_current_document_history_layout(platform_version)
+                            .expect("supported history layout"),
+                )
                 + document_type.index_structure().sub_levels().len() as u64;
             for seed in 0..=100u64 {
                 let mut document = document_type
@@ -405,6 +468,312 @@ fn note_document(contract: &DataContract) -> Document {
     document.set("code", Value::Text("n-1".to_string()));
     document.set("text", Value::Text("a note about a trip".to_string()));
     document
+}
+
+#[test]
+fn should_price_fresh_creates_with_the_lifecycle_insert_generation() {
+    let version = PlatformVersion::latest();
+    let mut previous = version.clone();
+    previous
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_for_contract_operations = 1;
+    let mut unsupported = version.clone();
+    unsupported
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_for_contract_operations = 3;
+    assert!(matches!(
+        check_mirrored_method_versions(&unsupported),
+        Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            received: 3,
+            ..
+        }))
+    ));
+
+    let mut unsupported_costs = Vec::new();
+    for case in ["ordinary", "history", "ttl", "derived"] {
+        let mut schema = note_schema();
+        match case {
+            "history" => schema
+                .insert("documentsKeepHistory".into(), true.into())
+                .unwrap(),
+            "ttl" => {
+                schema.insert("ttl".into(), 86_400u32.into()).unwrap();
+                schema
+                    .insert(
+                        "required".into(),
+                        platform_value!(["$createdAt", "tag", "code", "text"]),
+                    )
+                    .unwrap();
+            }
+            "derived" => {
+                schema = platform_value!({
+                    "type": "object", "documentsMutable": false, "canBeDeleted": true,
+                    "properties": {
+                        "quoteId": {
+                            "type": "array", "byteArray": true,
+                            "minItems": 32, "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {"type": "permanentDocument", "documentType": "post"},
+                            "position": 0
+                        }
+                    },
+                    "indices": [{"name": "byQuotedOwner", "properties": [{"quoteId.$ownerId": "asc"}]}],
+                    "required": ["quoteId"], "additionalProperties": false
+                });
+            }
+            _ => {}
+        }
+        let contract = contract_with(platform_value!({
+            "note": schema,
+            "post": {
+                "type": "object", "documentsMutable": false, "canBeDeleted": false,
+                "properties": {"title": {"type": "string", "maxLength": 20, "position": 0}},
+                "additionalProperties": false
+            }
+        }));
+        let note = contract.document_type_for_name("note").unwrap();
+        let post_type = contract.document_type_for_name("post").unwrap();
+        let mut post = post_type.random_document(Some(7), version).unwrap();
+        post.set_id([5; 32].into());
+        let mut document = note.random_document(Some(1), version).unwrap();
+        document.set_revision(Some(1));
+        document.set_created_at(Some(1_000));
+        if case == "derived" {
+            document.set("quoteId", Value::Identifier(post.id().to_buffer()));
+        }
+        let mut priced_document = document.clone();
+        if case == "derived" {
+            priced_document.properties_mut().insert(
+                "quoteId.$ownerId".into(),
+                Value::Identifier(post.owner_id().to_buffer()),
+            );
+        }
+        let assumptions = CostAssumptions::new(version);
+        let previous_cost =
+            document_create_cost(&contract, note, &priced_document, &assumptions, &previous)
+                .unwrap();
+        let current_cost =
+            document_create_cost(&contract, note, &priced_document, &assumptions, version);
+        match current_cost {
+            Ok(cost) => assert_eq!(cost.to_value(), previous_cost.to_value(), "{case}"),
+            Err(error) => unsupported_costs.push(format!("{case}: {error}")),
+        }
+
+        let mut actual = Vec::new();
+        for insert_version in [&previous, version] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    version,
+                )
+                .unwrap();
+            if case == "derived" {
+                insert(&drive, &contract, post_type, &post).unwrap();
+            }
+            let fee = insert_at_version(&drive, &contract, note, &document, 1_000, insert_version)
+                .unwrap();
+            assert!(element(
+                &drive,
+                &contract,
+                "note",
+                &[vec![0]],
+                document.id().as_slice()
+            )
+            .is_some());
+            actual.push((fee.storage_fee, fee.processing_fee));
+        }
+        let estimated_processing = previous_cost.processing_credits().new_values;
+        let estimated_writes = previous_cost
+            .processing
+            .iter()
+            .find(|part| part.code == "writes")
+            .unwrap()
+            .credits
+            .new_values;
+        println!(
+            "CREATE_COST {case} estimated_storage={} estimated_processing={estimated_processing} estimated_writes={estimated_writes} actual_insert1={:?} actual_insert2={:?}",
+            previous_cost.storage_credits.new_values, actual[0], actual[1]
+        );
+        assert_eq!(
+            actual[0], actual[1],
+            "{case}: fresh insert fees must be unchanged"
+        );
+        assert_eq!(
+            previous_cost.storage_credits.new_values, actual[1].0,
+            "{case}"
+        );
+        assert!(
+            estimated_processing >= actual[1].1,
+            "{case}: processing must not be undercounted"
+        );
+    }
+    assert!(
+        unsupported_costs.is_empty(),
+        "the current insert generation must have a client cost: {unsupported_costs:?}"
+    );
+}
+
+#[test]
+fn should_match_applied_delete_refunds_without_refunding_retained_history() {
+    let latest = PlatformVersion::latest();
+    let mut mismatches = Vec::new();
+    for (version, keeps_history) in [
+        (PlatformVersion::get(14).unwrap(), false),
+        (latest, false),
+        (latest, true),
+    ] {
+        let mut schema = note_schema();
+        schema
+            .insert("documentsKeepHistory".into(), keeps_history.into())
+            .unwrap();
+        let contract = contract_with(platform_value!({"note": schema}));
+        let note = contract.document_type_for_name("note").unwrap();
+        let document = note_document(&contract);
+        let cost = document_create_cost(
+            &contract,
+            note,
+            &document,
+            &CostAssumptions::new(version),
+            version,
+        )
+        .unwrap();
+        println!(
+            "DELETE_REFUND pv={} history={keeps_history} same_epoch={:?} after_one_year={:?}",
+            version.protocol_version, cost.refund_same_epoch, cost.refund_after_one_year
+        );
+        if !keeps_history {
+            assert_eq!(
+                cost.refund_same_epoch,
+                Some(Scenarios {
+                    new_values: 54_929_132,
+                    known_values: 33_976_675,
+                })
+            );
+            assert_eq!(
+                cost.refund_after_one_year,
+                Some(Scenarios {
+                    new_values: 52_181_962,
+                    known_values: 32_277_376,
+                })
+            );
+        }
+        if keeps_history {
+            let released = PlatformVersion::get(14).unwrap();
+            let legacy_cost = document_create_cost(
+                &contract,
+                note,
+                &document,
+                &CostAssumptions::new(released),
+                released,
+            )
+            .unwrap();
+            assert_eq!(
+                legacy_cost.refund_same_epoch,
+                Some(Scenarios {
+                    new_values: 53_796_789,
+                    known_values: 32_843_893,
+                })
+            );
+            assert_eq!(
+                legacy_cost.refund_after_one_year,
+                Some(Scenarios {
+                    new_values: 51_106_242,
+                    known_values: 31_201_257,
+                })
+            );
+            println!(
+                "DELETE_REFUND legacy_history_pv14 same_epoch={:?} after_one_year={:?}",
+                legacy_cost.refund_same_epoch, legacy_cost.refund_after_one_year
+            );
+        }
+        for (epochs_later, expected) in [
+            (0, cost.refund_same_epoch.unwrap().new_values),
+            (
+                DEFAULT_EPOCHS_PER_ERA,
+                cost.refund_after_one_year.unwrap().new_values,
+            ),
+        ] {
+            let drive = setup_drive_with_initial_state_structure(Some(version));
+            drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    version,
+                )
+                .unwrap();
+            insert_at_version(&drive, &contract, note, &document, 0, version).unwrap();
+            let block = BlockInfo {
+                epoch: Epoch::new(epochs_later).unwrap(),
+                ..BlockInfo::default_with_time(2_000)
+            };
+            let fee = drive
+                .delete_document_for_contract(
+                    document.id(),
+                    &contract,
+                    "note",
+                    block,
+                    true,
+                    None,
+                    version,
+                )
+                .unwrap();
+            let actual: u64 = fee
+                .fee_refunds
+                .0
+                .values()
+                .flat_map(|epochs| epochs.values())
+                .sum();
+            assert!(element(
+                &drive,
+                &contract,
+                "note",
+                &[vec![0]],
+                document.id().as_slice()
+            )
+            .is_none());
+            if keeps_history {
+                assert!(element(
+                    &drive,
+                    &contract,
+                    "note",
+                    &[vec![2]],
+                    document.id().as_slice()
+                )
+                .is_some());
+            }
+            println!(
+                "DELETE_REFUND pv={} history={keeps_history} epochs_later={epochs_later} estimated={expected} actual={actual}",
+                version.protocol_version
+            );
+            if expected != actual {
+                mismatches.push((
+                    version.protocol_version,
+                    keeps_history,
+                    epochs_later,
+                    expected,
+                    actual,
+                ));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "delete refund must match removed bytes: {mismatches:?}"
+    );
 }
 
 #[test]

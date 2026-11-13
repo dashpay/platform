@@ -6,25 +6,146 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dash_context_provider::{ContextProvider, ContextProviderError};
 use drive_proof_verifier::FromProof;
 
+/// How verifying a response, with quorum keys fetched as needed, ended without a result.
+pub(crate) enum KeyFetchFailure {
+    /// The verifier refused the response for a reason of its own. The caller says what
+    /// that means for the node that sent it.
+    Refused(Box<drive_proof_verifier::Error>),
+    /// Getting a quorum key decided the outcome. The error is final.
+    Decided(Box<Error>),
+}
+
+/// Run `verify` against `provider`, fetching the key of a quorum the provider has not
+/// cached.
+///
+/// Proof verification is synchronous, so a provider that caches quorum keys cannot fetch
+/// a missing one while it runs. When `verify` fails only because the provider has no key
+/// for a quorum the response names, the provider is asked to fetch it
+/// ([`ContextProvider::fetch_quorum_public_key`]) and `verify` runs again on the same
+/// response, signatures included. No request is sent again.
+///
+/// A response can name several quorums, as a page of blocks does when the validator set
+/// rotated within it, and the same quorum at several Core heights. A provider may hold a
+/// fetched key only for the Core heights near the one it was fetched for, so a quorum is
+/// fetched once at most for each Core height it is named at. `max_fetches` bounds how many
+/// fetches there are: a response that needs more is refused with the verifier's error.
+///
+/// What the provider's source said decides the result:
+/// * the key: the result of the next verification;
+/// * the quorum is absent: the original, retryable error, so the node that named the
+///   quorum is banned and the request moves on;
+/// * no answer: [`ContextProviderError::QuorumSourceUnavailable`]. It is not retryable,
+///   so the node is not banned for the source's failure; [`crate::sync::retry`] only
+///   steps over it briefly to ask another one;
+/// * nothing, because the provider cannot fetch: the original error.
+pub(crate) async fn verify_fetching_quorum_keys<T>(
+    provider: &dyn ContextProvider,
+    max_fetches: usize,
+    verify: impl Fn() -> Result<T, drive_proof_verifier::Error>,
+) -> Result<T, KeyFetchFailure> {
+    // The quorum type, quorum hash and Core height of each fetch that returned a key
+    let mut fetched: Vec<(u32, [u8; 32], u32)> = Vec::new();
+    loop {
+        let missing = match verify() {
+            Ok(verified) => return Ok(verified),
+            Err(error) => error,
+        };
+        let unavailable = |quorum_type: u32,
+                           quorum_hash: [u8; 32],
+                           core_chain_locked_height: u32,
+                           reason: String| {
+            tracing::warn!(
+                quorum_type,
+                quorum_hash = %hex::encode(quorum_hash),
+                core_chain_locked_height,
+                %reason,
+                "could not get the key of the quorum a proof names"
+            );
+            KeyFetchFailure::Decided(Box::new(
+                ContextProviderError::QuorumSourceUnavailable(reason).into(),
+            ))
+        };
+        let (quorum_type, quorum_hash, core_chain_locked_height) = match &missing {
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+                error,
+            } => {
+                // The provider broke its contract, for example by not caching the key it
+                // returned. The node is not to blame for that. A miss at another Core
+                // height is no such breach: the fetched key may not be served there.
+                if fetched.contains(&(*quorum_type, *quorum_hash, *core_chain_locked_height)) {
+                    return Err(unavailable(
+                        *quorum_type,
+                        *quorum_hash,
+                        *core_chain_locked_height,
+                        format!(
+                            "the provider fetched the key but its lookup still misses it: {error}"
+                        ),
+                    ));
+                }
+                (*quorum_type, *quorum_hash, *core_chain_locked_height)
+            }
+            drive_proof_verifier::Error::InvalidPublicKey { .. } => {
+                return Err(match fetched.last() {
+                    Some((quorum_type, quorum_hash, core_chain_locked_height)) => unavailable(
+                        *quorum_type,
+                        *quorum_hash,
+                        *core_chain_locked_height,
+                        format!("the provider supplied an unusable quorum key: {missing}"),
+                    ),
+                    None => KeyFetchFailure::Refused(Box::new(missing)),
+                });
+            }
+            _ => return Err(KeyFetchFailure::Refused(Box::new(missing))),
+        };
+        if fetched.len() >= max_fetches {
+            return Err(KeyFetchFailure::Decided(Box::new(missing.into())));
+        }
+        let Some(fetch) =
+            provider.fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        else {
+            return Err(KeyFetchFailure::Decided(Box::new(missing.into())));
+        };
+
+        match fetch.await {
+            Ok(Some(_)) => fetched.push((quorum_type, quorum_hash, core_chain_locked_height)),
+            Ok(None) => {
+                tracing::warn!(
+                    quorum_type,
+                    quorum_hash = %hex::encode(quorum_hash),
+                    core_chain_locked_height,
+                    "proof names a quorum the provider's quorum source does not know"
+                );
+                // A fresh answer from the provider's source supersedes the
+                // initial lookup's failure: the node named a quorum that
+                // source does not know.
+                return Err(KeyFetchFailure::Decided(Box::new(Error::Proof(missing))));
+            }
+            Err(ContextProviderError::QuorumSourceUnavailable(reason)) => {
+                return Err(unavailable(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                    reason,
+                ));
+            }
+            Err(error) => {
+                return Err(unavailable(
+                    quorum_type,
+                    quorum_hash,
+                    core_chain_locked_height,
+                    error.to_string(),
+                ));
+            }
+        }
+    }
+}
+
 impl Sdk {
     /// Verify `response` against `provider`, fetching the key of a quorum the
-    /// provider has not cached.
-    ///
-    /// Proof verification is synchronous, so a provider that caches quorum
-    /// keys cannot fetch a missing one while it runs. When verification fails
-    /// only because the provider has no key for the quorum the proof names,
-    /// the provider is asked to fetch it
-    /// ([`ContextProvider::fetch_quorum_public_key`]) and the same response is
-    /// verified again, signature included. No request is sent again.
-    ///
-    /// What the provider's trusted source said decides the result:
-    /// * the key: the result of the second verification;
-    /// * the quorum is absent: the original, retryable error, so the node that
-    ///   named the quorum is banned and the request moves on;
-    /// * no answer: [`ContextProviderError::QuorumSourceUnavailable`]. It is
-    ///   not retryable, so the node is not banned for the source's failure;
-    ///   [`crate::sync::retry`] only steps over it briefly to ask another one;
-    /// * nothing, because the provider cannot fetch: the original error.
+    /// provider has not cached ([`verify_fetching_quorum_keys`]).
     ///
     /// A verified response's metadata is then accepted
     /// ([`Sdk::accept_verified_metadata`]). One that waited for a fetch is
@@ -41,94 +162,33 @@ impl Sdk {
         O::Request: Clone,
         O::Response: Clone + ProofResponseMetadata,
     {
-        // Both verifications use the same protocol version. The request and
+        // Every verification uses the same protocol version. The request and
         // response are copied on every call so a second verification can
         // follow a fetch; the copy is small next to proof verification itself.
         let metadata = response.response_metadata()?.clone();
         let version = verifier_version(self.version(), metadata.protocol_version);
         let arrival = self.metadata_arrival();
-        let missing = match O::maybe_from_proof_with_metadata(
-            request.clone(),
-            response.clone(),
-            self.network,
-            version,
-            provider,
-        ) {
-            Ok(verified) => {
-                self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
-                return Ok(verified);
-            }
-            Err(error) => error,
-        };
-        let drive_proof_verifier::Error::QuorumKeyUnavailable {
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height,
-            ..
-        } = missing
-        else {
-            return Err(self.classify_verifier_error(
-                missing,
-                method_name,
-                Some(&metadata),
-                arrival,
-            ));
-        };
-        let Some(fetch) =
-            provider.fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
-        else {
-            return Err(missing.into());
-        };
-        let unavailable = |reason: String| {
-            tracing::warn!(
-                quorum_type,
-                quorum_hash = %hex::encode(quorum_hash),
-                core_chain_locked_height,
-                %reason,
-                "could not get the key of the quorum a proof names"
-            );
-            Err(ContextProviderError::QuorumSourceUnavailable(reason).into())
-        };
-
-        match fetch.await {
-            Ok(Some(_)) => match O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
+        let network = self.network;
+        let verify = move || {
+            O::maybe_from_proof_with_metadata(
+                request.clone(),
+                response.clone(),
+                network,
                 version,
                 provider,
-            ) {
-                // The provider broke its contract, for example by not caching
-                // the key it returned. The node is not to blame for that.
-                Err(drive_proof_verifier::Error::QuorumKeyUnavailable { error, .. }) => {
-                    unavailable(format!(
-                        "the provider fetched the key but its lookup still misses it: {error}"
-                    ))
-                }
-                Err(error @ drive_proof_verifier::Error::InvalidPublicKey { .. }) => unavailable(
-                    format!("the provider supplied an unusable quorum key: {error}"),
-                ),
-                Ok(verified) => {
-                    self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
-                    Ok(verified)
-                }
-                Err(error) => {
-                    Err(self.classify_verifier_error(error, method_name, Some(&metadata), arrival))
-                }
-            },
-            Ok(None) => {
-                tracing::warn!(
-                    quorum_type,
-                    quorum_hash = %hex::encode(quorum_hash),
-                    core_chain_locked_height,
-                    "proof names a quorum the trusted quorum source does not list"
-                );
-                // A fresh trusted answer supersedes the initial lookup's
-                // failure: the node named a quorum the source does not know.
-                Err(Error::Proof(missing))
+            )
+        };
+
+        // One quorum signs a response of this kind
+        match verify_fetching_quorum_keys(provider, 1, verify).await {
+            Ok(verified) => {
+                self.accept_verified_metadata(method_name, &verified.1, Some(arrival))?;
+                Ok(verified)
             }
-            Err(ContextProviderError::QuorumSourceUnavailable(reason)) => unavailable(reason),
-            Err(error) => unavailable(error.to_string()),
+            Err(KeyFetchFailure::Refused(error)) => {
+                Err(self.classify_verifier_error(*error, method_name, Some(&metadata), arrival))
+            }
+            Err(KeyFetchFailure::Decided(error)) => Err(*error),
         }
     }
 }
@@ -153,7 +213,9 @@ mod tests {
         GetEpochsInfoRequest, GetEpochsInfoResponse, Proof, ResponseMetadata,
         WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
     };
-    use dash_context_provider::{ContextProviderError, QuorumKeyFuture};
+    use dash_context_provider::{
+        AdaptiveContextProvider, ContextProviderError, QuorumKeyFuture, QuorumKeySource,
+    };
     use dpp::block::extended_epoch_info::ExtendedEpochInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::TokenConfiguration;
@@ -715,6 +777,9 @@ mod tests {
         finish_fetch_after_ms: AtomicU64,
         /// Earliest synchronous lookup completion time, including refetch.
         finish_lookup_after_ms: AtomicU64,
+        /// Run once, the first time the SDK asks for a fetch, before the inner
+        /// fetch starts.
+        on_fetch: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
 
     impl Counting {
@@ -727,6 +792,7 @@ mod tests {
                 raise_on_fetch: std::sync::Mutex::new(None),
                 finish_fetch_after_ms: AtomicU64::new(0),
                 finish_lookup_after_ms: AtomicU64::new(0),
+                on_fetch: std::sync::Mutex::new(None),
             })
         }
     }
@@ -780,6 +846,10 @@ mod tests {
                 Some((quorum_type, quorum_hash, core_chain_locked_height));
             if let Some((mark, height)) = self.raise_on_fetch.lock().expect("raise lock").as_ref() {
                 mark.fetch_max(*height, Ordering::SeqCst);
+            }
+            let on_fetch = self.on_fetch.lock().expect("hook lock").take();
+            if let Some(on_fetch) = on_fetch {
+                on_fetch();
             }
             let fetch = self.inner.fetch_quorum_public_key(
                 quorum_type,
@@ -893,6 +963,188 @@ mod tests {
         let mut asked = service.join().expect("quorum service");
         asked.sort();
         assert_eq!(asked, ["/previous", "/quorums"]);
+    }
+
+    /// An SDK in Auto with SPV synced still verifies a proof signed by a
+    /// quorum SPV has not caught up with yet, with the key the trusted
+    /// service lists: the node that sent it is honest, and would otherwise
+    /// be banned for SPV lagging behind.
+    #[tokio::test]
+    async fn should_verify_a_proof_whose_quorum_spv_has_not_seen_with_the_trusted_key() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let trusted = Arc::new(trusted_provider(base_url));
+        let adaptive = AdaptiveContextProvider::new(
+            Arc::clone(&trusted) as Arc<dyn ContextProvider>,
+            trusted.local_resolver(),
+            Network::Regtest,
+        )
+        .expect("a trusted provider of the same network");
+        let spv_client = Arc::new(SpvWithoutTheQuorum::default());
+        let spv = adaptive
+            .spv_source_slot()
+            .expect("an SPV slot")
+            .claim()
+            .expect("an empty slot");
+        spv.publish(
+            Arc::clone(&spv_client) as Arc<dyn ContextProvider>,
+            Arc::new(|| Ok(true)),
+        );
+        assert_eq!(
+            adaptive.quorum_source(),
+            Some(QuorumKeySource::Spv),
+            "a synced SPV client is asked first"
+        );
+        let provider = Counting::new(adaptive);
+        let sdk = network_sdk(Arc::clone(&provider));
+        let (request, response) = recorded_epoch_fetch();
+
+        let epoch = verify(&sdk, request, response)
+            .await
+            .expect("the trusted key verifies the proof SPV cannot");
+
+        assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(
+            spv_client.lookups.load(Ordering::SeqCst),
+            2,
+            "SPV is asked first, before and after the fetch"
+        );
+        assert_eq!(
+            provider.fetches.load(Ordering::SeqCst),
+            1,
+            "the key SPV lacks is fetched"
+        );
+        let mut asked = service.join().expect("quorum service");
+        asked.sort();
+        assert_eq!(
+            asked,
+            ["/previous", "/quorums"],
+            "the key comes from the trusted service"
+        );
+    }
+
+    /// A synced SPV client that does not hold the quorum a proof names: it
+    /// answers every lookup with the error platform-wallet's SPV source
+    /// reports for a missing quorum, and counts them.
+    #[derive(Default)]
+    struct SpvWithoutTheQuorum {
+        lookups: AtomicUsize,
+    }
+
+    impl ContextProvider for SpvWithoutTheQuorum {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            self.lookups.fetch_add(1, Ordering::SeqCst);
+            Err(ContextProviderError::Generic(
+                "SPV error: quorum not found".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// A provider set while a verification fetches a missing quorum key does
+    /// not take that verification over: the response is verified again with
+    /// the provider the verification started with, whose cache now holds the
+    /// key, and only verifications that start later use the new provider.
+    #[tokio::test]
+    async fn should_finish_a_verification_with_the_provider_it_started_with() {
+        let (base_url, service) = quorum_service(vec![
+            (
+                "/quorums",
+                200,
+                current_list(SIGNING_QUORUM_HASH, &signing_quorum_key()),
+            ),
+            ("/previous", 200, empty_previous_list()),
+        ]);
+        let provider = Counting::new(trusted_provider(base_url));
+        let sdk = network_sdk(Arc::clone(&provider));
+        let replacement = Counting::new(CannotFetch);
+        let setter = sdk.clone();
+        let installed = Arc::clone(&replacement);
+        *provider.on_fetch.lock().expect("hook lock") = Some(Box::new(move || {
+            setter
+                .set_context_provider(installed)
+                .expect("the replacement states no requirements");
+        }));
+        let (request, response) = recorded_epoch_fetch();
+
+        let epoch = verify(&sdk, request, response.clone())
+            .await
+            .expect("the provider that fetched the key verifies the proof");
+
+        assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+        assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            provider.lookups.load(Ordering::SeqCst),
+            2,
+            "both verifications of the response ask the provider they started with"
+        );
+        assert_eq!(replacement.lookups.load(Ordering::SeqCst), 0);
+        assert_eq!(replacement.fetches.load(Ordering::SeqCst), 0);
+        service.join().expect("quorum service");
+
+        let error = verify(&sdk, request, response)
+            .await
+            .expect_err("the replacement has no key");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
+            ),
+            "got {error:?}"
+        );
+        assert_eq!(
+            replacement.lookups.load(Ordering::SeqCst),
+            1,
+            "a verification that starts after the change uses the new provider"
+        );
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 2);
+    }
+
+    /// A mock SDK verifies an answer it holds no expectation for through the
+    /// clone of the SDK it took when it was built, which verifies with a
+    /// provider set afterwards.
+    #[tokio::test]
+    async fn should_verify_a_mock_answer_with_a_provider_set_after_build() {
+        let provider = Counting::new(CannotFetch);
+        let sdk = SdkBuilder::new_mock().build().expect("mock sdk");
+        sdk.set_context_provider(Arc::clone(&provider))
+            .expect("the test provider states no requirements");
+        let (request, response) = recorded_epoch_fetch();
+
+        verify(&sdk, request, response)
+            .await
+            .expect_err("the provider has no key");
+
+        assert_eq!(provider.lookups.load(Ordering::SeqCst), 1);
     }
 
     /// The second verification is a full one: a key that arrived does not

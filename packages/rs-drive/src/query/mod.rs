@@ -35,7 +35,7 @@ pub use {
     // (`DocumentCountMode`). Available under either `server`
     // (executor input) or `verify` (proof-decode input).
     drive_document_count_query::{
-        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+        CountMode, CountProofPlan, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
     // Having-range verifier-shareable types — same split as ranked:
     // `DocumentHavingMode` + `AxisRangeBounds` to re-run the same
@@ -59,7 +59,7 @@ pub use {
     // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
     // are shape inputs the verifier needs to rebuild the path query.
     // Parallels the count-side exports above.
-    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
+    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode, SumProofPlan},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
@@ -175,7 +175,11 @@ use dpp::version::FeatureVersion;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod canonicalize;
 #[cfg(any(feature = "server", feature = "verify"))]
+mod primary_key_path_query;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use canonicalize::{key_array_element_clauses, validate_and_canonicalize_where_clauses};
+#[cfg(any(feature = "server", feature = "verify"))]
+use primary_key_path_query::{primary_key_path_query_target, PrimaryKeyPathQueryTarget};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -210,6 +214,16 @@ pub mod vote_poll_contestant_votes_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by end date query
 pub mod vote_polls_by_end_date_query;
+
+/// A page of a historical document's retained revisions
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod document_history_drive_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use document_history_drive_query::{
+    DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult, DocumentHistoryEntry,
+    DocumentHistoryFilter, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+    DocumentHistoryState,
+};
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Vote polls by document type query
@@ -279,6 +293,12 @@ pub mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
+
+/// How a `SELECT COUNT` / `SUM` / `AVG` request executes — one of the
+/// grouped modes, ranked or having-range — and the grouped modes' limit
+/// contract, decided from the request's shape alone.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod aggregate_routing;
 
 /// A query to count documents using CountTree elements
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1700,6 +1720,32 @@ pub fn refuse_a_range_total_through_a_ranked_index(
     Ok(())
 }
 
+/// Refuses more than one window selection: a transform's source must be its
+/// index's first property, so one index buckets exactly one field and no
+/// index serves two resolved windows. Serving such a query would need a join
+/// across two bucketed indexes, which the engine has no shape for.
+/// `query_kind` names the query in the refusal ("query", "ranked query",
+/// "having-range query").
+///
+/// The documents index pick, the ranked dispatcher and the having dispatcher
+/// call it before they route a request, and a client calls it before sending
+/// one, so all of them refuse two windows by one rule in one text, which
+/// differs only by the query kind it names.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn refuse_several_window_selections(
+    resolved_time_ranges: &[ResolvedTimeRange],
+    query_kind: &'static str,
+) -> Result<(), Error> {
+    if resolved_time_ranges.len() > 1 {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is supported \
+             per {query_kind}; this one resolves {resolved_time_ranges:?}, and no single \
+             index can bucket more than one field"
+        ))));
+    }
+    Ok(())
+}
+
 /// Rejects a query whose resolution provenance and clause shapes disagree:
 /// every field in `resolved_time_ranges` must appear in the where
 /// clauses as exactly one `Equal` clause — the only shape
@@ -1947,7 +1993,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// (page-only) surface, which would otherwise silently ignore them —
     /// on the verify side that would mean reporting the composition
     /// verified when only the page was.
-    pub(crate) fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
+    pub fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
         if self.sub_queries.is_empty() {
             return Ok(());
         }
@@ -2548,6 +2594,26 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
+    /// The cursor lookup for the protocol 15 layout, where a keep-history
+    /// document's primary key tree entry points at its current revision: the
+    /// cursor is always the document id in the primary key tree.
+    pub fn start_at_document_path_and_key_v1(
+        &self,
+        starts_at: &[u8; 32],
+    ) -> (Vec<Vec<u8>>, Vec<u8>) {
+        let document_holding_path = self
+            .contract
+            .documents_primary_key_path(self.document_type.name().as_str());
+        (
+            document_holding_path
+                .into_iter()
+                .map(|key| key.to_vec())
+                .collect::<Vec<_>>(),
+            starts_at.to_vec(),
+        )
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
     /// Versioned preflight over the shape of the query's where clauses, run
     /// by the server and the verifier alike before any lowering.
     ///
@@ -2727,6 +2793,16 @@ impl<'a> DriveDocumentQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_where_clause_shape(platform_version)?;
         self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
@@ -2786,7 +2862,13 @@ impl<'a> DriveDocumentQuery<'a> {
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    self.start_at_document_path_and_key(starts_at);
+                    if primary_key_path_query_target(platform_version)?
+                        == PrimaryKeyPathQueryTarget::CurrentDocument
+                    {
+                        self.start_at_document_path_and_key_v1(starts_at)
+                    } else {
+                        self.start_at_document_path_and_key(starts_at)
+                    };
                 let start_at_document = drive
                     .grove_get(
                         start_at_document_path.as_slice().into(),
@@ -2968,6 +3050,16 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<Document>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.document_type.documents_keep_history()
+            && self.block_time_ms.is_some()
+            && primary_key_path_query_target(platform_version)?
+                == PrimaryKeyPathQueryTarget::CurrentDocument
+        {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "point-in-time reads are unavailable for history-keeping document types"
+                    .to_string(),
+            )));
+        }
         self.validate_where_clause_shape(platform_version)?;
         self.refuse_a_private_document_type()?;
         // indexOnly documents have no primary-key tree: nothing is ever
@@ -3216,6 +3308,8 @@ impl<'a> DriveDocumentQuery<'a> {
         starts_at_document: Option<(Document, bool)>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        let uses_current_document = primary_key_path_query_target(platform_version)?
+            == PrimaryKeyPathQueryTarget::CurrentDocument;
         let mut path = document_type_path;
 
         // Add primary key ($id) subtree
@@ -3230,7 +3324,7 @@ impl<'a> DriveDocumentQuery<'a> {
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history() {
+            if self.document_type.documents_keep_history() && !uses_current_document {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -3309,7 +3403,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -3350,7 +3444,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.documents_keep_history() && !uses_current_document {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -3410,19 +3504,9 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<BestIndexOutcome<'_>, Error> {
-        // A transform's source must be its index's first property, so one
-        // index buckets exactly one field and no index can carry two resolved
-        // equalities. Serving such a query would need a join across two
-        // bucketed indexes, which the engine has no shape for. This runs
-        // before any routing so the multiple-`In` path cannot bypass it.
-        if self.resolved_time_ranges.len() > 1 {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
-                 supported per query; this one resolves {:?}, and no single index can bucket \
-                 more than one field",
-                self.resolved_time_ranges
-            ))));
-        }
+        // No index can carry two resolved equalities. This runs before any
+        // routing so the multiple-`In` path cannot bypass it.
+        refuse_several_window_selections(&self.resolved_time_ranges, "query")?;
 
         // One shared source-shape guard for every selection route — see its
         // doc for the contract. Running it before routing keeps the single-
@@ -3752,13 +3836,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3809,13 +3891,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -3868,13 +3948,11 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = Drive::calculate_fee(
+            let fee_result = drive.calculate_fee(
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
-                drive.config.epochs_per_era,
                 platform_version,
-                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -4147,6 +4225,12 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(all(test, feature = "server"))]
 pub(crate) mod unsigned_index_key_order_tests;
 
+#[cfg(all(test, feature = "server"))]
+mod window_selection_cardinality_tests;
+
+#[cfg(all(test, feature = "server"))]
+mod proof_plan_equivalence_tests;
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
@@ -4164,6 +4248,8 @@ mod tests {
     use std::option::Option::None;
 
     use crate::drive::Drive;
+    use crate::error::{drive::DriveError, Error};
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::query::{
         DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
     };
@@ -4215,6 +4301,116 @@ mod tests {
             .expect("expected to apply contract successfully");
 
         (drive, contract)
+    }
+
+    fn keep_history_contract() -> DataContract {
+        json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected history contract")
+    }
+
+    fn keep_history_primary_query(contract: &DataContract) -> DriveDocumentQuery<'_> {
+        DriveDocumentQuery {
+            contract,
+            document_type: contract
+                .document_type_for_name("person")
+                .expect("person document type"),
+            internal_clauses: InternalClauses::default(),
+            offset: None,
+            limit: Some(10),
+            order_by: IndexMap::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
+        }
+    }
+
+    #[test]
+    fn should_select_keep_history_primary_path_by_query_version() {
+        let contract = keep_history_contract();
+        let query = keep_history_primary_query(&contract);
+        let legacy = query
+            .construct_path_query(None, PlatformVersion::get(14).expect("protocol 14"))
+            .expect("legacy query");
+        assert_eq!(
+            legacy.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+
+        let current = query
+            .construct_path_query(None, PlatformVersion::get(15).expect("protocol 15"))
+            .expect("protocol 15 query");
+        assert_eq!(
+            current.query.query.default_subquery_branch.subquery_path,
+            None
+        );
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_pure_query() {
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/family/family-contract.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .expect("expected non-history contract");
+        let query = keep_history_primary_query(&contract);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 2;
+
+        let error = query
+            .construct_path_query(None, &platform_version)
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
+        ));
+    }
+
+    #[test]
+    fn should_reject_unknown_primary_key_path_query_version_in_stateful_cursor_lookup() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = keep_history_contract();
+        let mut query = keep_history_primary_query(&contract);
+        query.start_at = Some([3; 32]);
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .document
+            .document_history_storage_layout = 2;
+        let mut operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let error = query
+            .construct_path_query_operations(
+                &drive,
+                false,
+                None,
+                &mut operations,
+                &platform_version,
+            )
+            .expect_err("unknown path-query versions must fail closed");
+        assert!(matches!(
+            error,
+            Error::Drive(DriveError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received: 2,
+            }) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
+        ));
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
@@ -5676,7 +5872,6 @@ mod tests {
                             true,
                             None,
                             platform_version,
-                            None,
                         )
                         .expect("expected to insert a tip");
                     tip.id()
@@ -5850,3 +6045,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod grove_version_compatibility_tests;

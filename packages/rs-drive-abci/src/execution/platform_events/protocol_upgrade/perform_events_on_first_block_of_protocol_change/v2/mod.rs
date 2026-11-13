@@ -1,12 +1,16 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Empties the contract cache, then runs the protocol change events of v1.
     ///
     /// A cached contract can carry the fee of the read that cached it, calculated under the fee
@@ -22,6 +26,7 @@ impl<C> Platform<C> {
     pub(super) fn perform_events_on_first_block_of_protocol_change_v2(
         &self,
         platform_state: &PlatformState,
+        block_platform_state: &mut PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
@@ -31,6 +36,7 @@ impl<C> Platform<C> {
 
         self.perform_events_on_first_block_of_protocol_change_v1(
             platform_state,
+            block_platform_state,
             block_info,
             transaction,
             previous_protocol_version,

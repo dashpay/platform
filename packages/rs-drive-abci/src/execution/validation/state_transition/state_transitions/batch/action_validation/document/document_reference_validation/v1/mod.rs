@@ -21,6 +21,7 @@ use dpp::data_contract::document_type::{
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::property_constraints::{
     referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
 };
@@ -36,6 +37,9 @@ use dpp::errors::consensus::state::document::referenced_document_preceded_error:
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use dpp::errors::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+use dpp::errors::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -61,9 +65,7 @@ use drive::drive::identity::key::fetch::{
 use drive::query::{TransactionArg, WhereClause, WhereOperator};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
-    ConsumedDocument, ConsumedDocumentRead,
-};
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use std::slice;
@@ -78,23 +80,18 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_document_with_id, fetch_documents_holding_in_order, hash_lookup_key, holds_key_part,
-    BilledLookupKey,
+    fetch_document_through_lookup, fetch_document_with_id, fetch_documents_holding_in_order,
+    hash_lookup_key, holds_key_part, BilledLookupKey,
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::choose_first_scan_budget;
-use drive::util::storage_flags::StorageFlags;
 use crate::execution::validation::state_transition::common::validate_document_not_expired::document_is_expired;
 use crate::platform_types::platform::PlatformStateRef;
 
-mod lookup;
-
-use lookup::fetch_document_with_flags_through_lookup;
-
 /// Versioned, stateful validation of document references using the v1 rules (protocol
 /// version 15): generation 0's, but a `refersTo` lookup of a reference declaring `consume`
-/// reads the document it finds with its stored element's storage flags and keeps that read in
-/// the [`ConsumedDocument`] it records, so the create conversion 1 deletes the document from it
-/// without reading it again. Any other lookup reads as generation 0's does.
+/// keeps the document it finds in the [`ConsumedDocument`] it records, so the create
+/// conversion 1 deletes the document from it without reading it again. Every lookup reads as
+/// generation 0's does.
 ///
 /// It is intended to be called via the higher-level `DocumentReferenceValidation` dispatcher
 /// that selects the version; `deletable_document_reference_target_is_gone` stays generation
@@ -285,9 +282,7 @@ fn validate_document_type_references_v1(
             // A string or byte array property whose value its `findBy` reads in
             // place of an id: as `"."`, filling an index property holding the same
             // kind of value, or revealed into a computed key, a commitment judged
-            // when the document is created only. An unset one is not validated. In
-            // place in generation 0: only the protocol version 14 parser produces
-            // one
+            // when the document is created only. An unset one is not validated
             PropertyReference::Revealed(target) => {
                 let ReferenceHolder::Property(property_path) = holder else {
                     continue;
@@ -333,10 +328,7 @@ fn validate_document_type_references_v1(
                 // stands for the value in the errors; the create's structure
                 // validation refused a value it could not reveal, before any read. A
                 // value read as is has no hash to stand for it, so the errors carry
-                // an all-zero id beside its path. The writer is passed in place in
-                // generation 0, inert before protocol version 14: only meta-schema v3
-                // admits a computed key at all, and the `"$ownerId"` param that reads
-                // the writer
+                // an all-zero id beside its path
                 let (referenced_id, billed_key) = match hash_key {
                     Some((_, key)) => {
                         let Some(billed_key) = hash_lookup_key(
@@ -723,8 +715,7 @@ fn binds_a_changed_property(
 ) -> bool {
     // A lookup with a computed key is judged on a create only: nothing it reads can change,
     // and the commitment it found may be gone. Only a replace asks, which a document type
-    // whose documents are never replaced does not reach. In place in generation 0, reached
-    // from protocol version 14 only, the only version whose parser produces one
+    // whose documents are never replaced does not reach
     if reference_target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
@@ -769,13 +760,20 @@ fn binds_a_changed_property(
         // finds now being the target: an expression holding one is
         // re-validated on every replace through the walk below, and an
         // `ownerRefersTo` one gates every replace on the writer's document
-        // still existing. Reached from protocol version 14 only, the version
-        // whose parser produces it.
+        // still existing.
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => true,
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property, ..
         } => is_changed_field(changed_fields, key_id_property),
+        // A reference naming its target through the referring document binds the
+        // properties it reads the target from: a changed one points the value into another
+        // contract or document type, or names another property for a slot, so the whole
+        // reference is checked again. Kept otherwise, as a permanent or moderated
+        // reference is
+        DocumentPropertyReferenceTarget::DynamicDocument(dynamic) => dynamic
+            .target_properties()
+            .any(|target_property| is_changed_field(changed_fields, target_property)),
         // A list element binds the properties its agreement reads, the
         // `$id` pair's among them: a changed one may name another document,
         // whose list is then checked against every value
@@ -800,19 +798,14 @@ fn binds_a_changed_property(
         // never bring a reference back and stay checked when the reference
         // is written, a create or a replace changing it. A reference the
         // owner requirement brings back is checked whole, as a writer
-        // gate's is. In place in generation 0, reached from protocol version
-        // 14 only: the document create and replace state validations that
-        // call this validation run at that version alone, and only its
-        // parser produces `contractRequirements`
+        // gate's is
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => writer_can_change && contract_requirements.owner.is_some(),
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => false,
-        // In place in generation 0, reached from protocol version 14 only,
-        // the only version whose parser produces an expression. A contract
-        // target is never an operand (the parser combines identity and
-        // document targets only), but the flag is passed down so an operand
-        // is judged as the same target alone
+        // A contract target is never an operand (the parser combines identity
+        // and document targets only), but the flag is passed down so an
+        // operand is judged as the same target alone
         DocumentPropertyReferenceTarget::AnyOf(operands)
         | DocumentPropertyReferenceTarget::AllOf(operands) => operands
             .operands()
@@ -883,11 +876,6 @@ struct RevealedValue<'a> {
 /// read is billed as it is made, those of the operands that failed included.
 /// The recursion is as deep as the expression, which registration keeps
 /// within `SystemLimits::max_reference_expression_depth`.
-///
-/// In place in generation 0, which every table selects: its callers, the
-/// document create and replace state validations, reach it from protocol
-/// version 14 only, and only that version's parser produces an expression, so
-/// every earlier write goes straight to the leaf check it always ran.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_v1(
     contract: &DataContract,
@@ -1125,7 +1113,54 @@ fn validate_reference_target_v1(
         | DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
         | DocumentPropertyReferenceTarget::ModeratedDocument { .. }
-        | DocumentPropertyReferenceTarget::ListElement(_) => {
+        | DocumentPropertyReferenceTarget::ListElement(_)
+        | DocumentPropertyReferenceTarget::DynamicDocument(_) => {
+            // A reference naming its target through the referring document (protocol
+            // version 15) has no declaration in the schema: the document says which
+            // contract and which document type its value points into, and from there it
+            // is checked as a reference by id with no `where`. A document that holds the
+            // reference without saying where it points names nothing that exists
+            let no_agreement = BTreeMap::new();
+            let no_conditions = BTreeMap::new();
+            let named_document_type;
+            let declaration = match reference_target.as_dynamic_document_reference() {
+                Some(dynamic) => {
+                    let named_contract_id = document_data
+                        .get(&dynamic.contract_id_property)
+                        .and_then(|contract_id| contract_id.to_identifier().ok());
+                    let named_type = document_data
+                        .get(&dynamic.document_type_property)
+                        .and_then(|document_type_name| document_type_name.as_text());
+                    let (Some(named_contract_id), Some(named_type)) =
+                        (named_contract_id, named_type)
+                    else {
+                        let missing_id = Identifier::from_bytes(&referenced_id)
+                            .map_err(|e| Error::Protocol(e.into()))?;
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(
+                                ReferencedEntityNotFoundError::new(
+                                    missing_id,
+                                    reference_target.clone(),
+                                    path.to_string(),
+                                ),
+                            )),
+                        ));
+                    };
+                    named_document_type = named_type.to_string();
+                    Some(DocumentReferenceDeclaration {
+                        contract_id: Some(named_contract_id),
+                        document_type_name: &named_document_type,
+                        property_agreement: &no_agreement,
+                        where_conditions: &no_conditions,
+                        // Settled below, once the named type is known: a declaration
+                        // listing both kinds is of the kind the type is
+                        kind: dynamic.kind.checked_as(DocumentReferenceKind::Permanent),
+                        lookup: None,
+                        in_list: None,
+                    })
+                }
+                None => reference_target.as_any_document_reference(),
+            };
             let Some(DocumentReferenceDeclaration {
                 contract_id: referenced_contract_id,
                 document_type_name,
@@ -1134,15 +1169,14 @@ fn validate_reference_target_v1(
                 kind,
                 lookup,
                 in_list: _,
-            }) = reference_target.as_any_document_reference()
+            }) = declaration
             else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "every document reference target carries a document reference declaration",
                 )));
             };
             // A commitment is revealed once, by the create; nothing the lookup reads can
-            // change on a replace. In place in generation 0: only the protocol version 14
-            // parser produces a lookup judged on the create alone
+            // change on a replace
             if !is_create
                 && lookup.is_some_and(|lookup| {
                     lookup.is_checked_on_create_only(document_type.documents_mutable())
@@ -1218,6 +1252,89 @@ fn validate_reference_target_v1(
                 ));
             };
 
+            // What registration checks of a reference naming its target in the schema, a
+            // reference naming it through the referring document meets here, on every
+            // write that checks it: the type is not private, whose documents are encrypted
+            // entries the chain never reads, it is not indexOnly, whose documents are index
+            // entries Drive refuses to fetch by id (the read below would fail the block's
+            // processing of the transition instead of refusing it, paid), and it has the
+            // properties the reference's `documentTypeRequirements` ask for. A slot naming
+            // its property through the referring document reads the name there, and a
+            // slot's `when` is judged against what the type says of each property that
+            // could fill it
+            let kind = match reference_target.as_dynamic_document_reference() {
+                // The kind it declares or, declaring both, a moderated reference into a
+                // moderated type and a permanent one into any other, which the kind check
+                // below refuses for a type whose documents can be deleted
+                Some(dynamic) => dynamic
+                    .kind
+                    .checked_as(referenced_document_type.document_reference_kind()),
+                None => kind,
+            };
+            if let Some(dynamic) = reference_target.as_dynamic_document_reference() {
+                if referenced_document_type.is_private() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypePrivateError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                if referenced_document_type.index_only() {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeIndexOnlyError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+                // Judging the type reads nothing from state, but its work grows with the
+                // type's properties, the slots and their `when` conditions, and a document
+                // may hold many such references: billed by the comparisons it may take,
+                // before it is judged, so a write refused below pays for it too
+                if let Some(requirements) = &dynamic.requirements {
+                    bill_requirement_comparisons(
+                        requirements.comparisons(referenced_document_type),
+                        execution_context,
+                        platform_version,
+                    )?;
+                }
+                // What the named contract lets its elected team do on the type, which a
+                // requirement may ask for (`$electedAbilities`): nothing where the contract
+                // elects no team or leaves the type out of what the team moderates
+                let elected_abilities = referenced_contract
+                    .config()
+                    .moderation()
+                    .and_then(|moderation| moderation.moderators.elected())
+                    .and_then(|elected| elected.moderated_document_types.get(document_type_name));
+                let meets_requirements = dynamic.requirements.as_ref().is_none_or(|requirements| {
+                    requirements.met_by(
+                        referenced_document_type,
+                        elected_abilities,
+                        |referring_property| {
+                            document_data
+                                .get(referring_property)
+                                .and_then(|name| name.as_text())
+                                .map(str::to_string)
+                        },
+                    )
+                });
+                if !meets_requirements {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentTypeRequirementNotMetError::new(
+                            effective_contract_id,
+                            document_type_name.to_string(),
+                            path.to_string(),
+                        )
+                        .into(),
+                    ));
+                }
+            }
+
             // A `permanentDocument` reference admits only document types
             // whose documents never leave state: what could make them leave
             // it is immutable on contract updates and document types can not
@@ -1282,7 +1399,7 @@ fn validate_reference_target_v1(
                     }
                 }
             };
-            let mut looked_up_document: Option<(Document, Option<StorageFlags>)> = None;
+            let mut looked_up_document: Option<Document> = None;
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
@@ -1297,7 +1414,7 @@ fn validate_reference_target_v1(
                             &id_value
                         }
                     };
-                    looked_up_document = fetch_document_with_flags_through_lookup(
+                    looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
@@ -1312,7 +1429,7 @@ fn validate_reference_target_v1(
                         transaction,
                         platform_version,
                     )?;
-                    looked_up_document.as_ref().map(|(document, _)| document)
+                    looked_up_document.as_ref()
                 }
                 (None, Some(document_id)) => fetched_documents.document(
                     effective_contract_id,
@@ -1453,8 +1570,7 @@ fn validate_reference_target_v1(
                     // Two typed arrays, which registration pairs with nothing
                     // else, are equal as lists: the same elements in the same
                     // order, each compared by value, a list either document
-                    // leaves out the empty one. In place in generation 0: a
-                    // pair of lists registers from protocol version 14 only
+                    // leaves out the empty one
                     let lists = typed_array_property(
                         referenced_document_type.flattened_properties(),
                         referenced_property,
@@ -1488,10 +1604,6 @@ fn validate_reference_target_v1(
                             // differing value would be.
                             (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
                         };
-                    // In place in generation 0, which every table selects: a
-                    // `where` only parses from protocol version
-                    // 14 (`apply_property_reference` 0), so before it no
-                    // document type carries a pair to reach this comparison
                     if !referring_value.same_scalar_data(&referenced_value) {
                         return Ok(mismatch());
                     }
@@ -1595,18 +1707,13 @@ fn validate_reference_target_v1(
             // The commitment the reference consumes, recorded once nothing above reads it any
             // more: what the lookup read moves into it, so the create deletes the document from
             // that read without reading it again
-            if let (Some(lookup), Some((document, storage_flags))) =
-                (lookup, looked_up_document.take())
-            {
+            if let (Some(lookup), Some(document)) = (lookup, looked_up_document.take()) {
                 if lookup.consume {
                     consumed_documents.push(ConsumedLookupDocument {
                         document: ConsumedDocument {
                             document_id: document.id(),
                             document_type_name: document_type_name.to_string(),
-                            read: Some(ConsumedDocumentRead {
-                                document,
-                                storage_flags,
-                            }),
+                            read: Some(document),
                         },
                         referenced_id: Identifier::from(referenced_id),
                         reference_target: reference_target.clone(),
@@ -1836,8 +1943,6 @@ fn found_order_bound(found: &Document, property: &str) -> Result<Value, Error> {
 /// documents that are none can make a create cost more but never refuse it. A `found` or a
 /// candidate missing an ordered property, or a `found` missing `among`, are what registration
 /// rules out, so each is an internal error.
-///
-/// In place in generation 0: only the protocol version 14 parser produces a `chooseFirst`.
 #[allow(clippy::too_many_arguments)]
 fn validate_choose_first_v1(
     choose_first: &LookupChooseFirst,
@@ -2056,6 +2161,37 @@ fn bill_where_list_elements(
     Ok(())
 }
 
+/// Bills `comparisons`, what judging a document type against the
+/// `documentTypeRequirements` of a reference naming its target through the
+/// referring document may take (`DocumentTypeRequirements::comparisons`):
+/// `requirement_credits_per_comparison` each, of the fee schedule's document
+/// reference group. The count is bounded by the slots a declaration may hold,
+/// the nodes of a `when` and the properties of a type, so the product never
+/// nears overflow; an overflow is still an error rather than a wrapped bill.
+fn bill_requirement_comparisons(
+    comparisons: u64,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if comparisons == 0 {
+        return Ok(());
+    }
+    let credits = comparisons
+        .checked_mul(
+            platform_version
+                .fee_version
+                .document_reference
+                .requirement_credits_per_comparison,
+        )
+        .ok_or(Error::Execution(ExecutionError::Overflow(
+            "document type requirement comparison fee overflow",
+        )))?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+        FeeResult::new_from_processing_fee(credits),
+    ));
+    Ok(())
+}
+
 /// The value of the bound `condition` compares the referenced side with, read
 /// from the referring document: a property of `document_data` (`None` when it
 /// leaves it out), the writer `owner_id`, or a time or height of
@@ -2155,9 +2291,6 @@ impl RemovalRecord<'_> {
 /// record was read and billed by the caller. The list elements an entry
 /// comparing typed arrays reads are billed before it compares them
 /// ([`bill_where_list_elements`]), as against a document in state.
-///
-/// In place in generation 0: reached from protocol version 14 only, the only
-/// version whose parser produces a `moderatedDocument` reference.
 #[allow(clippy::too_many_arguments)]
 fn validate_pairs_against_removal(
     property_agreement: &BTreeMap<String, String>,
@@ -2355,10 +2488,6 @@ fn validate_key_id_reference_v1(
         // may add a property carrying this reference to such a type, so a
         // replace setting the key id of an old document names no identity,
         // and is refused as a key id set while its identity property is not.
-        // In place in generation 0, which every table selects: its callers,
-        // the document create and replace state validations, reach it from
-        // protocol version 14 only, the only version whose parser produces a
-        // key reference, so no earlier write gets here
         KeyReferenceIdentityProperty::CreatorId => match creator_id {
             Some(creator_id) => creator_id,
             None => {

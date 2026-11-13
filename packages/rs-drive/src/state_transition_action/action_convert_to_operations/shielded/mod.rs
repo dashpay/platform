@@ -192,7 +192,6 @@ pub(super) mod fee_floor_support {
                         &BlockInfo::default(),
                         Some(&tx),
                         platform_version,
-                        None,
                     )
                     .expect("apply");
                 let t = fr.total_base_fee();

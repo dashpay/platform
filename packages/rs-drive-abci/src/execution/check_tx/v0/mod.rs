@@ -76,7 +76,6 @@ where
                 None,   // address_balances_in_update not needed for check_tx
                 &mut 0, // check_tx's transaction is discarded, its mints are never recorded
                 platform_ref.state.current_platform_version()?,
-                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(
@@ -187,7 +186,6 @@ where
                 platform_ref.state.last_block_info(),
                 None,
                 platform_version,
-                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
@@ -737,9 +735,10 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
-            // privateContactRequest type (one more document type registration fee)
-            26005728080
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress
+            26005987270
         );
 
         let check_result = platform
@@ -1095,8 +1094,9 @@ mod tests {
 
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
-        // and DashPay v3's declarations add to the schema the validation is billed for
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 346830);
+        // and DashPay v3's declarations and its contact request's shielded address add to the
+        // schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346990);
 
         let check_result = platform
             .check_tx(
@@ -1413,9 +1413,10 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
-            // privateContactRequest type (one more document type registration fee)
-            26011456160
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress
+            26011974540
         );
 
         let check_result = platform
@@ -1901,9 +1902,10 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
-            // privateContactRequest type (one more document type registration fee)
-            26005728080
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress
+            26005987270
         );
 
         platform
@@ -2001,9 +2003,10 @@ mod tests {
             // about 1.8 times its bytes, which are byte-billed, and checking its compiled size
             // is charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
-            // privateContactRequest type (one more document type registration fee)
-            31006514040
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress
+            31006811010
         );
 
         let check_result = platform
@@ -2598,9 +2601,10 @@ mod tests {
             // 1.8 times its bytes, which are byte-billed, and checking its compiled size is
             // charged per compiled byte
             // and a document type's schema size is billed at least the values the
-            // repeated-key walk read; the DashPay v3 schema adds its declarations and the
-            // privateContactRequest type (one more document type registration fee)
-            26005728080
+            // repeated-key walk read; the DashPay v3 schema adds its declarations, the
+            // privateContactRequest type (one more document type registration fee) and the
+            // contact request's encryptedShieldedAddress
+            26005987270
         );
 
         platform
@@ -2725,8 +2729,9 @@ mod tests {
 
         // From protocol version 15 a document type's schema size is billed at least the
         // values the repeated-key walk read
-        // and DashPay v3's declarations add to the schema the validation is billed for
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 448810);
+        // and DashPay v3's declarations and its contact request's shielded address add to the
+        // schema the validation is billed for
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448970);
 
         let check_result = platform
             .check_tx(

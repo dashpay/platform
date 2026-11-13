@@ -314,8 +314,10 @@ mod tests {
             // From protocol version 15 the contract is stored compiled (format version 2), its
             // document types beside its schemas, and is DashPay v3, which declares the checks of
             // its data triggers and adds the private `privateContactRequest` type, whose store
-            // the insert creates.
-            _ => "66306426bce1beaa7319e7e6d822bcf8a7c93f14425c2f82841a3222a7502912",
+            // the insert creates, at chunk power 10 (605-byte stored entries under the 1 MiB
+            // chunk target of `SYSTEM_LIMITS_V5`), and a contact request's optional
+            // `encryptedShieldedAddress`.
+            _ => "3ef193e9d125d0e6cce24e208e1c0e9d723e7226db1150ae6dbcc1a06622c3f3",
         };
 
         assert_eq!(

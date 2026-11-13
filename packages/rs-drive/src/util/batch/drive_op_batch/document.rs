@@ -2,6 +2,7 @@ use crate::util::estimated_layers::EstimatedLayers;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::state_transition_action::batch::storage_sponsor_of_document_type;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::util::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
@@ -11,6 +12,7 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_event::DocumentEvent;
@@ -26,7 +28,7 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::Co
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -129,6 +131,22 @@ pub enum DocumentOperationType<'a> {
     DeleteDocument {
         /// The document id
         document_id: Identifier,
+        /// The identity credited with the lifecycle record a keep-history
+        /// delete writes; `None` credits nobody.
+        deleter_id: Option<Identifier>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Removes a bounded chunk of the retained revisions of an already deleted
+    /// keep-history document, dropping the history subtree and the lifecycle
+    /// record with the terminal chunk. Whether the type allows erasure and who
+    /// may start one are decided in transition validation, like a delete's
+    /// ownership; this operation assumes both.
+    EraseDocument {
+        /// The document id
+        document_id: Identifier,
         /// Data Contract info to potentially be resolved if needed
         contract_info: DataContractInfo<'a>,
         /// Document type
@@ -223,9 +241,8 @@ fn force_delete_consumed_document_operations(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     match consumed_document.read {
-        Some(read) => drive.force_delete_read_document_for_contract_operations(
-            read.document,
-            read.storage_flags,
+        Some(document) => drive.force_delete_read_document_for_contract_operations(
+            document,
             contract,
             document_type,
             previous_batch_operations,
@@ -238,9 +255,10 @@ fn force_delete_consumed_document_operations(
             consumed_document.document_id,
             contract,
             document_type,
+            block_info,
+            None,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
-            block_info.time_ms,
             transaction,
             platform_version,
         ),
@@ -262,6 +280,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         self.into_low_level_drive_operations_after_ttl_drain(
             drive,
             estimated_costs_only_with_layer_info,
+            None,
             block_info,
             transaction,
             platform_version,
@@ -270,6 +289,76 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 }
 
 impl DocumentOperationType<'_> {
+    /// Adds this operation's part to the owner handover of the batch it is in (see
+    /// `GroveDbOpBatch::owner_handover`): nothing unless it updates a document, and then the
+    /// owner of the update's contract when the document type offers gas sponsorship, the
+    /// identity that may hold the storage of a document someone else owns.
+    ///
+    /// An update naming only its contract's id reads the contract here, at no charge: lowering
+    /// the operation fetches it again and bills that. A contract that is not stored has no
+    /// sponsor, and the lowering answers for it.
+    pub(crate) fn add_to_owner_handover(
+        &self,
+        owner_handover: &mut Option<BTreeSet<[u8; 32]>>,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let storage_sponsor = match self {
+            Self::UpdateDocument {
+                contract_info,
+                document_type_info,
+                ..
+            } => {
+                let fetched_contract;
+                let contract = match contract_info {
+                    DataContractInfo::DataContractFetchInfo(fetch_info) => {
+                        Some(&fetch_info.contract)
+                    }
+                    DataContractInfo::BorrowedDataContract(contract) => Some(*contract),
+                    DataContractInfo::OwnedDataContract(contract) => Some(contract),
+                    DataContractInfo::DataContractId(contract_id) => {
+                        // Not cached here, so the lowering's fetch finds the cache as it
+                        // would have
+                        fetched_contract = drive.get_contract_with_fetch_info(
+                            contract_id.to_buffer(),
+                            false,
+                            transaction,
+                            platform_version,
+                        )?;
+                        fetched_contract
+                            .as_ref()
+                            .map(|fetch_info| &fetch_info.contract)
+                    }
+                };
+                match contract {
+                    Some(contract) => storage_sponsor_of_document_type(
+                        contract,
+                        document_type_info.clone().resolve(contract)?,
+                    ),
+                    None => None,
+                }
+            }
+            Self::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } if document_operations
+                .operations
+                .iter()
+                .any(|operation| matches!(operation, DocumentOperation::UpdateOperation(_))) =>
+            {
+                storage_sponsor_of_document_type(
+                    document_operations.contract,
+                    document_operations.document_type,
+                )
+            }
+            _ => return Ok(()),
+        };
+        owner_handover
+            .get_or_insert_with(BTreeSet::new)
+            .extend(storage_sponsor);
+        Ok(())
+    }
+
     /// Run all direct TTL cleanup before any operation in this batch is built.
     pub(crate) fn prepare_time_range_ttl(
         &self,
@@ -463,6 +552,9 @@ impl DocumentOperationType<'_> {
             }
             // These write to system contracts.
             Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+            // An erase acts on a document whose delete already removed every
+            // index reference, so there is nothing left to drain.
+            Self::EraseDocument { .. } => Ok(()),
         }
     }
 
@@ -470,6 +562,7 @@ impl DocumentOperationType<'_> {
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -673,9 +766,10 @@ impl DocumentOperationType<'_> {
                         document_id,
                         contract,
                         consumed_document_type,
+                        block_info,
+                        None,
                         Some(&mut drive_operations),
                         estimated_costs_only_with_layer_info,
-                        block_info.time_ms,
                         transaction,
                         platform_version,
                     )?;
@@ -739,6 +833,55 @@ impl DocumentOperationType<'_> {
             }
             DocumentOperationType::DeleteDocument {
                 document_id,
+                deleter_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
+                let mut operations = drive
+                    .delete_document_for_contract_operations_without_ttl_drain(
+                        document_id,
+                        contract,
+                        document_type,
+                        block_info,
+                        deleter_id,
+                        previous_batch_operations,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
+                // Protocols through 14 return only the delete's operations.
+                // Generation 1 deletes retain the contract fetch they bill.
+                if platform_version
+                    .drive
+                    .methods
+                    .document
+                    .delete
+                    .delete_document_for_contract_operations
+                    == 0
+                {
+                    return Ok(operations);
+                }
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
+            }
+            DocumentOperationType::EraseDocument {
+                document_id,
                 contract_info,
                 document_type_info,
             } => {
@@ -753,16 +896,17 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                drive.delete_document_for_contract_operations_without_ttl_drain(
+                let mut operations = drive.erase_document_for_contract_operations(
                     document_id,
                     contract,
                     document_type,
-                    None,
+                    block_info,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
                     transaction,
                     platform_version,
-                )
+                )?;
+                drive_operations.append(&mut operations);
+                Ok(drive_operations)
             }
             DocumentOperationType::ForceDeleteDocument {
                 document_id,
@@ -780,15 +924,24 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 // The deletion a document's own owner runs, without its `canBeDeleted` guard;
                 // it removes the expirations tree entry of a type with a `ttl` itself.
                 drive.force_delete_document_for_contract_operations(
                     document_id,
                     contract,
                     document_type,
+                    block_info,
                     None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -811,12 +964,20 @@ impl DocumentOperationType<'_> {
                 )
                 .resolve(contract)?;
 
+                // Only history deletes use pending siblings to share the lazy lifecycle container.
+                // Released force-delete handlers refuse history types.
+                let previous_batch_operations = if document_type.documents_keep_history() {
+                    previous_batch_operations
+                } else {
+                    None
+                };
+
                 force_delete_consumed_document_operations(
                     drive,
                     consumed_document,
                     contract,
                     document_type,
-                    None,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,

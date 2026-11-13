@@ -1,4 +1,5 @@
-//! Cancellation of a note-sync pass (dashpay/platform#5200).
+//! Cancellation of a note-sync pass (dashpay/platform#5200), and the
+//! height a completed pass covers.
 //!
 //! Feeds `sync_notes_from_stream` a synthetic batch stream so the
 //! cancel path runs without a network. The stream yields real-shaped
@@ -350,4 +351,62 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     assert_eq!(store.last_synced_note_index(sub).unwrap(), 0);
 
     let _ = std::fs::remove_file(&path);
+}
+
+/// A batch of `len` notes at `start_index`, proved at `block_height`, whose
+/// proof (with every one read before it) shows `total_count` notes.
+fn proved_batch(
+    start_index: u64,
+    len: u64,
+    total_count: u64,
+    block_height: u64,
+) -> ShieldedChunkBatch {
+    ShieldedChunkBatch {
+        block_height,
+        ..batch(start_index, len, total_count)
+    }
+}
+
+/// A completed pass covers the proved height of the last batch of its run
+/// whose proof shows the tree ending within that run, and no height when
+/// every proof shows a longer tree than the run reached.
+#[tokio::test]
+async fn should_report_the_height_a_completed_scan_covers() {
+    let cases: [(&str, Vec<ShieldedChunkBatch>, Option<u64>); 4] = [
+        (
+            "the last batch ends the tree",
+            vec![proved_batch(0, 4, 6, 1_000), proved_batch(4, 2, 6, 1_004)],
+            Some(1_004),
+        ),
+        (
+            "a proof of a longer tree than the run reached",
+            vec![proved_batch(0, 4, 9, 1_000), proved_batch(4, 2, 9, 1_004)],
+            None,
+        ),
+        (
+            "an empty chunk past a full one, at a later height",
+            vec![proved_batch(0, 4, 4, 1_000), proved_batch(4, 0, 4, 1_005)],
+            Some(1_005),
+        ),
+        (
+            "a batch past a gap in the run",
+            vec![proved_batch(0, 4, 4, 1_000), proved_batch(8, 0, 4, 1_009)],
+            Some(1_000),
+        ),
+    ];
+    for (case, batches, covered) in cases {
+        let path = temp_tree_path("covered");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+        ));
+        let result = run(
+            &store,
+            &one_subwallet(),
+            &CancellationToken::new(),
+            futures::stream::iter(batches.into_iter().map(Ok)),
+        )
+        .await;
+        assert_eq!(result.covered_height, covered, "{case}");
+        let _ = std::fs::remove_file(&path);
+    }
 }

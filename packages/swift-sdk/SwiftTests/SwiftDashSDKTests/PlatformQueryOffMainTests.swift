@@ -1,4 +1,5 @@
 import Foundation
+import os
 import XCTest
 
 @testable import SwiftDashSDK
@@ -43,6 +44,61 @@ final class PlatformQueryOffMainTests: XCTestCase {
 
     let released = try await waitResult
     XCTAssertTrue(released, "the parked query was not released by the main actor")
+  }
+
+  private struct MainHoldError: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+  }
+
+  /// `identityGet` and `dpnsGetUsername` make their FFI call without the
+  /// main actor: the main thread is held for the whole of both calls, and
+  /// each still returns (with the mock's missing-expectation error) before it
+  /// is released. A call that needed the main actor would wait until the hold
+  /// timed out.
+  func testIdentityReadsDoNotNeedTheMainActor() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    let mainHeld = DispatchSemaphore(value: 0)
+    let releaseMain = DispatchSemaphore(value: 0)
+    let holdTimedOut = OSAllocatedUnfairLock(initialState: false)
+
+    DispatchQueue.main.async {
+      mainHeld.signal()
+      if releaseMain.wait(timeout: .now() + 5) == .timedOut {
+        holdTimedOut.withLock { $0 = true }
+      }
+    }
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      DispatchQueue.global().async {
+        if mainHeld.wait(timeout: .now() + 5) == .timedOut {
+          releaseMain.signal()
+          continuation.resume(
+            throwing: MainHoldError(message: "the main queue never ran the hold"))
+        } else {
+          continuation.resume()
+        }
+      }
+    }
+
+    do {
+      _ = try await sdk.identityGet(identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk")
+      XCTFail("identityGet should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("identityGet must reach the FFI, not fail on an unavailable SDK handle")
+    } catch {}
+
+    do {
+      _ = try await sdk.dpnsGetUsername(
+        identityId: "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk", limit: 1)
+      XCTFail("dpnsGetUsername should fail without recorded responses")
+    } catch SDKError.invalidState {
+      XCTFail("dpnsGetUsername must reach the FFI, not fail on an unavailable SDK handle")
+    } catch {}
+
+    let returnedWhileMainWasHeld = !holdTimedOut.withLock { $0 }
+    releaseMain.signal()
+    XCTAssertTrue(
+      returnedWhileMainWasHeld, "an identity read waited for the main actor")
   }
 
   /// The off-main entry points marshal their arguments, make the FFI call and
@@ -97,6 +153,22 @@ final class PlatformQueryOffMainTests: XCTestCase {
     } catch SDKError.invalidParameter {
     } catch {
       XCTFail("expected SDKError.invalidParameter, got \(error)")
+    }
+  }
+
+  @MainActor
+  func testDocumentHistoryPreservesNativeErrors() async throws {
+    let sdk = try SDK(mockVectorsDirectory: nil)
+    do {
+      _ = try await sdk.documentGetHistory(
+        dataContractId: "not-base58-0OIl",
+        documentType: "note",
+        documentId: "not-base58-0OIl")
+      XCTFail("documentGetHistory should refuse a malformed id")
+    } catch SDKError.invalidParameter(let message) {
+      XCTAssertTrue(message.contains("Invalid contract ID"))
+    } catch {
+      XCTFail("expected the native SDKError.invalidParameter, got \(error)")
     }
   }
 }

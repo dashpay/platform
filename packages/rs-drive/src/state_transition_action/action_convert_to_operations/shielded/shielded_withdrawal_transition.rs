@@ -563,7 +563,6 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&tx),
                     platform_version,
-                    None,
                 )
                 .expect("apply write ops");
             let actual_cost = fee_result.total_base_fee();

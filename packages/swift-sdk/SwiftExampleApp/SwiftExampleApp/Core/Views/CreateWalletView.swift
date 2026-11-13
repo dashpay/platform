@@ -388,7 +388,7 @@ struct CreateWalletView: View {
                     }
                     for net in selectedNetworks {
                         do {
-                            let mgr = try walletManagerStore.backgroundManager(for: net)
+                            let mgr = try await walletManagerStore.backgroundManager(for: net)
                             let managed = try await mgr.createWallet(
                                 mnemonic: mnemonicPhrase,
                                 network: net,

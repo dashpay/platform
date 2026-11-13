@@ -110,7 +110,7 @@ class RegistrationCoordinatorTest {
     }
 
     @Test
-    fun `broadcast-rejected classifier sets failure stage`() = runTest {
+    fun `broadcast-not-sent classifier sets failure stage`() = runTest {
         val coordinator = coordinator()
         val gate = CompletableDeferred<ByteArray>()
 
@@ -119,14 +119,14 @@ class RegistrationCoordinatorTest {
             identityIndex = 0,
             fundingKind = IdentityRegistrationController.FundingKind.ShieldedPool,
             body = { gate.await() },
-            isBroadcastRejected = { true },
+            isBroadcastNotSent = { true },
         )
-        gate.completeExceptionally(RuntimeException("broadcast rejected"))
+        gate.completeExceptionally(RuntimeException("nothing was sent"))
         advanceUntilIdle()
 
         assertTrue(controller.phase.value is Phase.Failed)
         assertEquals(
-            IdentityRegistrationController.FailureStage.BroadcastRejected,
+            IdentityRegistrationController.FailureStage.BroadcastNotSent,
             controller.failureStage.value,
         )
     }

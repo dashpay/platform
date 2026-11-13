@@ -297,7 +297,6 @@ fn insert_widget_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert count bench document");
 }

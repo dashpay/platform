@@ -93,7 +93,6 @@ fn insert_post(
             apply,
             None,
             PlatformVersion::latest(),
-            None,
         )
         .expect("add document")
 }

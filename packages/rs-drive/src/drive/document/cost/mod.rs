@@ -28,6 +28,7 @@ use crate::drive::document::expiration::pricing::{
 };
 use crate::drive::document::layout::LayoutRole;
 use crate::drive::document::sdk_value::{map, number, text, texts};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -362,7 +363,15 @@ pub fn document_create_cost(
     let refundable = if document_type.documents_ttl_seconds().is_some() {
         Scenarios::default()
     } else {
-        refundable_bytes(&writes, &known, &elements)
+        let retains_history = document_type.documents_keep_history()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .delete
+                .delete_document_for_contract_operations
+                >= 1;
+        refundable_bytes(&writes, &known, &elements, retains_history)
     };
     let refund_same_epoch = refund(document_type, refundable, credits_per_byte, 0)?;
     let refund_after_one_year = refund(
@@ -393,52 +402,58 @@ pub fn document_create_cost(
 }
 
 /// Refuses a platform version whose insert methods are not the ones the
-/// estimate mirrors (those of protocol version 14): another version of any
-/// of them may write other elements.
+/// estimate mirrors: another version of any of them may write other elements.
+/// Primary-storage generation 1 uses the per-type history layout. Index-reference
+/// generation 1 writes a keep-history type's references to the primary pointer,
+/// which `writes.rs` mirrors by selecting the v1 constructors, and describes
+/// summable entries with their sum items.
 fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
     let document = &platform_version.drive.methods.document;
     for (method, known, received) in [
         (
             "add_document_for_contract_operations",
-            1,
+            // Generation 2 reserves retained ids without adding operations to a fresh create.
+            &[1, 2][..],
             document.insert.add_document_for_contract_operations,
         ),
         (
             "add_document_to_primary_storage",
-            0,
+            &[0, 1][..],
             document.insert.add_document_to_primary_storage,
         ),
         (
+            // 3 differs from 2 only for a document whose time range buckets
+            // have expired, which a document created now has none of.
             "add_indices_for_top_index_level_for_contract_operations",
-            2,
+            &[2, 3][..],
             document
                 .insert
                 .add_indices_for_top_index_level_for_contract_operations,
         ),
         (
             "add_indices_for_index_level_for_contract_operations",
-            2,
+            &[2][..],
             document
                 .insert
                 .add_indices_for_index_level_for_contract_operations,
         ),
         (
             "add_reference_for_index_level_for_contract_operations",
-            0,
+            &[0, 1][..],
             document
                 .insert
                 .add_reference_for_index_level_for_contract_operations,
         ),
         (
             "add_document_expiration_operations",
-            0,
+            &[0][..],
             document.expiration.add_document_expiration_operations,
         ),
     ] {
-        if received != known {
+        if !known.contains(&received) {
             return Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: format!("document_create_cost ({method})"),
-                known_versions: vec![known],
+                known_versions: known.to_vec(),
                 received,
             }));
         }
@@ -560,11 +575,25 @@ fn written_when_values_known(writes: &[Write], document_id: &[u8]) -> Vec<bool> 
 /// The storage bytes a delete refunds: those of the elements it removes that
 /// carry the owner's flags. Not refunded: elements without flags (a ranked
 /// tree's rows, trees an index writes without flags), ephemeral elements,
-/// and preallocated trees, which a delete keeps.
-fn refundable_bytes(writes: &[Write], known: &[bool], elements: &[ElementCost]) -> Scenarios {
+/// and preallocated trees, which a delete keeps. A lifecycle delete also keeps
+/// the retained revisions and their per-document history tree until erasure.
+fn refundable_bytes(
+    writes: &[Write],
+    known: &[bool],
+    elements: &[ElementCost],
+    retains_history: bool,
+) -> Scenarios {
     let mut total = Scenarios::default();
     for ((write, known), element) in writes.iter().zip(known).zip(elements) {
-        if write.flagged && !write.ephemeral && write.referring_type.is_none() {
+        if write.flagged
+            && !write.ephemeral
+            && write.referring_type.is_none()
+            && !(retains_history
+                && matches!(
+                    write.role,
+                    LayoutRole::DocumentHistory | LayoutRole::RetainedRevision
+                ))
+        {
             total.add(Scenarios {
                 new_values: element.bytes,
                 known_values: if *known { element.bytes } else { 0 },
@@ -680,8 +709,12 @@ fn processing_costs(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<ProcessingCost>, Error> {
     let fee_version = &platform_version.fee_version;
-    // The primary key tree and one tree per first index level.
+    // The primary key tree, retained-history tree and first index levels.
     let type_entries = u64::from(!document_type.index_only())
+        + u64::from(
+            document_type.documents_keep_history()
+                && uses_current_document_history_layout(platform_version)?,
+        )
         + document_type.index_structure().sub_levels().len() as u64;
     let exact = |credits: Credits| Scenarios {
         new_values: credits,

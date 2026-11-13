@@ -19,7 +19,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-use std::convert::TryFrom;
 use crate::state_transition::batch_transition::batched_transition::{BatchedTransition, BatchedTransitionRef};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -66,6 +65,25 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    /// Builds a signed erase of one already deleted keep-history document.
+    ///
+    /// The transition carries no token payment: the deletion cost was charged
+    /// when the document was deleted. Whether this erase starts or continues an
+    /// erasure, and how many revisions it removes, are read from committed
+    /// state rather than signed here.
+    #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
+    async fn new_document_erase_transition_from_document<S: Signer<IdentityPublicKey>>(
+        document: Document,
+        document_type: DocumentTypeRef<'_>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
         signer: &S,
         platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
@@ -165,14 +183,12 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
             }
         };
 
-        Ok(if highest_security_level == SecurityLevel::MASTER {
-            vec![SecurityLevel::MASTER]
-        } else {
-            // this might seem wrong until you realize that master is 0, critical 1, etc
-            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
-                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
-                .collect()
-        })
+        // Edited in place in a shipped generation: `document_signing_levels` returns what the
+        // code it replaced did for every requirement (MASTER alone for MASTER, otherwise
+        // CRITICAL through the requirement, strongest first), without its `unwrap`. Its tests
+        // and the batch tests pin each output, so no protocol version that signs or checks a
+        // batch through this method can see another result.
+        Ok(highest_security_level.document_signing_levels())
     }
 
     fn set_transitions(&mut self, transitions: Vec<BatchedTransition>);

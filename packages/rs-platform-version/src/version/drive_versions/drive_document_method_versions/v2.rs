@@ -11,6 +11,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
+            fetch_document_lifecycle: None,
+
             query_documents: 0,
             query_chained_documents: 0,
             query_composite_documents: 0,
@@ -29,8 +31,14 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 0,
             start_at_document: 0,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
+            erase_refund_recipient_cost: None,
+            erase_document_for_contract_operations: None,
+            add_estimation_costs_for_erase_document: None,
+            add_estimation_costs_for_lifecycle_record: None,
+
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
             delete_document_for_contract: 0,
             delete_document_for_contract_id: 0,
@@ -123,6 +131,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         // stop, so a future change to the v1 arm doesn't need to
         // re-prove v0 ≡ v1 for every pre-v12 corner case.
         primary_key_tree_type: 0,
+        document_history_storage_layout: 0,
         fetch_property_constraint_aggregate: 0,
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15

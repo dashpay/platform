@@ -1,12 +1,17 @@
+use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
 use crate::state_transition_action::contract::moderators_pot_settlement::ModeratorsPotSettlement;
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV1Getters};
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::drive::contract_groups::types::ContractGroupMembershipsForContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::consensus::ConsensusError;
+use dpp::decision_proposal::is_multiple_choice_proposal;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
@@ -18,7 +23,9 @@ use dpp::data_contract::document_type::action_fees::{
     ActionFeePricing, ContractFeePot, DocumentActionFee, FEE_MULTIPLIER_PERMILLE_BASE,
 };
 use dpp::prelude::FeeMultiplier;
-use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
+use crate::util::batch::drive_op_batch::{
+    ContractFeePotOperationType, DocumentOperationType, IdentityOperationType,
+};
 use crate::util::batch::DriveOperation;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 
@@ -170,6 +177,94 @@ pub fn action_fee_operations(
         })
     }));
     Ok(operations)
+}
+
+/// Names the gas sponsor as the owner of the storage the batch's documents write (protocol
+/// version 15), once fee validation settled that the sponsor pays: storage refunds go to whoever
+/// paid for the storage, and a document's would otherwise go to its owner, who could delete it
+/// and keep what the sponsor paid.
+///
+/// A history delete names the sponsor on its lifecycle record; refunds for the
+/// removed pointer and index entries still go to their recorded owners. An erase
+/// preserves those owners too. Withdrawal and multi-document operations are never
+/// part of a batch. A type with a `ttl` is stored without flags and refunds nobody.
+///
+/// The estimate needs no owner, and an owner takes no more bytes than any other, so this
+/// changes no fee.
+pub fn record_gas_sponsor_as_storage_owner(
+    operations: &mut [DriveOperation],
+    gas_sponsor_id: Identifier,
+) {
+    let gas_sponsor = gas_sponsor_id.to_buffer();
+    for operation in operations {
+        let DriveOperation::DocumentOperation(document_operation) = operation else {
+            continue;
+        };
+        match document_operation {
+            DocumentOperationType::AddDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::AddContestedDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::UpdateDocument {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::AddDocumentAndDeleteConsumed {
+                owned_document_info,
+                ..
+            }
+            | DocumentOperationType::AddDocumentAndDeleteReadConsumed {
+                owned_document_info,
+                ..
+            } => owned_document_info
+                .document_info
+                .set_storage_flags_owner(gas_sponsor),
+            // Only delete operation generation 1 reads this owner, for the lifecycle record.
+            DocumentOperationType::DeleteDocument { deleter_id, .. } => {
+                *deleter_id = Some(gas_sponsor_id);
+            }
+            DocumentOperationType::EraseDocument { .. }
+            | DocumentOperationType::ForceDeleteDocument { .. }
+            | DocumentOperationType::ForceDeleteReadDocument { .. }
+            | DocumentOperationType::DeleteIndexOnlyDocument { .. }
+            | DocumentOperationType::AddWithdrawalDocument { .. }
+            | DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                ..
+            }
+            | DocumentOperationType::DocumentHistory { .. } => {}
+        }
+    }
+}
+
+/// Whether a document type's token costs let the contract owner pay the gas of some action on
+/// its documents: only then can the contract owner hold the storage of a document someone else
+/// owns as its gas sponsor.
+pub(crate) fn document_type_offers_gas_sponsorship(document_type: DocumentTypeRef) -> bool {
+    [
+        document_type.document_creation_token_cost(),
+        document_type.document_replacement_token_cost(),
+        document_type.document_deletion_token_cost(),
+        document_type.document_transfer_token_cost(),
+        document_type.document_update_price_token_cost(),
+        document_type.document_purchase_token_cost(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|token_cost| token_cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
+}
+
+/// The identity that may hold the storage of a document of the type which someone else owns:
+/// the contract's owner, when the type offers gas sponsorship. A change of owner involving it
+/// is a full handover (see `GroveDbOpBatch::owner_handover`).
+pub(crate) fn storage_sponsor_of_document_type(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+) -> Option<[u8; 32]> {
+    document_type_offers_gas_sponsorship(document_type).then(|| contract.owner_id().to_buffer())
 }
 
 /// Who pays the gas of a whole batch, as `GasFeesPaidBy::resolve` names it for each of its
@@ -340,6 +435,33 @@ impl BatchTransitionAction {
                     _ => None,
                 })
                 .collect(),
+        }
+    }
+
+    /// How many multiple choice proposals the batch creates (protocol version 15): each adds
+    /// the multiple choice proposal processing fee to what the batch pays.
+    ///
+    /// Read off the transitions as they are now, like the action fees: state validation
+    /// replaces a create that fails with a nonce bump, which creates nothing and owes
+    /// nothing.
+    pub fn multiple_choice_proposals_created(&self) -> u64 {
+        match self {
+            BatchTransitionAction::V0(v0) => v0
+                .transitions
+                .iter()
+                .filter(|transition| match transition {
+                    BatchedTransitionAction::DocumentAction(
+                        document_action @ DocumentTransitionAction::CreateAction(_),
+                    ) => {
+                        let base = document_action.base();
+                        is_multiple_choice_proposal(
+                            &base.data_contract_id(),
+                            base.document_type_name(),
+                        )
+                    }
+                    _ => false,
+                })
+                .count() as u64,
         }
     }
 

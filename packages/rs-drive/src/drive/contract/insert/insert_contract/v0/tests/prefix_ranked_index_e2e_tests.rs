@@ -170,7 +170,6 @@ fn insert_row(
         apply,
         None,
         pv,
-        None,
     )
 }
 
@@ -401,7 +400,6 @@ fn updating_a_hashtag_moves_its_document_between_groups() {
             StorageFlags::optional_default_as_cow(),
             None,
             pv,
-            None,
         )
         .expect("expected to update the like document");
 
@@ -451,7 +449,6 @@ fn draining_a_hashtag_removes_it_from_the_ranking() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to delete the like document");
         let mut after = count_top_k_named(&drive, &grouping_path, 10, true);
@@ -664,7 +661,6 @@ fn index_only_entries_rank_hashtags_and_drain_on_delete() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete the ilike entry");
     let mut after = count_top_k_named(&drive, &grouping_path, 10, true);
@@ -680,7 +676,6 @@ fn index_only_entries_rank_hashtags_and_drain_on_delete() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete beta's only entry");
     assert_eq!(
@@ -790,7 +785,6 @@ fn both_levels_rank_on_one_index() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete a like");
     assert_eq!(
@@ -812,7 +806,6 @@ fn both_levels_rank_on_one_index() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete beta's only like");
     assert_eq!(
@@ -904,7 +897,6 @@ fn every_level_of_an_index_can_rank() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to delete a chain document");
     assert_eq!(
@@ -958,7 +950,6 @@ fn preallocated_groups_stay_rankable_at_zero() {
             true,
             None,
             pv,
-            None,
         )
         .expect("expected to insert the post");
 
@@ -1003,7 +994,6 @@ fn preallocated_groups_stay_rankable_at_zero() {
                     true,
                     None,
                     pv,
-                    None,
                 )
                 .expect("expected to insert a plike entry");
             like
@@ -1024,7 +1014,6 @@ fn preallocated_groups_stay_rankable_at_zero() {
                 true,
                 None,
                 pv,
-                None,
             )
             .expect("expected to delete the plike entry");
     }

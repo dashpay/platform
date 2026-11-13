@@ -92,6 +92,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
+            fetch_document_lifecycle: None,
+
             query_documents: 0,
             query_chained_documents: 0,
             query_composite_documents: 0,
@@ -113,8 +115,14 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             // from any item element, so a `documentsSummable` type (stored as
             // `ItemWithSumItem`) can be paginated.
             start_at_document: 1,
+            single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
+            erase_refund_recipient_cost: None,
+            erase_document_for_contract_operations: None,
+            add_estimation_costs_for_erase_document: None,
+            add_estimation_costs_for_lifecycle_record: None,
+
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
             delete_document_for_contract: 0,
             delete_document_for_contract_id: 0,
@@ -190,6 +198,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.
         primary_key_tree_type: 1,
+        document_history_storage_layout: 0,
         fetch_property_constraint_aggregate: 0,
         insert_empty_private_document_store_operation: None, // no private document type before protocol version 15
         fetch_private_document_entries: None, // no private document type before protocol version 15

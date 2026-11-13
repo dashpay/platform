@@ -14,12 +14,13 @@
 use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serialization::{object_with_own_properties, platform_value_to_object};
 use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
-    IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound, WhereLiteral,
-    WhereNotEqualBound, WhereOrderingBound,
+    DocumentTypeRequirements, IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey,
+    LookupKeyParam, LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound,
+    WhereLiteral, WhereNotEqualBound, WhereOrderingBound,
 };
 use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
@@ -269,7 +270,151 @@ export type DocumentPropertyReferenceTarget =
        */
       where?: DocumentReferenceWhere;
     }
+  | {
+      /**
+       * A document of a document type the referring document names
+       * (protocol version 15): permanent or moderated, found by the value
+       * as its id. Told from the other members of the same `type` by its
+       * `contractId` and `documentType`, which start with `$self.`: the
+       * contract and the type are read from the referring document (`$self`,
+       * as `$old` is the stored one in a rule) when it is written, where
+       * consensus checks that both exist, that the type is of this kind and
+       * that it meets `documentTypeRequirements` (code 40153 when it does
+       * not). A list of both kinds admits a type of either: the reference is
+       * then checked as one of the kind the named type is.
+       */
+      type:
+        | 'permanentDocument'
+        | 'moderatedDocument'
+        | ['permanentDocument', 'moderatedDocument'];
+      /**
+       * `$self.` followed by the top-level identifier property of the
+       * referring document holding the id of the contract the referenced
+       * document type lives in.
+       */
+      contractId: `$self.${string}`;
+      /**
+       * `$self.` followed by the top-level string property of the referring
+       * document holding the name of the referenced document type.
+       */
+      documentType: `$self.${string}`;
+      /**
+       * What the named document type must look like. Absent when the
+       * declaration asks nothing of it beyond its kind.
+       */
+      documentTypeRequirements?: DocumentTypeRequirements;
+    }
   | DocumentPropertyReferenceExpression;
+
+/**
+ * What the document type a dynamic reference names must look like: named
+ * slots, each describing a top-level property it must have, and which of the
+ * slots must be filled. A slot is filled by one property matching its
+ * description, and slots that are `distinctFrom` each other by different
+ * properties.
+ */
+export type DocumentTypeRequirements = {
+  properties: Record<string, DocumentTypeRequirementSlot>;
+  /**
+   * Which slots must be filled: a slot name, or `anyOf` / `allOf` over slot
+   * names and, one level down, the other combinator over slot names. Absent
+   * when every slot must be filled.
+   */
+  require?: string | DocumentTypeSlotRequirement;
+  /**
+   * What the named type must say of itself, whatever fills the slots: a
+   * condition that reads no `'$property'`. A type it does not hold for does
+   * not meet the requirements.
+   */
+  when?: DocumentTypeSlotCondition;
+};
+
+export type DocumentTypeRequirementSlot = {
+  /**
+   * Which property may fill the slot: `'$any'` for any property matching
+   * the rest, a property name, or `$self.` followed by the string property
+   * of the referring document that names it.
+   */
+  name: string;
+  /** What the property holds; `'array'` comes with `byteArray: true`. */
+  type: 'string' | 'identifier' | 'integer' | 'boolean' | 'array';
+  byteArray?: true;
+  /** The most bytes a value of the property may ever take. */
+  maxBytes?: number;
+  /** The other slots this one is filled by a different property than. */
+  distinctFrom?: Array<string>;
+  /**
+   * What the referenced type must say of the property: one the condition
+   * does not hold for does not fill the slot.
+   */
+  when?: DocumentTypeSlotCondition;
+};
+
+/**
+ * A string a slot's `when` compares: `'$kind'`, the kind of the referenced
+ * document type (`'permanentDocument'` or `'moderatedDocument'`), `'$property'`,
+ * the name of the property tried for the slot, or a constant.
+ */
+export type DocumentTypeSlotConditionString =
+  | '$kind'
+  | '$property'
+  | { const: string };
+
+/**
+ * A setting of the referenced document type a `present` or an `absent`
+ * tests: whether the type declares `moderatorAbilities.deleteWithin` or
+ * `moderatorAbilities.deleteSettled`, or whether that rule counts a member
+ * the team's leader added only for documents created after its addition
+ * (`approversPredateDocument`, its default applied).
+ */
+export type DocumentTypeSlotConditionSetting =
+  | '$moderatorAbilities.deleteWithin'
+  | '$moderatorAbilities.deleteSettled'
+  | '$moderatorAbilities.deleteSettled.approversPredateDocument';
+
+/**
+ * A condition of a slot's `when`, in the forms of a `propertyConstraints`
+ * condition, read against the referenced document type instead of a
+ * document. `contains` looks into the type's
+ * `moderatorAbilities.deleteKeepsFields` or `moderatorAbilities.changeFields`,
+ * empty where the type declares none, or into `'$electedAbilities'`, the
+ * abilities the type's contract gives its elected moderation team on the
+ * type (`'deleteDocuments'`, `'changeDocumentFields'`, ...), empty where it
+ * elects none or leaves the type out. `present` and `absent` test a setting
+ * of the type (`DocumentTypeSlotConditionSetting`).
+ */
+export type DocumentTypeSlotCondition =
+  | { equal: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { notEqual: [DocumentTypeSlotConditionString, DocumentTypeSlotConditionString] }
+  | { in: ['$kind' | '$property', Array<string>] }
+  | { notIn: ['$kind' | '$property', Array<string>] }
+  | {
+      contains: [
+        (
+          | '$moderatorAbilities.deleteKeepsFields'
+          | '$moderatorAbilities.changeFields'
+          | '$electedAbilities'
+        ),
+        '$property' | { const: string },
+      ];
+    }
+  | { present: DocumentTypeSlotConditionSetting }
+  | { absent: DocumentTypeSlotConditionSetting }
+  | { not: DocumentTypeSlotCondition }
+  | { anyOf: Array<DocumentTypeSlotCondition> }
+  | { allOf: Array<DocumentTypeSlotCondition> }
+  | { ifThen: [DocumentTypeSlotCondition, DocumentTypeSlotCondition] }
+  | {
+      ifThenElse: [
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+        DocumentTypeSlotCondition,
+      ];
+    };
+
+export type DocumentTypeSlotRequirement =
+  | { anyOf: Array<string | { allOf: Array<string> }> }
+  | { allOf: Array<string | { anyOf: Array<string> }> };
 
 /**
  * A reference expression, declared as `refersTo: { anyOf: [...] }` or
@@ -829,13 +974,32 @@ fn set_reference_target_fields(
         DocumentPropertyReferenceTarget::DeletableDocument { .. }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
         DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
+        // Permanent or moderated, as declared; both are listed below when it admits either
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => reference
+            .wire_names()
+            .first()
+            .copied()
+            .unwrap_or("permanentDocument"),
         DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
             return Err(WasmDppError::generic(format!(
                 "the reference expression declared at '{path}' has no single target kind"
             )));
         }
     };
-    set_field(object, "type", &JsValue::from_str(kind), path)?;
+    let declared_type: JsValue = match target {
+        DocumentPropertyReferenceTarget::DynamicDocument(reference)
+            if reference.wire_names().len() > 1 =>
+        {
+            reference
+                .wire_names()
+                .iter()
+                .map(|name| JsValue::from_str(name))
+                .collect::<Array>()
+                .into()
+        }
+        _ => JsValue::from_str(kind),
+    };
+    set_field(object, "type", &declared_type, path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
@@ -989,9 +1153,77 @@ fn set_reference_target_fields(
             )?;
             set_key_requirements_field(object, key_requirements, path)?;
         }
+        // As the schema declares it: the contract and the document type read from the
+        // referring document, which names them when it is written
+        DocumentPropertyReferenceTarget::DynamicDocument(reference) => {
+            set_field(
+                object,
+                "contractId",
+                &JsValue::from_str(&reference.contract_id_schema_value()),
+                path,
+            )?;
+            set_field(
+                object,
+                "documentType",
+                &JsValue::from_str(&reference.document_type_schema_value()),
+                path,
+            )?;
+            if let Some(requirements) = &reference.requirements {
+                set_field(
+                    object,
+                    "documentTypeRequirements",
+                    &document_type_requirements_to_js(requirements, path)?.into(),
+                    path,
+                )?;
+            }
+        }
     }
 
     Ok(())
+}
+
+/// `documentTypeRequirements` as the schema declares it. The shape is rs-dpp's
+/// (`DocumentTypeRequirements::to_schema_value`, which the parser reads back); only the
+/// slots are placed here, each an own property, since a slot may be named like an
+/// accessor every object inherits (`__proto__`).
+fn document_type_requirements_to_js(
+    requirements: &DocumentTypeRequirements,
+    path: &str,
+) -> WasmDppResult<Object> {
+    let slots = requirements
+        .slots
+        .iter()
+        .map(|(slot_name, slot)| {
+            Ok((
+                slot_name.as_str(),
+                platform_value_to_object(&slot.to_schema_value())?,
+            ))
+        })
+        .collect::<WasmDppResult<Vec<_>>>()?;
+    let object = Object::new();
+    set_field(
+        &object,
+        "properties",
+        &object_with_own_properties(slots)?.into(),
+        path,
+    )?;
+    if let Some(require) = &requirements.require {
+        set_field(
+            &object,
+            "require",
+            &platform_value_to_object(&require.to_schema_value())?,
+            path,
+        )?;
+    }
+    if let Some(when) = &requirements.when {
+        set_field(
+            &object,
+            "when",
+            &platform_value_to_object(&when.to_schema_value())?,
+            path,
+        )?;
+    }
+    Ok(object)
 }
 
 /// Collect every reference declaration of one document type: its

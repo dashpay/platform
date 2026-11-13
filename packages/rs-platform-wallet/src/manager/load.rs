@@ -1,9 +1,13 @@
 //! Hydrate a [`PlatformWalletManager`] from its persister.
 
 use std::collections::BTreeMap;
+#[cfg(feature = "shielded")]
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PersistenceCapabilities, PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -86,11 +90,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
-            // Shielded restore happens lazily on `bind_shielded`,
-            // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded,
+            retained_private_contact_scan_states,
         } = start_state;
+        // Shielded restore happens lazily on `bind_shielded`, not here: only
+        // which wallets bound a shielded account is kept from the snapshot.
+        // A bind persists the account's viewing key before anything is
+        // installed, and refuses when it cannot, so a wallet with no persisted
+        // viewing key never bound one, and its shielded store holds no private
+        // contact request payment of its. A Clear deletes both together.
+        #[cfg(feature = "shielded")]
+        let bound_shielded: BTreeSet<WalletId> = shielded
+            .viewing_keys
+            .keys()
+            .map(|id| id.wallet_id)
+            .collect();
 
         // Tracked (wallet-independent) masternodes ride the same startup
         // hydration; a failure logs and starts empty rather than failing
@@ -143,7 +158,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             let ClientWalletStartState {
                 mut wallet,
                 mut wallet_info,
-                identity_manager,
+                mut identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
                 dashpay_backfill,
@@ -242,9 +257,36 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
             let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
+                finalized_spends: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
-                identity_manager: IdentityManager::from(identity_manager),
+                identity_manager: {
+                    // A backend that does not attest the private contact
+                    // request scan state, with the atomic changesets it needs,
+                    // keeps no current copy of it: the store is read from its
+                    // start.
+                    if !self
+                        .persister
+                        .persistence_capabilities()
+                        .contains(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART)
+                    {
+                        identity_manager.forget_private_contact_scan_state();
+                    }
+                    let mut identity_manager = IdentityManager::from(identity_manager);
+                    // Records the host kept marked for this id after an
+                    // earlier wallet under it was removed hold their
+                    // identities, those loaded now and those added later, as
+                    // a record of their own marked would.
+                    identity_manager.retain_private_payment_markers(
+                        retained_private_contact_scan_states
+                            .get(&expected_wallet_id)
+                            .into_iter()
+                            .flat_map(|records| records.iter())
+                            .filter(|(_, record)| record.private_payments_unresolved)
+                            .map(|(owner, _)| *owner),
+                    );
+                    identity_manager
+                },
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
@@ -538,6 +580,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 platform_wallet.platform().initialize().await;
             }
 
+            // Before the wallet is published: a public contact request it
+            // sends or accepts waits until the reservations of its unconfirmed
+            // private payments from an earlier process are restored from the
+            // shielded store, which only a configured store can show.
+            // So does one whose persister keeps the private scan state: only it
+            // lets a private payment be paid, so only its wallet can have one
+            // the journal keeps that no marker shows. Restored below once the
+            // load is published when a store is configured, by
+            // `configure_shielded` otherwise.
+            #[cfg(feature = "shielded")]
+            if bound_shielded.contains(&wallet_id)
+                || platform_wallet
+                    .persister()
+                    .persists_private_contact_scan_state()
+            {
+                platform_wallet
+                    .persister()
+                    .hold_until_private_payments_restored();
+            }
+
             let platform_wallet = Arc::new(platform_wallet);
             self.wallets.rcu(|wallets| {
                 let mut wallets = std::collections::BTreeMap::clone(wallets);
@@ -644,6 +706,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
+                    // As `remove_wallet` does, while this load's wallet
+                    // still holds the id.
+                    self.forget_txo_reconcile(id);
                     if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
@@ -656,7 +721,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
-        // Past the rollback point: every registration here is one this load
+        // Past the rollback point. A store configured before this load
+        // restores the held wallets' private payments now, with no keys and
+        // without waiting on the store, which a scan may hold; otherwise
+        // `configure_shielded` does.
+        #[cfg(feature = "shielded")]
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            self.restore_private_payments_without_waiting(&coordinator, true)
+                .await;
+        }
+
+        // Every registration here is one this load
         // actually committed, so the transactions now have a wallet to belong
         // to for as long as it stays registered.
         //
@@ -1891,5 +1966,237 @@ mod tests {
             started.elapsed() < std::time::Duration::from_secs(5),
             "validation must not derive every index below the sparse row"
         );
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod private_payment_hold_tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::Wallet;
+
+    use crate::changeset::{
+        ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence, ShieldedSyncStartState,
+    };
+    use crate::events::PlatformEventHandler;
+    use crate::test_support::NoopTestEventHandler;
+    use crate::wallet::identity::ManagedIdentity;
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::wallet::shielded::store::{PendingRedrive, PrivatePaymentEntry};
+    use crate::wallet::shielded::{
+        FileBackedShieldedStore, PrivateContactPayment, ShieldedStore, SubwalletId,
+    };
+    use crate::PlatformWalletManager;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
+
+    /// The identity the bound wallet manages, which paid for a private
+    /// contact request to [`RECIPIENT`] in an earlier process.
+    const SENDER: [u8; 32] = [0xB1; 32];
+    /// The identity that private request is to.
+    const RECIPIENT: [u8; 32] = [0xA1; 32];
+
+    /// Two wallets, of which only `bound` has a persisted shielded viewing
+    /// key: it bound a shielded account in an earlier process, and manages
+    /// [`SENDER`].
+    struct ShieldedTracePersister {
+        wallets: Vec<(Wallet, ManagedWalletInfo)>,
+        bound: WalletId,
+    }
+
+    impl PlatformWalletPersistence for ShieldedTracePersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let wallets = self
+                .wallets
+                .iter()
+                .map(|(wallet, managed)| {
+                    let wallet_id = wallet.compute_wallet_id();
+                    let mut identity_manager = IdentityManagerStartState::default();
+                    if wallet_id == self.bound {
+                        let sender = ManagedIdentity::new(
+                            dpp::identity::Identity::V0(IdentityV0 {
+                                id: Identifier::from(SENDER),
+                                public_keys: BTreeMap::new(),
+                                balance: 0,
+                                revision: 1,
+                            }),
+                            0,
+                        );
+                        identity_manager
+                            .wallet_identities
+                            .insert(wallet_id, BTreeMap::from([(0, sender)]));
+                    }
+                    (
+                        wallet_id,
+                        ClientWalletStartState {
+                            wallet: wallet.clone(),
+                            wallet_info: managed.clone(),
+                            identity_manager,
+                            unused_asset_locks: BTreeMap::new(),
+                            unconfirmed_outgoing_txs: Vec::new(),
+                            dashpay_backfill: Default::default(),
+                        },
+                    )
+                })
+                .collect();
+            let mut shielded = ShieldedSyncStartState::default();
+            shielded
+                .viewing_keys
+                .insert(SubwalletId::new(self.bound, 0), vec![0; 96]);
+            Ok(ClientStartState {
+                wallets,
+                shielded,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// A manager over two wallets, only the first of which bound a shielded
+    /// account before; with their ids.
+    fn manager() -> (
+        Arc<PlatformWalletManager<ShieldedTracePersister>>,
+        WalletId,
+        WalletId,
+    ) {
+        let bound = TestWalletContext::new_random();
+        let unbound = TestWalletContext::new_random();
+        let bound_id = bound.wallet.compute_wallet_id();
+        let unbound_id = unbound.wallet.compute_wallet_id();
+        let persister = ShieldedTracePersister {
+            wallets: vec![
+                (bound.wallet, bound.managed_wallet),
+                (unbound.wallet, unbound.managed_wallet),
+            ],
+            bound: bound_id,
+        };
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(persister),
+            event_handler,
+        ));
+        (manager, bound_id, unbound_id)
+    }
+
+    /// Whether `wallet_id`'s public contact requests wait for its private
+    /// payments to be restored.
+    async fn held(
+        manager: &PlatformWalletManager<ShieldedTracePersister>,
+        wallet_id: WalletId,
+    ) -> bool {
+        manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("loaded")
+            .persister()
+            .private_payments_unrestored()
+    }
+
+    /// Save, in the shielded store at `path`, the bound wallet's payment for a
+    /// private contact request from [`SENDER`] to [`RECIPIENT`] that may
+    /// still execute, as an earlier process left it: its redrive record and
+    /// its journal record.
+    fn save_payment(path: &std::path::Path, bound: WalletId) {
+        let mut store = FileBackedShieldedStore::open_path(path, 100).expect("the store");
+        store
+            .arm_private_contact_payment(
+                SubwalletId::new(bound, 0),
+                PendingRedrive {
+                    activity_id: [0x21; 32],
+                    anchor: [0x22; 32],
+                    nullifiers: vec![[0x23; 32]],
+                    st_bytes: vec![0xAB; 96],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                },
+                PrivateContactPayment {
+                    sender: SENDER,
+                    recipient: RECIPIENT,
+                    account_reference: 0,
+                },
+                &[PrivatePaymentEntry::for_commitment([0xC1; 32])],
+                0,
+                None,
+            )
+            .expect("the payment saved");
+    }
+
+    /// Whether `wallet_id`'s [`SENDER`] holds its pair with [`RECIPIENT`],
+    /// which refuses every request to it, public or private.
+    async fn pair_held(
+        manager: &PlatformWalletManager<ShieldedTracePersister>,
+        wallet_id: WalletId,
+    ) -> bool {
+        let wallet = manager.get_wallet(&wallet_id).await.expect("loaded");
+        let wm = wallet.wallet_manager().read().await;
+        wm.get_wallet_info(&wallet_id)
+            .and_then(|info| {
+                info.identity_manager
+                    .managed_identity(&Identifier::from(SENDER))
+            })
+            .is_some_and(|sender| {
+                sender
+                    .dashpay()
+                    .private_reply_pending(&Identifier::from(RECIPIENT))
+            })
+    }
+
+    /// A loaded wallet that bound a shielded account before holds its public
+    /// contact requests until the shielded store is configured, which
+    /// restores its private payment's pair with no keys and releases the
+    /// wallet; one that never bound a shielded account is never held.
+    #[tokio::test]
+    async fn should_hold_a_loaded_wallet_that_bound_a_shielded_account_until_the_store_opens() {
+        let (manager, bound, unbound) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        save_payment(&path, bound);
+        manager.load_from_persistor().await.expect("loaded");
+        assert!(
+            held(&manager, bound).await,
+            "may have an unrestored payment"
+        );
+        assert!(!pair_held(&manager, bound).await, "not restored yet");
+        assert!(
+            !held(&manager, unbound).await,
+            "never bound a shielded account"
+        );
+
+        manager.configure_shielded(&path).await.expect("configured");
+        assert!(!held(&manager, bound).await, "restored from the store");
+        assert!(pair_held(&manager, bound).await, "the pair is held");
+    }
+
+    /// A wallet loaded once the shielded store is configured is restored by
+    /// the load itself, its private payment's pair held.
+    #[tokio::test]
+    async fn should_restore_a_wallet_loaded_once_the_store_is_configured() {
+        let (manager, bound, _) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        save_payment(&path, bound);
+        manager.configure_shielded(&path).await.expect("configured");
+        manager.load_from_persistor().await.expect("loaded");
+        assert!(!held(&manager, bound).await, "restored by the load");
+        assert!(pair_held(&manager, bound).await, "the pair is held");
     }
 }

@@ -282,6 +282,29 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl DriveOperation<'_> {
+    /// The batch's owner handover (protocol version 15): `None` for a batch that updates no
+    /// document, and otherwise the owners of the contracts offering gas sponsorship on the
+    /// documents it updates, for whom an owner change is a full handover.
+    pub(crate) fn owner_handover(
+        operations: &[DriveOperation],
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<BTreeSet<[u8; 32]>>, Error> {
+        let mut owner_handover = None;
+        for operation in operations {
+            if let DriveOperation::DocumentOperation(document_operation) = operation {
+                document_operation.add_to_owner_handover(
+                    &mut owner_handover,
+                    drive,
+                    transaction,
+                    platform_version,
+                )?;
+            }
+        }
+        Ok(owner_handover)
+    }
+
     /// Whether the batch this operation is in refunds nobody for the storage its document
     /// operations remove: see [`ContractModerationOperationType::ForfeitStorageRefunds`].
     pub fn forfeits_storage_refunds(&self) -> bool {
@@ -323,6 +346,7 @@ impl DriveOperation<'_> {
         self,
         drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -332,6 +356,7 @@ impl DriveOperation<'_> {
                 .into_low_level_drive_operations_after_ttl_drain(
                     drive,
                     estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
                     block_info,
                     transaction,
                     platform_version,
@@ -873,7 +898,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert contract and document");
 
@@ -993,7 +1017,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1104,7 +1127,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1239,7 +1261,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1350,7 +1371,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1410,7 +1430,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -1567,7 +1586,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1621,7 +1639,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to be able to update documents");
 
@@ -2080,7 +2097,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("add token balance");
         }
@@ -2134,7 +2150,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(
@@ -2175,7 +2190,6 @@ mod tests {
             &BlockInfo::default(),
             None,
             platform_version,
-            None,
         );
 
         assert!(

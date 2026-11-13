@@ -49,7 +49,7 @@ use dash_sdk::platform::transition::put_contract::{
 use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 use super::*;
 
@@ -301,9 +301,11 @@ impl IdentityWallet {
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to put data contract to platform: {e}"
-                ))
+                preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to put data contract to platform: {e}"
+                    ))
+                })
             })?;
 
         Ok(confirmed)

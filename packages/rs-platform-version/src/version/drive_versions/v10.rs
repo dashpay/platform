@@ -3,9 +3,11 @@ use crate::version::drive_versions::drive_contract_method_versions::{
     DriveContractFeePotMethodVersions, DriveContractMethodVersions,
 };
 use crate::version::drive_versions::drive_document_method_versions::v5::DRIVE_DOCUMENT_METHOD_VERSIONS_V5;
+use crate::version::drive_versions::drive_grove_method_versions::v2::DRIVE_GROVE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::v2::DRIVE_IDENTITY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_identity_method_versions::{
     DriveIdentityCostEstimationMethodVersions, DriveIdentityMethodVersions,
+    DriveIdentityUpdateMethodVersions,
 };
 use crate::version::drive_versions::drive_state_transition_method_versions::v5::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5;
 use crate::version::drive_versions::drive_token_method_versions::v3::DRIVE_TOKEN_METHOD_VERSIONS_V3;
@@ -13,14 +15,17 @@ use crate::version::drive_versions::drive_verify_method_versions::v4::DRIVE_VERI
 use crate::version::drive_versions::drive_vote_method_versions::v4::DRIVE_VOTE_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::drive_versions::{
-    DriveBatchOperationsMethodVersion, DriveInitializationMethodVersions, DriveMethodVersions,
-    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
-    DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveBatchOperationsMethodVersion, DriveFeesMethodVersions, DriveInitializationMethodVersions,
+    DriveMethodVersions, DrivePlatformSystemMethodVersions,
+    DrivePrefundedSpecializedMethodVersions, DriveSystemEstimationCostsMethodVersions,
+    DriveVersion,
 };
 use grovedb_version::version::v5::GROVE_V5;
 
 /// Drive version 10, introduced in protocol v15:
 ///
+/// * **Retained history** (protocol v15 note 35): per-type revision trees and one proof
+///   authenticate its page, count and lifecycle.
 /// * **Compiled contracts**: with `DRIVE_CONTRACT_METHOD_VERSIONS_V5`, applying a contract writes
 ///   nothing when its format version 1 bytes match the stored contract's, whatever format the
 ///   stored one is in, as contracts are stored compiled from this version
@@ -47,7 +52,8 @@ use grovedb_version::version::v5::GROVE_V5;
 /// * **Yes/no vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V4` bumps
 ///   `insert.register_identity_vote` to 1, which registers a vote of either poll kind, and
 ///   `cleanup.remove_all_votes_given_by_identities` to 1, which also removes the yes/no votes of
-///   a masternode that left the list. It sets every `yes_no` method to `Some(0)`, so yes/no
+///   a masternode that left the list and deletes a contested resource vote a reference
+///   points at while that vote is stored. It sets every `yes_no` method to `Some(0)`, so yes/no
 ///   polls can be opened and voted on (`None`, not active, in every earlier table), and bumps
 ///   `contested_resource_insert.add_vote_poll_end_date_query_operations` to 1, which adds only
 ///   the entry when the batch already queues the end date's tree with other storage flags.
@@ -73,19 +79,51 @@ use grovedb_version::version::v5::GROVE_V5;
 ///   resolves an estimated batch's layer descriptions once the whole batch is lowered, the root
 ///   also kept at the level of the deepest root key the batch writes under, so the estimate no
 ///   longer depends on the order of the batch's operations. `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`
-///   also sets `remove_reference_for_index_level_for_contract_operations` to 2 and
+///   also sets `remove_reference_for_index_level_for_contract_operations` to 2,
+///   `add_reference_for_index_level_for_contract_operations` to 1 and
 ///   `stateless_delete_of_non_tree_for_costs` to 1, and
-///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete and a
-///   system credits update describe their layers as they are. Applying a batch is unchanged.
+///   `platform_system.estimation_costs.for_total_system_credits_update` is 1, so a delete, an
+///   insert under a summable index and a system credits update describe their layers as they
+///   are. Applying a batch is unchanged.
 /// * **Core fork activations**: `platform_system.fetch_core_fork_activation_height` and
 ///   `store_core_fork_activation_height` are `Some(0)` (`None` before): Drive keeps, in `Misc`,
 ///   the chain locked Core height at which Platform first saw each tracked Core fork active.
+/// * **Masternode keys that repeat a hash**: `identity.update.add_new_keys_to_masternode_identity`
+///   is 1 rather than 0: a key added to a masternode identity whose public key hash the identity
+///   already holds a non-unique key hash reference for, or that an earlier key of the same batch
+///   has, gets no second reference instead of failing with `IdentityKeyAlreadyExists`. Core
+///   accepts any 20 bytes as an operator payout or platform node id, so an operator identity can
+///   need two keys of different kinds with one hash. The keys Platform adds to owner and voter
+///   identities go through the same method. `apply_drive_operations` 2 also creates a hash's
+///   tree under the non-unique key hashes tree once where several identity operations of one
+///   batch each queue it, as masternodes whose operators share a payout address do.
+/// * **Refunds at the storing epoch's rate** (protocol v15 note 27): `fees.calculate_fee` 1
+///   prices the bytes a refund returns at the storage rate of the protocol version that ran the
+///   epoch that stored them, which that epoch's tree records.
 ///
 /// * **GroveDB V5** (protocol v15 note 26): `grove_version` is `GROVE_V5` (`GROVE_V4` before).
 ///   GroveDB reads and proves a private document store's entries by position range only under
 ///   V5 (`private_document_store.get_range` and `range_proof`), prices a store's creation as it
 ///   applies it (`merk_insert_element` 1 in both estimators), and lets a batch carry the same
 ///   keyless append more than once (`apply_batch.keyless_append_repeats`).
+///
+/// * **Storage handover** (protocol v15 note 28): `grove_methods` is
+///   `DRIVE_GROVE_METHOD_VERSIONS_V2`.
+///
+/// * **A document that may be contested** (protocol v15 note 29):
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V4` sets `single_document.verify_proof_keep_serialized` to
+///   1, which verifies the proof of a single document query in its "maybe contested" status.
+///
+/// * **A single document at a block time** (protocol v15 note 31):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets `query.single_document_path_query` to 1, which
+///   selects the newest retained revision at or before the time, taking the highest revision
+///   at equal times in the composite history layout. `verify_proof_keep_serialized` 1 verifies
+///   its proof outside a contest. A history document that may be contested is refused at a
+///   block time; explicitly contested queries ignore the time.
+///
+/// * **An insert writes no entry in an expired time range bucket** (protocol v15 note 36):
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` sets
+///   `insert.add_indices_for_top_index_level_for_contract_operations` to 3.
 ///
 /// Everything else matches `DRIVE_VERSION_V9`.
 pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
@@ -107,19 +145,23 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
                 for_token_balances: 1, // changed in v10: keeps a deeper root and Tokens layer description
                 ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.cost_estimation
             },
+            update: DriveIdentityUpdateMethodVersions {
+                add_new_keys_to_masternode_identity: 1, // changed in v10: a masternode key whose hash the identity already holds a reference for is added without a second one
+                ..DRIVE_IDENTITY_METHOD_VERSIONS_V2.update
+            },
             ..DRIVE_IDENTITY_METHOD_VERSIONS_V2
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete estimates
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
+            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container (note 41)
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
-            ..DRIVE_VERSION_V9.methods.batch_operations
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
             estimated_cost_for_prefunded_specialized_balance_update: 2, // changed in v10: keeps a deeper prefunded balances layer description
             ..DRIVE_VERSION_V9.methods.prefunded_specialized_balances
         },
         vote: DRIVE_VOTE_METHOD_VERSIONS_V4, // changed in v10: the yes/no poll kind
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V4, // changed in v10: the yes/no and private document entries proof verifiers; a document that may be contested is verified
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V5, // changed in v10: a consume deletes what its lookup read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
@@ -128,12 +170,14 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             fetch_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
             store_core_fork_activation_height: Some(0), // changed in v10: the Core fork activations
         },
+        fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: refunds at the storing epoch's rate (note 27)
         ..DRIVE_VERSION_V9.methods
     },
     // changed in v10: GROVE_V5 (protocol v15 note 26), whose gates protocol v15 needs: a private
     // document store's entries are read and proved by position range, a store's creation is
     // estimated as it is applied, and a batch may repeat a keyless append. GROVE_V4, which v9
-    // keeps, refuses all three.
+    // keeps, refuses all three. History also uses branch-local pagination and parent echoes.
     grove_version: GROVE_V5,
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V2, // changed in v10: the flags update follows the written owner
     ..DRIVE_VERSION_V9
 };

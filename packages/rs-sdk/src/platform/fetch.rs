@@ -231,6 +231,7 @@ where
                     Ok(parsed)
                 })
                 .map_err(|e| ExecutionError {
+                    possibly_accepted: false,
                     inner: e,
                     address: Some(address.clone()),
                     retries,
@@ -374,6 +375,11 @@ impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
 impl Fetch for drive_proof_verifier::types::DataContractHistory {
     type Query = platform_proto::GetDataContractHistoryRequest;
     type Request = platform_proto::GetDataContractHistoryRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::DocumentHistoryProofInfo {
+    type Query = platform_proto::GetDocumentHistoryRequest;
+    type Request = platform_proto::GetDocumentHistoryRequest;
 }
 
 impl Fetch for drive_proof_verifier::types::DocumentHistory {

@@ -97,7 +97,9 @@ pub(crate) fn validate_document_action_not_expired(
         DocumentTransitionAction::UpdatePriceAction(action) => {
             (action.base(), action.document().created_at())
         }
-        DocumentTransitionAction::CreateAction(_)
+        // Protocols through 14 reject erase at the bounds gate; erase has no live document.
+        DocumentTransitionAction::EraseAction(_)
+        | DocumentTransitionAction::CreateAction(_)
         | DocumentTransitionAction::DeleteAction(_)
         | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {
             return Ok(SimpleConsensusValidationResult::new());

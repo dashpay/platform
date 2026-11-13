@@ -6,6 +6,9 @@ pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
+    /// Maximum retained revisions removed by one erase, read by
+    /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
+    pub max_document_revisions_erased_per_transition: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
@@ -45,7 +48,7 @@ pub struct SystemLimits {
     /// this does not count.
     pub max_private_document_entry_size: Option<u32>,
     /// The bytes a compacted chunk of a private document store is kept near (protocol version
-    /// 15): 512 KiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
+    /// 15): 1 MiB from `SYSTEM_LIMITS_V5`, `None` in the earlier tables, which admit no private
     /// document type. Read with the two chunk power bounds below by Drive's
     /// `insert_empty_private_document_store_operation` 0 when a contract creates a private
     /// type's store; the chunk power it picks is committed into the store, so a store keeps the
@@ -91,6 +94,31 @@ pub struct SystemLimits {
     /// it. Read by document type parser generation 3 (protocol version 14) and never reached
     /// before.
     pub max_reference_expression_depth: u16,
+    /// Maximum number of slots the `documentTypeRequirements` of a `refersTo` naming its
+    /// target through the referring document (`"$self.<property>"`) may declare (it holds
+    /// at least one). Every write that checks such a reference looks for properties of the
+    /// referenced document type to fill them with, a search that stays small only while
+    /// the slots are few. Refused on every parse. Read by `apply_property_reference` 1
+    /// (protocol version 15), the only version that parses such a reference, and never
+    /// reached before.
+    pub max_document_type_requirement_slots: u16,
+    /// Maximum number of conditions the `when` of one `documentTypeRequirements` slot may be
+    /// made of, `anyOf`, `allOf`, `not`, `ifThen` and `ifThenElse` counted with the
+    /// comparisons under them, and each string an `in` or a `notIn` lists counted too. Every write that checks the reference judges the condition
+    /// against each property of the referenced document type that could fill the slot. It
+    /// also bounds how deep conditions nest, which a decoder holds to
+    /// `MAX_SLOT_CONDITION_DECODE_DEPTH` (a test keeps this limit within it). Refused on
+    /// every parse. Read by `apply_property_reference` 1 (protocol version 15), the only
+    /// version that parses such a reference, and never reached before.
+    pub max_document_type_requirement_condition_nodes: u16,
+    /// Maximum number of characters of a string the `when` of a `documentTypeRequirements`
+    /// slot is written with: a `{ "const": ... }` and each string an `in` or a `notIn`
+    /// lists. They are compared with property names and property paths, which are no
+    /// longer. With `max_document_type_requirement_condition_nodes`, which counts each
+    /// listed string, it bounds what one `when` adds to a stored contract. Refused on
+    /// every parse and by the native schema check. Read by `apply_property_reference` 1
+    /// and `check_document_type_schema` 1 (protocol version 15) only.
+    pub max_document_type_requirement_condition_text_length: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
     /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
@@ -584,10 +612,11 @@ mod tests {
     fn mock_platform_versions_carry_the_same_documents_batch_cap() {
         use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
         use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+        use crate::version::mocks::v4_test::TEST_PLATFORM_V4;
         use crate::version::protocol_version::PLATFORM_TEST_VERSIONS;
 
-        let versions =
-            PLATFORM_TEST_VERSIONS.get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+        let versions = PLATFORM_TEST_VERSIONS
+            .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3, TEST_PLATFORM_V4]);
         assert!(
             !versions.is_empty(),
             "the mock version registry is empty; this test would assert nothing"

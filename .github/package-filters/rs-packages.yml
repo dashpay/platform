@@ -183,6 +183,9 @@ rs-dapi:
   - *dapi_grpc
   - *dpp
   - packages/rs-dash-event-bus/**
+  # The block proof hashing rs-dapi shares with the clients that verify it
+  - packages/rs-drive-proof-verifier/**
+  - *context_provider
 
 platform-encryption: &platform_encryption
   - .github/workflows/tests*
