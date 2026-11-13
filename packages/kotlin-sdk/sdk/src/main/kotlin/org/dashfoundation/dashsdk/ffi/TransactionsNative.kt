@@ -181,6 +181,16 @@ internal object TransactionsNative {
         signerHandle: Long,
     ): ByteArray
 
+    /** Bridges the Rust wallet's single read/decide/submit/observe operation. */
+    external fun documentEraseAndObserve(
+        walletHandle: Long,
+        submittingIdentityId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signerHandle: Long,
+    ): String
+
     /**
      * Transfer + broadcast [documentId] on [contractId]'s [documentType],
      * from [ownerId] to [recipientId], signed via [signerHandle] with key

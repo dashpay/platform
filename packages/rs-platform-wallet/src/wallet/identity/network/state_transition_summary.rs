@@ -490,6 +490,8 @@ fn summarize_document_transition(
         DocumentTransition::Transfer(t) => (None, Some(t.recipient_owner_id())),
         DocumentTransition::Purchase(t) => (Some(t.price()), None),
         DocumentTransition::UpdatePrice(t) => (Some(t.price()), None),
+        // Protocols through 14 cannot admit an erase. It carries no transfer amount or recipient.
+        DocumentTransition::Erase(_) => (None, None),
         DocumentTransition::Create(_)
         | DocumentTransition::Replace(_)
         | DocumentTransition::Delete(_)
@@ -662,6 +664,8 @@ mod tests {
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::state_transition::batch_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+    use dpp::state_transition::batch_transition::document_erase_transition::v0::DocumentEraseTransitionV0;
+    use dpp::state_transition::batch_transition::DocumentEraseTransition;
     use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
     use dpp::state_transition::batch_transition::token_claim_transition::v0::TokenClaimTransitionV0;
@@ -743,6 +747,37 @@ mod tests {
 
     fn summarize_bytes(transition: &StateTransition) -> StateTransitionSummary {
         summarize_state_transition(&transition.serialize_to_bytes().unwrap()).expect("summarizes")
+    }
+
+    #[test]
+    fn should_identify_an_erase_and_its_document_without_a_transfer() {
+        let transition = batch(vec![BatchedTransition::Document(
+            DocumentTransition::Erase(DocumentEraseTransition::V0(DocumentEraseTransitionV0 {
+                base: document_base("post"),
+            })),
+        )]);
+        let summary = summarize_bytes(&transition);
+        assert_eq!(summary.kind_name, "DocumentsBatch([Erase])");
+        assert_eq!(summary.serialized, transition.serialize_to_bytes().unwrap());
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        let [erase] = transitions.as_slice() else {
+            panic!("expected one document operation");
+        };
+        assert_eq!(erase.action, "Erase");
+        assert_eq!(erase.data_contract_id, Identifier::from(CONTRACT));
+        assert_eq!(
+            erase.target,
+            BatchedTransitionTarget::Document {
+                document_type: "post".to_string(),
+                document_id: Identifier::from([0x0D; 32]),
+            }
+        );
+        assert_eq!(erase.amount, None);
+        assert_eq!(erase.recipient_id, None);
+        assert_eq!(erase.token_count, None);
+        assert_eq!(erase.details, None);
     }
 
     #[test]

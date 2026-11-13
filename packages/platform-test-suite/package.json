@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "5.0.3",
+  "version": "5.1.0-dev.1",
   "description": "Dash Network end-to-end tests",
   "engines": {
     "node": ">=22"

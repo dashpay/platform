@@ -11,6 +11,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
+            fetch_document_lifecycle: None,
+
             query_documents: 0,
             query_chained_documents: 0,
             query_composite_documents: 0,
@@ -32,6 +34,11 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             single_document_path_query: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
+            erase_refund_recipient_cost: None,
+            erase_document_for_contract_operations: None,
+            add_estimation_costs_for_erase_document: None,
+            add_estimation_costs_for_lifecycle_record: None,
+
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
             delete_document_for_contract: 0,
             delete_document_for_contract_id: 0,

@@ -68,9 +68,15 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
+            // Each contract once, and kept in the contract cache: a contract stored as its schemas
+            // is parsed, every pattern it holds compiled, each time it is read from state. The
+            // response holds one entry for an id however often the request names it
+            let mut distinct_contract_ids = contract_ids;
+            distinct_contract_ids.sort_unstable();
+            distinct_contract_ids.dedup();
             let contracts = self.drive.get_contracts_with_fetch_info(
-                contract_ids.as_slice(),
-                false,
+                distinct_contract_ids.as_slice(),
+                true,
                 None,
                 platform_version,
             )?;
@@ -110,8 +116,12 @@ mod tests {
     use super::*;
     use crate::query::tests::{
         assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+        store_data_contract,
     };
     use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use std::sync::Arc;
 
     #[test]
     fn test_invalid_data_contract_id() {
@@ -237,5 +247,46 @@ mod tests {
             &state,
             version,
         ));
+    }
+
+    /// A contract stored as its schemas is parsed each time it is read from state, every
+    /// pattern it holds compiled, so a request naming one id many times reads it once, and
+    /// through the contract cache.
+    #[test]
+    fn should_read_a_repeated_id_once_through_the_contract_cache() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract =
+            get_data_contract_fixture(None, 0, version.protocol_version).data_contract_owned();
+        store_data_contract(&platform, &contract, version);
+        let id = contract.id().to_buffer();
+        // What stored the contract cached it
+        let cache = &platform.drive.cache.data_contracts;
+        cache.clear();
+
+        let query = || {
+            let request = GetDataContractsRequestV0 {
+                ids: vec![id.to_vec(); 3],
+                prove: false,
+            };
+            let result = platform
+                .query_data_contracts_v0(request, &state, version)
+                .expect("expected query to succeed");
+            assert!(matches!(
+                result.data,
+                Some(GetDataContractsResponseV0 {
+                    result: Some(get_data_contracts_response_v0::Result::DataContracts(contracts)),
+                    metadata: Some(_),
+                }) if contracts.data_contract_entries.len() == 1
+                    && contracts.data_contract_entries[0].data_contract.is_some()
+            ));
+            cache.get(id, false).expect("the query caches the contract")
+        };
+
+        let read_from_state = query();
+        let read_again = query();
+        assert!(
+            Arc::ptr_eq(&read_from_state, &read_again),
+            "the second query is answered with the cached contract"
+        );
     }
 }

@@ -5,10 +5,9 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_history_response::{get_data_contract_history_response_v0, GetDataContractHistoryResponseV0};
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_with_data, ProtocolError};
+use dpp::check_validation_result_with_data;
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
 use drive::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
 use drive::error::query::QuerySyntaxError;
@@ -87,7 +86,9 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
-            let contracts = self.drive.fetch_contract_with_history(
+            // Each revision serialized without parsing it: one stored in schema form would
+            // build every document type, its patterns compiled, on every request
+            let contracts = self.drive.fetch_serialized_contract_history(
                 contract_id.to_buffer(),
                 None,
                 start_at_ms,
@@ -104,14 +105,8 @@ impl<C> Platform<C> {
 
             let contract_historical_entries: Vec<DataContractHistoryEntry> = contracts
                 .into_iter()
-                .map(|(date_in_seconds, data_contract)| {
-                    Ok::<DataContractHistoryEntry, ProtocolError>(DataContractHistoryEntry {
-                        date: date_in_seconds,
-                        value: data_contract
-                            .serialize_to_bytes_with_platform_version(platform_version)?,
-                    })
-                })
-                .collect::<Result<Vec<DataContractHistoryEntry>, ProtocolError>>()?;
+                .map(|(date, value)| DataContractHistoryEntry { date, value })
+                .collect();
 
             GetDataContractHistoryResponseV0 {
                 result: Some(

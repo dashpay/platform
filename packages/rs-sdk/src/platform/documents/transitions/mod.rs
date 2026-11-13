@@ -1,5 +1,6 @@
 pub mod create;
 pub mod delete;
+pub mod erase;
 pub mod purchase;
 pub mod replace;
 pub mod set_price;
@@ -9,6 +10,7 @@ pub use create::{DocumentCreateResult, DocumentCreateTransitionBuilder};
 pub use delete::{
     index_only_delete_document, DocumentDeleteResult, DocumentDeleteTransitionBuilder,
 };
+pub use erase::{DocumentEraseResult, DocumentEraseTransitionBuilder};
 pub use purchase::{DocumentPurchaseResult, DocumentPurchaseTransitionBuilder};
 pub use replace::{DocumentReplaceResult, DocumentReplaceTransitionBuilder};
 pub use set_price::{DocumentSetPriceResult, DocumentSetPriceTransitionBuilder};

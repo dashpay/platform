@@ -222,6 +222,26 @@ class DocumentTransactions internal constructor(
         }
     }
 
+    /** Rust owns eligibility, key selection, submission and lifecycle observations. */
+    suspend fun eraseAndObserve(
+        walletHandle: Long,
+        submittingIdentityId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        documentId: ByteArray,
+        signerHandle: Long,
+    ): DocumentEraseOutcome = gate.op {
+        require(submittingIdentityId.size == 32) { "submittingIdentityId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(documentId.size == 32) { "documentId must be 32 bytes" }
+        val json = mapNativeErrors {
+            TransactionsNative.documentEraseAndObserve(
+                walletHandle, submittingIdentityId, contractId, documentType, documentId, signerHandle,
+            )
+        }
+        DocumentEraseOutcome.fromJson(json)
+    }
+
     /**
      * Transfer + broadcast [documentId] on [contractId]'s [documentType],
      * from [ownerId] to [recipientId] — signed via [signerHandle] with key

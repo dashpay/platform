@@ -14,7 +14,7 @@ runs:
 
         ci-image-contract verify .github/runner-requirements.json
         python3 packages/dapi-grpc/scripts/setup-codegen.py
-        for pkg in build-essential cmake curl jq libgmp-dev libssl-dev pkg-config python3 unzip zip; do
+        for pkg in build-essential cmake curl jq libssl-dev pkg-config python3 unzip zip; do
           dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
         done
         test -x "$HOME/.cargo/bin/rustup"

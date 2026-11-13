@@ -909,6 +909,131 @@ mod tests {
         assert!(replies_on(&drive, &contract, "rust").is_empty());
     }
 
+    fn assert_current_insert_operations_preserved(
+        drive: &Drive,
+        contract: &DataContract,
+        type_name: &str,
+        document: &Document,
+    ) {
+        use crate::util::estimated_layers::EstimatedLayers;
+        for estimate in [false, true] {
+            let operations = |generation| {
+                let mut version = PlatformVersion::latest().clone();
+                version
+                    .drive
+                    .methods
+                    .document
+                    .insert
+                    .add_document_for_contract_operations = generation;
+                let mut layers = estimate.then(EstimatedLayers::new);
+                let operations = drive
+                    .add_document_for_contract_operations(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((
+                                    document,
+                                    StorageFlags::optional_default_as_cow(),
+                                )),
+                                owner_id: Some(OWNER),
+                            },
+                            contract,
+                            document_type: contract.document_type_for_name(type_name).unwrap(),
+                        },
+                        false,
+                        &BlockInfo::default_with_time(CREATED_AT),
+                        &mut None,
+                        &mut layers,
+                        None,
+                        &version,
+                    )
+                    .unwrap();
+                if estimate {
+                    let mut costs = vec![];
+                    drive
+                        .apply_batch_low_level_drive_operations(
+                            layers,
+                            None,
+                            operations,
+                            &mut costs,
+                            &version.drive,
+                        )
+                        .unwrap();
+                    costs
+                } else {
+                    operations
+                }
+            };
+            assert_eq!(
+                operations(1),
+                operations(2),
+                "insert operations and priced estimates must remain equal, estimate={estimate}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_preserve_current_insert_operations_for_derived_indices_and_ttl() {
+        let contract = contract();
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
+        assert_current_insert_operations_preserved(&drive, &contract, "reply", &reply(2));
+
+        let contract = dpp::tests::json_document::json_document_to_contract(
+            "tests/supporting_files/contract/skip-if-absent/skip-memos-contract.json",
+            false,
+            PlatformVersion::latest(),
+        )
+        .unwrap();
+        let drive = setup(&contract);
+        let mut memo = document(
+            [3; 32],
+            BTreeMap::from([
+                ("a".into(), Value::Text("a".into())),
+                ("b".into(), Value::Text("b".into())),
+                ("c".into(), Value::Text("c".into())),
+                ("d".into(), Value::Text("d".into())),
+            ]),
+        );
+        memo.set_created_at(Some(CREATED_AT));
+        assert_current_insert_operations_preserved(&drive, &contract, "memo", &memo);
+    }
+
+    #[test]
+    fn should_remove_a_deleted_history_document_from_its_derived_index() {
+        let contract = contract_with(
+            Value::Null,
+            platform_value!([{ "postId.topic": "asc" }]),
+            platform_value!({ "documentsKeepHistory": true }),
+        );
+        let drive = setup(&contract);
+        add(&drive, &contract, "post", &post(), true);
+        add(&drive, &contract, "reply", &reply(2), true);
+        assert_eq!(
+            replies_on(&drive, &contract, "rust"),
+            vec![Identifier::from([2; 32])]
+        );
+        let price = |apply| {
+            drive
+                .delete_document_for_contract(
+                    [2; 32].into(),
+                    &contract,
+                    "reply",
+                    BlockInfo::default_with_time(CREATED_AT + 1),
+                    apply,
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .unwrap()
+        };
+        // Processing has wide headroom; storage is the tight side of this fee matrix.
+        let estimated = price(false);
+        let actual = price(true);
+        println!("delete derived-index: estimated storage={} processing={}, actual storage={} processing={}", estimated.storage_fee, estimated.processing_fee, actual.storage_fee, actual.processing_fee);
+        assert!(estimated.storage_fee >= actual.storage_fee);
+        assert!(estimated.processing_fee >= actual.processing_fee);
+        assert!(replies_on(&drive, &contract, "rust").is_empty());
+    }
+
     /// A document carrying its derived values, as a create does from its reference
     /// validation, is keyed by them without reading the referenced document: here there is
     /// none to read, and a read would find the state corrupted.

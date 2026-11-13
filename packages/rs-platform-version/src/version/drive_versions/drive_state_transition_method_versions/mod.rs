@@ -5,7 +5,7 @@ pub mod v4;
 pub mod v5;
 
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveStateTransitionMethodVersions {
@@ -33,6 +33,8 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub document_create_transition: FeatureVersion,
     pub document_delete_transition: FeatureVersion,
     pub document_index_only_delete_transition: FeatureVersion,
+    /// The erase kind, absent before protocol version 15.
+    pub document_erase_transition: OptionalFeatureVersion,
     pub document_purchase_transition: FeatureVersion,
     pub document_replace_transition: FeatureVersion,
     pub document_transfer_transition: FeatureVersion,
