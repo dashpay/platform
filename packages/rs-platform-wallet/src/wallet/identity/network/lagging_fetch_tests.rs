@@ -167,6 +167,7 @@ async fn land_update(
             Some(0),
             transition_revision,
             added,
+            &[],
             disabled,
         )
         .await
