@@ -3320,6 +3320,9 @@ fn should_cover_applied_delete_fees_for_migrated_history_with_multi_epoch_contra
     );
 }
 
+#[cfg(test)]
+mod raw_conversion_tests;
+
 #[test]
 fn should_refuse_erase_refund_cost_before_lifecycle_activation_even_with_a_chunk_limit() {
     let drive = setup_drive_with_initial_state_structure(None);

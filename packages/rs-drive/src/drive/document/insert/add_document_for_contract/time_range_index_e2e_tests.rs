@@ -674,10 +674,15 @@ fn should_apply_time_range_batches_through_raw_conversion_without_ttl() {
 /// without the caller's transaction. Neither refusal may leave a trace.
 #[test]
 fn raw_conversion_refuses_ttl_operations_and_requires_a_transaction() {
+    for pv in [PlatformVersion::get(14).unwrap(), PlatformVersion::latest()] {
+        assert_raw_conversion_refusals(pv);
+    }
+}
+
+fn assert_raw_conversion_refusals(pv: &PlatformVersion) {
     use crate::error::drive::DriveError;
     use crate::util::batch::drive_op_batch::{DocumentOperationType, DriveOperation};
     use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
-    let pv = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(pv));
     let contract = build_ttl_contract_with_index_keys(230, vec![]);
     drive

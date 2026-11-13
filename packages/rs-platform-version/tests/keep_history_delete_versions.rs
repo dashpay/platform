@@ -48,6 +48,21 @@ fn should_activate_lifecycle_handlers_and_limits_only_with_erase_wire_bounds() {
             (protocol >= 15).then_some(100),
             "erase bound at {protocol}"
         );
+        assert_eq!(
+            version
+                .drive
+                .methods
+                .batch_operations
+                .convert_drive_operations_to_grove_operations,
+            if protocol >= 15 {
+                2
+            } else if protocol >= 14 {
+                1
+            } else {
+                0
+            },
+            "raw converter at {protocol}"
+        );
         if protocol <= 14 {
             assert_eq!(document.delete.delete_document_for_contract_operations, 0);
             assert_eq!(conversion.document_delete_transition, 0);
