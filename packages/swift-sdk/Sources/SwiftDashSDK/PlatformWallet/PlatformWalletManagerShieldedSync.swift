@@ -1166,6 +1166,13 @@ extension PlatformWalletManager {
                 "recipientRaw43 must be exactly 43 bytes"
             )
         }
+        // The memo crosses the FFI as a C string, which ends at the first
+        // NUL: a memo holding one would be sent cut short.
+        guard memo?.utf8.contains(0) != true else {
+            throw PlatformWalletError.invalidParameter(
+                "memo must not contain NUL characters"
+            )
+        }
 
         // Admitted through the detached call and the result delivery, like
         // `withWalletDrainNativeOperation`: `shutdown()` waits for the spend
