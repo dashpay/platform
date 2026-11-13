@@ -136,6 +136,12 @@ struct Fixture {
 
 impl Fixture {
     async fn new(on_platform: bool) -> Self {
+        Self::build(Some(on_platform)).await
+    }
+
+    /// `on_platform` `None`: Platform cannot be reached to look the
+    /// identity up, there is no expectation for the request.
+    async fn build(on_platform: Option<bool>) -> Self {
         let mut sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
             .with_time_tolerance(None)
@@ -181,10 +187,12 @@ impl Fixture {
             })),
         );
         sdk.mock().load_expectations_sync(directory.path()).unwrap();
-        sdk.mock()
-            .expect_fetch(target.id(), on_platform.then(|| target.clone()))
-            .await
-            .unwrap();
+        if let Some(on_platform) = on_platform {
+            sdk.mock()
+                .expect_fetch(target.id(), on_platform.then(|| target.clone()))
+                .await
+                .unwrap();
+        }
         sdk.mock()
             .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
                 BTreeSet::from([ADDRESS]),
@@ -338,6 +346,26 @@ async fn should_refuse_an_identity_platform_does_not_know_without_submitting() {
         fixture.managed_identity_ids().await,
         vec![Identifier::from(OWN_IDENTITY)]
     );
+}
+
+/// A recipient lookup that fails (here a transport error) is reported as its
+/// own not-sent error, not as a generic SDK error a host must read as "may
+/// have gone through", with nothing signed or submitted.
+#[tokio::test(flavor = "multi_thread")]
+async fn should_report_a_failed_recipient_lookup_as_not_sent() {
+    let mut fixture = Fixture::build(None).await;
+
+    let error = fixture
+        .top_up()
+        .await
+        .expect_err("the identity cannot be looked up");
+
+    assert!(
+        matches!(&error, PlatformWalletError::IdentityLookupFailed { identity_id, .. }
+            if *identity_id == fixture.target),
+        "got {error:?}"
+    );
+    assert_eq!(fixture.submissions().await, (0, 0, 0));
 }
 
 /// An empty funding map is the caller's mistake on both routes: the SDK's

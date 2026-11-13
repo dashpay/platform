@@ -135,7 +135,9 @@ impl IdentityWallet {
     /// holds the lifecycle gate and reconciles.
     ///
     /// Returns [`PlatformWalletError::IdentityNotFound`] before anything is
-    /// signed or broadcast when Platform has no identity with this id.
+    /// signed or broadcast when Platform has no identity with this id, and
+    /// [`PlatformWalletError::IdentityLookupFailed`], likewise before
+    /// anything is signed or broadcast, when the lookup itself fails.
     /// `inputs` are funding rows as for [`Self::top_up_from_addresses`].
     ///
     /// [`PlatformWallet::top_up_external_identity_from_addresses`]:
@@ -153,7 +155,11 @@ impl IdentityWallet {
     {
         let inputs = funding_inputs(inputs)?;
         let identity = Identity::fetch(&self.sdk, *identity_id)
-            .await?
+            .await
+            .map_err(|source| PlatformWalletError::IdentityLookupFailed {
+                identity_id: *identity_id,
+                source,
+            })?
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
         let (address_infos, new_balance, metadata) = self

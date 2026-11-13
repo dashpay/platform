@@ -322,6 +322,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// Platform could not be asked for an identity the operation names (the
+    /// lookup failed, which is not Platform's answer that it does not exist,
+    /// 7). Nothing was signed, reserved or broadcast: retry as it is.
+    case errorIdentityLookupFailed = 77
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -473,6 +477,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
+            self = .errorIdentityLookupFailed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -743,6 +749,11 @@ public enum PlatformWalletError: LocalizedError {
     /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
     /// reads whether the pair is still held so.
     case publicContactRequestUnconfirmed(String)
+    /// Platform could not be asked for an identity the operation names (code
+    /// 77): the lookup itself failed, before anything was signed, reserved or
+    /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
+    /// SDK error it is never a possibly delivered operation.
+    case identityLookupFailed(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -976,7 +987,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
-             .publicContactRequestUnconfirmed(let m),
+             .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1114,6 +1125,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
+        case .errorIdentityLookupFailed:
+            self = .identityLookupFailed(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

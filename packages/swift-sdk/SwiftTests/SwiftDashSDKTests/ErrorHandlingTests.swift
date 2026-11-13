@@ -604,6 +604,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A failed identity lookup, which sent nothing, has its own code and
+    /// typed case, apart from the unmapped SDK errors a host reads as possibly
+    /// delivered.
+    func testShouldReportAFailedIdentityLookupByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED
+        )
+        XCTAssertEqual(code, .errorIdentityLookupFailed)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "could not look up identity 9fRYTJZW on Platform; nothing was sent"
+        guard case .identityLookupFailed(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed identity-lookup-failed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
