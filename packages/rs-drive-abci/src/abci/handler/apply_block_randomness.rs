@@ -466,7 +466,6 @@ pub(super) mod tests {
             minimum: 100,
             maximum: 1_000,
             kind: RandomTokenRequestKind::Transfer {
-                sender_id: Identifier::from(OWNER),
                 recipient_id: Identifier::from(RECIPIENT),
             },
         };
@@ -507,6 +506,7 @@ pub(super) mod tests {
                         sender_id: request.owner_id,
                         recipient_id: Identifier::from(RECIPIENT),
                         identity_contract_nonce: request.identity_contract_nonce,
+                        minimum: request.minimum,
                         maximum: request.maximum,
                     },
                 )],

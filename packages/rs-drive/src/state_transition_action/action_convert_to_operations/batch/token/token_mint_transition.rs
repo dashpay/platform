@@ -95,6 +95,7 @@ impl DriveHighLevelBatchOperationConverter for TokenMintTransitionAction {
                                 owner_id,
                                 recipient_id: self.identity_balance_holder_id(),
                                 identity_contract_nonce,
+                                minimum,
                                 maximum: self.mint_amount(),
                                 allow_first_mint: false,
                             }));

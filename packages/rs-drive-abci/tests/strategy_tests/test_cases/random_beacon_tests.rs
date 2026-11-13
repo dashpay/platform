@@ -31,7 +31,9 @@ mod tests {
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-    use drive::drive::tokens::settle_random_token_amounts::random_token_reservation_id;
+    use drive::drive::tokens::settle_random_token_amounts::{
+        RandomTokenRequest, RandomTokenRequestKind,
+    };
     use drive::drive::Drive;
     use drive::query::DriveDocumentQuery;
     use drive_abci::config::{
@@ -458,21 +460,39 @@ mod tests {
             Some(BASE_SUPPLY + minted_total)
         );
 
-        // No reservation is left in the escrow, and the token totals balance
+        // No reservation is left in the escrow, whichever of a transfer or a mint to the
+        // player each nonce sent, and the token totals balance
         for nonce in 1..=sent {
-            assert_eq!(
-                drive
-                    .fetch_token_order_escrow(
-                        token_id.to_buffer(),
-                        random_token_reservation_id(&token_id, &owner.id(), nonce),
-                        None,
-                        &mut vec![],
-                        platform_version,
-                    )
-                    .expect("expected to fetch a reservation"),
-                None,
-                "the reservation of nonce {nonce} was settled"
-            );
+            for kind in [
+                RandomTokenRequestKind::Transfer {
+                    recipient_id: player.id(),
+                },
+                RandomTokenRequestKind::Mint {
+                    recipient_id: player.id(),
+                },
+            ] {
+                let request = RandomTokenRequest {
+                    token_id,
+                    owner_id: owner.id(),
+                    identity_contract_nonce: nonce,
+                    minimum: MINIMUM,
+                    maximum: MAXIMUM,
+                    kind,
+                };
+                assert_eq!(
+                    drive
+                        .fetch_token_order_escrow(
+                            token_id.to_buffer(),
+                            request.reservation_id(),
+                            None,
+                            &mut vec![],
+                            platform_version,
+                        )
+                        .expect("expected to fetch a reservation"),
+                    None,
+                    "the reservation of {request:?} was settled"
+                );
+            }
         }
         let total = drive
             .calculate_total_tokens_balance(None, platform_version)

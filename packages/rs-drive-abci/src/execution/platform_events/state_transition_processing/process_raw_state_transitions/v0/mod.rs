@@ -527,7 +527,6 @@ fn random_requests_of(
                                 minimum,
                                 transfer.amount(),
                                 RandomTokenRequestKind::Transfer {
-                                    sender_id: owner_id,
                                     recipient_id: transfer.recipient_id(),
                                 },
                             )
@@ -685,7 +684,6 @@ mod tests {
                     minimum: 100,
                     maximum: 900,
                     kind: RandomTokenRequestKind::Transfer {
-                        sender_id: Identifier::from(OWNER),
                         recipient_id: Identifier::from(RECIPIENT),
                     },
                 },

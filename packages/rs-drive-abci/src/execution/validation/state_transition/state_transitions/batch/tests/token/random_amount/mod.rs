@@ -252,7 +252,6 @@ mod random_amount_tests {
             minimum: MINIMUM,
             maximum: MAXIMUM,
             kind: RandomTokenRequestKind::Transfer {
-                sender_id: identity.id(),
                 recipient_id: recipient.id(),
             },
         };

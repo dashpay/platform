@@ -1,5 +1,7 @@
 use crate::util::estimated_layers::EstimatedLayers;
-use crate::drive::tokens::settle_random_token_amounts::random_token_reservation_id;
+use crate::drive::tokens::settle_random_token_amounts::{
+    RandomTokenRequest, RandomTokenRequestKind,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -193,7 +195,7 @@ pub enum TokenOperationType {
     },
     /// Reserves the most a random token transfer moves (protocol version 15): moves `maximum`
     /// from the sender's balance into the token marketplace escrow of the token, under the
-    /// transfer's reservation id (`random_token_reservation_id`), and writes the recipient's
+    /// transfer's reservation id (`RandomTokenRequest::reservation_id`), and writes the recipient's
     /// balance unchanged, creating it at zero if it has none, so the transition pays for its
     /// storage. `Drive::settle_random_token_amounts` later removes the reservation, pays the
     /// drawn amount to the recipient and the rest back to the sender.
@@ -206,12 +208,14 @@ pub enum TokenOperationType {
         recipient_id: Identifier,
         /// The identity contract nonce of the transition, which keys the reservation
         identity_contract_nonce: IdentityNonce,
+        /// The least the transfer moves, which keys the reservation
+        minimum: TokenAmount,
         /// The most the transfer moves
         maximum: TokenAmount,
     },
     /// Reserves the most a random token mint issues (protocol version 15): adds `maximum` to
     /// the token's total supply and holds it in the token marketplace escrow of the token,
-    /// under the mint's reservation id (`random_token_reservation_id`), and writes the
+    /// under the mint's reservation id (`RandomTokenRequest::reservation_id`), and writes the
     /// recipient's balance unchanged, creating it at zero if it has none, so the transition pays
     /// for its storage. `Drive::settle_random_token_amounts` later removes the reservation, pays
     /// the drawn amount to the recipient and takes the rest off the total supply.
@@ -224,6 +228,8 @@ pub enum TokenOperationType {
         recipient_id: Identifier,
         /// The identity contract nonce of the transition, which keys the reservation
         identity_contract_nonce: IdentityNonce,
+        /// The least the mint issues, which keys the reservation
+        minimum: TokenAmount,
         /// The most the mint issues
         maximum: TokenAmount,
         /// Should we allow this to be the first ever mint
@@ -557,6 +563,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 sender_id,
                 recipient_id,
                 identity_contract_nonce,
+                minimum,
                 maximum,
             } => {
                 let token_id_bytes = token_id.to_buffer();
@@ -578,12 +585,17 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     transaction,
                     platform_version,
                 )?);
+                let request = RandomTokenRequest {
+                    token_id,
+                    owner_id: sender_id,
+                    identity_contract_nonce,
+                    minimum,
+                    maximum,
+                    kind: RandomTokenRequestKind::Transfer { recipient_id },
+                };
                 batch_operations.extend(random_token_reservation_operations(
                     drive,
-                    token_id,
-                    sender_id,
-                    identity_contract_nonce,
-                    maximum,
+                    &request,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -595,6 +607,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                 owner_id,
                 recipient_id,
                 identity_contract_nonce,
+                minimum,
                 maximum,
                 allow_first_mint,
             } => {
@@ -621,12 +634,17 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     transaction,
                     platform_version,
                 )?);
-                batch_operations.extend(random_token_reservation_operations(
-                    drive,
+                let request = RandomTokenRequest {
                     token_id,
                     owner_id,
                     identity_contract_nonce,
+                    minimum,
                     maximum,
+                    kind: RandomTokenRequestKind::Mint { recipient_id },
+                };
+                batch_operations.extend(random_token_reservation_operations(
+                    drive,
+                    &request,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -637,9 +655,10 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
     }
 }
 
-/// The operations holding `maximum` of `token_id` in the token marketplace escrow of the token,
-/// under the reservation id of the random transfer or mint `owner_id` sent with
-/// `identity_contract_nonce`, creating the token's escrow tree if it has none.
+/// The operations holding the maximum of `request`, the random transfer or mint a transition
+/// reserves, in the token marketplace escrow of its token, under its reservation id
+/// (`RandomTokenRequest::reservation_id`, which the settlement finds it by), creating the
+/// token's escrow tree if it has none.
 ///
 /// The entry lives from the execution of the transition to the settlement of the block's random
 /// token amounts, which removes it in the same block, so a marketplace read of committed state
@@ -649,21 +668,17 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
 /// operation queued before this one in the batch creates the token's escrow tree, and
 /// `DriveOperation::refuse_repeated_token_balance_writes` refuses a batch reserving two random
 /// amounts of one token, whose second reservation would queue the tree's creation again.
-#[allow(clippy::too_many_arguments)]
 fn random_token_reservation_operations(
     drive: &Drive,
-    token_id: Identifier,
-    owner_id: Identifier,
-    identity_contract_nonce: IdentityNonce,
-    maximum: TokenAmount,
+    request: &RandomTokenRequest,
     estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<LowLevelDriveOperation>, Error> {
     drive.add_to_token_order_escrow_operations(
-        token_id.to_buffer(),
-        random_token_reservation_id(&token_id, &owner_id, identity_contract_nonce),
-        maximum,
+        request.token_id.to_buffer(),
+        request.reservation_id(),
+        request.maximum,
         estimated_costs_only_with_layer_info,
         transaction,
         &mut None,
@@ -1037,6 +1052,7 @@ mod tests {
             sender_id: test_identity_id(),
             recipient_id: test_recipient_id(),
             identity_contract_nonce: 3,
+            minimum: 100,
             maximum: 900,
         };
         assert!(matches!(
@@ -1048,6 +1064,7 @@ mod tests {
             owner_id: test_identity_id(),
             recipient_id: test_recipient_id(),
             identity_contract_nonce: 3,
+            minimum: 100,
             maximum: 400,
             allow_first_mint: false,
         };

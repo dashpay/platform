@@ -78,8 +78,10 @@ impl Drive {
         let token_id = request.token_id.to_buffer();
 
         // The reservation holds exactly the maximum: the block's execution of the transition
-        // wrote it, and nothing else writes under a reservation id. Anything else is a request
-        // no executed transition reserved, which is never paid out.
+        // wrote it, and nothing else writes under a reservation id. Its id hashes every field
+        // of the request, so a request naming another recipient, range or kind than its
+        // transition reserved finds none, and anything else is a request no executed
+        // transition reserved: neither is ever paid out.
         let reservation_id = request.reservation_id();
         let reserved = self.fetch_token_order_escrow(
             token_id,
@@ -101,10 +103,7 @@ impl Drive {
         )?;
 
         let history_document_type_name = match request.kind {
-            RandomTokenRequestKind::Transfer {
-                sender_id,
-                recipient_id,
-            } => {
+            RandomTokenRequestKind::Transfer { recipient_id } => {
                 operations.extend(self.add_to_identity_token_balance_operations(
                     token_id,
                     recipient_id.to_buffer(),
@@ -114,11 +113,12 @@ impl Drive {
                     platform_version,
                 )?);
                 if released > 0 {
-                    // The sender and the recipient differ (structure validation refuses a
-                    // transfer to oneself), so the two writes are to two balances
+                    // The sender, the request's owner, and the recipient differ (structure
+                    // validation refuses a transfer to oneself), so the two writes are to two
+                    // balances
                     operations.extend(self.add_to_identity_token_balance_operations(
                         token_id,
-                        sender_id.to_buffer(),
+                        request.owner_id.to_buffer(),
                         released,
                         &mut None,
                         transaction,
@@ -331,7 +331,6 @@ fn draw_token_amount_v0(beacon: &[u8], request: &RandomTokenRequest) -> Option<T
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::tokens::settle_random_token_amounts::random_token_reservation_id;
     use crate::util::batch::drive_op_batch::TokenOperationType;
     use crate::util::batch::DriveOperation;
     use crate::drive::contract::DataContractFetchInfo;
@@ -426,7 +425,6 @@ mod tests {
 
     fn transfer() -> RandomTokenRequest {
         request(RandomTokenRequestKind::Transfer {
-            sender_id: Identifier::from(SENDER),
             recipient_id: Identifier::from(RECIPIENT),
         })
     }
@@ -487,7 +485,7 @@ mod tests {
         let epoch = BlockInfo::default().epoch;
         let platform_version = PlatformVersion::latest();
         match request.kind {
-            RandomTokenRequestKind::Transfer { recipient_id, .. } => {
+            RandomTokenRequestKind::Transfer { recipient_id } => {
                 TokenTransferTransitionAction::V0(TokenTransferTransitionActionV0 {
                     base,
                     amount: request.maximum,
@@ -967,7 +965,6 @@ mod tests {
         let second = RandomTokenRequest {
             owner_id: Identifier::from(other_sender),
             kind: RandomTokenRequestKind::Transfer {
-                sender_id: Identifier::from(other_sender),
                 recipient_id: Identifier::from([10; 32]),
             },
             ..transfer()
@@ -1177,24 +1174,127 @@ mod tests {
     }
 
     #[test]
-    fn should_key_each_reservation_by_token_owner_and_nonce() {
-        let token_id = Identifier::from(TOKEN);
-        let owner_id = Identifier::from(SENDER);
-        let reservation = random_token_reservation_id(&token_id, &owner_id, NONCE);
-        assert_eq!(transfer().reservation_id(), reservation);
-        assert_eq!(mint().reservation_id(), reservation);
-        assert_ne!(
-            random_token_reservation_id(&token_id, &owner_id, NONCE + 1),
-            reservation
+    fn should_key_each_reservation_by_every_field_of_its_request() {
+        let reservation = transfer().reservation_id();
+        let others = [
+            RandomTokenRequest {
+                token_id: Identifier::from([9; 32]),
+                ..transfer()
+            },
+            RandomTokenRequest {
+                owner_id: Identifier::from([9; 32]),
+                ..transfer()
+            },
+            RandomTokenRequest {
+                identity_contract_nonce: NONCE + 1,
+                ..transfer()
+            },
+            RandomTokenRequest {
+                minimum: MINIMUM + 1,
+                ..transfer()
+            },
+            RandomTokenRequest {
+                maximum: MAXIMUM + 1,
+                ..transfer()
+            },
+            request(RandomTokenRequestKind::Transfer {
+                recipient_id: Identifier::from([9; 32]),
+            }),
+            mint(),
+        ];
+        for other in others {
+            assert_ne!(other.reservation_id(), reservation, "{other:?}");
+        }
+        // The id is consensus: every node must compute it forever
+        assert_eq!(hex::encode(reservation), TRANSFER_RESERVATION_ID_VECTOR);
+        assert_eq!(
+            hex::encode(mint().reservation_id()),
+            MINT_RESERVATION_ID_VECTOR
         );
-        assert_ne!(
-            random_token_reservation_id(&Identifier::from([9; 32]), &owner_id, NONCE),
-            reservation
-        );
-        assert_ne!(
-            random_token_reservation_id(&token_id, &Identifier::from([9; 32]), NONCE),
-            reservation
-        );
+    }
+
+    /// The reservation id of [`transfer`].
+    const TRANSFER_RESERVATION_ID_VECTOR: &str =
+        "dd587207758c9acd443c912aab55d47d85b07a5680500dd09051d7fa16a23ae5";
+    /// The reservation id of [`mint`].
+    const MINT_RESERVATION_ID_VECTOR: &str =
+        "8f500e3dfb1de546ad40167d366177f4aa1d08b29e36bb8fa13c503ae3cde66d";
+
+    #[test]
+    fn should_refuse_to_settle_a_reservation_as_another_recipient_range_or_kind() {
+        let drive = setup();
+        let other_recipient = [9; 32];
+        let transfer = transfer();
+        let mint = RandomTokenRequest {
+            identity_contract_nonce: NONCE + 1,
+            ..mint()
+        };
+        reserve(&drive, &transfer, true);
+        reserve(&drive, &mint, true);
+        let supply_reserved = supply(&drive);
+        let mismatches = [
+            // The transfer's reservation, paid to another recipient
+            request(RandomTokenRequestKind::Transfer {
+                recipient_id: Identifier::from(other_recipient),
+            }),
+            // The transfer's reservation, drawn from another range
+            RandomTokenRequest {
+                minimum: MINIMUM + 1,
+                ..transfer.clone()
+            },
+            // The transfer's reservation, settled as a mint
+            RandomTokenRequest {
+                kind: RandomTokenRequestKind::Mint {
+                    recipient_id: Identifier::from(RECIPIENT),
+                },
+                ..transfer.clone()
+            },
+            // The mint's reservation, paid to another recipient
+            RandomTokenRequest {
+                kind: RandomTokenRequestKind::Mint {
+                    recipient_id: Identifier::from(other_recipient),
+                },
+                ..mint.clone()
+            },
+            // The mint's reservation, settled as a transfer, which would refund its owner
+            RandomTokenRequest {
+                kind: RandomTokenRequestKind::Transfer {
+                    recipient_id: Identifier::from(RECIPIENT),
+                },
+                ..mint.clone()
+            },
+        ];
+        for mismatch in mismatches {
+            let result = drive.settle_random_token_amounts(
+                &BEACON,
+                std::slice::from_ref(&mismatch),
+                &BlockInfo::default(),
+                None,
+                PlatformVersion::latest(),
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+                ),
+                "{mismatch:?}: {result:?}"
+            );
+            assert_eq!(reserved(&drive, &transfer), Some(MAXIMUM), "{mismatch:?}");
+            assert_eq!(reserved(&drive, &mint), Some(MAXIMUM), "{mismatch:?}");
+            assert_eq!(balance(&drive, other_recipient), None, "{mismatch:?}");
+            assert_eq!(balance(&drive, RECIPIENT), Some(0), "{mismatch:?}");
+            assert_eq!(
+                balance(&drive, SENDER),
+                Some(BASE_SUPPLY - MAXIMUM),
+                "{mismatch:?}"
+            );
+            assert_eq!(supply(&drive), supply_reserved, "{mismatch:?}");
+        }
+        assert_tokens_balanced(&drive);
+
+        // The requests the transitions reserved settle both
+        assert_eq!(settle(&drive, &[transfer, mint]), 2);
+        assert_tokens_balanced(&drive);
     }
 
     #[test]
