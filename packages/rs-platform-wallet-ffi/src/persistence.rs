@@ -713,7 +713,14 @@ pub struct PersistenceCallbacksExtension {
     /// Authoritative profile overlays. `contact_id` is the profile identity ID;
     /// `is_present == false` deletes it, independent of identity placement.
     /// The host must copy all row data before returning.
-    pub on_persist_dashpay_profiles_fn: Option<PersistDashpayProfilesFn>,
+    pub on_persist_dashpay_profiles_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            profiles: *const ContactProfileRowFFI,
+            profiles_count: usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
