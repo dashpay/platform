@@ -2801,8 +2801,13 @@ impl PlatformWalletPersistence for FFIPersister {
             changeset.dashpay_profiles.as_ref(),
             self.tracked_masternodes_callbacks.persist_dashpay_profiles,
         ) {
+            let removed = changeset
+                .identities
+                .as_ref()
+                .map(|identity_changes| &identity_changes.removed);
             let rows = profiles
                 .iter()
+                .filter(|(id, _)| !removed.is_some_and(|ids| ids.contains(id)))
                 .map(|(id, profile)| {
                     (
                         *id,
@@ -9614,6 +9619,64 @@ mod tests {
             *host.order.lock().unwrap(),
             vec!["scalar", "profile", "scalar", "profile"]
         );
+    }
+
+    #[test]
+    fn should_not_forward_profile_overlay_for_identity_removed_in_same_changeset() {
+        use platform_wallet::changeset::IdentityChangeSet;
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct Host {
+            ids: Mutex<Vec<[u8; 32]>>,
+        }
+
+        unsafe extern "C" fn persist(
+            context: *mut c_void,
+            _: *const u8,
+            rows: *const ContactProfileRowFFI,
+            count: usize,
+        ) -> i32 {
+            let host = &*(context as *const Host);
+            host.ids.lock().unwrap().extend(
+                slice::from_raw_parts(rows, count)
+                    .iter()
+                    .map(|row| row.contact_id),
+            );
+            0
+        }
+
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&host as *const Host).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_dashpay_profiles: Some(persist),
+                ..Default::default()
+            },
+        );
+        let removed = Identifier::from([9; 32]);
+        let kept = Identifier::from([10; 32]);
+        let mut identities = IdentityChangeSet::default();
+        identities.removed.insert(removed);
+
+        persister
+            .store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(identities),
+                    dashpay_profiles: Some(BTreeMap::from([(removed, None), (kept, None)])),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*host.ids.lock().unwrap(), vec![[10; 32]]);
     }
 
     // --- persists_durably: the fail-closed durability attestation ---

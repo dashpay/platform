@@ -1871,7 +1871,11 @@ class PlatformWalletPersistenceHandler(
         shieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
-            val identity = requireNotNull(db.identityDao().getByIdentityId(identityId))
+            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw
+                ?: return@stage
+            val identity = requireNotNull(
+                db.identityDao().getByIdentityAndNetwork(identityId, networkRaw)
+            )
             if (isPresent) {
                 db.dashpayDao().upsertProfile(
                     DashpayProfileEntity(

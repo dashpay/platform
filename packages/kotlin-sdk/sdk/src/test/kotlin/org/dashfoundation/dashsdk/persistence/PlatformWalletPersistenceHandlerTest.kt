@@ -1021,6 +1021,30 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun profileOverlayRejectsIdentityFromAnotherNetwork() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 15 }
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, true, 0, 0, true, walletId,
+            emptyArray(), LongArray(0), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val otherWalletId = ByteArray(32) { 16 }
+        handler.onPersistWalletMetadata(otherWalletId, testnet + 1, groupId, 0)
+        handler.onChangesetBegin(otherWalletId)
+        val result = handler.onPersistDashpayProfile(
+            otherWalletId, identityId, true, "Wrong network", null, null,
+            ByteArray(32), false, ByteArray(8), false, null, null, null, null,
+        )
+        assertEquals(0, result)
+        assertTrue(handler.onChangesetEnd(otherWalletId, success = true) != 0)
+        assertNull(db.dashpayDao().getProfile(testnet + 1, identityId))
+    }
+
+    @Test
     fun identityDpnsSnapshotRemovesStaleOwnedLabels() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 12 }

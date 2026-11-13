@@ -298,6 +298,26 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(buffer[0].identities)[0].dashpay_profile)
     }
 
+    func testProfileOverlayRequiresIdentityNetworkToMatchCallbackWallet() throws {
+        let otherWalletId = Data(repeating: 0xBB, count: 32)
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: otherWalletId, network: .devnet))
+        try context.save()
+
+        handler.beginChangeset(walletId: otherWalletId)
+        let stored = handler.persistDashpayProfiles(walletId: otherWalletId, profiles: [
+            .init(identityId: ownerId, profile: .init(
+                displayName: "Wrong network", bio: nil, publicMessage: nil, avatarUrl: nil,
+                avatarHash: nil, avatarFingerprint: nil, shieldedAddress: nil
+            ))
+        ])
+        XCTAssertFalse(stored)
+        XCTAssertFalse(handler.endChangeset(walletId: otherWalletId, success: stored))
+
+        let reader = ModelContext(container)
+        XCTAssertTrue(try reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).isEmpty)
+    }
+
     func testObservedProfileSurvivesAdoptionAndExplicitCallbackCanRemoveIt() throws {
         let callbacks = handler.makePersistenceCallbacksExtension()
         let persist = try XCTUnwrap(callbacks.on_persist_dashpay_profiles_fn)

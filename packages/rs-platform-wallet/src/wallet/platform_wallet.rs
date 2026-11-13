@@ -917,14 +917,18 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        // Fence generation teardown across attachment validation, host
+        // viewing-key persistence, and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
-        self.bind_shielded_locked(seed, accounts, coordinator).await
+        self.bind_shielded_locked_unfenced(seed, accounts, coordinator)
+            .await
     }
 
     /// [`Self::bind_shielded`] for a caller already holding
-    /// `shielded_config_lock`.
+    /// `shielded_config_lock` and the generation lifecycle guard.
     #[cfg(feature = "shielded")]
-    pub(crate) async fn bind_shielded_locked(
+    pub(crate) async fn bind_shielded_locked_unfenced(
         &self,
         seed: &[u8],
         accounts: &[u32],
@@ -1059,6 +1063,9 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        // Keep the generation alive from attachment validation through the
+        // persisted snapshot read and coordinator/handle installation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -1374,10 +1381,13 @@ impl PlatformWallet {
                 missing.bits(),
             )));
         }
-        self.ensure_shielded_attached()?;
         // Serialized with the binds: tip preparation rebinds a snapshot of
         // the account set, which would drop an account inserted mid-way.
+        // The lifecycle gate spans attachment validation through host
+        // persistence and the final handle mutation.
+        let _lifecycle = self.core().generation_payment_guard().await;
         let _config = self.shielded_config_lock.lock().await;
+        self.ensure_shielded_attached()?;
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is

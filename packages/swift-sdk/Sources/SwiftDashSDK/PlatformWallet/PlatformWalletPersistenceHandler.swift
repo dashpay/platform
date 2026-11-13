@@ -3909,10 +3909,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func persistDashpayProfiles(walletId: Data, profiles: [DashpayProfileOverlaySnapshot]) -> Bool {
         onQueue {
             do {
+                let walletDescriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: PersistentWallet.predicate(walletId: walletId)
+                )
+                guard let wallet = try modelFetcher.fetch(walletDescriptor, in: backgroundContext).first,
+                      let networkRaw = wallet.networkRaw else {
+                    return false
+                }
                 for overlay in profiles {
                     let identityId = overlay.identityId
                     let descriptor = FetchDescriptor<PersistentIdentity>(
-                        predicate: #Predicate { $0.identityId == identityId }
+                        predicate: #Predicate { $0.identityId == identityId && $0.networkRaw == networkRaw }
                     )
                     guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
                         return false
