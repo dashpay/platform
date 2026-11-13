@@ -2,11 +2,15 @@
 //!
 //! # Precondition
 //!
-//! Every `identity_id` MUST already exist in `identities` and belong to the
-//! flush's `wallet_id` (or have NULL `wallet_id` for the all-zero sentinel
-//! scope). The FK enforces existence; the wallet match is checked here and
-//! propagates [`WalletStorageError::WalletIdMismatch`] on a mis-attributed
-//! caller.
+//! Every `identity_id` MUST already exist in `identities`. Under a real
+//! wallet scope it must also belong to the flush's `wallet_id`. The FK
+//! enforces existence; the wallet match is checked here and propagates
+//! [`WalletStorageError::WalletIdMismatch`] on a mis-attributed caller.
+//!
+//! The all-zero sentinel scope skips the wallet match: `IdentitySyncManager`
+//! has no wallet linkage and writes every balance under it, including those
+//! of wallet-owned identities. Rows carry no wallet column, so there is
+//! nothing to attribute.
 
 use rusqlite::{params, Transaction};
 
@@ -16,27 +20,32 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::util::safe_cast;
 
-/// Keyed by `(identity_id, token_id)`. `wallet_id` feeds the precondition
-/// check only — no column — since cascade flows
-/// `wallets → identities → token_balances` via the nullable
-/// `identities.wallet_id` FK. No auto-prune: hosts deleting identities
-/// out-of-band must prune `token_balances` themselves.
+/// Keyed by `(identity_id, token_id)`. `wallet_id` feeds the ownership
+/// check only (skipped for the all-zero sentinel scope) — no column —
+/// since cascade flows `wallets → identities → token_balances` via the
+/// nullable `identities.wallet_id` FK. No auto-prune: hosts deleting
+/// identities out-of-band must prune `token_balances` themselves.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &TokenBalanceChangeSet,
 ) -> Result<(), WalletStorageError> {
-    let touched: std::collections::BTreeSet<dpp::prelude::Identifier> = cs
-        .balances
-        .keys()
-        .map(|(identity_id, _)| *identity_id)
-        .chain(
-            cs.removed_balances
-                .iter()
-                .map(|(identity_id, _)| *identity_id),
-        )
-        .collect();
-    super::assert_identities_belong_to_wallet(tx, wallet_id, &touched)?;
+    // The sentinel scope is identity-keyed, not wallet-attributed (see the
+    // module docs), so only a real wallet scope is checked for ownership.
+    let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
+    if !scope_is_sentinel {
+        let touched: std::collections::BTreeSet<dpp::prelude::Identifier> = cs
+            .balances
+            .keys()
+            .map(|(identity_id, _)| *identity_id)
+            .chain(
+                cs.removed_balances
+                    .iter()
+                    .map(|(identity_id, _)| *identity_id),
+            )
+            .collect();
+        super::assert_identities_belong_to_wallet(tx, wallet_id, &touched)?;
+    }
     if !cs.balances.is_empty() {
         let now = chrono::Utc::now().timestamp();
         let mut stmt = tx.prepare_cached(
