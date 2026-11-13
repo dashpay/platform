@@ -1195,7 +1195,7 @@ impl PlatformWallet {
         }
         // Hand the already-loaded snapshot to the install step so the
         // restore doesn't pay a second full persister load.
-        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
+        self.install_shielded_views(account_views, &coordinator, start, snapshot_generation)
             .await?;
         Ok(true)
     }
