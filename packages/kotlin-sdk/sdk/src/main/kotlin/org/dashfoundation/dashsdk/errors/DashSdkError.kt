@@ -796,6 +796,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityLookupFailed` (native code 77). Platform could not be
+         * asked for an identity the operation names (the lookup failed, which
+         * is not Platform's answer that it does not exist, code 7). Nothing
+         * was signed, reserved or broadcast, so the operation may be retried
+         * as it is and is never a possibly delivered one.
+         * ← Swift `PlatformWalletError.identityLookupFailed`.
+         */
+        class IdentityLookupFailed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1004,6 +1015,7 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            77 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

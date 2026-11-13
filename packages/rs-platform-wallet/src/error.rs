@@ -678,6 +678,20 @@ pub enum PlatformWalletError {
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
+    /// Platform could not be asked for an identity an operation names, so
+    /// nothing was signed, reserved or broadcast: the operation never
+    /// started and may be retried as it is. Distinct from [`Self::Sdk`],
+    /// which a host that treats an unknown error as "may have gone through"
+    /// cannot tell from a failure after a dispatch, and from
+    /// [`Self::IdentityNotFound`], which is Platform's answer that the
+    /// identity does not exist. `source` is the SDK's error.
+    #[error("could not look up identity {identity_id} on Platform; nothing was sent: {source}")]
+    IdentityLookupFailed {
+        identity_id: Identifier,
+        #[source]
+        source: dash_sdk::Error,
+    },
+
     /// The contact requests with this identity came or went privately
     /// (protocol version 15): a `contactRequest` document to it, in reply or
     /// as a rotation, would publish the relationship, so it is sent privately.
