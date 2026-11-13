@@ -1,0 +1,274 @@
+use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
+use crate::util::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
+
+impl Drive {
+    /// Gathers the operations to add a document to a contract.
+    ///
+    /// Uses the current insert operations, but reserves a retained history's id even
+    /// when the caller allows overwriting an existing document. Other types delegate
+    /// to generation 1, including its expiration and derived-index handling.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_document_for_contract_operations_v2(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if !document_and_contract_info
+            .document_type
+            .documents_keep_history()
+        {
+            return self.add_document_for_contract_operations_v1(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            );
+        }
+        // A type keeping history declares no `sys.random` property (its parser refuses one), so
+        // only generation 1 prepays the index entries a draw may create.
+        self.add_document_or_estimate_change_operations_v2(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            false,
+            platform_version,
+        )
+    }
+
+    /// Prepares the insert, including its derived index values and expiration costs.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn add_document_or_estimate_change_operations_v2(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
+        transaction: TransactionArg,
+        estimates_a_change: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // A document whose type declares a `ttl` is stored without storage flags.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
+
+        // indexOnly document types have no primary-storage row and no
+        // primary-key tree at all — the index entries are the rows, and
+        // updates are impossible by construction (immutable, no revision).
+        // `index_only()` can only be true on a PV14+ contract (the grammar
+        // rejects the keyword below meta-schema v3), so this branch is
+        // unreachable for every historical document.
+        if document_and_contract_info.document_type.index_only() {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                    document_and_contract_info.contract,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
+            self.add_indices_for_top_index_level_for_contract_operations(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_info.time_ms,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
+            self.add_preallocated_index_tree_operations_for_referring_types(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
+            return Ok(batch_operations);
+        }
+
+        let primary_key_path = contract_documents_primary_key_path(
+            document_and_contract_info.contract.id_ref().as_bytes(),
+            document_and_contract_info.document_type.name().as_str(),
+        );
+
+        let primary_key_tree_type = document_and_contract_info
+            .document_type
+            .primary_key_tree_type(platform_version)?;
+
+        // Apply means stateful query
+        let query_type = if estimated_costs_only_with_layer_info.is_none() {
+            StatefulDirectQuery
+        } else {
+            StatelessDirectQuery {
+                in_tree_type: primary_key_tree_type,
+                query_target: QueryTargetValue(
+                    document_and_contract_info
+                        .document_type
+                        .estimated_size(platform_version)? as u32,
+                ),
+            }
+        };
+
+        // To update but not create:
+
+        // 1. Override should be allowed
+        let could_be_update = override_document;
+
+        // 2. Is not a dry run
+        let could_be_update = could_be_update
+            && !document_and_contract_info
+                .owned_document_info
+                .document_info
+                .is_document_size();
+
+        // 3. Document exists in storage
+        let is_update = could_be_update
+            && self.grove_has_raw(
+                primary_key_path.as_ref().into(),
+                document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .id_key_value_info()
+                    .as_key_ref_request()?,
+                query_type,
+                transaction,
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
+
+        if is_update {
+            let update_operations = self
+                .update_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    block_info,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+
+            batch_operations.extend(update_operations);
+
+            return Ok(batch_operations);
+        }
+
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at, which the document does not
+        // store: they are read here, before anything is keyed. Every other type passes through
+        // unchanged.
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
+        // if we are trying to get estimated costs we need to add the upper levels
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
+                document_and_contract_info.contract,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
+        // if we have override_document set that means we already checked if it exists
+        self.add_document_to_primary_storage(
+            &document_and_contract_info,
+            block_info,
+            override_document
+                && !document_and_contract_info
+                    .document_type
+                    .documents_keep_history(),
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
+        self.add_indices_for_top_index_level_for_contract_operations(
+            &document_and_contract_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_info.time_ms,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
+        // A document whose type declares a `ttl` also gets its expirations tree entry, pays
+        // for its bytes by the time it will live, and prepays its deletion.
+        if let Some(ttl_seconds) = document_and_contract_info
+            .document_type
+            .documents_ttl_seconds()
+        {
+            batch_operations = self.add_document_ttl_operations(
+                &document_and_contract_info,
+                ttl_seconds,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                estimates_a_change,
+                platform_version,
+            )?;
+        }
+
+        // If any indexOnly document type of this contract carries a
+        // `preallocated` index bound to this document type through a
+        // refersTo declaration, create that index's trees for entries
+        // referencing this document now — see
+        // `add_preallocated_index_tree_operations`. A no-op for every
+        // contract without the (PV14+, indexOnly-only) flag. A change of
+        // the document preallocates nothing (its trees came with its
+        // creation, and an applied replace walks no preallocation), so its
+        // dry run leaves them out and still bounds what the change writes.
+        if !estimates_a_change {
+            self.add_preallocated_index_tree_operations_for_referring_types(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
+
+        Ok(batch_operations)
+    }
+}

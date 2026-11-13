@@ -1,3 +1,4 @@
+use crate::state_transition::batch_transition::batched_transition::DocumentEraseTransition;
 use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -326,6 +327,10 @@ impl BatchTransitionResolversV0 for TokenTransition {
     }
 
     fn as_transition_purchase(&self) -> Option<&DocumentPurchaseTransition> {
+        None
+    }
+
+    fn as_transition_erase(&self) -> Option<&DocumentEraseTransition> {
         None
     }
 
