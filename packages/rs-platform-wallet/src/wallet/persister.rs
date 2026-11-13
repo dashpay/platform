@@ -13,7 +13,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
     ClientStartState, DpnsNameStateEntry, FlushLedger, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
@@ -615,6 +615,27 @@ impl WalletPersister {
     /// guarantees a failed store retained and committed nothing.
     pub(crate) fn classify_store_failure(&self, error: PersistenceError) -> PlatformWalletError {
         PlatformWalletError::from_store_failure(self.inner.as_ref(), error)
+    }
+
+    /// What a caller reports when [`Self::store_durably`] did not answer for
+    /// a record: the store's failure as [`Self::classify_store_failure`]
+    /// gives it, and anything else as the flush failure it is. A flush that
+    /// failed for good, the call's own or another that took the record, is
+    /// `PersisterFlush` of kind `Fatal`: the record is gone. Another flush
+    /// still in progress, or one that put back what it took, leaves the
+    /// record buffered for a later flush: `PersisterFlush` of kind
+    /// `Transient`, to be tried again.
+    pub(crate) fn classify_not_durable(&self, not_durable: NotDurable) -> PlatformWalletError {
+        match not_durable {
+            NotDurable::Store(error) => self.classify_store_failure(error),
+            NotDurable::Flush(error) => PlatformWalletError::from_flush_failure(error),
+            NotDurable::Lost => PlatformWalletError::from_flush_failure(
+                PersistenceError::backend_with_kind(PersistenceErrorKind::Fatal, not_durable),
+            ),
+            NotDurable::OtherFlushUnsettled => PlatformWalletError::from_flush_failure(
+                PersistenceError::backend_with_kind(PersistenceErrorKind::Transient, not_durable),
+            ),
+        }
     }
 
     /// Flush this wallet's records, counted in the ledger of its id

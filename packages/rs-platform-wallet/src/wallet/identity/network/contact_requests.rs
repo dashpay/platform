@@ -4496,9 +4496,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Mark an established contact's payment channel as permanently broken
     /// and persist the transition through the changeset pipeline so
     /// it survives restarts and is FFI/UI-visible. Idempotent.
-    async fn mark_contact_channel_broken(&self, identity_id: &Identifier, contact_id: &Identifier) {
+    pub(super) async fn mark_contact_channel_broken(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+    ) {
         let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+        // On this handle's wallet generation only, as the two completions
+        // below: the fault was found without the lock, for the wallet the
+        // handle was taken from, and a wallet re-created under this id since
+        // has its own channel to judge.
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return;
         };
         let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {

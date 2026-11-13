@@ -7351,6 +7351,70 @@ mod tests {
     }
 
     /// A handle taken before its wallet was removed and created again under
+    /// its id breaks no payment channel on the replacement: the fault its
+    /// work found was found for the wallet it was taken from. The
+    /// replacement's own handle does.
+    #[tokio::test]
+    async fn should_break_no_channel_on_a_replacement_from_a_stale_handle() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        ))
+        .await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        let stale = first.identity().dashpay();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let again = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(again.wallet_id(), wallet_id);
+
+        // Bob is a contact of the replacement.
+        {
+            let iw = again.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice");
+            managed
+                .add_sent_contact_request(public_request(&alice, &bob, 0), &iw.persister)
+                .expect("sent request");
+            managed
+                .add_incoming_contact_request(public_request(&bob, &alice, 0), &iw.persister)
+                .expect("incoming request");
+        }
+        let broken = |wallet: Arc<PlatformWallet>| async move {
+            managed(&wallet, ALICE, |managed| {
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .get(&Identifier::from(BOB))
+                    .expect("established")
+                    .payment_channel_broken
+            })
+            .await
+        };
+
+        stale
+            .mark_contact_channel_broken(&alice.id(), &bob.id())
+            .await;
+        assert!(
+            !broken(Arc::clone(&again)).await,
+            "the replacement's channel is its own to judge"
+        );
+
+        again
+            .identity()
+            .dashpay()
+            .mark_contact_channel_broken(&alice.id(), &bob.id())
+            .await;
+        assert!(broken(again).await, "broken by its own handle");
+    }
+
+    /// A handle taken before its wallet was removed and created again under
     /// its id settles nothing of the replacement's unconfirmed public request,
     /// whatever the proofs show, and claims nothing on its pair.
     #[tokio::test]
