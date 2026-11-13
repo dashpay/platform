@@ -5029,20 +5029,39 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
         let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
             continue;
         };
-        // The claim waited for the store: the context is checked again right before the
-        // broadcast, as another task can verify a newer network version meanwhile. The
-        // claimed attempt stays counted; the record stays, unretired.
-        if let Some(context) = &redrive.spend_context {
-            if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) {
-                warn!(
-                    saved = ?context,
-                    "redrive: the context the spend was priced in stopped holding while its \
-                     claim waited; keeping the record without re-broadcasting it"
-                );
-                continue;
-            }
-        }
-        let broadcast_result = st.broadcast(sdk, None).await;
+        // The context is checked immediately before every dispatch, the first one included
+        // (the claim waited for the store, and another task can verify a newer network
+        // version meanwhile, or while an earlier dispatch is in flight), and the SDK's own
+        // retries are not used: no attempt is sent unchecked. A refusal sends nothing more.
+        // The claimed attempt stays counted and the record stays, unretired.
+        let broadcast_result =
+            match broadcast_tracking_delivery_checked(sdk, &st, || match &redrive.spend_context {
+                Some(context)
+                    if !recovery_context_holds(sdk, context, redrive.nullifiers.len()) =>
+                {
+                    Err(())
+                }
+                _ => Ok(()),
+            })
+            .await
+            {
+                Ok(BroadcastDelivery::Admitted) => Ok(()),
+                // Recovery never retires a record from here: a spend that was never delivered is
+                // resolved by the spend that saved it, the scan or the prune backstop.
+                Ok(BroadcastDelivery::MaybeDelivered(e) | BroadcastDelivery::NeverDelivered(e)) => {
+                    Err(e)
+                }
+                Err(stopped) => {
+                    warn!(
+                        saved = ?redrive.spend_context,
+                        may_have_been_delivered = stopped.may_have_been_delivered,
+                        "redrive: the context the spend was priced in stopped holding before a \
+                         dispatch; not sending it again, keeping the record and its notes (an \
+                         earlier dispatch, if any, may have been delivered)"
+                    );
+                    continue;
+                }
+            };
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -8285,6 +8304,81 @@ mod redrive_tests {
             1,
             "the record stays"
         );
+    }
+
+    /// Recovery re-broadcasts a saved spend in single dispatches, as the foreground spend
+    /// does, at the SDK's configured budget: none of them is left to the SDK's own retry
+    /// loop, which no check runs inside of.
+    #[tokio::test]
+    async fn should_rebroadcast_a_saved_spend_in_single_checked_dispatches() {
+        use crate::broadcast_outcome::spend_broadcast_dispatches;
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x60; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            spend_broadcast_dispatches(&handle),
+            "every failed dispatch is followed by another, up to the budget"
+        );
+        let left = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(left.len(), 1, "the record stays");
+        assert_eq!(left[0].attempts, 1, "one attempt is claimed for the pass");
+    }
+
+    /// The SDK learns a newer verified network version during recovery's first, failed
+    /// transport attempt: no second attempt is sent under the fee schedule the spend was not
+    /// priced in, whatever the SDK's retry budget. The first attempt may have been delivered,
+    /// so the record stays with its notes reserved, and its attempt stays counted.
+    #[tokio::test]
+    async fn should_not_send_another_recovery_attempt_when_the_version_is_learned_during_the_first()
+    {
+        use crate::test_support::tracing_capture::{RecordedEvents, RecordingGuard};
+        use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+
+        let (mut sdk, handle) = pinned_v13_sdk();
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = SubwalletId::new([0x61; 32], 0);
+        let (transition, record) = saved_transfer(0, Some(transfer_context(13, None, 0)));
+        store.write().await.arm_redrive(id, record).expect("armed");
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+
+        // The mock transport logs each execution after counting it and before it answers:
+        // the first one is where the SDK learns the newer version.
+        let learner = Arc::clone(&handle);
+        let learned = std::sync::atomic::AtomicBool::new(false);
+        let _recording = RecordingGuard::install(RecordedEvents::with_hook(move |message| {
+            if message == "mock execute" && !learned.swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                learner
+                    .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
+                    .expect("a mock SDK");
+            }
+        }));
+
+        redrive_pending_spends(&handle, &store, id, &recorded, &CancellationToken::new()).await;
+
+        let request = transition
+            .broadcast_request_for_state_transition()
+            .expect("serializes");
+        assert_eq!(
+            sdk.mock().request_count(&request).await,
+            1,
+            "the first attempt is the only one sent"
+        );
+        let left = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(left.len(), 1, "the record stays");
+        assert_eq!(left[0].attempts, 1, "the claimed attempt stays counted");
     }
 
     /// A shielded spend's dispatches check the context before each one, and a check that
