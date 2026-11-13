@@ -297,8 +297,8 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
 
 #[tokio::test]
 async fn seed_pool_batch_fits_max_state_transition_size() {
-    // The pool-seeding batch size (MAX_ACTIONS_PER_BATCH = 6 in
-    // rs-platform-wallet's seed_pool.rs) is bounded by the 20 KiB
+    // The pool-seeding batch size (`max_shielded_actions_per_transition`,
+    // 6 today) is bounded by the 20 KiB
     // transaction-size limit, not the 16-action consensus cap: the Halo 2
     // proof grows ~2,681 bytes per action (measured: 2 actions → 8,294 B,
     // 6 → 19,018 B, 7 → 21,699 B — the last rejected by tenderdash's
@@ -339,6 +339,12 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
         max,
     );
 
+    assert_eq!(
+        crate::shielded::max_shielded_actions_per_transition(platform_version),
+        6,
+        "the seeding batch is the helper's bound",
+    );
+
     let v1 = extract_v1(st);
     assert_eq!(
         v1.actions.len(),
@@ -349,4 +355,80 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
         v1.value_balance, 50_000,
         "dummy outputs are zero-value: value_balance must equal the real amount",
     );
+}
+
+/// A signed-looking Instant proof whose funding transaction spends `inputs` P2PKH coins: each
+/// input carries a 107-byte unlocking script (a DER signature and a compressed key), and the
+/// InstantLock names every input, as Core's does.
+fn make_instant_asset_lock_proof_with_signed_inputs(inputs: u32) -> AssetLockProof {
+    use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+    use crate::tests::fixtures::{
+        instant_asset_lock_is_lock_fixture,
+        instant_asset_lock_proof_transaction_fixture_with_inputs,
+    };
+    use dashcore::ScriptBuf;
+
+    let mut transaction =
+        instant_asset_lock_proof_transaction_fixture_with_inputs(None, None, inputs);
+    for input in &mut transaction.input {
+        input.script_sig = ScriptBuf::from_bytes(vec![0x30; 107]);
+    }
+    let mut instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+    instant_lock.inputs = transaction
+        .input
+        .iter()
+        .map(|input| input.previous_output)
+        .collect();
+    AssetLockProof::Instant(InstantAssetLockProof::new(instant_lock, transaction, 0))
+}
+
+/// An Instant proof serializes the whole funding transaction and its InstantLock, about 184
+/// bytes per funding input on top of a Chain proof, so the largest batch a lock can carry
+/// shrinks with its inputs: the bound the helper gives for the lock's own proof must build a
+/// transition within `max_state_transition_size`, whatever the number of inputs. Each size
+/// measured here is of a built, serialized `ShieldFromAssetLock` of 6 actions (1 input:
+/// 19,420 B, 7: 20,528 B, 20: 22,920 B, 100: 37,640 B against the 20,480 B limit).
+#[tokio::test]
+async fn seed_pool_batch_with_an_instant_proof_fits_max_state_transition_size() {
+    use crate::serialization::PlatformSerializable;
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+    use crate::shielded::max_shield_from_asset_lock_actions;
+
+    let platform_version = PlatformVersion::latest();
+    let recipient = test_orchard_address();
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+    let max = platform_version.system_limits.max_state_transition_size as usize;
+
+    let mut batch_by_inputs = Vec::new();
+    for inputs in [1u32, 6, 7, 20, 50] {
+        let proof = make_instant_asset_lock_proof_with_signed_inputs(inputs);
+        let actions = usize::from(max_shield_from_asset_lock_actions(platform_version, &proof));
+        assert!(actions >= 2, "{inputs} inputs: {actions} actions");
+        batch_by_inputs.push((inputs, actions));
+        let st = build_shield_from_asset_lock_transition_with_signer(
+            &recipient,
+            50_000u64,
+            proof,
+            &path,
+            &signer,
+            &TestProver,
+            [0u8; 36],
+            None,
+            None,
+            actions - 1,
+            platform_version,
+        )
+        .await
+        .expect("builder should succeed");
+        let len = st.serialize_to_bytes().expect("serialize").len();
+        assert!(
+            len <= max,
+            "{inputs} inputs, {actions} actions: {len} > {max}"
+        );
+    }
+    // A single-input lock keeps the full batch; a funding transaction with 7 inputs does not
+    // fit it any more.
+    assert_eq!(batch_by_inputs[0], (1, 6));
+    assert!(batch_by_inputs[2].1 < 6, "{batch_by_inputs:?}");
 }

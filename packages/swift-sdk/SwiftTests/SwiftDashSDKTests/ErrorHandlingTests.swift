@@ -604,6 +604,54 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A spend run against a plan whose notes moved since keeps its own code
+    /// and typed case, apart from an unconfirmed spend (18): nothing was sent.
+    func testShouldReportAChangedShieldedPlanByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED
+        )
+        XCTAssertEqual(code, .errorShieldedPlanChanged)
+        XCTAssertEqual(code.rawValue, 77)
+        let detail = "the shielded spend no longer selects the planned notes"
+        guard case .shieldedPlanChanged(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed plan-changed error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A spend the notes cover only with more notes than one transition spends
+    /// keeps its own code and typed case, apart from a balance shortfall (41).
+    func testShouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_TOO_MANY_NOTES
+        )
+        XCTAssertEqual(code, .errorShieldedSpendTooManyNotes)
+        XCTAssertEqual(code.rawValue, 78)
+        let detail = "Shielded spend needs 17 notes, more than the 16 one transition can spend"
+        guard case .shieldedSpendTooManyNotes(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed too-many-notes error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A withdrawal amount outside the protocol bounds keeps its own code and
+    /// typed case, apart from a balance shortfall (41).
+    func testShouldReportAWithdrawalAmountOutOfRangeByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE
+        )
+        XCTAssertEqual(code, .errorShieldedWithdrawalAmountOutOfRange)
+        XCTAssertEqual(code.rawValue, 79)
+        let detail = "Shielded withdrawal amount 1 is outside the allowed range 1000000 to 50000000000000"
+        guard case .shieldedWithdrawalAmountOutOfRange(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed withdrawal-out-of-range error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

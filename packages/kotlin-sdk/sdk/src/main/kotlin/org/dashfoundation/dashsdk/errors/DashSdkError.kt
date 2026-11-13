@@ -796,6 +796,38 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedPlanChanged` (native code 77). A shielded spend run
+         * against a plan (`platform_wallet_manager_shielded_plan_spend`, then
+         * a `_with_plan` spend) selected different notes or a different fee
+         * than the plan, as the wallet's notes changed since. Nothing was
+         * reserved, built or broadcast: plan again and confirm the new fee.
+         * ← Swift `PlatformWalletError.shieldedPlanChanged`.
+         */
+        class ShieldedPlanChanged(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedSpendTooManyNotes` (native code 78). The wallet's
+         * notes cover a shielded spend, or its plan, only with more notes
+         * than one shielded transition spends
+         * (`max_shielded_actions_per_transition`). Nothing was reserved, built or
+         * broadcast: a smaller amount fits, or the notes can be merged first.
+         * ← Swift `PlatformWalletError.shieldedSpendTooManyNotes`.
+         */
+        class ShieldedSpendTooManyNotes(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedWithdrawalAmountOutOfRange` (native code 79). A
+         * shielded withdrawal, or its plan, reserves an amount for Core below
+         * the protocol minimum for its Core fee rate or above the maximum.
+         * Nothing was reserved, built or broadcast: another amount fits.
+         * ← Swift `PlatformWalletError.shieldedWithdrawalAmountOutOfRange`.
+         */
+        class ShieldedWithdrawalAmountOutOfRange(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1004,6 +1036,9 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
+            78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
+            79 -> PlatformWallet.ShieldedWithdrawalAmountOutOfRange(message, cause) // ErrorShieldedWithdrawalAmountOutOfRange
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

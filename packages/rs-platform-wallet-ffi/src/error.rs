@@ -768,6 +768,27 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
 
+    /// Maps `PlatformWalletError::ShieldedPlanChanged`: a shielded spend run
+    /// against a plan (`platform_wallet_manager_shielded_plan_spend`, then a
+    /// `_with_plan` spend export) selected different notes or a different fee
+    /// than the plan, as the wallet's notes changed since (a sync added or
+    /// spent one, or another spend reserved one). Nothing was reserved, built
+    /// or broadcast. Plan again and have the new fee confirmed.
+    ErrorShieldedPlanChanged = 77,
+
+    /// Maps `PlatformWalletError::ShieldedSpendTooManyNotes`: the wallet's
+    /// notes cover a shielded spend (or its plan) only with more notes than
+    /// one shielded transition can spend (`max_shielded_actions_per_transition`).
+    /// Nothing was reserved, built or broadcast. A smaller amount fits, or the
+    /// notes can be merged first.
+    ErrorShieldedSpendTooManyNotes = 78,
+
+    /// Maps `PlatformWalletError::ShieldedWithdrawalAmountOutOfRange`: a
+    /// shielded withdrawal (or its plan) reserves an amount for Core below the
+    /// protocol minimum for its Core fee rate or above the maximum. Nothing was
+    /// reserved, built or broadcast. Another amount fits.
+    ErrorShieldedWithdrawalAmountOutOfRange = 79,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1101,6 +1122,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
+            }
+            PlatformWalletError::ShieldedPlanChanged { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedPlanChanged
+            }
+            PlatformWalletError::ShieldedSpendTooManyNotes { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedSpendTooManyNotes
+            }
+            PlatformWalletError::ShieldedWithdrawalAmountOutOfRange { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedWithdrawalAmountOutOfRange
             }
             // The core-transaction sibling of the shielded pair above: the
             // do-not-retry signal must survive the boundary as a typed code

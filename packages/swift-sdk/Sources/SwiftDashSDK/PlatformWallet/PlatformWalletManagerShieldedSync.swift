@@ -82,6 +82,90 @@ public struct ShieldedSyncEvent: Sendable {
     }
 }
 
+/// The shielded spend a `ShieldedSpendPlan` plans, numbered as the FFI's
+/// `kind` byte numbers it (`3`, the shield from an identity, spends no notes).
+public enum ShieldedSpendKind: UInt8, Sendable {
+    case transfer = 0
+    case unshield = 1
+    case withdrawal = 2
+    case identityTopUp = 4
+}
+
+/// What a planned shielded spend sends: an exact amount with the fee on top,
+/// or the most the largest notes can send after their fee: largest first, at
+/// most as many notes as one transition spends, a note joining only when it
+/// adds more than the fee it costs (a withdrawal sweep is also capped at the
+/// maximum withdrawal); notes left out stay unspent.
+public enum ShieldedSpendAmount: Sendable, Equatable {
+    case exact(UInt64)
+    case sweepAll
+}
+
+/// A shielded spend planned before it is confirmed
+/// (`PlatformWalletManager.shieldedPlanSpend`): the notes Rust would select
+/// now, by count and digest, and their exact fee. All amounts are credits.
+/// Pass it as `plan:` to the spend to run exactly this plan; the spend throws
+/// `PlatformWalletError.shieldedPlanChanged` when the notes moved since.
+public struct ShieldedSpendPlan: Sendable, Equatable {
+    public let kind: ShieldedSpendKind
+    /// What the spend reserves for the recipient: the amount sent, or for a
+    /// withdrawal the reserve for Core, of which the Core fee is taken.
+    public let amount: UInt64
+    /// What the recipient receives: `amount`, except for a withdrawal, where
+    /// it is the output the protocol pays: `amount` truncated to whole duffs,
+    /// minus the Core fee from protocol version 14.
+    public let recipientAmount: UInt64
+    /// The exact fee for the selected notes.
+    public let fee: UInt64
+    /// The sum of the selected notes.
+    public let totalInput: UInt64
+    /// What leaves the pool: `amount + fee` (any rest returns as change).
+    public let totalDebited: UInt64
+    public let noteCount: UInt32
+    /// 32 bytes naming the selection; opaque to the host.
+    public let digest: Data
+}
+
+extension ShieldedSpendPlan {
+    init(ffi: ShieldedSpendPlanFFI) throws {
+        guard let kind = ShieldedSpendKind(rawValue: ffi.kind) else {
+            throw PlatformWalletError.deserialization(
+                "unknown shielded spend plan kind \(ffi.kind)"
+            )
+        }
+        self.init(
+            kind: kind,
+            amount: ffi.amount,
+            recipientAmount: ffi.recipient_amount,
+            fee: ffi.fee,
+            totalInput: ffi.total_input,
+            totalDebited: ffi.total_debited,
+            noteCount: ffi.note_count,
+            digest: withUnsafeBytes(of: ffi.digest) { Data($0) }
+        )
+    }
+}
+
+/// Run `body` with a pointer to `plan`'s 32-byte digest, or `nil` with no
+/// plan; a digest of any other length throws before any FFI call.
+private func withPlanDigest<R>(
+    _ plan: ShieldedSpendPlan?,
+    _ body: (UnsafePointer<UInt8>?) throws -> R
+) throws -> R {
+    guard let plan else { return try body(nil) }
+    guard plan.digest.count == 32 else {
+        throw PlatformWalletError.invalidParameter(
+            "plan digest must be exactly 32 bytes"
+        )
+    }
+    return try plan.digest.withUnsafeBytes { raw in
+        guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+            throw PlatformWalletError.invalidParameter("plan digest baseAddress is nil")
+        }
+        return try body(ptr)
+    }
+}
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -773,6 +857,70 @@ extension PlatformWalletManager {
         return fee
     }
 
+    /// Plan a shielded spend from `account`'s notes before it is confirmed:
+    /// the notes Rust would select now and their exact fee, which grows with
+    /// the number of notes. Nothing is reserved or broadcast. Pass the plan
+    /// as `plan:` to the matching spend to run exactly it.
+    ///
+    /// `coreFeePerByte` is the Core fee rate of a `.withdrawal`, required for
+    /// it and ignored for the other kinds. A withdrawal's amount is the
+    /// reserve for Core: the plan's `recipientAmount` is what reaches the Core
+    /// address: the reserve's whole duffs minus the Core fee, and the withdrawal must run with the same
+    /// rate (another rate throws `shieldedPlanChanged`). A withdrawal sweep is
+    /// capped at the protocol's largest withdrawal.
+    ///
+    /// Throws `invalidParameter` for a kind or amount Rust refuses (or a
+    /// withdrawal without `coreFeePerByte`), `shieldedWithdrawalAmountOutOfRange`
+    /// for a withdrawal amount outside the protocol bounds for its rate, and
+    /// `walletOperation` when the notes cannot pay the amount and its fee
+    /// (or the amount is zero), as the spends do.
+    public func shieldedPlanSpend(
+        walletId: Data,
+        account: UInt32 = 0,
+        kind: ShieldedSpendKind,
+        amount: ShieldedSpendAmount,
+        coreFeePerByte: UInt32? = nil
+    ) async throws -> ShieldedSpendPlan {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        if kind == .withdrawal && coreFeePerByte == nil {
+            throw PlatformWalletError.invalidParameter(
+                "a withdrawal plan needs coreFeePerByte"
+            )
+        }
+        let (credits, sweepAll): (UInt64, Bool)
+        switch amount {
+        case .exact(let value): (credits, sweepAll) = (value, false)
+        case .sweepAll: (credits, sweepAll) = (0, true)
+        }
+
+        let handle = self.handle
+        // The plan reads the shielded store under its lock: off the caller's actor.
+        return try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                // A plain value struct: nothing in it is allocated by Rust.
+                var out = ShieldedSpendPlanFFI()
+                try platform_wallet_manager_shielded_plan_spend(
+                    handle, widPtr, account, kind.rawValue, credits, sweepAll,
+                    coreFeePerByte ?? 0, &out
+                ).check()
+                return try ShieldedSpendPlan(ffi: out)
+            }
+        }.value
+    }
+
     /// Shielded → Shielded transfer. Spends notes from `account`
     /// on `walletId` and creates a new note for `recipientRaw43`
     /// (the recipient's raw 43-byte Orchard payment address).
@@ -805,6 +953,50 @@ extension PlatformWalletManager {
         recipientRaw43: Data,
         amount: UInt64,
         memo: String? = nil
+    ) async throws {
+        try await spendShieldedTransfer(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            recipientRaw43: recipientRaw43,
+            amount: amount,
+            memo: memo,
+            plan: nil
+        )
+    }
+
+    /// `shieldedTransfer` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
+    public func shieldedTransfer(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String? = nil,
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedTransfer(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            recipientRaw43: recipientRaw43,
+            amount: amount,
+            memo: memo,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedTransfer(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        recipientRaw43: Data,
+        amount: UInt64,
+        memo: String?,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -853,10 +1045,13 @@ extension PlatformWalletManager {
                         // pass the text as a C string. Rust validates the
                         // 32-byte limit and does the 36-byte encoding.
                         let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
-                            try platform_wallet_manager_shielded_transfer(
-                                handle, widPtr, resolverHandle, account, recipientPtr, amount,
-                                memoCStr
-                            ).check()
+                            try withPlanDigest(plan) { digest in
+                                try (digest.map {
+                                    platform_wallet_manager_shielded_transfer_with_plan(
+                                        handle, widPtr, resolverHandle, account, recipientPtr, amount, memoCStr, $0)
+                                } ?? platform_wallet_manager_shielded_transfer(
+                                    handle, widPtr, resolverHandle, account, recipientPtr, amount, memoCStr)).check()
+                            }
                         }
                         if let memo, !memo.isEmpty {
                             try memo.withCString { try send($0) }
@@ -1217,6 +1412,46 @@ extension PlatformWalletManager {
         toPlatformAddress: String,
         amount: UInt64
     ) async throws {
+        try await spendShieldedUnshield(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toPlatformAddress: toPlatformAddress,
+            amount: amount,
+            plan: nil
+        )
+    }
+
+    /// `shieldedUnshield` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
+    public func shieldedUnshield(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        toPlatformAddress: String,
+        amount: UInt64,
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedUnshield(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toPlatformAddress: toPlatformAddress,
+            amount: amount,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedUnshield(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        toPlatformAddress: String,
+        amount: UInt64,
+        plan: ShieldedSpendPlan?
+    ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"
@@ -1249,9 +1484,13 @@ extension PlatformWalletManager {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
                     try toPlatformAddress.withCString { addrCStr in
-                        try platform_wallet_manager_shielded_unshield(
-                            handle, widPtr, resolverHandle, account, addrCStr, amount
-                        ).check()
+                        try withPlanDigest(plan) { digest in
+                            try (digest.map {
+                                platform_wallet_manager_shielded_unshield_with_plan(
+                                    handle, widPtr, resolverHandle, account, addrCStr, amount, $0)
+                            } ?? platform_wallet_manager_shielded_unshield(
+                                handle, widPtr, resolverHandle, account, addrCStr, amount)).check()
+                        }
                     }
                 }
             }
@@ -1283,6 +1522,46 @@ extension PlatformWalletManager {
         account: UInt32 = 0,
         identityId: Data,
         amount: UInt64
+    ) async throws {
+        try await spendShieldedIdentityTopUpFromPool(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            identityId: identityId,
+            amount: amount,
+            plan: nil
+        )
+    }
+
+    /// `shieldedIdentityTopUpFromPool` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
+    public func shieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        identityId: Data,
+        amount: UInt64,
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedIdentityTopUpFromPool(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            identityId: identityId,
+            amount: amount,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedIdentityTopUpFromPool(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        identityId: Data,
+        amount: UInt64,
+        plan: ShieldedSpendPlan?
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -1323,9 +1602,13 @@ extension PlatformWalletManager {
                                 "identityId baseAddress is nil"
                             )
                         }
-                        try platform_wallet_manager_shielded_identity_top_up_from_pool(
-                            handle, widPtr, resolverHandle, account, idPtr, amount
-                        ).check()
+                        try withPlanDigest(plan) { digest in
+                            try (digest.map {
+                                platform_wallet_manager_shielded_identity_top_up_from_pool_with_plan(
+                                    handle, widPtr, resolverHandle, account, idPtr, amount, $0)
+                            } ?? platform_wallet_manager_shielded_identity_top_up_from_pool(
+                                handle, widPtr, resolverHandle, account, idPtr, amount)).check()
+                        }
                     }
                 }
             }
@@ -1354,6 +1637,50 @@ extension PlatformWalletManager {
         amount: UInt64,
         coreFeePerByte: UInt32 = 1
     ) async throws {
+        try await spendShieldedWithdraw(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toCoreAddress: toCoreAddress,
+            amount: amount,
+            coreFeePerByte: coreFeePerByte,
+            plan: nil
+        )
+    }
+
+    /// `shieldedWithdraw` against a plan from `shieldedPlanSpend`: the spend runs
+    /// exactly that plan or throws `PlatformWalletError.shieldedPlanChanged`,
+    /// with nothing reserved or sent, when the wallet's notes no longer
+    /// select it.
+    public func shieldedWithdraw(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32 = 0,
+        toCoreAddress: String,
+        amount: UInt64,
+        coreFeePerByte: UInt32 = 1,
+        plan: ShieldedSpendPlan
+    ) async throws {
+        try await spendShieldedWithdraw(
+            walletId: walletId,
+            resolver: resolver,
+            account: account,
+            toCoreAddress: toCoreAddress,
+            amount: amount,
+            coreFeePerByte: coreFeePerByte,
+            plan: plan
+        )
+    }
+
+    private func spendShieldedWithdraw(
+        walletId: Data,
+        resolver: MnemonicResolver,
+        account: UInt32,
+        toCoreAddress: String,
+        amount: UInt64,
+        coreFeePerByte: UInt32,
+        plan: ShieldedSpendPlan?
+    ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"
@@ -1381,10 +1708,13 @@ extension PlatformWalletManager {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
                     try toCoreAddress.withCString { addrCStr in
-                        try platform_wallet_manager_shielded_withdraw(
-                            handle, widPtr, resolverHandle, account, addrCStr, amount,
-                            coreFeePerByte
-                        ).check()
+                        try withPlanDigest(plan) { digest in
+                            try (digest.map {
+                                platform_wallet_manager_shielded_withdraw_with_plan(
+                                    handle, widPtr, resolverHandle, account, addrCStr, amount, coreFeePerByte, $0)
+                            } ?? platform_wallet_manager_shielded_withdraw(
+                                handle, widPtr, resolverHandle, account, addrCStr, amount, coreFeePerByte)).check()
+                        }
                     }
                 }
             }

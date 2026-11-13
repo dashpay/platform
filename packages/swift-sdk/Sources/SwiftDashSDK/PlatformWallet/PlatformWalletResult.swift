@@ -322,6 +322,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome yet. Nothing new was signed. Unconfirmed, not failed: do not
     /// submit it again; a public contact request sync settles it.
     case errorPublicContactRequestUnconfirmed = 76
+    /// A shielded spend run against a plan (`shieldedPlanSpend`) selected
+    /// different notes or a different fee than the plan, as the wallet's
+    /// notes changed since. Nothing was reserved, built or broadcast.
+    case errorShieldedPlanChanged = 77
+    /// The wallet's notes cover a shielded spend, or its plan, only with more
+    /// notes than one shielded transition spends. Nothing was reserved, built
+    /// or broadcast: a smaller amount fits, or the notes can be merged first.
+    case errorShieldedSpendTooManyNotes = 78
+    /// A shielded withdrawal, or its plan, reserves an amount for Core below
+    /// the protocol minimum for its Core fee rate or above the maximum.
+    /// Nothing was reserved, built or broadcast: another amount fits.
+    case errorShieldedWithdrawalAmountOutOfRange = 79
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -473,6 +485,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSdkPinnedBelowProtocolVersion
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PUBLIC_CONTACT_REQUEST_UNCONFIRMED:
             self = .errorPublicContactRequestUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_PLAN_CHANGED:
+            self = .errorShieldedPlanChanged
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_TOO_MANY_NOTES:
+            self = .errorShieldedSpendTooManyNotes
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_WITHDRAWAL_AMOUNT_OUT_OF_RANGE:
+            self = .errorShieldedWithdrawalAmountOutOfRange
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -743,6 +761,20 @@ public enum PlatformWalletError: LocalizedError {
     /// `ManagedPlatformWallet.publicContactRequestUnconfirmed(senderId:recipientId:)`
     /// reads whether the pair is still held so.
     case publicContactRequestUnconfirmed(String)
+    /// A shielded spend run against a `ShieldedSpendPlan` selected different
+    /// notes or a different fee than the plan, as the wallet's notes changed
+    /// since (code 77). Nothing was reserved, built or broadcast: plan again
+    /// and confirm the new fee before spending.
+    case shieldedPlanChanged(String)
+    /// The wallet's notes cover a shielded spend, or its plan, only with more
+    /// notes than one shielded transition spends (code 78). Nothing was
+    /// reserved, built or broadcast: a smaller amount fits, or the notes can
+    /// be merged first.
+    case shieldedSpendTooManyNotes(String)
+    /// A shielded withdrawal, or its plan, reserves an amount for Core below
+    /// the protocol minimum for its Core fee rate or above the maximum (code
+    /// 79). Nothing was reserved, built or broadcast: another amount fits.
+    case shieldedWithdrawalAmountOutOfRange(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -976,7 +1008,8 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
-             .publicContactRequestUnconfirmed(let m),
+             .publicContactRequestUnconfirmed(let m), .shieldedPlanChanged(let m),
+             .shieldedSpendTooManyNotes(let m), .shieldedWithdrawalAmountOutOfRange(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1114,6 +1147,12 @@ public enum PlatformWalletError: LocalizedError {
             self = .sdkPinnedBelowProtocolVersion(detail)
         case .errorPublicContactRequestUnconfirmed:
             self = .publicContactRequestUnconfirmed(detail)
+        case .errorShieldedPlanChanged:
+            self = .shieldedPlanChanged(detail)
+        case .errorShieldedSpendTooManyNotes:
+            self = .shieldedSpendTooManyNotes(detail)
+        case .errorShieldedWithdrawalAmountOutOfRange:
+            self = .shieldedWithdrawalAmountOutOfRange(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

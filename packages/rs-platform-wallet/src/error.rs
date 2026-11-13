@@ -1063,6 +1063,31 @@ pub enum PlatformWalletError {
     #[error("Insufficient shielded balance: available {available}, required {required}")]
     ShieldedInsufficientBalance { available: u64, required: u64 },
 
+    /// A spend run against a `ShieldedSpendPlan` selected different notes, or a
+    /// different fee, than the plan: the wallet's notes changed since it was made (a sync
+    /// added or spent one, or another spend reserved one). Refused before any note was
+    /// reserved or anything built; plan again and confirm the new fee.
+    #[error(
+        "Shielded spend plan changed: the notes now select {fresh_note_count} notes for a fee \
+         of {fresh_fee}; plan the spend again"
+    )]
+    ShieldedPlanChanged {
+        fresh_fee: u64,
+        fresh_note_count: usize,
+    },
+
+    /// The notes cover the spend only with more notes than one shielded transition can spend
+    /// (`max_shielded_actions_per_transition`). Refused before any note was reserved or anything
+    /// built; a smaller amount, or merging notes first, fits.
+    #[error("Shielded spend needs {needed} notes, more than the {max} one transition can spend")]
+    ShieldedSpendTooManyNotes { needed: usize, max: usize },
+
+    /// A shielded withdrawal's amount (the reserve for Core) is below the protocol minimum for
+    /// its Core fee rate or above the maximum. Refused before any note was reserved or anything
+    /// built; consensus would reject it after the proof.
+    #[error("Shielded withdrawal amount {amount} is outside the allowed range {min} to {max}")]
+    ShieldedWithdrawalAmountOutOfRange { amount: u64, min: u64, max: u64 },
+
     /// A Platform Payment-account shield cannot be represented from the
     /// wallet's deterministic address-input set at the requested amount.
     /// Distinct from [`ShieldedInsufficientBalance`](Self::ShieldedInsufficientBalance),

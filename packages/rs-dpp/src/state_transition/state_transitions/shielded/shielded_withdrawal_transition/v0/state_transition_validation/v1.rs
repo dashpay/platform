@@ -1,10 +1,10 @@
-use crate::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionAmountError;
-use crate::consensus::basic::state_transition::WithdrawalBelowMinAmountError;
-use crate::consensus::basic::BasicError;
 use crate::shielded::compute_shielded_withdrawal_fee;
 use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::withdrawal::{min_withdrawal_amount_with_core_fee, validate_core_fee_per_byte_cap};
+use crate::withdrawal::{
+    min_withdrawal_amount_with_core_fee, validate_core_fee_per_byte_cap,
+    validate_withdrawal_reserved_amount_range,
+};
 use platform_version::version::PlatformVersion;
 
 impl ShieldedWithdrawalTransitionV0 {
@@ -44,35 +44,26 @@ impl ShieldedWithdrawalTransitionV0 {
             min_withdrawal_amount_with_core_fee(self.core_fee_per_byte, platform_version);
         let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
 
-        if reserved_amount < minimum_reserved_amount {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
-                    reserved_amount,
-                    minimum_reserved_amount,
-                    max_withdrawal_amount,
-                ))
-                .into(),
-            );
-        }
-
-        if reserved_amount > max_withdrawal_amount {
-            return SimpleConsensusValidationResult::new_with_error(
-                InvalidIdentityCreditWithdrawalTransitionAmountError::new(
-                    reserved_amount,
-                    minimum_reserved_amount,
-                    max_withdrawal_amount,
-                )
-                .into(),
-            );
-        }
-
-        SimpleConsensusValidationResult::new()
+        // In-place change to a shipped generation, inert: the two inline range checks moved
+        // unchanged into `validate_withdrawal_reserved_amount_range`, which the shielded
+        // withdrawal preflight shares. It tests the same comparisons in the same order (below the
+        // minimum first, then above the maximum) and returns the same errors built from the same
+        // reserved amount, minimum and maximum: `WithdrawalBelowMinAmountError` and
+        // `InvalidIdentityCreditWithdrawalTransitionAmountError`, as `BasicError`s. This
+        // generation is `validate_withdrawal_structure` 1, which protocol versions 14 and 15
+        // select.
+        validate_withdrawal_reserved_amount_range(
+            reserved_amount,
+            minimum_reserved_amount,
+            max_withdrawal_amount,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::identity::core_script::CoreScript;
     use crate::shielded::SerializedAction;

@@ -991,11 +991,27 @@ pub(crate) mod tracing_capture {
     /// Level and message of every event recorded while registered as the
     /// current thread's active recorder (see [`RecordingGuard`]).
     #[derive(Clone, Default)]
-    pub(crate) struct RecordedEvents(Arc<Mutex<Vec<(Level, String)>>>);
+    pub(crate) struct RecordedEvents {
+        events: Arc<Mutex<Vec<(Level, String)>>>,
+        on_event: Option<EventHook>,
+    }
+
+    /// What runs, inline on the emitting thread, for every recorded event's message.
+    type EventHook = Arc<dyn Fn(&str) + Send + Sync>;
 
     impl RecordedEvents {
+        /// A recorder that also runs `hook` with the message of every event, the moment it
+        /// is emitted: for a test that needs the world to change at a chosen point of the
+        /// code under test.
+        pub(crate) fn with_hook(hook: impl Fn(&str) + Send + Sync + 'static) -> Self {
+            Self {
+                events: Arc::default(),
+                on_event: Some(Arc::new(hook)),
+            }
+        }
+
         pub(crate) fn entries(&self) -> Vec<(Level, String)> {
-            self.0.lock().expect("recorded events mutex").clone()
+            self.events.lock().expect("recorded events mutex").clone()
         }
 
         fn record(&self, event: &tracing::Event<'_>) {
@@ -1009,7 +1025,10 @@ pub(crate) mod tracing_capture {
             }
             let mut visitor = MessageVisitor(String::new());
             event.record(&mut visitor);
-            self.0
+            if let Some(hook) = &self.on_event {
+                hook(&visitor.0);
+            }
+            self.events
                 .lock()
                 .expect("recorded events mutex")
                 .push((*event.metadata().level(), visitor.0));

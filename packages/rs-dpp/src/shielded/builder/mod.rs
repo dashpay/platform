@@ -522,6 +522,9 @@ pub(crate) mod test_helpers {
 }
 
 #[cfg(test)]
+mod max_actions_tests;
+
+#[cfg(test)]
 mod mod_tests {
     use super::test_helpers::{test_orchard_address, test_spendable_note, TestProver};
     use super::*;
