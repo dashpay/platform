@@ -59,7 +59,9 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let document_type = self.decision_proposal_document_type().await?;
+        let document_type = self
+            .decision_proposals_document_type(PROPOSAL_DOCUMENT_TYPE_NAME)
+            .await?;
         let DecisionProposalDocument { document, entropy } = self
             .sdk
             .build_decision_proposal(*owner_identity_id, input)
@@ -110,7 +112,9 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let document_type = self.decision_proposal_document_type().await?;
+        let document_type = self
+            .decision_proposals_document_type(PROPOSAL_DOCUMENT_TYPE_NAME)
+            .await?;
         let read = self.sdk.fetch_decision_proposal(*proposal_id).await?;
         let replacement =
             decision_proposal_replacement(owner_identity_id, proposal_id, read, edit)?;
@@ -129,15 +133,18 @@ impl IdentityWallet {
             .await?)
     }
 
-    /// The `proposal` document type of the decision proposals contract,
-    /// which rs-sdk resolves (refusing a network below protocol version
-    /// 15). The contract is registered for the proof check that follows
-    /// the put.
-    async fn decision_proposal_document_type(&self) -> Result<DocumentType, PlatformWalletError> {
+    /// The document type `document_type_name` of the decision proposals
+    /// contract, which rs-sdk resolves (refusing a network below protocol
+    /// version 15). The contract is registered for the proof check that
+    /// follows the put.
+    pub(super) async fn decision_proposals_document_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<DocumentType, PlatformWalletError> {
         let contract = self.sdk.fetch_decision_proposals_contract().await?;
         self.register_contract_for_proof_verification(&contract);
         contract
-            .document_type_cloned_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
+            .document_type_cloned_for_name(document_type_name)
             .map_err(|e| PlatformWalletError::Sdk(dash_sdk::Error::Protocol(e.into())))
     }
 }
@@ -176,7 +183,7 @@ fn decision_proposal_replacement(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::super::signing_key::tests::{
         available, identity, lock_checking_signer, wallet_with_signing_keys_on,
     };
@@ -209,15 +216,15 @@ mod tests {
 
     const CREATED_AT: u64 = 1_700_000_000_000;
     /// The identity contract nonce Platform reports for the owner.
-    const STORED_NONCE: u64 = 4;
+    pub(crate) const STORED_NONCE: u64 = 4;
     const NEW_TITLE: &str = "Raise the block size to 4 MB?";
 
     /// The owner identity `wallet_with_signing_keys_on` holds.
-    fn owner() -> Identifier {
+    pub(crate) fn owner() -> Identifier {
         Identifier::default()
     }
 
-    fn proposals_contract() -> Arc<DataContract> {
+    pub(crate) fn proposals_contract() -> Arc<DataContract> {
         Arc::new(
             load_system_data_contract(
                 SystemDataContract::DecisionProposals,
@@ -264,7 +271,7 @@ mod tests {
     /// Serves the bundled decision proposals contract (nothing else), the
     /// way a host's context provider does, so rs-sdk resolves it without a
     /// network fetch or a dump directory.
-    struct ProposalsContractProvider(Arc<DataContract>);
+    pub(crate) struct ProposalsContractProvider(pub(crate) Arc<DataContract>);
 
     impl dash_sdk::platform::ContextProvider for ProposalsContractProvider {
         fn get_data_contract(
@@ -313,7 +320,7 @@ mod tests {
     /// A mock SDK at the latest protocol version that resolves the
     /// decision proposals contract. A request without an expectation
     /// fails.
-    fn proposals_sdk() -> dash_sdk::Sdk {
+    pub(crate) fn proposals_sdk() -> dash_sdk::Sdk {
         dash_sdk::SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
             .with_context_provider(ProposalsContractProvider(proposals_contract()))
@@ -344,7 +351,7 @@ mod tests {
 
     /// Signs with a fixed signature, so the transition it signs is known.
     #[derive(Debug)]
-    struct FixedSignatureSigner;
+    pub(crate) struct FixedSignatureSigner;
 
     #[async_trait]
     impl Signer<IdentityPublicKey> for FixedSignatureSigner {

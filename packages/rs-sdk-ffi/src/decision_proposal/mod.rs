@@ -27,9 +27,11 @@
 //! contest (see `crate::voting::masternode_vote`).
 
 mod json;
+mod multiple_choice;
 mod queries;
 mod transitions;
 
+pub use multiple_choice::*;
 pub use queries::*;
 pub use transitions::*;
 

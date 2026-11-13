@@ -363,15 +363,6 @@ data class YesNoVotePollState(
                 finalizationBlock = block(obj.obj("finalizationBlock")),
             )
         }
-
-        private fun block(obj: JsonObject): PlatformBlockInfo = with(DecisionProposalJson) {
-            PlatformBlockInfo(
-                height = obj.long("height"),
-                coreHeight = obj.long("coreHeight"),
-                timeMs = obj.long("timeMs"),
-                epoch = obj.int("epoch"),
-            )
-        }
     }
 }
 
@@ -393,6 +384,18 @@ internal object DecisionProposalJson {
 
     fun JsonObject.obj(name: String): JsonObject =
         this[name] as? JsonObject ?: throw malformed(name)
+
+    fun JsonObject.optionalObj(name: String): JsonObject? = when (val value = this[name]) {
+        null, JsonNull -> null
+        is JsonObject -> value
+        else -> throw malformed(name)
+    }
+
+    /** The objects of the array [name], in its order. */
+    fun JsonObject.objects(name: String): List<JsonObject> =
+        (this[name] as? JsonArray ?: throw malformed(name)).map { entry ->
+            entry as? JsonObject ?: throw malformed(name)
+        }
 
     fun JsonObject.string(name: String): String =
         (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw malformed(name)
@@ -419,6 +422,14 @@ internal object DecisionProposalJson {
     fun JsonObject.boolean(name: String): Boolean =
         (this[name] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
             ?: throw malformed(name)
+
+    /** A block as every decision proposal read writes it. */
+    fun block(obj: JsonObject): PlatformBlockInfo = PlatformBlockInfo(
+        height = obj.long("height"),
+        coreHeight = obj.long("coreHeight"),
+        timeMs = obj.long("timeMs"),
+        epoch = obj.int("epoch"),
+    )
 
     private fun number(value: JsonElement?): Long? =
         (value as? JsonPrimitive)?.takeUnless { it.isString || it is JsonNull }?.longOrNull

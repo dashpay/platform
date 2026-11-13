@@ -67,7 +67,7 @@ pub(super) fn proposals_json(documents: Documents) -> Result<JsonValue, FFIError
         .map(JsonValue::Array)
 }
 
-fn block_json(block: &BlockInfo) -> JsonValue {
+pub(super) fn block_json(block: &BlockInfo) -> JsonValue {
     json!({
         "height": block.height,
         "coreHeight": block.core_height,
