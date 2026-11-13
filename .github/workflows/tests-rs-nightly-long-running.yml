@@ -83,6 +83,71 @@ jobs:
           fi
           echo "All features verified"
 
+  proof-verifier-fuzz:
+    name: Fuzz proof verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      id-token: write
+      contents: read
+    # cargo-fuzz needs nightly; override rust-toolchain.toml for every step.
+    # Pinned so a nightly regression cannot turn the job red on its own; keep
+    # it no older than the rust-toolchain.toml channel.
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-09-20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+
+      # Build against the workspace's exact pins, seed every target with the
+      # proof-vector corpus, then run each for 60 s. A failing target does not
+      # keep the others from running.
+      - name: Fuzz FromProof
+        working-directory: packages/rs-drive-proof-verifier/fuzz
+        run: |
+          set -euo pipefail
+          cp ../../../Cargo.lock .
+          fails=""
+          for target in $(cargo fuzz list); do
+            mkdir -p "corpus/$target"
+            for proof in ../tests/vectors/*/proof.hex; do
+              xxd -r -p "$proof" "corpus/$target/$(basename "$(dirname "$proof")")"
+            done
+            cargo fuzz run "$target" -- -max_total_time=60 || fails="${fails} ${target}"
+          done
+          if [ -n "$fails" ]; then
+            echo "Failed targets:$fails"
+            exit 1
+          fi
+        env:
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+
+      - name: Upload fuzz crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-verifier-fuzz-artifacts
+          path: packages/rs-drive-proof-verifier/fuzz/artifacts
+          if-no-files-found: ignore
+          retention-days: 7
+
   long-running-tests:
     name: Long-running Rust tests
     runs-on: ubuntu-24.04
