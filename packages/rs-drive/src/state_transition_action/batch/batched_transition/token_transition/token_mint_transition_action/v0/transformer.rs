@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use grovedb::TransactionArg;
+use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, DestinationIdentityForTokenMintingNotSetError};
@@ -12,7 +13,6 @@ use dpp::state_transition::batch_transition::token_base_transition::v0::v0_metho
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::v0::TokenMintTransitionActionV0;
-use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::fee::fee_result::FeeResult;
@@ -53,6 +53,47 @@ impl TokenMintTransitionActionV0 {
         drive: &Drive,
         owner_id: Identifier,
         value: TokenMintTransitionV0,
+        approximate_without_state_for_costs: bool,
+        transaction: TransactionArg,
+        block_info: &BlockInfo,
+        user_fee_increase: UserFeeIncrease,
+        get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        (
+            ConsensusValidationResult<BatchedTransitionAction>,
+            FeeResult,
+        ),
+        Error,
+    > {
+        Self::try_from_token_mint_fields_with_contract_lookup(
+            drive,
+            owner_id,
+            value,
+            None,
+            approximate_without_state_for_costs,
+            transaction,
+            block_info,
+            user_fee_increase,
+            get_data_contract,
+            platform_version,
+        )
+    }
+
+    /// [`Self::try_from_token_mint_transition_with_contract_lookup`] of the version 0 fields of
+    /// a mint drawing its amount from `random_minimum_amount` up to the amount, when `Some`.
+    ///
+    /// A random mint names its recipient (structure validation), as its payout lands after the
+    /// block executes it. On a token whose minters may not choose the destination, naming the
+    /// token's own destination is accepted for it, as the payout then lands where any mint of
+    /// the token would; naming any other identity is refused as for a fixed mint, which keeps
+    /// refusing every recipient it names there.
+    #[allow(clippy::too_many_arguments)]
+    fn try_from_token_mint_fields_with_contract_lookup(
+        drive: &Drive,
+        owner_id: Identifier,
+        value: TokenMintTransitionV0,
+        random_minimum_amount: Option<TokenAmount>,
         approximate_without_state_for_costs: bool,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -117,11 +158,14 @@ impl TokenMintTransitionActionV0 {
             }
         };
 
-        if !base_action
-            .token_configuration()?
-            .distribution_rules()
-            .minting_allow_choosing_destination()
+        let distribution_rules = base_action.token_configuration()?.distribution_rules();
+        let random_mint_names_the_destination = random_minimum_amount.is_some()
             && issued_to_identity_id.is_some()
+            && issued_to_identity_id.as_ref()
+                == distribution_rules.new_tokens_destination_identity();
+        if !distribution_rules.minting_allow_choosing_destination()
+            && issued_to_identity_id.is_some()
+            && !random_mint_names_the_destination
         {
             let bump_action =
                 BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(
@@ -190,7 +234,7 @@ impl TokenMintTransitionActionV0 {
                     mint_amount: amount,
                     identity_balance_holder_id,
                     public_note: change_note.unwrap_or(public_note),
-                    random_minimum_amount: None,
+                    random_minimum_amount,
                 }
                 .into(),
             ))
@@ -411,25 +455,18 @@ impl TokenMintTransitionActionV0 {
         Error,
     > {
         let (v0, random_minimum_amount) = value.into_v0_and_random_minimum_amount();
-        let (mut result, fee_result) = Self::try_from_token_mint_transition_with_contract_lookup(
+        Self::try_from_token_mint_fields_with_contract_lookup(
             drive,
             owner_id,
             v0,
+            random_minimum_amount,
             approximate_without_state_for_costs,
             transaction,
             block_info,
             user_fee_increase,
             get_data_contract,
             platform_version,
-        )?;
-        // A refused mint holds a nonce bump instead, which has no random amount
-        if let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
-            TokenMintTransitionAction::V0(mint),
-        ))) = result.data.as_mut()
-        {
-            mint.random_minimum_amount = random_minimum_amount;
-        }
-        Ok((result, fee_result))
+        )
     }
 
     /// Converts a borrowed `TokenMintTransitionV1` into a `TokenMintTransitionActionV0`:
@@ -481,8 +518,11 @@ impl TokenMintTransitionActionV0 {
 #[cfg(test)]
 mod random_amount_tests {
     use super::*;
+    use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::consensus::ConsensusError;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
     use dpp::data_contract::config::v0::DataContractConfigV0;
@@ -496,6 +536,7 @@ mod random_amount_tests {
     const CONTRACT: [u8; 32] = [3; 32];
     const MINTER: [u8; 32] = [1; 32];
     const RECIPIENT: [u8; 32] = [2; 32];
+    const DESTINATION: [u8; 32] = [6; 32];
     const MINIMUM: u64 = 100;
     const MAXIMUM: u64 = 1_000;
 
@@ -511,6 +552,24 @@ mod random_amount_tests {
                 .minting_allow_choosing_destination(),
             "expected the token to let a mint choose its recipient"
         );
+        contract_with(token)
+    }
+
+    /// A contract whose token, at position 0, mints to `DESTINATION` only: a mint may not
+    /// choose its recipient.
+    fn fixed_destination_token_contract() -> Arc<DataContractFetchInfo> {
+        let mut token = TokenConfigurationV0::default_most_restrictive();
+        token
+            .distribution_rules
+            .set_minting_allow_choosing_destination(false);
+        token
+            .distribution_rules
+            .set_new_tokens_destination_identity(Some(DESTINATION.into()));
+        contract_with(token)
+    }
+
+    /// A contract holding `token` at position 0.
+    fn contract_with(token: TokenConfigurationV0) -> Arc<DataContractFetchInfo> {
         let contract = DataContract::V1(DataContractV1 {
             id: CONTRACT.into(),
             version: 0,
@@ -603,5 +662,93 @@ mod random_amount_tests {
                 "keeps history: {keeps_history}"
             );
         }
+    }
+
+    /// The action a mint of up to `MAXIMUM` tokens to `recipient` builds on a token minting to
+    /// `DESTINATION` only, a random one from `MINIMUM` when `random`.
+    fn fixed_destination_mint(
+        recipient: [u8; 32],
+        random: bool,
+    ) -> ConsensusValidationResult<BatchedTransitionAction> {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let fetch_info = fixed_destination_token_contract();
+        let token_id = fetch_info
+            .contract
+            .token_id(0)
+            .expect("expected a token at position 0");
+        let transition = TokenMintTransitionV1 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: CONTRACT.into(),
+                token_id,
+                using_group_info: None,
+            }),
+            issued_to_identity_id: Some(recipient.into()),
+            amount: MAXIMUM,
+            public_note: None,
+            random_minimum_amount: random.then_some(MINIMUM),
+        };
+        TokenMintTransitionActionV0::try_from_token_mint_transition_v1_with_contract_lookup(
+            &drive,
+            MINTER.into(),
+            transition,
+            false,
+            None,
+            &BlockInfo::default(),
+            0,
+            |_| Ok(fetch_info.clone()),
+            platform_version,
+        )
+        .expect("expected the action to build")
+        .0
+    }
+
+    fn assert_recipient_not_allowed(
+        result: &ConsensusValidationResult<BatchedTransitionAction>,
+        case: &str,
+    ) {
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
+                )]
+            ),
+            "{case}: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn should_let_a_random_mint_name_the_destination_of_a_token_whose_minters_may_not_choose_it() {
+        // A random mint must name its recipient, so on such a token it names the token's own
+        // destination, and pays out there
+        let result = fixed_destination_mint(DESTINATION, true);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        let Some(BatchedTransitionAction::TokenAction(TokenTransitionAction::MintAction(
+            TokenMintTransitionAction::V0(mint),
+        ))) = result.data
+        else {
+            panic!("expected a mint action");
+        };
+        assert_eq!(
+            mint.identity_balance_holder_id,
+            Identifier::from(DESTINATION)
+        );
+        assert_eq!(mint.random_minimum_amount, Some(MINIMUM));
+
+        // Any other recipient is refused, as for a fixed mint
+        assert_recipient_not_allowed(
+            &fixed_destination_mint(RECIPIENT, true),
+            "a random mint naming another recipient",
+        );
+
+        // A fixed mint keeps refusing every recipient it names there, the destination included
+        assert_recipient_not_allowed(
+            &fixed_destination_mint(DESTINATION, false),
+            "a fixed mint naming the destination",
+        );
     }
 }
