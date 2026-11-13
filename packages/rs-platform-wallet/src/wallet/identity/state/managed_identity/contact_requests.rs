@@ -1287,6 +1287,14 @@ impl ManagedIdentity {
         self.dashpay.sent_sweep_completed = true;
     }
 
+    /// [`Self::mark_sent_sweep_completed`] for downstream storage tests (via
+    /// `test-utils`) that seed contacts without running a DashPay sync, so
+    /// `reconcile_dashpay_rescan` stops deferring them as a sync would.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn mark_sent_sweep_completed_for_test(&mut self) {
+        self.mark_sent_sweep_completed();
+    }
+
     /// Record the Platform-assigned `$createdAtCoreBlockHeight` of one of our
     /// sent requests to `recipient`, as fetched by a sync sweep. Keeps the
     /// minimum; see `DashPayState::earliest_sent_core_heights`.

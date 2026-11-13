@@ -16,6 +16,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob;
+use crate::sqlite::util::safe_cast::i64_to_u32;
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
@@ -211,8 +212,9 @@ pub fn apply(
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts \
                 (wallet_id, owner_id, contact_id, state, outgoing_request, incoming_request, \
-                 alias, note, is_hidden, accepted_accounts, payment_channel_broken) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
+                 alias, note, is_hidden, accepted_accounts, payment_channel_broken, \
+                 external_account_reference) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 state = excluded.state, \
                 outgoing_request = excluded.outgoing_request, \
@@ -221,7 +223,8 @@ pub fn apply(
                 note = excluded.note, \
                 is_hidden = excluded.is_hidden, \
                 accepted_accounts = excluded.accepted_accounts, \
-                payment_channel_broken = excluded.payment_channel_broken",
+                payment_channel_broken = excluded.payment_channel_broken, \
+                external_account_reference = excluded.external_account_reference",
         )?;
         for (key, established) in &cs.established {
             let outgoing = blob::encode(&established.outgoing_request)?;
@@ -239,6 +242,12 @@ pub fn apply(
                 established.is_hidden as i64,
                 accepted,
                 established.payment_channel_broken as i64,
+                // Written as handed. `WalletPersister::store` strips it on a
+                // backend that cannot keep it beside its account
+                // (`persists_outbound_account_markers`), and the manager's
+                // load clears any restored marker it cannot trust, so a
+                // direct caller of this store is covered on the way back.
+                established.external_account_reference.map(i64::from),
             ])?;
         }
     }
@@ -302,7 +311,8 @@ pub(crate) fn load_state(
 
     let mut stmt = conn.prepare(
         "SELECT owner_id, contact_id, state, outgoing_request, incoming_request, \
-                alias, note, is_hidden, accepted_accounts, payment_channel_broken \
+                alias, note, is_hidden, accepted_accounts, payment_channel_broken, \
+                external_account_reference \
          FROM contacts WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -324,6 +334,7 @@ pub(crate) fn load_state(
             is_hidden: row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
             accepted_accounts: row.get(8)?,
             payment_channel_broken: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
+            external_account_reference: row.get(10)?,
         };
         if let Err(err) = bucket_contact_row(&mut state, columns) {
             ctx.tolerate(LoadSite::ContactRow, err)?;
@@ -345,6 +356,7 @@ struct ContactRowColumns {
     is_hidden: bool,
     accepted_accounts: Option<Vec<u8>>,
     payment_channel_broken: bool,
+    external_account_reference: Option<i64>,
 }
 
 /// File one read row into the bucket its `state` names, decoding the blobs
@@ -365,6 +377,7 @@ fn bucket_contact_row(
         is_hidden,
         accepted_accounts,
         payment_channel_broken,
+        external_account_reference,
     } = columns;
 
     match contact_state_from_label(&label)? {
@@ -413,11 +426,13 @@ fn bucket_contact_row(
                     // no column for it, so it restores empty and re-derives
                     // on the next contact-info sweep.
                     contact_account_label: None,
-                    // Rotation self-heal marker; this backend has no column
-                    // for it, so it restores `None` — which conservatively
-                    // forces the next sweep to re-verify (tear down + rebuild)
-                    // the external account once, then re-stamp it.
-                    external_account_reference: None,
+                    // Rotation self-heal marker. `None` (a row written before
+                    // the column existed, or by a backend that could not keep
+                    // it) conservatively forces the next sweep to re-verify
+                    // (tear down + rebuild) the external account once.
+                    external_account_reference: external_account_reference
+                        .map(|value| i64_to_u32("contacts.external_account_reference", value))
+                        .transpose()?,
                 },
             );
         }
