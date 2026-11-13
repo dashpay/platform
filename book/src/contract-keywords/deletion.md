@@ -12,8 +12,8 @@ Whether a document's owner may delete it. Set it to `false` for records that oth
 | **Value** | boolean, or `"onlyWhenConsumed"` |
 | **Default** | the contract config's `documentsCanBeDeletedContractDefault`, which is `true` unless the contract says otherwise |
 | **Since** | protocol version 1; `"onlyWhenConsumed"` protocol version 14 |
-| **On update** | Fixed (`DocumentTypeUpdateError`, 40212), except that a type which keeps history before and after the update may change it from `true` to `false`. Adding or removing the key without changing its value is refused too, as a schema change (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete of a type set to `false` or `"onlyWhenConsumed"`, or, from protocol version 14, of a type that keeps history; `DocumentOwnerIdMismatchError` (40102) for a delete by anyone but the owner |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212), except that a type which keeps history before and after the update may change it from `true` to `false` when it does not allow erasure. Adding or removing the key without changing its value is refused too, as a schema change (`IncompatibleDocumentTypeSchemaError`, 10246). |
+| **Errors** | `InvalidDocumentTransitionActionError` (10404) for a delete of a type set to `false` or `"onlyWhenConsumed"`, or, at protocol version 14, of a type that keeps history; `DocumentOwnerIdMismatchError` (40102) for a delete by anyone but the owner |
 
 ### Example
 
@@ -40,14 +40,14 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 - An identity that is banned or suspended on a moderated contract may still delete its own documents. See [Contract Moderation](../data-model/contract-moderation.md#the-model). On a type set to `false` it can retract them instead, when the type declares [`retractedWhen`](#retractedwhen).
 - `false` binds only the owner. The contract's moderators, when the type allows them, and the platform, when the type has a `ttl`, still delete such documents.
 - `"onlyWhenConsumed"` binds the owner as `false` does, and lets a create consume the document (see [below](#deleted-only-when-consumed)).
-- Drive never deletes a document whose type keeps history (`documentsKeepHistory`). From protocol version 14 a delete of such a document is refused with 10404 whatever `canBeDeleted` says; before it, the delete failed inside Drive as an internal error.
+- Through protocol version 14, Drive refuses to delete a document whose type keeps history (`documentsKeepHistory`): 10404 at version 14, and an internal error before it. From version 15, an allowed owner delete removes the current pointer and indexes while retaining its revisions and a lifecycle record. Retained revision storage is refunded only when an allowed erase removes it. See [`canBeErased`](#canbeerased).
 - Documents of an `indexOnly` type are deleted with an index-only delete transition that carries their values, since there is no stored row to name by id. A delete by id of such a document is refused (10404). See [Index-Only Types](index-only.md).
 
 ### Rules at registration
 
-- From protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231). The default is `true`, so it has to be written out. A contract registered earlier with both flags on stays readable, but its next update is checked like a new contract, so that update must turn `canBeDeleted` off on the type. That is the one change to `canBeDeleted` an update may make.
+- At protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231); older types stay readable but must withdraw deletion on their next update. From version 15, deletable history is admitted, including legacy types whose flag is already true. A history type may withdraw deletion on update only when it does not allow erasure.
 - For references, a type whose owner may delete its documents is deletable: a `permanentDocument` reference, `inList` included, may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
-- `"onlyWhenConsumed"` is refused on a type that keeps history or is `indexOnly` (`InvalidContractStructure`, 10231): the storage layer never deletes a document that keeps history, and an `indexOnly` type has no stored row a reference finds, so nothing could consume either.
+- `"onlyWhenConsumed"` is refused on a type that keeps history or is `indexOnly` (`InvalidContractStructure`, 10231): history types cannot be consumed, and an `indexOnly` type has no stored row a reference finds.
 
 ### Deleted only when consumed
 
@@ -76,6 +76,23 @@ A preorder stays until the name registration that reveals it consumes it (the `p
 - For references the type is deletable, as with `true`: its documents can leave state without a record. A `permanentDocument` reference to it is refused (40122), and so is a `moderatedDocument` one (40143), even when the type also lets its moderators delete with records; a `deletableDocument` reference is the one that points at it.
 - Fixed on update: an update may neither set nor remove it (`DocumentTypeUpdateError`, 40212). Setting it would let documents leave state under the `permanentDocument` references made to a type that promised they never would; removing it would leave the references that consume its documents nothing to delete.
 - Before protocol version 14 the meta-schemas accept only a boolean, so a contract carrying the string is refused (`JsonSchemaError`, 10101).
+
+## `canBeErased`
+
+Whether the retained history of a deleted document may be removed, from protocol version 15.
+
+| | |
+|---|---|
+| **Where** | document type |
+| **Value** | boolean |
+| **Default** | `false` |
+| **Since** | protocol version 15 |
+| **On update** | Fixed in both directions (`DocumentTypeUpdateError`, 40212) |
+| **Requires** | `documentsKeepHistory: true` and `canBeDeleted: true` |
+
+Delete and erase are separate operations. Delete removes the current pointer and indexes, retaining the revisions. The document's current owner authorizes erasure with the first erase transition. Once erasure starts, any identity may pay to continue it in bounded chunks; the final chunk removes the lifecycle record and history without leaving a receipt. Each removed revision refunds its recorded storage payer. An erase carries no token payment or action fee.
+
+A type that allows erasure cannot withdraw deletion on update. A history type cannot carry a contested index, moderator deletion or a `ttl`. See [Keep-History Documents](../drive/keep-history-documents.md) for the complete lifecycle, temporal reads and proof behavior.
 
 ## `retractedWhen`
 
@@ -242,7 +259,7 @@ Authors cannot retract a post, but the contract's moderators can remove one for 
 All refusals below are `InvalidContractStructure` (10231).
 
 - The contract's config must declare `moderation`. Moderation cannot be added by a later update, so without it nobody could ever delete anything. In return the `moderation` block may keep no banlist, suspension list or warning list at all when a document type gives its moderators an ability.
-- Refused on a type that keeps history (Drive never deletes those documents), on an `indexOnly` type (there is no stored row to name), on a type with `creationRestrictionMode` 1 or 2 (its documents are the contract owner's or the platform's), and on a type with a contested index (a restore could not go through the vote the index requires).
+- Refused on a type that keeps history (history lifecycle deletion is owner-only), on an `indexOnly` type (there is no stored row to name), on a type with `creationRestrictionMode` 1 or 2 (its documents are the contract owner's or the platform's), and on a type with a contested index (a restore could not go through the vote the index requires).
 - For references, the type is no longer permanent even with `canBeDeleted: false`: a `permanentDocument` reference, `inList` included, may not point at it (40122). With `canBeDeleted: false`, no `ttl` and removal records kept (the default), its documents leave state only on a moderator's record, and a [`moderatedDocument`](refers-to.md#moderateddocument) reference is the one that points at it, resolving to the document or to its removal record; a `deletableDocument` reference is refused (40144). Otherwise a `deletableDocument` reference points at it.
 
 ## `moderatorAbilities.deleteWithin`
@@ -455,6 +472,7 @@ Whether the owner of a document a moderator deletes is refunded its storage. By 
 | Who deletes | Allowed by | Refund to the owner |
 |---|---|---|
 | The document's owner | `canBeDeleted: true`, on a type that does not keep history, when the stored document meets every `deleteConstraints` rule | Yes, except on a type with a `ttl` |
+| The document's owner, retaining history from protocol version 15 | `canBeDeleted: true`, when the stored document meets every `deleteConstraints` rule | Removed pointer/index storage only; retained revisions are refunded to their payers on erase |
 | The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | Only with `moderatorAbilities.deleteRefundsOwner: true`, except on a type with a `ttl` |
 | The seated moderation team, together | `moderatorAbilities.deleteSettled`, once `moderatorAbilities.deleteWithin` has passed | As for the moderators |
 | The platform | `ttl`, once it has passed | No |
@@ -466,7 +484,7 @@ Which reference may point at a type follows from which of the three it allows. A
 - [Deleting Documents](../data-model/contract-moderation.md#deleting-documents), [Deleting Settled Documents](../data-model/contract-moderation.md#deleting-settled-documents) and [Restoring Documents](../data-model/contract-moderation.md#restoring-documents), for the moderation transition, the approvals and the removal record
 - [Moderator Abilities](moderator-abilities.md), for the `moderatorAbilities` object and the fields only moderators write
 - [Time To Live](ttl.md), the third way a document leaves the state
-- [History](history.md), for why a type that keeps history can never delete
+- [History](history.md) and [Keep-History Documents](../drive/keep-history-documents.md), for retained revisions, lifecycle states and proofs
 - [Mutability](mutability.md), for `immutable` and the conditions `retractedWhen` shares with it, and [Creation, Transfers and Trading](ownership-and-trading.md)
 - [propertyConstraints](property-constraints.md), for the grammar of `deleteConstraints` and the totals its rules read
 - [References](refers-to.md), for `permanentDocument`, `moderatedDocument` and `deletableDocument`

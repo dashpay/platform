@@ -1,4 +1,6 @@
-use crate::drive::document::paths::{contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY};
+use crate::drive::document::paths::{
+    contract_document_type_path_vec, DOCUMENT_HISTORY_TREE_KEY, DOCUMENT_LIFECYCLE_TREE_KEY,
+};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::primary_key_path_query::{
@@ -6,7 +8,7 @@ use crate::query::primary_key_path_query::{
 };
 use crate::query::{Query, SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use crate::util::common::encode::encode_u64;
-use grovedb::PathQuery;
+use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 /// The last time a document's history can order. A time is stored with its top bit flipped, so
@@ -89,33 +91,46 @@ impl SingleDocumentDriveQuery {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        if self.is_lifecycle_temporal_query(platform_version)? {
+            let mut lifecycle_path =
+                contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+            lifecycle_path.push(vec![DOCUMENT_LIFECYCLE_TREE_KEY]);
+            let mut lifecycle = Query::new();
+            lifecycle.insert_key(self.document_id.to_vec());
+            let lifecycle = PathQuery::new(lifecycle_path, SizedQuery::new(lifecycle, None, None));
+
+            let mut history_path =
+                contract_document_type_path_vec(&self.contract_id, &self.document_type_name);
+            history_path.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
+            let mut document = Query::new();
+            document.insert_key(self.document_id.to_vec());
+            let mut revisions = Query::new_with_direction(false);
+            let mut upper = encode_u64(
+                self.block_time_ms
+                    .unwrap_or_default()
+                    .min(LAST_ORDERED_TIME_MS),
+            );
+            upper.extend([0xff; 8]);
+            revisions.insert_range_inclusive(encode_u64(0)..=upper);
+            // The cap belongs to the history leaf. Ancestor caps would also limit
+            // the lifecycle evidence when this query joins a larger proof.
+            revisions.limit = Some(1);
+            document.set_subquery(revisions);
+            let history = PathQuery::new(history_path, SizedQuery::new(document, None, None));
+            return PathQuery::merge(
+                vec![&lifecycle, &history],
+                &platform_version.drive.grove_version,
+            )
+            .map_err(Error::from);
+        }
         let mut path_query = self.construct_non_contested_path_query(true, platform_version)?;
         if self.document_type_keeps_history {
             if let Some(block_time_ms) = self.block_time_ms {
                 let mut versions_up_to_block_time = Query::new_with_direction(false);
-                let mut upper = encode_u64(block_time_ms.min(LAST_ORDERED_TIME_MS));
-                if primary_key_path_query_target(platform_version)?
-                    == PrimaryKeyPathQueryTarget::CurrentDocument
-                {
-                    // Revisions start at one and advance by one per accepted write;
-                    // crossing the encoding's sign bit would require over 2^63-2
-                    // writes to one document. Migration preserves that sequence, as
-                    // do history pages, so descending keys select the latest revision.
-                    // FF is the largest encoded suffix, not encode_u64(u64::MAX).
-                    upper.extend([0xff; 8]);
-                    versions_up_to_block_time.insert_range_inclusive(encode_u64(0)..=upper);
-                    path_query.path = contract_document_type_path_vec(
-                        &self.contract_id,
-                        &self.document_type_name,
-                    );
-                    path_query.path.push(vec![DOCUMENT_HISTORY_TREE_KEY]);
-                    // History types cannot be deleted. A lifecycle-aware lookup is
-                    // required when deletion of retained histories is supported.
-                } else {
-                    // Stop above the legacy latest-version pointer, which must not
-                    // answer a time before the first retained version.
-                    versions_up_to_block_time.insert_range_after_to_inclusive(vec![0]..=upper);
-                }
+                let upper = encode_u64(block_time_ms.min(LAST_ORDERED_TIME_MS));
+                // Stop above the legacy latest-version pointer, which must not
+                // answer a time before the first retained version.
+                versions_up_to_block_time.insert_range_after_to_inclusive(vec![0]..=upper);
                 path_query
                     .query
                     .query
@@ -123,5 +138,18 @@ impl SingleDocumentDriveQuery {
             }
         }
         Ok(path_query)
+    }
+    /// Whether this lookup needs authenticated lifecycle evidence as well as a revision.
+    pub(crate) fn is_lifecycle_temporal_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        Ok(
+            self.contested_status == SingleDocumentDriveQueryContestedStatus::NotContested
+                && self.document_type_keeps_history
+                && self.block_time_ms.is_some()
+                && primary_key_path_query_target(platform_version)?
+                    == PrimaryKeyPathQueryTarget::CurrentDocument,
+        )
     }
 }

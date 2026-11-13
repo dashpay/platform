@@ -853,9 +853,8 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        // The storage layer refuses to delete a document whose type keeps history. A full
-        // parse, the only one this check runs under, already refuses such a type that allows
-        // deletion; the rule is kept here too, as `ttl` and moderator deletion keep theirs
+        // Consume deletes through the read-delete path, which refuses a keep-history type;
+        // consuming would bypass the explicit delete and erase lifecycle.
         if self.consume && referenced.documents_keep_history() {
             return Some(format!(
                 "consume deletes the found document, which the storage layer refuses for \
@@ -1703,8 +1702,8 @@ mod tests {
 
     #[test]
     fn should_refuse_consuming_a_type_that_keeps_history() {
-        // Parsed without full validation, as a type stored before protocol version 14
-        // may be: a full parse refuses a deletable type that keeps history first
+        // A history type may be deletable, but consuming it would bypass the
+        // explicit delete and erase lifecycle.
         let keeps_history = join_request_with(platform_value!({
             "canBeDeleted": true,
             "documentsKeepHistory": true

@@ -3,6 +3,7 @@ use versioned_feature_core::{FeatureVersionBounds, OptionalFeatureVersion};
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionSerializationVersions {
@@ -35,6 +36,11 @@ pub struct DPPStateTransitionSerializationVersions {
     /// as `OptionalFeatureVersion`), and the batch basic-structure wire
     /// gate rejects the variant wherever this is `None`.
     pub document_index_only_delete_state_transition: Option<DocumentFeatureVersionBounds>,
+    /// The erase kind, which purges the retained revisions of a deleted
+    /// keep-history document. `None` below protocol version 15 — the kind does
+    /// not exist on the wire there, and the batch basic-structure wire gate
+    /// rejects the variant wherever this is `None`.
+    pub document_erase_state_transition: Option<DocumentFeatureVersionBounds>,
     pub document_transfer_state_transition: DocumentFeatureVersionBounds,
     pub document_update_price_state_transition: DocumentFeatureVersionBounds,
     pub document_purchase_state_transition: DocumentFeatureVersionBounds,
@@ -59,7 +65,7 @@ pub struct DPPStateTransitionSerializationVersions {
     /// which carries `random_minimum_amount`. `StateTransition::active_version_range` makes a
     /// batch carrying one active from the first protocol version whose table has this `Some`.
     /// `None` refuses the batch at decode, which every table does for now, protocol version
-    /// 15's included (it shares `STATE_TRANSITION_SERIALIZATION_VERSIONS_V3` with 14): block
+    /// 15's `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4` included (it takes V3's value): block
     /// execution does not settle the amounts yet (`settle_random_token_amounts` waits for the
     /// beacon Tenderdash delivers), so a reservation would never be paid out. 0 decodes it.
     pub random_token_amount: OptionalFeatureVersion,

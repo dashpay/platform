@@ -25,9 +25,9 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use dash_context_provider::platform_activation_height;
 use dash_context_provider::ContextProvider;
 use dash_context_provider::ContextProviderError;
+use dash_context_provider::{is_platform_quorum_type, platform_activation_height};
 use dashcore::sml::llmq_type::network::NetworkLLMQExt;
 use dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
@@ -114,8 +114,8 @@ impl ContextProvider for SpvQuorumSource {
         // a compromised threshold of a lower-threshold quorum (e.g. LLMQ 50/60,
         // which needs only 30 signers, vs Platform's 100/67) could authenticate
         // forged Platform state. Pin the lookup to `network.platform_type()`.
-        let platform_type = self.network.platform_type();
-        if quorum_type != u32::from(u8::from(platform_type)) {
+        if !is_platform_quorum_type(self.network, quorum_type) {
+            let platform_type = self.network.platform_type();
             return Err(ContextProviderError::InvalidQuorum(format!(
                 "quorum type {quorum_type} is not the Platform quorum for {:?} \
                  (expected {platform_type:?})",

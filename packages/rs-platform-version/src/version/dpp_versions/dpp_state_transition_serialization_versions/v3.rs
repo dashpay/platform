@@ -132,6 +132,8 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
                 default_current_version: 0,
             },
         }),
+        // The erase kind joins the wire at protocol version 15.
+        document_erase_state_transition: None,
         document_transfer_state_transition: DocumentFeatureVersionBounds {
             bounds: FeatureVersionBounds {
                 min_version: 0,
@@ -228,7 +230,7 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V3: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
-        // Protocol version 15 shares this table: random token amounts stay refused until block
-        // execution settles them
+        // Protocol version 15's V4 takes this value: random token amounts stay refused until
+        // block execution settles them
         random_token_amount: None,
     };

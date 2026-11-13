@@ -2144,10 +2144,13 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
+        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
+        // incidental Debug output; keep actions, charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
-        );
+        )
+        .replace(", documents_can_be_erased: false", "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform

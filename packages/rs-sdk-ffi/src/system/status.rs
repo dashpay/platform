@@ -15,9 +15,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 ///   `"spv"`, `"adaptive"`, or `"custom"` for a provider this crate did not
 ///   build (caller-supplied or mock). It stays so after native code replaces
 ///   the provider.
-/// - `quorumSource` is the source the SDK's current provider answers quorum
-///   lookups from now: `"trusted"` or `"spv"`; an adaptive provider reports
-///   its live choice. It is `null` for a provider that does not say.
+/// - `quorumSource` is the source the SDK's current provider asks first for
+///   quorum keys now: `"trusted"` or `"spv"`; an adaptive provider reports
+///   the source it would ask first, and in Auto a key SPV cannot serve still
+///   comes from the trusted service. It is `null` for a provider that does
+///   not say.
 /// - `quorumCount` is the number of quorums in the cache of the trusted
 ///   provider the SDK was built with, whichever source answers; `0` without
 ///   one.
