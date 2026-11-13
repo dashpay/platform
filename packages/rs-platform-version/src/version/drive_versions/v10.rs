@@ -153,7 +153,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: private document type stores, delete and summable index estimates; a single document at a block time; no insert into an expired time range bucket
         batch_operations: DriveBatchOperationsMethodVersion {
-            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container
+            convert_drive_operations_to_grove_operations: 2, // changed: sibling history deletes share their pending lifecycle container (note 41)
             apply_drive_operations: 2, // changed in v10: a batch's estimate is resolved (note 14)
         },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
