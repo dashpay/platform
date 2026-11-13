@@ -39,6 +39,7 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
             fetch_contract_version: 0,
             fetch_contracts: 0,
             fetch_contract_with_history: 0,
+            fetch_serialized_contract_history: 0,
             get_cached_contract_with_fetch_info: 0,
             get_contract_with_fetch_info: 0,
             get_contracts_with_fetch_info: 0,

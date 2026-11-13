@@ -16,6 +16,8 @@ use crate::data_contract::document_type::{
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
 use crate::identity::Purpose;
+#[cfg(feature = "validation")]
+use crate::prelude::DataContract;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -43,6 +45,21 @@ impl DocumentType {
             return Err(consensus_or_protocol_data_contract_error(
                 DocumentTypesAreMissingError::new(data_contract_id).into(),
             ));
+        }
+
+        // Before any schema is parsed, so that nothing compiles a pattern this refuses. In
+        // place in this generation, which protocol versions before 15 select too: the
+        // method's own gate, `validate_schema_patterns`, is `None` there, so it refuses nothing
+        #[cfg(feature = "validation")]
+        if full_validation {
+            let result = DataContract::validate_schema_patterns(
+                &document_schemas,
+                schema_defs,
+                platform_version,
+            )?;
+            if let Some(error) = result.errors.into_iter().next() {
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
         }
 
         for (name, schema) in document_schemas.into_iter() {
