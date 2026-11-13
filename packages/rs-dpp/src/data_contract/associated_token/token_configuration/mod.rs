@@ -1231,12 +1231,18 @@ mod marketplace_rules_tests {
         PlatformVersion::get(14).expect("expected protocol version 14")
     }
 
-    /// The protocol version that admits a tradeable token has no tables yet, so what it admits is
-    /// tested with the latest tables under its number.
+    /// The protocol version that admits a tradeable token. While it has no tables of its own,
+    /// what it admits is tested with the latest tables under its number; once it has them, they
+    /// are the ones used.
     fn protocol_version_admitting_tradeable() -> PlatformVersion {
-        let mut platform_version = PlatformVersion::latest().clone();
-        platform_version.protocol_version = TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION;
-        platform_version
+        PlatformVersion::get(TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION)
+            .cloned()
+            .unwrap_or_else(|_| {
+                let mut platform_version = PlatformVersion::latest().clone();
+                platform_version.protocol_version =
+                    TOKEN_TRADE_MODE_TRADEABLE_INITIAL_PROTOCOL_VERSION;
+                platform_version
+            })
     }
 
     #[test]
