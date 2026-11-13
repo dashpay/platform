@@ -370,6 +370,40 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(try reader.fetch(FetchDescriptor<PersistentIdentity>()).first?.balance, 0)
     }
 
+    func testExplicitProfileAbsenceLaterCallbackFailureRollsBackDeletionAndScalarUpdate() throws {
+        handler.beginChangeset(walletId: walletId)
+        let profile = PlatformWalletPersistenceHandler.DashpayProfileSnapshot(
+            displayName: "Keep me", bio: nil, publicMessage: nil, avatarUrl: nil,
+            avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43))
+        let stored = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: profile)])
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: stored))
+        handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+
+        handler.beginChangeset(walletId: walletId)
+        let updated = handler.persistIdentities(walletId: walletId, upserts: [.init(
+            identityId: ownerId, balance: 999, revision: 4, identityIndex: nil,
+            label: nil, status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil,
+            contactProfiles: [])], removed: [])
+        let cleared = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: ownerId, profile: nil)])
+        let laterCallback = handler.persistDashpayProfiles(walletId: walletId,
+            profiles: [.init(identityId: contactId, profile: nil)])
+        XCTAssertTrue(updated)
+        XCTAssertTrue(cleared)
+        XCTAssertFalse(laterCallback)
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: updated && cleared && laterCallback))
+
+        let reader = ModelContext(container)
+        let restoredProfile = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentDashpayProfile>()).first)
+        XCTAssertEqual(restoredProfile.displayName, "Keep me")
+        let addresses = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>()).first)
+        XCTAssertEqual(addresses.shieldedAddress, Data(repeating: 3, count: 43))
+        let restoredIdentity = try XCTUnwrap(reader.fetch(FetchDescriptor<PersistentIdentity>()).first)
+        XCTAssertEqual(restoredIdentity.balance, 0)
+        XCTAssertEqual(restoredIdentity.revision, 0)
+    }
+
     // MARK: Contact-profile tombstone delete
 
     /// A present profile upserts a row; a later `isPresent == false` tombstone

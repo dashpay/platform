@@ -3920,11 +3920,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     if let profile = overlay.profile {
                         try upsertDashpayProfile(identityRow: row, profile: profile)
                     } else {
-                        if let existing = row.dashpayProfile { backgroundContext.delete(existing) }
+                        // Resolve the profile so SwiftData can snapshot it during rollback.
+                        let profileDescriptor = FetchDescriptor<PersistentDashpayProfile>(
+                            predicate: PersistentDashpayProfile.predicate(identityId: identityId)
+                        )
+                        let existing = try modelFetcher.fetch(profileDescriptor, in: backgroundContext).first
                         try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
                             networkRaw: row.networkRaw, ownerIdentityId: row.identityId,
                             profileIdentityId: row.identityId, core: nil, platform: nil, shielded: nil,
                             fetcher: modelFetcher)
+                        if let existing { backgroundContext.delete(existing) }
                     }
                 }
                 return true
