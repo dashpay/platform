@@ -35,7 +35,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -502,10 +501,9 @@ fun DocumentActionsScreen(
             }
 
             // ── Erase ─────────────────────────────────────────────────────
-            // A deleted document is invisible to the probe above, so the
-            // erase cannot be ownership-gated here; consensus refuses a
-            // first erase from anyone but the owner (a paid rejection) and
-            // accepts later ones from any identity.
+            // The probe above is for presentation. Rust checks the newest
+            // retained owner before starting erasure of a deleted document;
+            // any submitting identity may continue an erasing document.
             FormSection(title = "Erase") {
                 Text(
                     "Remove the retained revisions of a document that has already " +

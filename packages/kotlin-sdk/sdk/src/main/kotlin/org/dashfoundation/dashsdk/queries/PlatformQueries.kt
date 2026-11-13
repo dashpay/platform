@@ -933,8 +933,9 @@ class Documents internal constructor(private val sdk: Sdk) {
     /**
      * Read where a keep-history document stands right now: its lifecycle
      * state and the exact number of revisions still retained. A current
-     * observation, not the outcome of any particular transition; the erase
-     * result itself only observes absence (see `DocumentTransactions.eraseAndObserve`).
+     * observation, not the outcome of any particular transition. The wallet's
+     * erase-and-observe operation returns its submission decision together
+     * with the lifecycle observations before and after submission.
      */
     suspend fun lifecycle(
         contractId: String,
