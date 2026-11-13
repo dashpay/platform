@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::prelude::{AddressNonce, Identifier};
@@ -176,9 +177,9 @@ impl IdentityWallet {
     /// affects (the identity's balance and the input addresses as of the
     /// proof's block), not that this transition executed. The result stands
     /// only once the proof shows every input address at or past the nonce
-    /// this transition was signed with ([`bind_to_submitted_nonces`]);
-    /// otherwise the top-up is reported unconfirmed and nothing is
-    /// reconciled from it.
+    /// this transition was signed with and the identity balance above the
+    /// one `identity` carries ([`bind_to_submitted_nonces`]); otherwise the
+    /// top-up is reported unconfirmed and nothing is reconciled from it.
     async fn submit_top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         identity: &Identity,
@@ -212,7 +213,7 @@ impl IdentityWallet {
             )
             .await
             .map_err(top_up_error)?;
-        bind_to_submitted_nonces(&submitted, confirmed)
+        bind_to_submitted_nonces(&submitted, identity.balance(), confirmed)
     }
 }
 
@@ -259,36 +260,55 @@ fn no_inputs_as_invalid_parameter(error: &dash_sdk::Error) -> Option<PlatformWal
 }
 
 /// The submitted top-up's result once its proof is bound to this
-/// transition's address nonces (`submitted`).
+/// transition's address nonces (`submitted`) and to the identity balance
+/// it started from (`balance_before`).
 ///
 /// An address nonce is used exactly once and only in order (Platform takes
 /// stored + 1), and only this wallet can sign for its input addresses. A
 /// proof showing every input address at or past the submitted nonce shows
 /// those nonces consumed: this top-up executed, or a transition this wallet
 /// signed with the same nonces did and this one never can. Either way it can
-/// no longer execute later, so the result stands. A proof showing an input
-/// address before its submitted nonce (or not at all) is a snapshot that does
-/// not reflect this top-up, which may still execute: it is reported as the
-/// SDK's unconfirmed outcome, never as done.
+/// no longer execute later. A proof showing an input address before its
+/// submitted nonce (or not at all) is a snapshot that does not reflect this
+/// top-up, which may still execute.
+///
+/// Used nonces alone do not show that the identity was paid: the other
+/// transition may have spent them elsewhere. The result stands only when
+/// the proved identity balance is also above `balance_before`; a balance at
+/// or below it is the snapshot of a top-up that did not reach the identity
+/// (or of an identity that spent meanwhile, which reads the same way and
+/// errs on the safe side). Every refusal is the SDK's unconfirmed outcome,
+/// never done: the host must not pay again.
 fn bind_to_submitted_nonces(
     submitted: &BTreeMap<PlatformAddress, AddressNonce>,
+    balance_before: Credits,
     confirmed: (AddressInfos, Credits, ResponseMetadata),
 ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
+    if confirmed.1 <= balance_before {
+        return Err(unconfirmed(format!(
+            "the identity top-up proof shows the identity balance at {}, not above the {} it \
+             started from",
+            confirmed.1, balance_before
+        )));
+    }
     for (address, nonce) in submitted {
         let proved = confirmed.0.get(address).and_then(|info| info.as_ref());
         if proved.is_none_or(|info| info.nonce < *nonce) {
-            return Err(PlatformWalletError::Sdk(
-                dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
-                    dash_sdk::Error::ExecutionNotProved(format!(
-                        "the identity top-up proof shows {address:?} at nonce {:?}, before \
-                         the submitted nonce {nonce}",
-                        proved.map(|info| info.nonce)
-                    )),
-                )),
-            ));
+            return Err(unconfirmed(format!(
+                "the identity top-up proof shows {address:?} at nonce {:?}, before the \
+                 submitted nonce {nonce}",
+                proved.map(|info| info.nonce)
+            )));
         }
     }
     Ok(confirmed)
+}
+
+/// The SDK's unconfirmed outcome for a proof that does not show this top-up.
+fn unconfirmed(reason: String) -> PlatformWalletError {
+    PlatformWalletError::Sdk(dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+        dash_sdk::Error::ExecutionNotProved(reason),
+    )))
 }
 
 #[cfg(test)]
@@ -312,14 +332,28 @@ mod nonce_binding_tests {
         }))
     }
 
-    fn bind(
+    const BALANCE_BEFORE: Credits = 700;
+
+    fn bind_with_balance(
         proved_nonces: &[(PlatformAddress, Option<AddressNonce>)],
+        proved_balance: Credits,
     ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
         let submitted = BTreeMap::from([(FIRST, 4), (SECOND, 9)]);
         bind_to_submitted_nonces(
             &submitted,
-            (proved(proved_nonces), 777, ResponseMetadata::default()),
+            BALANCE_BEFORE,
+            (
+                proved(proved_nonces),
+                proved_balance,
+                ResponseMetadata::default(),
+            ),
         )
+    }
+
+    fn bind(
+        proved_nonces: &[(PlatformAddress, Option<AddressNonce>)],
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), PlatformWalletError> {
+        bind_with_balance(proved_nonces, 777)
     }
 
     /// A proof that shows an input address before the nonce this top-up
@@ -353,6 +387,24 @@ mod nonce_binding_tests {
         ] {
             let (_, balance, _) = bind(&proved_nonces).expect("bound to the submitted nonces");
             assert_eq!(balance, 777);
+        }
+    }
+
+    /// The submitted nonces are used but the identity balance did not grow:
+    /// another transition this wallet signed with the same nonces took them
+    /// and paid elsewhere. This top-up did not reach the identity, so the
+    /// result is unconfirmed, not done.
+    #[test]
+    fn should_report_used_nonces_without_a_higher_identity_balance_as_unconfirmed() {
+        for proved_balance in [BALANCE_BEFORE, BALANCE_BEFORE - 1] {
+            let result = bind_with_balance(&[(FIRST, Some(4)), (SECOND, Some(9))], proved_balance);
+            assert!(
+                matches!(
+                    &result,
+                    Err(PlatformWalletError::Sdk(e)) if e.is_state_transition_result_unconfirmed()
+                ),
+                "{proved_balance}: {result:?}"
+            );
         }
     }
 }
