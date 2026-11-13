@@ -15,8 +15,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentPropertyType;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::{Document, DocumentV0Getters};
+use dpp::document::DocumentV0;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
@@ -40,7 +39,7 @@ pub struct DocumentHistoryMigrationStats {
     pub maximum_document_revisions: u64,
     /// Document index references inspected.
     pub index_entries: u64,
-    /// Index references successfully rewritten.
+    /// Index references rewritten.
     pub rewritten_index_entries: u64,
     /// Largest index-reference count retained for one document type.
     pub maximum_type_index_entries: u64,
@@ -54,6 +53,24 @@ pub struct DocumentHistoryMigrationStats {
 
 type IndexReference = (Vec<Vec<u8>>, Vec<u8>, Element);
 type IndexEntries = BTreeMap<Vec<u8>, Vec<IndexReference>>;
+
+/// Writes gathered across documents, types and contracts and applied together, so the root is
+/// recomputed once per batch rather than once per document.
+#[derive(Default)]
+struct PendingHistoryWrites {
+    /// History trees and their revisions to insert, and the legacy per-document trees to delete.
+    moves: Vec<QualifiedGroveDbOp>,
+    /// Current pointers written over the deleted trees' keys, and the index references that now
+    /// target them. A batch can not delete a key's tree and write a reference at that key, or
+    /// point a reference into a tree it deletes, so these are applied after `moves`.
+    links: Vec<QualifiedGroveDbOp>,
+}
+
+impl PendingHistoryWrites {
+    fn len(&self) -> usize {
+        self.moves.len() + self.links.len()
+    }
+}
 
 #[cfg(test)]
 mod index_tests;
@@ -99,6 +116,12 @@ fn index_inventory_buffer_bound(entries: &IndexEntries) -> u64 {
 impl Drive {
     /// Moves timestamp-keyed document histories out of primary storage.
     /// The caller owns the transaction and must roll it back on any error.
+    ///
+    /// Retained revisions are copied unchanged. Only their id and revision are
+    /// read, from the fields the serialized document holds ahead of its
+    /// properties, so a revision is moved whatever the type's current schema
+    /// makes of its properties. The writes are applied in batches of about
+    /// `max_history_migration_batch_operations` operations.
     pub fn migrate_document_history_storage(
         &self,
         transaction: &Transaction,
@@ -109,6 +132,14 @@ impl Drive {
                 "document history migration requires the composite-key layout",
             ));
         }
+        let max_batch_operations = platform_version
+            .system_limits
+            .max_history_migration_batch_operations
+            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                "the protocol version that migrates document histories sets \
+                 max_history_migration_batch_operations",
+            )))? as usize;
+        let mut pending = PendingHistoryWrites::default();
         let mut stats = DocumentHistoryMigrationStats::default();
         let mut cursor: Option<[u8; 32]> = None;
         loop {
@@ -183,12 +214,14 @@ impl Drive {
                         .iter()
                         .any(|(key, _)| key == &[DOCUMENT_HISTORY_TREE_KEY])
                     {
-                        self.history_migration_batch(
-                            vec![QualifiedGroveDbOp::insert_or_replace_op(
-                                type_path.clone(),
-                                vec![DOCUMENT_HISTORY_TREE_KEY],
-                                Element::empty_tree_with_flags(contract_flags.clone()),
-                            )],
+                        pending.moves.push(QualifiedGroveDbOp::insert_or_replace_op(
+                            type_path.clone(),
+                            vec![DOCUMENT_HISTORY_TREE_KEY],
+                            Element::empty_tree_with_flags(contract_flags.clone()),
+                        ));
+                        self.history_migration_apply_when_full(
+                            &mut pending,
+                            max_batch_operations,
                             transaction,
                             &mut stats,
                             platform_version,
@@ -235,11 +268,17 @@ impl Drive {
                         )?;
                         let mut pointer = None;
                         let mut revisions = BTreeMap::new();
-                        let mut copies = vec![QualifiedGroveDbOp::insert_or_replace_op(
+                        // The history tree keeps the flags of the per-document tree it
+                        // replaces, which the legacy writer flagged with the document's
+                        // own flags when the contract can be deleted, and left unflagged
+                        // otherwise.
+                        pending.moves.push(QualifiedGroveDbOp::insert_or_replace_op(
                             history_path[..history_path.len() - 1].to_vec(),
                             document_id.clone(),
-                            Element::empty_provable_count_tree_with_flags(contract_flags.clone()),
-                        )];
+                            Element::empty_provable_count_tree_with_flags(
+                                element.get_flags().clone(),
+                            ),
+                        ));
                         for (key, element) in &entries {
                             if key == &[0] {
                                 pointer = Some(element.clone());
@@ -251,12 +290,18 @@ impl Drive {
                             let Element::Item(bytes, _) = element else {
                                 return Err(corrupt("legacy history revision must be an item"));
                             };
-                            let document = Document::from_bytes(
+                            stats.revisions += 1;
+                            stats.revision_bytes += bytes.len() as u64;
+                            let (id, revision) = DocumentV0::id_and_revision_from_bytes(
                                 bytes,
                                 document_type.as_ref(),
-                                platform_version,
-                            )?;
-                            if document.id().as_slice() != document_id {
+                            )
+                            .map_err(|error| {
+                                corrupt(format!(
+                                    "legacy history revision has no readable header: {error}"
+                                ))
+                            })?;
+                            if id.as_slice() != document_id {
                                 return Err(corrupt(
                                     "history document id does not match its primary key",
                                 ));
@@ -264,97 +309,70 @@ impl Drive {
                             let time = DocumentPropertyType::decode_date_timestamp(key)
                                 .ok_or_else(|| corrupt("invalid history timestamp"))?;
                             let mut composite = encode_u64(time);
-                            composite.extend(encode_u64(document.revision().unwrap_or(1)));
+                            composite.extend(encode_u64(revision.unwrap_or(1)));
                             revisions.insert(key.clone(), composite.clone());
-                            copies.push(QualifiedGroveDbOp::insert_or_replace_op(
+                            pending.moves.push(QualifiedGroveDbOp::insert_or_replace_op(
                                 history_path.clone(),
                                 composite,
                                 element.clone(),
                             ));
                         }
-                        let revision_entries = entries
-                            .iter()
-                            .filter(|(key, _)| key != &[0])
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        Self::history_migration_count_revisions(&revision_entries, &mut stats)?;
+                        stats.maximum_document_revisions =
+                            stats.maximum_document_revisions.max(revisions.len() as u64);
                         let pointer = Self::history_migration_pointer(
                             pointer.ok_or_else(|| corrupt("history has no current pointer"))?,
                             &document_id,
                             &revisions,
                         )?;
-                        self.history_migration_batch(
-                            copies,
-                            transaction,
-                            &mut stats,
-                            platform_version,
-                        )?;
-                        let mut deletes = entries
-                            .into_iter()
-                            .map(|(key, _)| QualifiedGroveDbOp::delete_op(old_path.clone(), key))
-                            .collect::<Vec<_>>();
-                        deletes.push(QualifiedGroveDbOp::delete_tree_op(
+                        pending.moves.extend(
+                            entries.into_iter().map(|(key, _)| {
+                                QualifiedGroveDbOp::delete_op(old_path.clone(), key)
+                            }),
+                        );
+                        pending.moves.push(QualifiedGroveDbOp::delete_tree_op(
                             primary_path.clone(),
                             document_id.clone(),
                             old_tree_type,
                             SubelementsDeletionBehavior::Error,
                         ));
-                        self.history_migration_batch(
-                            deletes,
-                            transaction,
-                            &mut stats,
-                            platform_version,
-                        )?;
-                        self.history_migration_batch(
-                            vec![QualifiedGroveDbOp::insert_or_replace_op(
-                                primary_path.clone(),
-                                document_id.clone(),
-                                pointer,
-                            )],
-                            transaction,
-                            &mut stats,
-                            platform_version,
-                        )?;
-                        if let Some(references) = index_entries.remove(&document_id) {
-                            let rewrites = references
-                                .iter()
-                                .cloned()
-                                .map(|(path, key, mut element)| {
-                                    match &mut element {
-                                        Element::Reference(reference, hops, _)
-                                        | Element::ReferenceWithSumItem(reference, hops, _, _) => {
-                                            *reference = UpstreamRootHeightReference(
-                                                4,
-                                                vec![vec![0], document_id.clone()],
-                                            );
-                                            *hops = Some(2);
-                                        }
-                                        // The inventory only admits references; anything
-                                        // else is corrupt state, reported like the rest.
-                                        _ => {
-                                            return Err(corrupt(
-                                                "unexpected leaf in a historical document index",
-                                            ))
-                                        }
-                                    }
-                                    Ok(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
-                                })
-                                .collect::<Result<Vec<_>, Error>>()?;
-                            self.history_migration_batch(
-                                rewrites,
-                                transaction,
-                                &mut stats,
-                                platform_version,
-                            )?;
-                            self.history_migration_check_index_rewrites(
-                                &references,
-                                &document_id,
-                                transaction,
-                                &mut stats,
-                                platform_version,
-                            )?;
+                        pending.links.push(QualifiedGroveDbOp::insert_or_replace_op(
+                            primary_path.clone(),
+                            document_id.clone(),
+                            pointer,
+                        ));
+                        for (path, key, mut element) in
+                            index_entries.remove(&document_id).unwrap_or_default()
+                        {
+                            match &mut element {
+                                Element::Reference(reference, hops, _)
+                                | Element::ReferenceWithSumItem(reference, hops, _, _) => {
+                                    *reference = UpstreamRootHeightReference(
+                                        4,
+                                        vec![vec![0], document_id.clone()],
+                                    );
+                                    *hops = Some(2);
+                                }
+                                // The inventory only admits references; anything
+                                // else is corrupt state, reported like the rest.
+                                _ => {
+                                    return Err(corrupt(
+                                        "unexpected leaf in a historical document index",
+                                    ))
+                                }
+                            }
+                            pending
+                                .links
+                                .push(QualifiedGroveDbOp::insert_or_replace_op(path, key, element));
+                            stats.rewritten_index_entries += 1;
                         }
                         stats.migrated_documents += 1;
+                        self.history_migration_apply_when_full(
+                            &mut pending,
+                            max_batch_operations,
+                            transaction,
+                            &mut stats,
+                            platform_version,
+                        )?;
                     }
                     if !index_entries.is_empty() {
                         return Err(corrupt("history index references a missing document"));
@@ -362,48 +380,50 @@ impl Drive {
                 }
             }
         }
+        self.history_migration_apply(&mut pending, transaction, &mut stats, platform_version)?;
         Ok(stats)
     }
 
-    fn history_migration_check_index_rewrites(
+    /// Applies the pending writes once they hold `max_batch_operations` operations.
+    fn history_migration_apply_when_full(
         &self,
-        references: &[IndexReference],
-        document_id: &[u8],
+        pending: &mut PendingHistoryWrites,
+        max_batch_operations: usize,
         transaction: &Transaction,
         stats: &mut DocumentHistoryMigrationStats,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut rewritten = 0;
-        for (path, key, original) in references {
-            let mut expected = original.clone();
-            match &mut expected {
-                Element::Reference(reference, hops, _)
-                | Element::ReferenceWithSumItem(reference, hops, _, _) => {
-                    *reference =
-                        UpstreamRootHeightReference(4, vec![vec![0], document_id.to_vec()]);
-                    *hops = Some(2);
-                }
-                _ => continue,
+        if pending.len() >= max_batch_operations {
+            self.history_migration_apply(pending, transaction, stats, platform_version)?;
+        }
+        Ok(())
+    }
+
+    /// Applies the pending moves, then the pending links.
+    fn history_migration_apply(
+        &self,
+        pending: &mut PendingHistoryWrites,
+        transaction: &Transaction,
+        stats: &mut DocumentHistoryMigrationStats,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for operations in [
+            std::mem::take(&mut pending.moves),
+            std::mem::take(&mut pending.links),
+        ] {
+            if operations.is_empty() {
+                continue;
             }
-            let stored = self
-                .grove
-                .get_raw(
-                    path.as_slice().into(),
-                    key,
+            self.grove
+                .apply_batch(
+                    operations,
+                    None,
                     Some(transaction),
                     &platform_version.drive.grove_version,
                 )
                 .value?;
-            if stored == expected {
-                rewritten += 1;
-            }
+            stats.batches += 1;
         }
-        if rewritten != references.len() {
-            return Err(corrupt(
-                "history index rewrite count differs from its inventory",
-            ));
-        }
-        stats.rewritten_index_entries += rewritten as u64;
         Ok(())
     }
 
@@ -533,25 +553,6 @@ impl Drive {
                 return Err(corrupt("unexpected leaf in a historical document index"));
             }
         }
-        Ok(())
-    }
-
-    fn history_migration_batch(
-        &self,
-        operations: Vec<QualifiedGroveDbOp>,
-        transaction: &Transaction,
-        stats: &mut DocumentHistoryMigrationStats,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        self.grove
-            .apply_batch(
-                operations,
-                None,
-                Some(transaction),
-                &platform_version.drive.grove_version,
-            )
-            .value?;
-        stats.batches += 1;
         Ok(())
     }
 }
