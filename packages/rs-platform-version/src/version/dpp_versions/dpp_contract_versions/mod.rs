@@ -47,6 +47,12 @@ pub struct DataContractMethodVersions {
     pub validate_moderation_config: FeatureVersion,
     pub equal_ignoring_time_fields: FeatureVersion,
     pub registration_cost: FeatureVersion,
+    /// `DataContract::validate_schema_patterns`: refuses a contract whose document schemas and
+    /// `$defs` hold more patterns than `max_contract_schema_patterns`, or one that does not
+    /// compile within `max_schema_pattern_compiled_size`. `None` on versions that predate the
+    /// rule: the method refuses nothing there, so the shipped
+    /// `create_document_types_from_document_schemas` 1 that calls it is inert.
+    pub validate_schema_patterns: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -230,6 +236,13 @@ pub struct DocumentTypeSchemaVersions {
     /// contract registration. `None` on versions that predate the keyword: they ignore
     /// it entirely, exactly as they parsed before it existed.
     pub apply_generated_from: OptionalFeatureVersion,
+    /// Admits the `generatedFrom` function `sys.random.uniform` in `apply_generated_from` 1:
+    /// an integer property the platform draws from the block's random beacon once the block's
+    /// transitions are accepted. `None` refuses the function at registration, which every
+    /// table does for now, protocol version 15's included: block execution does not draw the
+    /// values yet (`draw_random_document_properties` waits for the beacon Tenderdash
+    /// delivers), so a document would keep its placeholder for good. 0 parses it.
+    pub random_generated_from: OptionalFeatureVersion,
     /// `DocumentType::expand_property_type_shorthands`: rewrites the property
     /// type shorthands of a document type schema and of the contract's
     /// `$defs` into the long form they stand for, `"type": "identifier"` into

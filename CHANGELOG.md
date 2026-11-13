@@ -22,6 +22,12 @@
 
 ### Changed
 
+- **dpp (Rust API):** `GeneratedFrom` gains a public `range: Option<RandomRange>` field, and
+  `SystemFunction` a `Random(RandomFunction)` variant, for `sys.random.uniform` (protocol
+  version 15). This is a source change for Rust code whichever protocol version it runs: a
+  `GeneratedFrom` literal sets `range: None` for every function but a random one, and an
+  exhaustive match on `SystemFunction` needs a `Random` arm.
+
 - **swift-sdk:** `SDK(network:)` builds the adaptive context provider in Auto mode
   instead of the trusted one (`contextProvider` defaults to `.adaptive`). An SDK that no
   `PlatformWalletManager` serves verifies proofs as before, with the trusted quorum

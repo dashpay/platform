@@ -67,6 +67,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         validate_moderation_config: 0,
         equal_ignoring_time_fields: 0,
         registration_cost: 2, // changed: charges the once-per-identity token distribution surcharge
+        validate_schema_patterns: None,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {
@@ -94,6 +95,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             parse_private_document: None,
             parse_contested_documents_resolution: None,
             apply_generated_from: Some(0), // changed: the meta-schema v3 `generatedFrom` keyword (a string property whose value a built-in function generates from other properties of the same document) is parsed onto the property and the properties it reads are checked at registration; None before this version means the keyword is ignored, as it was before it existed
+            random_generated_from: None,
             expand_property_type_shorthands: Some(0), // new: a property schema of `"type": "identifier"`, or `"type": "bytes"` with a `size`, is read as the byte array it stands for, before the meta-schema, the parser and the document validator see it; the contract is stored as sent. None before this version leaves the schema as sent, which every earlier meta-schema refuses
             validate_max_depth: 1, // changed: a scalar `$ref` target is not walked and the visited set is never cleared, so the depth check is bounded; v0 was exponential on a crafted `$defs` chain
             max_depth: 256,

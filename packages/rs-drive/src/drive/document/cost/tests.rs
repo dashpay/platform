@@ -15,6 +15,7 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::setup_contract;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -468,6 +469,60 @@ fn note_document(contract: &DataContract) -> Document {
     document.set("code", Value::Text("n-1".to_string()));
     document.set("text", Value::Text("a note about a trip".to_string()));
     document
+}
+
+#[test]
+fn should_refuse_the_cost_of_a_type_indexing_a_property_drawn_at_random() {
+    // Registered at the latest platform version with `sys.random.uniform` admitted
+    let mut platform_version = PlatformVersion::latest().clone();
+    platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .random_generated_from = Some(0);
+    let contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::from([7; 32]),
+            "ownerId": Identifier::from([8; 32]),
+            "version": 1u32,
+            "documentSchemas": {
+                "card": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "properties": {
+                        "name": { "type": "string", "maxLength": 32, "position": 0 },
+                        "rarity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "generatedFrom": { "function": "sys.random.uniform" },
+                            "position": 1
+                        }
+                    },
+                    "indices": [{ "name": "byRarity", "properties": [{ "rarity": "asc" }] }],
+                    "required": ["name", "rarity"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        true,
+        &platform_version,
+    )
+    .expect("the contract parses");
+    let card = contract.document_type_for_name("card").expect("card");
+    // The create also prepays the draw's index entries, which the estimate does not price
+    assert!(matches!(
+        document_type_create_cost(
+            &contract,
+            card,
+            &BTreeMap::new(),
+            &CostAssumptions::new(&platform_version),
+            &platform_version,
+        ),
+        Err(Error::Drive(DriveError::NotSupported(_)))
+    ));
 }
 
 #[test]

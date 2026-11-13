@@ -15,6 +15,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   `prove_private_document_entries` are `Some(0)` too (`None` before): a page of a store's
 ///   entries can be read and proved, and `append_private_document_entries_operations` is
 ///   `Some(0)` (`None` before): a `PrivateDocumentCreateFromShieldedPool` appends entries to one.
+/// * `draw_random_document_properties` is `Some(0)` (`None` in every earlier table): the
+///   documents a block created get their `sys.random` properties drawn from the block's random
+///   beacon.
 /// * `delete.remove_reference_for_index_level_for_contract_operations` is 2: a delete's estimate
 ///   describes an index's entries for a value (its `[0]` layer) as the references they are, as
 ///   the insert's does, not as subtrees, and under a summable index that layer and the deleted
@@ -69,6 +72,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         fetch_private_document_entries: Some(0), // changed: a page of a store's entries can be read
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
+        draw_random_document_properties: Some(0), // changed: sys.random properties are drawn
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: Some(0), // changed: prices third-party balance work caused by erasure
             add_estimation_costs_for_remove_document_to_primary_storage: 1, // changed: estimates removal of the composite current pointer

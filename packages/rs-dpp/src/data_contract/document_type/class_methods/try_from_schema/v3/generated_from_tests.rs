@@ -160,6 +160,7 @@ fn should_parse_generated_from_onto_string_properties_at_any_depth() {
                 StringTransformation::HomographSafeAscii,
             ),
             params: vec![GenerationParam::Property(source.to_string())],
+            range: None,
         })
     };
 
@@ -320,8 +321,8 @@ fn should_refuse_a_malformed_generated_from() {
                 "function": "sys.stringTransformations.homographSafe",
                 "params": ["label"]
             }),
-            "function \"sys.stringTransformations.homographSafe\" is unknown, expected one of \
-             \"sys.stringTransformations.camelCase\", \"sys.stringTransformations.capitalize\", \
+            // Protocol version 15 lists its random and token functions around these
+            "\"sys.stringTransformations.camelCase\", \"sys.stringTransformations.capitalize\", \
              \"sys.stringTransformations.homographSafeASCII\", \"sys.stringTransformations.lowercase\", \
              \"sys.stringTransformations.snakeCase\", \"sys.stringTransformations.uppercase\"",
         ),

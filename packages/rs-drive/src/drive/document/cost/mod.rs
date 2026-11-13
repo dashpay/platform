@@ -37,7 +37,7 @@ use dpp::data_contract::document_type::accessors::{
 };
 use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{indexes_a_random_property, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -273,7 +273,11 @@ impl DocumentCreateCost {
 /// document with a `ttl` pays for its bytes by its lifetime, carries no flags
 /// (so nothing is refunded) and prepays its deletion. The storage is an
 /// uncontested create's: a value that starts a contest is stored in the
-/// contest's vote poll until it ends, which this does not price.
+/// contest's vote poll until it ends, which this does not price. A type
+/// indexing a property drawn at random (protocol version 15) is refused: its
+/// create also prepays the index entries the draw may create
+/// (`Drive::prepay_random_document_index_entries`), which this does not
+/// price either, and an estimate leaving it out would understate the create.
 pub fn document_create_cost(
     contract: &DataContract,
     document_type: DocumentTypeRef,
@@ -282,6 +286,16 @@ pub fn document_create_cost(
     platform_version: &PlatformVersion,
 ) -> Result<DocumentCreateCost, Error> {
     check_mirrored_method_versions(platform_version)?;
+    if document_type
+        .indexes()
+        .values()
+        .any(|index| indexes_a_random_property(document_type, index))
+    {
+        return Err(Error::Drive(DriveError::NotSupported(
+            "the cost of creating a document of a type indexing a property drawn at random, \
+             whose create also prepays the draw's index entries",
+        )));
+    }
     let fee_version = &platform_version.fee_version;
     // A document with a `ttl` pays for its bytes by the lifetime it has
     // left, all of its `ttl` when it is created.
