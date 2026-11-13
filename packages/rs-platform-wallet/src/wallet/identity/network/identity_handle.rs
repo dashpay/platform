@@ -542,6 +542,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// tip address publication take it for reading). Taken before
     /// `wallet_manager`.
     pub(crate) identity_placement: Arc<tokio::sync::RwLock<()>>,
+    /// The platform wallet's shielded viewing keys and seed-proven identity accounts,
+    /// from which the address a contact request carries is derived
+    /// ([`Self::contact_shielded_address`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) contact_shielded_addresses: crate::wallet::shielded::ContactShieldedAddresses,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -572,6 +577,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
             identity_placement: Arc::clone(&self.identity_placement),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: self.contact_shielded_addresses.clone(),
         }
     }
 }

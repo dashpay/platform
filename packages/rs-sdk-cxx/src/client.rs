@@ -560,6 +560,7 @@ impl PlatformClient {
                     recipient_key_index: input.recipient_key_index,
                     account_reference: input.account_reference,
                     account_label: (!input.account_label.is_empty()).then_some(input.account_label),
+                    shielded_address: None,
                     auto_accept_proof: None,
                 };
                 let sent = sdk

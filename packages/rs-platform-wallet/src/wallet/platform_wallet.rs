@@ -830,6 +830,13 @@ impl PlatformWallet {
             .with_mined_height_locator(mined_height_locator),
         );
 
+        // Shared with the identity wallet, which derives the shielded address a
+        // contact request carries from them.
+        #[cfg(feature = "shielded")]
+        let shielded_keys = Arc::new(RwLock::new(None));
+        #[cfg(feature = "shielded")]
+        let prepared_tip_accounts = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+
         let identity: IdentityWallet<SpvBroadcaster> = IdentityWallet {
             sdk: Arc::clone(&sdk),
             wallet_manager: Arc::clone(&wallet_manager),
@@ -849,6 +856,11 @@ impl PlatformWallet {
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             identity_placement: Arc::new(tokio::sync::RwLock::new(())),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(
+                Arc::clone(&shielded_keys),
+                Arc::clone(&prepared_tip_accounts),
+            ),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -871,13 +883,13 @@ impl PlatformWallet {
             persister: wallet_persister,
             generation,
             #[cfg(feature = "shielded")]
-            shielded_keys: Arc::new(RwLock::new(None)),
+            shielded_keys,
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
-            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            prepared_tip_accounts,
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]

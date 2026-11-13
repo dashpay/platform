@@ -63,6 +63,7 @@ pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdra
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;
 mod contact_requests;
+mod contact_shielded_address;
 mod contacts;
 mod dashpay_view;
 mod invitation;

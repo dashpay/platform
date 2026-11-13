@@ -24,6 +24,15 @@ pub(crate) struct PreparedTipAccount {
 }
 
 impl PreparedTipAccount {
+    /// The prepared account, while the preparation stands: its coordinator is alive
+    /// and has not been cleared since.
+    pub(crate) fn standing_account(&self) -> Option<u32> {
+        self.coordinator
+            .upgrade()
+            .is_some_and(|coordinator| coordinator.clear_generation() == self.clear_generation)
+            .then_some(self.account)
+    }
+
     pub(crate) fn coordinator(&self) -> Option<Arc<NetworkShieldedCoordinator>> {
         self.coordinator.upgrade()
     }
