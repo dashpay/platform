@@ -5,14 +5,21 @@
 //! so an owner who loses their keys, their funds or their permission cannot
 //! strand a half-erased document.
 
+use super::gas_sponsorship::gas_sponsorship_tests::IDENTITY_INSUFFICIENT_BALANCE;
 use super::*;
+use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::prelude::IdentityNonce;
@@ -90,6 +97,12 @@ struct Fixture {
 
 impl Fixture {
     async fn new(document_type_name: &str) -> Self {
+        Self::new_with_message(document_type_name, None).await
+    }
+
+    /// As [`Fixture::new`], with the document's `message` set to `message`
+    /// rather than a random one when given.
+    async fn new_with_message(document_type_name: &str, message: Option<&str>) -> Self {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(platform_version.protocol_version)
@@ -130,6 +143,9 @@ impl Fixture {
                 platform_version,
             )
             .expect("expected a random note");
+        if let Some(message) = message {
+            document.set("message", message.into());
+        }
 
         document
             .set_id_for_creation(document_type, &entropy.0, 1, platform_version)
@@ -401,6 +417,61 @@ impl Fixture {
             .lifecycle
             .expect("history carries lifecycle metadata")
             .state
+    }
+
+    /// The codes of the errors check tx at `level` refuses `transition` with,
+    /// and the fee it estimated when it got that far.
+    fn check_tx_at(&self, transition: &[u8], level: CheckTxLevel) -> (Vec<u32>, Option<FeeResult>) {
+        let state = self.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &self.platform.drive,
+            state: &state,
+            config: &self.platform.config,
+            core_rpc: &self.platform.core_rpc,
+        };
+        let result = self
+            .platform
+            .check_tx(transition, level, &platform_ref, PlatformVersion::latest())
+            .expect("expected to check the transaction");
+        let codes = result.errors.iter().map(|error| error.code()).collect();
+        (codes, result.data.and_then(|check| check.fee_result))
+    }
+
+    /// Sets the owner's balance to `credits`.
+    fn set_owner_balance(&self, credits: Credits) {
+        let platform_version = PlatformVersion::latest();
+        let id = self.owner.id().to_buffer();
+        let balance = self
+            .platform
+            .drive
+            .fetch_identity_balance(id, None, platform_version)
+            .expect("expected to fetch the balance")
+            .expect("expected a balance");
+        if balance > credits {
+            self.platform
+                .drive
+                .remove_from_identity_balance(
+                    id,
+                    balance - credits,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to lower the balance");
+        } else if credits > balance {
+            self.platform
+                .drive
+                .add_to_identity_balance(
+                    id,
+                    credits - balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to raise the balance");
+        }
     }
 
     fn lifecycle(&self, document_type_name: &str) -> DocumentLifecycleState {
@@ -882,8 +953,6 @@ async fn should_delete_and_erase_in_one_block() {
 /// in the estimate that admits the transition and in the fee actually charged.
 #[tokio::test]
 async fn should_charge_an_erase_for_the_refund_recipients_it_can_credit() {
-    use dpp::block::epoch::Epoch;
-
     let mut fixture = Fixture::new("note").await;
     assert_successful(&fixture.delete_as_owner("note").await, "the delete");
 
@@ -1242,6 +1311,120 @@ async fn should_allow_the_new_owner_to_delete_and_erase_a_transferred_history() 
     );
     assert_matches!(
         fixture.lifecycle("transferableNote"),
+        DocumentLifecycleState::Absent
+    );
+}
+
+/// Check tx validates no state of an unsponsored erase, and the work its
+/// refunds cause for other identities is billed there, so check tx reserves
+/// that work on top of the estimate, on the first check and on every recheck.
+/// A signer one credit short of the estimate so reserved, who covers the
+/// estimate without the reservation, stays out of the mempool rather than
+/// being refused unpaid in a block; one holding the estimate is admitted. The
+/// estimate the block admits the erase against is then the first check's and
+/// the lifecycle read only state validation makes.
+#[tokio::test]
+async fn should_reserve_the_refund_recipient_work_when_admitting_an_erase() {
+    let mut fixture = Fixture::new("note").await;
+    assert_successful(&fixture.delete_as_owner("note").await, "the delete");
+    let erase = fixture.erase_transition("note", true).await;
+    let recipient_cost = fixture
+        .platform
+        .drive
+        .erase_refund_recipient_cost(&Epoch::new(0).unwrap(), PlatformVersion::latest())
+        .expect("expected the recipient work to be priced");
+
+    let mut first_check_estimate = None;
+    for level in [FirstTimeCheck, Recheck] {
+        fixture.set_owner_balance(dash_to_credits!(1.0));
+        let (errors, estimated) = fixture.check_tx_at(&erase, level);
+        assert_eq!(errors, Vec::<u32>::new(), "{level:?}");
+        let estimated = estimated.expect("expected an estimated fee");
+        assert!(
+            estimated.processing_fee >= recipient_cost.processing_fee,
+            "{level:?}: the estimate holds the recipient work: {} is below {}",
+            estimated.processing_fee,
+            recipient_cost.processing_fee
+        );
+        let required = estimated.total_base_fee();
+        first_check_estimate.get_or_insert(required);
+
+        fixture.set_owner_balance(required - 1);
+        assert_eq!(
+            fixture.check_tx_at(&erase, level).0,
+            vec![IDENTITY_INSUFFICIENT_BALANCE],
+            "{level:?}"
+        );
+        fixture.set_owner_balance(required);
+        assert_eq!(
+            fixture.check_tx_at(&erase, level).0,
+            Vec::<u32>::new(),
+            "{level:?}"
+        );
+    }
+
+    let (_, lifecycle_read) = fixture
+        .platform
+        .drive
+        .fetch_document_lifecycle(
+            &fixture.contract,
+            fixture.document_type("note"),
+            fixture.document.id(),
+            Some(&Epoch::new(0).unwrap()),
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("expected to read the lifecycle");
+    fixture.set_owner_balance(dash_to_credits!(1.0));
+    let result = process(&mut fixture.platform, erase);
+    let StateTransitionExecutionResult::SuccessfulExecution { estimated_fees, .. } = result else {
+        panic!("expected the erase to succeed, got {result:?}");
+    };
+    let block_estimate = estimated_fees
+        .expect("an erase is admitted against an estimate")
+        .total_base_fee();
+    let first_check_estimate = first_check_estimate.expect("the first check estimated a fee");
+    assert!(
+        first_check_estimate + lifecycle_read.total_base_fee() >= block_estimate,
+        "check tx admits the erase against all the block does but read its lifecycle: \
+         {first_check_estimate} and a read of {} is below {block_estimate}",
+        lifecycle_read.total_base_fee()
+    );
+}
+
+/// A type whose string may hold 16384 characters and declares no `maxBytes`
+/// has a byte bound past `u16::MAX` at four bytes a character. An erase sizes
+/// the revisions it may remove as the type's largest documents, held at
+/// `u16::MAX`, so it runs and is charged, and the estimate that admits it
+/// covers a full chunk of revisions as large as a document's fields may be.
+#[tokio::test]
+async fn should_erase_a_type_whose_string_bound_does_not_fit_a_document_size() {
+    let platform_version = PlatformVersion::latest();
+    let longest_message = "x".repeat(platform_version.system_limits.max_field_value_size as usize);
+    let mut fixture = Fixture::new_with_message("longNote", Some(&longest_message)).await;
+    let chunk = platform_version
+        .system_limits
+        .max_document_revisions_erased_per_transition
+        .expect("protocol 15 bounds the chunk") as u64;
+    fixture.retain_revisions("longNote", chunk);
+    assert_successful(&fixture.delete_as_owner("longNote").await, "the delete");
+    let erase = fixture.erase_transition("longNote", true).await;
+
+    let (errors, estimated) = fixture.check_tx_at(&erase, FirstTimeCheck);
+    assert_eq!(errors, Vec::<u32>::new());
+    let estimated = estimated.expect("expected an estimated fee");
+    let result = process(&mut fixture.platform, erase);
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+        panic!("expected the erase to succeed, got {result:?}");
+    };
+    assert!(
+        estimated.total_base_fee() >= fee_result.total_base_fee(),
+        "the estimate that admits the erase covers what it is charged: {} is below {}",
+        estimated.total_base_fee(),
+        fee_result.total_base_fee()
+    );
+    assert_matches!(
+        fixture.lifecycle("longNote"),
         DocumentLifecycleState::Absent
     );
 }
