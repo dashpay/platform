@@ -40,13 +40,18 @@ impl IdentityWallet {
     ///
     /// This method owns only the identity-side balance update and returns
     /// the proof-attested post-spend `AddressInfos` alongside the new
-    /// identity balance. Prefer the composite
-    /// [`PlatformWallet::top_up_from_addresses`], which feeds the returned
+    /// identity balance. The composite
+    /// [`PlatformWallet::top_up_from_addresses`] feeds the returned
     /// `AddressInfos` through
     /// [`PlatformAddressWallet::reconcile_address_infos`] — the
     /// platform-address wallet holds the address provider needed to map a
     /// spent address back to its derivation index (including addresses
     /// restored from disk that are no longer in a live derived pool).
+    ///
+    /// Crate-private: it does not check the wallet generation or reconcile
+    /// the spent addresses. Callers outside the crate use
+    /// [`PlatformWallet::top_up_from_addresses`], which holds the lifecycle
+    /// gate and reconciles.
     ///
     /// [`PlatformWallet::top_up_from_addresses`]:
     /// crate::wallet::PlatformWallet::top_up_from_addresses
@@ -71,7 +76,7 @@ impl IdentityWallet {
     ///   [`PlatformAddress`]es. Construction is the caller's concern —
     ///   seed-backed, hardware, FFI trampoline, whatever — the wallet
     ///   struct carries no key material itself.
-    pub async fn top_up_from_addresses<S, I>(
+    pub(crate) async fn top_up_from_addresses<S, I>(
         &self,
         identity_id: &Identifier,
         inputs: I,

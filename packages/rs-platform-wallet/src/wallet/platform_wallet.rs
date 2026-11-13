@@ -590,10 +590,10 @@ impl PlatformWallet {
     /// balances and nonces from the proof-attested post-spend
     /// `AddressInfos`.
     ///
-    /// See [`IdentityWallet::top_up_from_addresses`] for the identity-side
-    /// semantics. Reconciliation failures are logged inside the seam
-    /// rather than propagated — Platform already accepted the top-up, and
-    /// a later sync reconciles.
+    /// The identity-side semantics are those of the crate-private
+    /// `IdentityWallet::top_up_from_addresses`. Reconciliation failures are
+    /// logged inside the seam rather than propagated — Platform already
+    /// accepted the top-up, and a later sync reconciles.
     ///
     /// The result stands only when its proof shows every input address at or
     /// past the nonce this top-up was signed with AND the identity balance
