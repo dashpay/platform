@@ -57,6 +57,9 @@ use platform_wallet::{DashPayProfile, IdentityStatus};
 /// distinguish "no profile yet" (skip the row) from "profile present
 /// with this field unset" (clear the column). All heap-allocated
 /// strings are freed in [`free_identity_entry_ffi`].
+/// Confirmed absence travels separately on the size-negotiated
+/// `on_persist_dashpay_profiles_fn` extension; identity placement does not
+/// establish whether the profile was checked.
 #[repr(C)]
 pub struct IdentityEntryFFI {
     pub identity_id: [u8; 32],
@@ -643,7 +646,7 @@ fn allocate_dpns_arrays(
 /// pointers — every one must be released with `CString::from_raw`
 /// before the outer slice drops. [`free_identity_entry_ffi`] does this
 /// row-by-row, mirroring the DPNS label-array free path exactly.
-fn allocate_contact_profile_rows(
+pub(crate) fn allocate_contact_profile_rows(
     contact_profiles: &std::collections::BTreeMap<
         dpp::prelude::Identifier,
         platform_wallet::ContactProfileEntry,
@@ -924,23 +927,29 @@ pub unsafe fn free_identity_entry_ffi(entry: &mut IdentityEntryFFI) {
     // produced by `optional_c_string` (`CString::into_raw`) so it MUST be
     // reclaimed with `CString::from_raw` — the byte arrays are inline and
     // need no free.
-    if !entry.contact_profiles.is_null() && entry.contact_profiles_count > 0 {
-        let rows = unsafe {
-            std::slice::from_raw_parts_mut(
-                entry.contact_profiles as *mut ContactProfileRowFFI,
-                entry.contact_profiles_count,
-            )
-        };
-        for row in rows.iter_mut() {
-            free_optional_c_string(&mut row.display_name);
-            free_optional_c_string(&mut row.bio);
-            free_optional_c_string(&mut row.avatar_url);
-            free_optional_c_string(&mut row.public_message);
-        }
-        let _ = unsafe { Box::from_raw(rows as *mut [ContactProfileRowFFI]) };
-        entry.contact_profiles = ptr::null();
-    }
+    unsafe { free_contact_profile_rows(entry.contact_profiles, entry.contact_profiles_count) };
+    entry.contact_profiles = ptr::null();
     entry.contact_profiles_count = 0;
+}
+
+/// Release rows allocated by `allocate_contact_profile_rows` after the host copied them.
+///
+/// # Safety
+/// The pointer and count must describe the original allocation, freed exactly once.
+pub(crate) unsafe fn free_contact_profile_rows(ptr: *const ContactProfileRowFFI, count: usize) {
+    if !ptr.is_null() && count > 0 {
+        let rows =
+            unsafe { std::slice::from_raw_parts_mut(ptr as *mut ContactProfileRowFFI, count) };
+        for row in rows.iter_mut() {
+            unsafe {
+                free_optional_c_string(&mut row.display_name);
+                free_optional_c_string(&mut row.bio);
+                free_optional_c_string(&mut row.avatar_url);
+                free_optional_c_string(&mut row.public_message);
+            }
+        }
+        drop(unsafe { Box::from_raw(rows as *mut [ContactProfileRowFFI]) });
+    }
 }
 
 /// Release a heap-allocated C string produced by

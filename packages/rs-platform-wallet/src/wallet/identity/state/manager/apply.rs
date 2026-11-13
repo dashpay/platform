@@ -74,7 +74,9 @@ impl IdentityManager {
             }
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
-            *existing.dashpay_profile_mut() = entry.dashpay_profile;
+            if let Some(profile) = entry.dashpay_profile {
+                existing.apply_dashpay_profile(Some(profile));
+            }
             // DPNS names: wholesale assign, matching the changeset's
             // last-write-wins merge — entries carry the complete list
             // (snapshotted via `from_managed`), and a sold/transferred

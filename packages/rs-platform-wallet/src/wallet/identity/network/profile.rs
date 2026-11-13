@@ -55,11 +55,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Fetches through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles) (`In`
     /// queries, not N+1; a failed fetch leaves the cache as is for the next
-    /// sweep), and persists only when the
-    /// fetched profile differs from the cached one — a `None` result clears the
-    /// cache only when a profile is currently stored (both arms guarded so a
-    /// no-change sweep writes nothing). Returns the number of identities whose
-    /// cached profile changed. Results for a removed or replaced wallet
+    /// sweep), and persists when the fetched profile differs from the cached
+    /// one or establishes the first confirmed absence this session. Subsequent
+    /// unchanged results emit nothing. Returns the number of identities whose
+    /// profile state was updated. Results for a removed or replaced wallet
     /// generation are discarded without changing state or persistence.
     pub async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
         // 1. Collect all managed identity IDs under a short read lock.
@@ -100,8 +99,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .map(|id| (*id, found.get(id).cloned().flatten()))
             .collect();
 
-        // 4. Under the write guard: persist-on-change only (mirror the
-        //    None-arm's is_some guard for both directions).
+        // A first confirmed absence must emit a tombstone even on a cold cache.
         let mut changed = 0u32;
         let mut wm = self.wallet_manager.write().await;
         let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
@@ -111,7 +109,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
                 continue;
             };
-            if managed.dashpay().profile == profile {
+            if (managed.dashpay().profile_checked || managed.dashpay().profile.is_some())
+                && managed.dashpay().profile == profile
+            {
                 continue;
             }
             managed.set_dashpay_profile(profile, &self.persister);
@@ -1446,6 +1446,100 @@ mod sync_generation_tests {
         } else {
             wallet.identity().dashpay().sync_profiles().await.unwrap()
         }
+    }
+
+    #[tokio::test]
+    async fn should_persist_first_observed_profile_absence_once_and_keep_overlay_across_scalars() {
+        use crate::changeset::Merge;
+        let owner = Identifier::from([0x61; 32]);
+        let query = DocumentQuery::new(dashpay_contract().unwrap(), "profile")
+            .unwrap()
+            .with_where(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![owner.into()]),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".into(),
+                ascending: true,
+            })
+            .with_limit(100);
+        let mut sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .unwrap();
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                query,
+                Some(Default::default()),
+            )
+            .await
+            .unwrap();
+        let persistence = Arc::new(CapturingPersistence::default());
+        let manager = PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::clone(&persistence),
+            Arc::new(NoopTestEventHandler),
+        );
+        let wallet = add_wallet(&manager).await;
+        {
+            let mut state = wallet.state_mut().await.unwrap();
+            state
+                .identity_manager
+                .add_out_of_wallet_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: Default::default(),
+                        balance: 123,
+                        revision: 7,
+                    }),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        persistence.0.lock().unwrap().clear();
+        assert_eq!(sync(&wallet, false).await, 1);
+        assert_eq!(sync(&wallet, false).await, 0);
+        let mut merged = {
+            let mut writes = persistence.0.lock().unwrap();
+            assert_eq!(writes.len(), 1);
+            writes.pop().unwrap()
+        };
+        assert_eq!(
+            merged.dashpay_profiles.as_ref().unwrap().get(&owner),
+            Some(&None)
+        );
+        let scalar = merged.identities.clone().unwrap();
+        let mut known = scalar.clone();
+        known.identities.get_mut(&owner).unwrap().dashpay_profile = Some(DashPayProfile {
+            display_name: Some("Retained".into()),
+            ..Default::default()
+        });
+        known.merge(scalar.clone());
+        assert_eq!(
+            known.identities[&owner]
+                .dashpay_profile
+                .as_ref()
+                .unwrap()
+                .display_name
+                .as_deref(),
+            Some("Retained")
+        );
+        merged.merge(scalar.into());
+        assert_eq!(
+            merged.dashpay_profiles.as_ref().unwrap().get(&owner),
+            Some(&None)
+        );
+        let state = wallet.state().await;
+        assert!(
+            state
+                .identity_manager
+                .managed_identity(&owner)
+                .unwrap()
+                .dashpay()
+                .profile_checked
+        );
     }
 
     async fn assert_delayed_sync_preserves_replacement(contacts: bool) {

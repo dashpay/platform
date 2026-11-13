@@ -68,7 +68,8 @@ use crate::dpns_name_state_persistence::{
     build_dpns_name_state_entries, free_dpns_name_state_entries, DpnsNameStateFFI,
 };
 use crate::identity_persistence::{
-    free_identity_entry_ffi, free_identity_key_entry_ffi, IdentityEntryFFI, IdentityKeyEntryFFI,
+    allocate_contact_profile_rows, free_contact_profile_rows, free_identity_entry_ffi,
+    free_identity_key_entry_ffi, ContactProfileRowFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI,
 };
 use crate::invitation_persistence::{build_invitation_entries, InvitationEntryFFI};
@@ -709,6 +710,10 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids_count: usize,
         ),
     >,
+    /// Authoritative profile overlays. `contact_id` is the profile identity ID;
+    /// `is_present == false` deletes it, independent of identity placement.
+    /// The host must copy all row data before returning.
+    pub on_persist_dashpay_profiles_fn: Option<PersistDashpayProfilesFn>,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -736,9 +741,17 @@ impl Default for PersistenceCallbacksExtension {
             on_load_private_contact_scan_state_free_fn: None,
             on_load_private_contact_scan_state_wallets_fn: None,
             on_load_private_contact_scan_state_wallets_free_fn: None,
+            on_persist_dashpay_profiles_fn: None,
         }
     }
 }
+
+pub type PersistDashpayProfilesFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    profiles: *const ContactProfileRowFFI,
+    profiles_count: usize,
+) -> i32;
 
 /// The additive (extension-negotiated) callbacks in Rust-side form, read
 /// out of a size-gated [`PersistenceCallbacksExtension`] by the manager
@@ -764,6 +777,7 @@ pub struct PersistenceExtensionCallbacks {
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
     pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
     pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
+    pub persist_dashpay_profiles: Option<PersistDashpayProfilesFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -2773,6 +2787,30 @@ impl PlatformWalletPersistence for FFIPersister {
                     );
                     outcome.record(result);
                 }
+            }
+        }
+
+        if let (Some(profiles), Some(cb)) = (
+            changeset.dashpay_profiles.as_ref(),
+            self.tracked_masternodes_callbacks.persist_dashpay_profiles,
+        ) {
+            let rows = profiles
+                .iter()
+                .map(|(id, profile)| {
+                    (
+                        *id,
+                        platform_wallet::ContactProfileEntry {
+                            profile: profile.clone(),
+                            checked_at_ms: 0,
+                        },
+                    )
+                })
+                .collect();
+            let (rows, count) = allocate_contact_profile_rows(&rows);
+            let rc = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), rows, count) };
+            unsafe { free_contact_profile_rows(rows, count) };
+            if rc != 0 {
+                outcome.record(rc);
             }
         }
 
@@ -9461,6 +9499,116 @@ mod tests {
         }
     }
 
+    #[test]
+    fn should_forward_authoritative_profile_overlays_after_scalar_snapshots() {
+        use dpp::identity::{Identity, IdentityV0};
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use platform_wallet::ManagedIdentity;
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Host {
+            profiles: Mutex<Vec<(bool, Option<String>, bool)>>,
+            order: Mutex<Vec<&'static str>>,
+        }
+        unsafe extern "C" fn scalar(
+            context: *mut c_void,
+            _: *const u8,
+            entries: *const IdentityEntryFFI,
+            count: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            let host = &*(context as *const Host);
+            assert_eq!(count, 1);
+            assert!(!(*entries).dashpay_profile_present);
+            host.order.lock().unwrap().push("scalar");
+            0
+        }
+        unsafe extern "C" fn persist(
+            context: *mut c_void,
+            wallet: *const u8,
+            rows: *const ContactProfileRowFFI,
+            count: usize,
+        ) -> i32 {
+            assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+            let host = &*(context as *const Host);
+            host.order.lock().unwrap().push("profile");
+            for row in slice::from_raw_parts(rows, count) {
+                assert_eq!(row.contact_id, [9; 32]);
+                let display = (!row.display_name.is_null()).then(|| {
+                    CStr::from_ptr(row.display_name)
+                        .to_str()
+                        .unwrap()
+                        .to_owned()
+                });
+                host.profiles.lock().unwrap().push((
+                    row.is_present,
+                    display,
+                    row.shielded_address_present,
+                ));
+            }
+            0
+        }
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&host as *const Host).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                on_persist_identities_fn: Some(scalar),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                persist_dashpay_profiles: Some(persist),
+                ..Default::default()
+            },
+        );
+        let id = Identifier::from([9; 32]);
+        let managed = ManagedIdentity::new_out_of_wallet(Identity::V0(IdentityV0 {
+            id,
+            public_keys: Default::default(),
+            balance: 0,
+            revision: 0,
+        }));
+        for profile in [
+            Some(platform_wallet::DashPayProfile {
+                display_name: Some("Owned copy".into()),
+                shielded_address: Some(vec![3; 43]),
+                ..Default::default()
+            }),
+            None,
+        ] {
+            persister
+                .store(
+                    [42; 32],
+                    PlatformWalletChangeSet {
+                        identities: Some(IdentityChangeSet {
+                            identities: BTreeMap::from([(
+                                id,
+                                IdentityEntry::from_managed(&managed),
+                            )]),
+                            ..Default::default()
+                        }),
+                        dashpay_profiles: Some(BTreeMap::from([(id, profile)])),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            *host.profiles.lock().unwrap(),
+            vec![
+                (true, Some("Owned copy".into()), true),
+                (false, None, false)
+            ]
+        );
+        assert_eq!(
+            *host.order.lock().unwrap(),
+            vec!["scalar", "profile", "scalar", "profile"]
+        );
+    }
+
     // --- persists_durably: the fail-closed durability attestation ---
 
     unsafe extern "C" fn noop_begin(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
@@ -12335,6 +12483,16 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_private_contact_scan_state_wallets_free_fn
             ) + std::mem::size_of::<Option<FreePrivateContactScanStateWalletsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dashpay_profiles_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_dashpay_profiles_fn
+            ) + std::mem::size_of::<Option<PersistDashpayProfilesFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(

@@ -337,7 +337,7 @@ impl PlatformWalletInfo {
         if let Some(profiles) = dashpay_profiles {
             for (id, profile) in profiles {
                 if let Some(managed) = self.identity_manager.managed_identity_mut(&id) {
-                    *managed.dashpay_profile_mut() = profile;
+                    managed.apply_dashpay_profile(profile);
                 }
             }
         }
@@ -2213,6 +2213,30 @@ mod tests {
             .apply_changeset(&mut wallet_b, wrap_id(id_cs))
             .expect("apply");
 
+        assert_eq!(
+            info_b
+                .identity_manager
+                .managed_identity(&id)
+                .unwrap()
+                .dashpay()
+                .profile
+                .as_ref()
+                .unwrap()
+                .display_name
+                .as_deref(),
+            Some("seed"),
+            "a scalar snapshot with no profile must preserve the retained profile"
+        );
+        info_b
+            .apply_changeset(
+                &mut wallet_b,
+                PlatformWalletChangeSet {
+                    dashpay_profiles: Some(BTreeMap::from([(id, None)])),
+                    ..Default::default()
+                },
+            )
+            .expect("apply explicit profile absence");
+
         // Both wallets should have profile == None.
         assert_eq!(
             info_a
@@ -2232,6 +2256,37 @@ mod tests {
                 .profile,
             None
         );
+    }
+
+    #[test]
+    fn apply_first_absent_profile_establishes_session_authority_for_observed_identity() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let p = noop_persister();
+        let id = Identifier::from([9; 32]);
+        info.identity_manager
+            .add_out_of_wallet_identity(make_test_identity(9, 1), &p)
+            .unwrap();
+        assert!(
+            !info
+                .identity_manager
+                .managed_identity(&id)
+                .unwrap()
+                .dashpay()
+                .profile_checked
+        );
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                dashpay_profiles: Some(BTreeMap::from([(id, None)])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let managed = info.identity_manager.managed_identity(&id).unwrap();
+        assert!(managed.dashpay().profile_checked);
+        assert!(managed.dashpay().profile.is_none());
+        assert!(managed.identity_index.is_none());
     }
 
     #[test]

@@ -626,8 +626,10 @@ nullable `identities.wallet_id` link; no direct `wallet_id` column exists.
 
 At most one DashPay profile blob per identity. `None` profile maps to a
 DELETE rather than a NULL blob — the row is absent, not nulled.
-`apply` writes these rows, but `load()` does not return them today;
-`DashPaySyncManager` rebuilds the canonical profile from Platform.
+`apply` also folds each explicit profile update or deletion into the identity's
+canonical `entry_blob`, which `load()` reads. An identity scalar snapshot with
+no profile preserves the stored profile; only an explicit profile overlay
+establishes absence.
 
 `profile_format` (V021) stamps the bincode shape of `profile_blob` the same
 way `identities.entry_format` does (0 = pre-payment-address record, 1 =

@@ -87,7 +87,22 @@ pub fn apply_upserts(
                     });
                 }
             }
-            let payload = blob::encode(entry)?;
+            let mut entry = entry.clone();
+            if entry.dashpay_profile.is_none() {
+                let stored: Option<(i64, Vec<u8>, i64)> = tx
+                    .query_row(
+                        "SELECT length(entry_blob), entry_blob, entry_format FROM identities \
+                     WHERE identity_id = ?1 AND (wallet_id IS NULL OR wallet_id IS ?2)",
+                        params![id.as_slice(), wallet_id_param],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .optional()?;
+                if let Some((len, payload, format)) = stored {
+                    blob::check_size(len)?;
+                    entry.dashpay_profile = decode_identity(&payload, format)?.dashpay_profile;
+                }
+            }
+            let payload = blob::encode(&entry)?;
             stmt.execute(params![
                 id.as_slice(),
                 wallet_id_param,

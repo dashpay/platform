@@ -3395,6 +3395,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.struct_size = UInt(MemoryLayout<PersistenceCallbacksExtension>.size)
         extensionCallbacks.version = UInt32(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION)
         extensionCallbacks.reserved = 0
+        extensionCallbacks.on_persist_dashpay_profiles_fn = persistDashpayProfilesCallback
         extensionCallbacks.on_persist_dpns_name_states_fn = persistDpnsNameStatesCallback
         extensionCallbacks.on_persist_tracked_masternodes_fn = persistTrackedMasternodesCallback
         extensionCallbacks.on_load_tracked_masternodes_fn = loadTrackedMasternodesCallback
@@ -3816,24 +3817,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 names: entry.dpnsNames
             )
 
-            // Sync the DashPay profile cache for this identity.
-            //
-            // The snapshot carries Rust's current profile. For a
-            // wallet-owned identity (`identityIndex != nil`) the load
-            // path hydrated this row into Rust, so a `nil` profile is
-            // authoritative (e.g. `sync_profiles` found it deleted on
-            // Platform) and the row plus its address sidecar go.
-            // Out-of-wallet identities are never hydrated, so for them
-            // `nil` only means "not fetched" and leaves the row intact.
             if let profile = entry.dashpayProfile {
                 try upsertDashpayProfile(identityRow: row, profile: profile)
-            } else if entry.identityIndex != nil {
-                if let existing = row.dashpayProfile {
-                    backgroundContext.delete(existing)
-                }
-                try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
-                    networkRaw: row.networkRaw, ownerIdentityId: row.identityId,
-                    profileIdentityId: row.identityId, core: nil, platform: nil, shielded: nil, fetcher: modelFetcher)
             }
 
             // Upsert the cached contact-profile rows for this identity.
@@ -3918,6 +3903,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             return false
         }
         }  // onQueue
+    }
+
+    @discardableResult
+    func persistDashpayProfiles(walletId: Data, profiles: [DashpayProfileOverlaySnapshot]) -> Bool {
+        onQueue {
+            do {
+                for overlay in profiles {
+                    let identityId = overlay.identityId
+                    let descriptor = FetchDescriptor<PersistentIdentity>(
+                        predicate: #Predicate { $0.identityId == identityId }
+                    )
+                    guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first else {
+                        return false
+                    }
+                    if let profile = overlay.profile {
+                        try upsertDashpayProfile(identityRow: row, profile: profile)
+                    } else {
+                        if let existing = row.dashpayProfile { backgroundContext.delete(existing) }
+                        try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
+                            networkRaw: row.networkRaw, ownerIdentityId: row.identityId,
+                            profileIdentityId: row.identityId, core: nil, platform: nil, shielded: nil,
+                            fetcher: modelFetcher)
+                    }
+                }
+                return true
+            } catch {
+                SDKLogger.event("persistence_profile_overlay_failed", category: .persistence,
+                    severity: .error, error: error)
+                return false
+            }
+        }
     }
 
     /// Upsert a `PersistentDPNSName` row for every label the FFI
@@ -5484,6 +5500,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// `isPresent == false` tombstone deletes, and a contact simply
         /// missing from the array is left intact (no update).
         let contactProfiles: [ContactProfileSnapshot]
+    }
+
+    struct DashpayProfileOverlaySnapshot {
+        let identityId: Data
+        let profile: DashpayProfileSnapshot?
     }
 
     /// Owned snapshot of one `ContactProfileRowFFI` — the contact's
@@ -10524,6 +10545,36 @@ private func persistAccountAddressPoolsCallback(
     }
 
     return allOk ? 0 : 1
+}
+
+private func persistDashpayProfilesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    rowsPtr: UnsafePointer<ContactProfileRowFFI>?,
+    rowsCount: UInt
+) -> Int32 {
+    guard let context, let walletIdPtr else { return 1 }
+    guard rowsCount == 0 || rowsPtr != nil else { return 1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    var profiles: [PlatformWalletPersistenceHandler.DashpayProfileOverlaySnapshot] = []
+    if let rowsPtr {
+        for index in 0..<Int(rowsCount) {
+            let row = rowsPtr[index]
+            let profile: PlatformWalletPersistenceHandler.DashpayProfileSnapshot? = row.is_present ? .init(
+                displayName: row.display_name.map { String(cString: $0) },
+                bio: row.bio.map { String(cString: $0) },
+                publicMessage: row.public_message.map { String(cString: $0) },
+                avatarUrl: row.avatar_url.map { String(cString: $0) },
+                avatarHash: row.avatar_hash_present ? hashData(row.avatar_hash) : nil,
+                avatarFingerprint: row.avatar_fingerprint_present ? Swift.withUnsafeBytes(of: row.avatar_fingerprint) { Data($0) } : nil,
+                corePaymentAddress: row.core_payment_address_present ? Swift.withUnsafeBytes(of: row.core_payment_address) { Data($0) } : nil,
+                platformPaymentAddress: row.platform_payment_address_present ? Swift.withUnsafeBytes(of: row.platform_payment_address) { Data($0) } : nil,
+                shieldedAddress: row.shielded_address_present ? Swift.withUnsafeBytes(of: row.shielded_address) { Data($0) } : nil
+            ) : nil
+            profiles.append(.init(identityId: dataFromTuple32(row.contact_id), profile: profile))
+        }
+    }
+    return handler.persistDashpayProfiles(walletId: Data(bytes: walletIdPtr, count: 32), profiles: profiles) ? 0 : 1
 }
 
 /// C shim for `on_persist_identities_fn`. Copies every
