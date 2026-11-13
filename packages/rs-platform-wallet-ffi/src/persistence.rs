@@ -7377,24 +7377,8 @@ unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut
     apply_contact_profile_rows(rows, managed);
 }
 
-/// Maximum cached `avatarUrl` length — mirrors the
-/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
-/// before caching (DIP-15's 2048-char cap).
-const MAX_AVATAR_URL_LEN: usize = 2048;
-
-/// Defensive re-validation of a cached `avatarUrl` at restore. The
-/// fetch path already dropped non-`https://` / over-length URLs before
-/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
-/// attacker-controlled public data and the UI will load it, so we
-/// re-apply the same `https://`-only, length-capped rule on the way back
-/// in. A URL that fails is dropped to `None` (the rest of the profile is
-/// still restored) rather than discarding the whole row.
-fn is_valid_avatar_url(url: &str) -> bool {
-    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
-}
-
-/// Copy a host-owned profile row, retaining the avatar URL validation used for
-/// cached contact profiles. The host frees the buffers after restoration returns.
+/// Copy a host-owned profile row. The host frees the buffers after restoration
+/// returns; platform-wallet owns normalization and payment-address policy.
 ///
 /// # Safety
 /// The row's string pointers must be null or readable NUL-terminated strings.
@@ -7408,39 +7392,34 @@ unsafe fn profile_from_restore_row(
             CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
         }
     };
-    platform_wallet::DashPayProfile {
+    platform_wallet::normalize_persisted_profile(platform_wallet::DashPayProfile {
         display_name: opt_string(row.display_name),
         bio: opt_string(row.bio),
-        avatar_url: opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u)),
+        avatar_url: opt_string(row.avatar_url),
         avatar_hash: row.avatar_hash_present.then_some(row.avatar_hash),
         avatar_fingerprint: row
             .avatar_fingerprint_present
             .then_some(row.avatar_fingerprint),
         public_message: opt_string(row.public_message),
-        // Re-validated like the avatar URL: a stale or corrupt host row must
-        // not restore an address that a profile fetch would have rejected.
         core_payment_address: row
             .core_payment_address_present
             .then_some(row.core_payment_address)
-            .filter(|address| platform_wallet::valid_transparent_payment_address(address))
             .map(|address| address.to_vec()),
         platform_payment_address: row
             .platform_payment_address_present
             .then_some(row.platform_payment_address)
-            .filter(|address| platform_wallet::valid_transparent_payment_address(address))
             .map(|address| address.to_vec()),
         shielded_address: row
             .shielded_address_present
             .then_some(row.shielded_address)
-            .and_then(|address| platform_wallet::validated_shielded_address(&address))
             .map(|address| address.to_vec()),
-    }
+    })
 }
 
 /// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
 /// the managed identity's contact-profile cache. Split out from
-/// [`restore_contact_profiles`] so the c-string decode + avatar-url
-/// re-validation is unit-testable without a full
+/// [`restore_contact_profiles`] so the c-string decode + profile
+/// normalization is unit-testable without a full
 /// [`IdentityRestoreEntryFFI`].
 ///
 /// # Safety

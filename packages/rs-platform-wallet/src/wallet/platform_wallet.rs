@@ -3053,6 +3053,12 @@ impl PlatformWallet {
             )));
         }
         let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
+        #[cfg(not(feature = "shielded"))]
+        if sets_shielded {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Shielded address publication requires shielded support".to_string(),
+            ));
+        }
         let _placement = if sets_shielded {
             Some(self.identity.identity_placement.read().await)
         } else {
@@ -3719,6 +3725,42 @@ mod state_generation_tests {
     struct NoopEvents;
     impl EventHandler for NoopEvents {}
     impl PlatformEventHandler for NoopEvents {}
+
+    #[cfg(not(feature = "shielded"))]
+    #[tokio::test]
+    async fn should_reject_shielded_profile_addresses_without_shielded_support() {
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        );
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        let signer = simple_signer::signer::SimpleSigner::default();
+        let result = wallet
+            .write_dashpay_profile(
+                &Identifier::from([7; 32]),
+                ProfileUpdate {
+                    shielded_address: PaymentAddressUpdate::Set(vec![0; 43]),
+                    ..Default::default()
+                },
+                &signer,
+                false,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::InvalidIdentityData(message))
+                if message.contains("requires shielded support")
+        ));
+    }
 
     #[tokio::test]
     async fn should_reject_mutations_from_a_removed_wallet_generation() {

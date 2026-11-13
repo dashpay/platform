@@ -11,8 +11,8 @@ pub mod key_storage;
 
 pub use block_time::BlockTime;
 pub use dashpay::{
-    ContactProfileEntry, ContactRequest, DashPayProfile, DashpayAddressMatch, EstablishedContact,
-    PaymentAddressUpdate, PaymentDirection, PaymentEntry, PaymentStatus, ProfileUpdate,
-    ShieldedTipRecipient,
+    normalize_persisted_profile, ContactProfileEntry, ContactRequest, DashPayProfile,
+    DashpayAddressMatch, EstablishedContact, PaymentAddressUpdate, PaymentDirection, PaymentEntry,
+    PaymentStatus, ProfileUpdate, ShieldedTipRecipient,
 };
 pub use key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};

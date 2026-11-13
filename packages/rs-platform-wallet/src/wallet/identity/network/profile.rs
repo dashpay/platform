@@ -22,8 +22,8 @@ use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::{
-    calculate_avatar_hash, calculate_dhash_fingerprint, ContactProfileEntry, DashPayProfile,
-    ProfileUpdate,
+    calculate_avatar_hash, calculate_dhash_fingerprint, normalize_persisted_profile,
+    ContactProfileEntry, DashPayProfile, ProfileUpdate,
 };
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
@@ -345,7 +345,7 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
         .and_then(|v: &Value| v.as_bytes_slice().ok())
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
 
-    DashPayProfile {
+    normalize_persisted_profile(DashPayProfile {
         display_name: text("displayName"),
         bio: public_message.clone(),
         avatar_url: text("avatarUrl"),
@@ -367,7 +367,7 @@ fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) ->
             .and_then(|v| v.as_bytes_slice().ok())
             .and_then(crate::validated_shielded_address)
             .map(|bytes| bytes.to_vec()),
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
