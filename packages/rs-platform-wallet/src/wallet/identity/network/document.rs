@@ -71,7 +71,7 @@ use super::*;
 /// `Signer<IdentityPublicKey>` trait bound on the SDK's `PutDocument`
 /// extension be satisfied with a `&S` instead of forcing the caller to
 /// hand over ownership / wrap in an `Arc` per call.
-struct SignerRef<'a, S: ?Sized>(&'a S);
+pub(super) struct SignerRef<'a, S: ?Sized>(pub(super) &'a S);
 
 impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
