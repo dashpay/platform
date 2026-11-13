@@ -78,7 +78,10 @@ mod tests {
 
         // Protocol version 13 reads the saved state with fetch_platform_state v0, 14 with v1
         for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
-            for fixture in [PLATFORM_STATE_V3_TESTNET.deref(), PLATFORM_STATE_V8_DEVNET.deref()] {
+            for fixture in [
+                PLATFORM_STATE_V3_TESTNET.deref(),
+                PLATFORM_STATE_V8_DEVNET.deref(),
+            ] {
                 let transaction = platform.drive.grove.start_transaction();
                 platform
                     .drive
