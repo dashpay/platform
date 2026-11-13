@@ -82,11 +82,18 @@ fn catch_address_top_up_panic(
 /// `ManagedIdentity::balance` read on the same handle reflects the
 /// new value without an extra round trip.
 ///
+/// The identity's balance is read from Platform before anything is signed:
+/// a failed read is `ErrorIdentityLookupFailed` (80) and an identity
+/// Platform does not know `ErrorIdentityNotFound` (7), nothing sent.
+///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
-/// executed or may still execute: its result was not proved (including a
-/// result proof that does not show this top-up's address nonces used), or
-/// the call panicked, possibly after signing or broadcast. The host must not
-/// submit it again; the next sync settles the outcome.
+/// executed or may still execute: its result was not proved, or the call
+/// panicked, possibly after signing or broadcast. A result proof counts only
+/// when it shows every input address at or past the nonce this top-up was
+/// signed with AND the identity balance above the balance the top-up started
+/// from, a fresh read from Platform taken before signing; any other proof is
+/// 20 and nothing is reconciled from it. The host must not submit it again;
+/// the next sync settles the outcome.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -190,10 +197,13 @@ unsafe fn funding_rows(
 /// is signed or broadcast.
 ///
 /// `ErrorTransactionBroadcastUnconfirmed` (20) means the top-up may have
-/// executed or may still execute: its result was not proved (including a
-/// result proof that does not show this top-up's address nonces used), or
-/// the call panicked, possibly after signing or broadcast. The host must not
-/// submit it again; the next sync settles the outcome.
+/// executed or may still execute: its result was not proved, or the call
+/// panicked, possibly after signing or broadcast. A result proof counts only
+/// when it shows every input address at or past the nonce this top-up was
+/// signed with AND the identity balance above the balance the top-up started
+/// from, a fresh read from Platform taken before signing; any other proof is
+/// 20 and nothing is reconciled from it. The host must not submit it again;
+/// the next sync settles the outcome.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_top_up_from_addresses_with_signer`].

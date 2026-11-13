@@ -595,8 +595,11 @@ impl PlatformWallet {
     /// rather than propagated — Platform already accepted the top-up, and
     /// a later sync reconciles.
     ///
-    /// A result proof that does not show the input addresses' nonces this
-    /// top-up was signed with as used does not prove it executed: it is
+    /// The result stands only when its proof shows every input address at or
+    /// past the nonce this top-up was signed with AND the identity balance
+    /// above the balance the top-up started from, a fresh read from Platform
+    /// taken before signing (not the identity manager's cached balance).
+    /// Otherwise the proof does not prove this top-up executed: it is
     /// reported as `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and neither the identity balance
@@ -642,9 +645,12 @@ impl PlatformWallet {
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// fetched, signed or broadcast. A caller must not hold the gate.
     ///
-    /// A result proof that does not show the input addresses' nonces this
-    /// top-up was signed with as used does not prove it executed: it is
-    /// reported as `PlatformWalletError::Sdk` holding
+    /// The result stands only when its proof shows every input address at or
+    /// past the nonce this top-up was signed with AND the identity balance
+    /// above the balance the top-up started from, the one in the identity
+    /// fetched from Platform before signing. Otherwise the proof does not
+    /// prove this top-up executed: it is reported as
+    /// `PlatformWalletError::Sdk` holding
     /// `dash_sdk::Error::StateTransitionResultUnconfirmed` (it may still
     /// execute, so do not submit it again), and the addresses are not
     /// updated from it; the next sync settles them.
