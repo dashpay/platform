@@ -623,6 +623,10 @@ pub(crate) fn map_spend_result(
         // built or broadcast. Preserve that distinction from an unconfirmed
         // submission so hosts can wait for the original payment's sync.
         Err(e @ PlatformWalletError::ShieldedIdentityDebitPending { .. })
+        // An identity shield whose proved balance cannot cover the amount and
+        // fee: refused before anything was armed or broadcast, code 39 with the
+        // figures in the stable JSON detail.
+        | Err(e @ PlatformWalletError::InsufficientIdentityCredits { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryCorrupted { .. })
         | Err(e @ PlatformWalletError::ShieldedRecoveryKeysRequired { .. }) => e.into(),
         // A private contact request in flight, or paid and not yet read back
@@ -1327,6 +1331,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield_from_identity(
 /// identity's balance proof, or a failure verdict the proven identity nonce
 /// cannot rule out, is reported as `ErrorShieldedSpendUnconfirmed` (the
 /// transition may have executed; do not resubmit, the next sync reconciles).
+///
+/// An identity whose proved balance is below `amount` plus the shielded
+/// identity-debit fee floor (`platform_wallet_shielded_estimate_fee` kind 3, two
+/// actions) is refused before anything is armed or broadcast, as
+/// `ErrorInsufficientIdentityCredits` (39, JSON detail with `required` and `available`).
 ///
 /// A signer that reports the TRANSFER key unavailable surfaces as code 31
 /// (`ErrorSigningKeyUnavailable`), the same key-repair signal the other
@@ -3346,6 +3355,29 @@ mod tests {
             assert_eq!(result.code, code);
             assert_eq!(result.code as i32, number);
         }
+    }
+
+    /// A balance that cannot cover the amount and fee is refused before anything is armed or
+    /// broadcast; the host reads it as 39 with the figures in the stable JSON detail, not as 6.
+    #[test]
+    fn shield_from_identity_insufficient_balance_maps_to_code_39() {
+        let identity_id = dpp::prelude::Identifier::from([7; 32]);
+        let result = map_spend_result(
+            Err(PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required: 200,
+                available: 100,
+            }),
+            "shielded shield from identity to recipient",
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInsufficientIdentityCredits
+        );
+        assert_eq!(result.code as i32, 39);
+        let detail: serde_json::Value = serde_json::from_str(&message_of(&result)).unwrap();
+        assert_eq!(detail["required"], 200);
+        assert_eq!(detail["available"], 100);
     }
 
     /// A panic in the new export's body must become code 18 (never abort the host), under the
