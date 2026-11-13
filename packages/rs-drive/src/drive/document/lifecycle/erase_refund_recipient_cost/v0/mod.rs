@@ -33,7 +33,7 @@ impl Drive {
     /// measurement performs no balance mutation and touches no real identity:
     /// it runs the balance update in estimation mode, where the reads are
     /// average-case costs rather than state.
-    pub fn erase_refund_recipient_cost(
+    pub(super) fn erase_refund_recipient_cost_v0(
         &self,
         epoch: &Epoch,
         platform_version: &PlatformVersion,

@@ -10,7 +10,7 @@
 mod fetch;
 
 #[cfg(feature = "server")]
-mod refund_recipients;
+mod erase_refund_recipient_cost;
 
 #[cfg(all(test, feature = "server", feature = "verify"))]
 mod tests;

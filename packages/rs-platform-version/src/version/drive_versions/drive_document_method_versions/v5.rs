@@ -33,6 +33,7 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   `delete.erase_document_for_contract_operations`, `add_estimation_costs_for_erase_document`
 ///   and `add_estimation_costs_for_lifecycle_record` are `Some(0)`: bounded erasure removes
 ///   retained revisions and prices the chunk and its lifecycle metadata.
+///   `delete.erase_refund_recipient_cost` is `Some(0)`: prices the balance updates caused by erase refunds.
 /// * `update.update_document_for_contract_operations` is 2: when an update names a new owner,
 ///   the references of the indexes it leaves unchanged are rewritten with that owner.
 /// * `update.update_document_for_contract_apply_and_add_to_operations` is 1: an update applied
@@ -69,6 +70,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         prove_private_document_entries: Some(0), // changed: and proved
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
+            erase_refund_recipient_cost: Some(0), // changed: prices third-party balance work caused by erasure
             add_estimation_costs_for_remove_document_to_primary_storage: 1, // changed: estimates removal of the composite current pointer
             remove_document_from_primary_storage: 1, // changed: removes only the current history pointer
             delete_document_for_contract_operations: 1, // changed: retains history and records deletion

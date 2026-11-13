@@ -34,6 +34,7 @@ fn should_activate_lifecycle_handlers_and_limits_only_with_erase_wire_bounds() {
             document.delete.erase_document_for_contract_operations,
             document.delete.add_estimation_costs_for_erase_document,
             document.delete.add_estimation_costs_for_lifecycle_record,
+            document.delete.erase_refund_recipient_cost,
             conversion.document_erase_transition,
             batch.document_erase_transition_structure_validation,
             batch.document_erase_transition_state_validation,
