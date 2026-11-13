@@ -168,7 +168,7 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
-        self.bind_shielded_locked_unfenced(seed, &accounts, coordinator)
+        self.bind_shielded_locked_unfenced(seed, &accounts, &coordinator)
             .await?;
         #[cfg(test)]
         test_hooks::after_bind(self).await;
@@ -189,7 +189,7 @@ impl PlatformWallet {
                 *identity_id,
                 PreparedTipAccount {
                     account,
-                    coordinator: Arc::downgrade(coordinator),
+                    coordinator: Arc::downgrade(&coordinator),
                     clear_generation,
                 },
             );
@@ -389,7 +389,7 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::before_spend(self).await;
         self.shielded_transfer_to(
-            coordinator,
+            &coordinator,
             seed,
             account,
             &current.address,
