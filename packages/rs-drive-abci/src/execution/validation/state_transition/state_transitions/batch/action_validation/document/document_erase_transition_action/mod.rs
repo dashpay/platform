@@ -14,6 +14,8 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 mod advanced_structure_v0;
 mod state_v0;
 
+pub(in crate::execution::validation::state_transition) use state_v0::erase_refund_recipient_reservation;
+
 pub trait DocumentEraseTransitionActionValidation {
     fn validate_structure(
         &self,

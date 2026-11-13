@@ -61,6 +61,25 @@
             "additionalProperties": false,
             "$comment": "A keep-history type whose deleted documents may also have their retained revisions purged. Deleting a note removes it from ordinary reads and leaves its revisions readable; erasing removes those revisions a bounded chunk at a time.",
             "transferable": 1
+        },
+        "longNote": {
+            "type": "object",
+            "documentsKeepHistory": true,
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "canBeErased": true,
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "maxLength": 16384,
+                    "position": 0
+                }
+            },
+            "required": [
+                "message"
+            ],
+            "additionalProperties": false,
+            "$comment": "An erasable note whose message may hold 16384 characters and declares no maxBytes: at four bytes a character its byte bound does not fit in the u16 a document type's sizes are computed in."
         }
     },
     "groups": {},

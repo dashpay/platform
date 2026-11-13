@@ -892,7 +892,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     deletion time, and an erasing or erased document is absent at every requested time.
 ///     Parser 4 admits `canBeErased` with meta-schema 3; compiled type storage keeps generation
 ///     0 and its existing non-lifecycle bytes. Protocols through 14 retain their handlers,
-///     limits and wire bounds, and cannot admit an erase.
+///     limits and wire bounds, and cannot admit an erase. An erase sizes the revisions it may
+///     remove with `max_size` 1 (`CONTRACT_VERSIONS_V7`), which counts a string of 16384 or
+///     more characters without `maxBytes` as `u16::MAX` bytes where generation 0 fails on the
+///     overflow.
 /// 42. **A contract's patterns are bounded**: `CONTRACT_VERSIONS_V7` selects
 ///     `validate_schema_patterns` 0. Contract registration and update refuse a contract whose
 ///     document schemas and `$defs` hold more than 32 patterns
@@ -947,7 +950,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: verify_hash_signature 1 refuses a high-S signature and an uncompressed-key header where the key is recovered (note 43)
         state_transitions: STATE_TRANSITION_VERSIONS_V5, // changed: validate_asset_lock_transaction_structure 1 drops the input cap and validate_instant_asset_lock_proof_structure 1 applies it to instant proofs only, so a chain proof redeems a lock of more than 100 inputs (note 30)
-        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
+        contract_versions: CONTRACT_VERSIONS_V7, // changed: parse_property_constraints 1 lets countOf and sumOf match byte array keys (note 4); validate_document 2 checks documents natively (note 6); check_document_type_schema 1 checks schemas natively at registration (note 7); contract_storage_serialization_version 2 stores contracts compiled (note 8); parse_private_document 0 parses private document types (note 13); apply_generated_from 1 admits sys.tokens.decimals (note 15); try_from_schema 4 parses lifecycle flags (note 41); max_size 1 holds a string bound past u16::MAX bytes there for the erase (note 41); validate_schema_patterns 0 bounds the patterns of a contract and registration_cost 3 estimates its fee without compiling one (note 42)
         document_versions: DOCUMENT_VERSIONS_V4,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V3, // changed: the yes/no poll's stored info, id, parameter rules and decision rules are active (note 10), and the decision proposal's poll (note 12)
@@ -958,7 +961,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3); the decision proposals contract (note 12); the token market contract is selected (note 17); DashPay v3 states what its data triggers checked (note 24)
     fee_version: FEE_VERSION4, // changed: decision proposals prefund their poll with 0.5 Dash (note 12); a private document entry pays its storage and 10,000,000 credits (note 25); a multiple choice proposal pays a 0.2 Dash processing fee on create (note 40)
-    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41)
+    system_limits: SYSTEM_LIMITS_V5, // changed: max_compiled_contract_size caps a contract stored compiled at 1 MiB (note 8); max_private_document_entry_size caps a private type's entries at 4096 bytes, and the private document store limits size its store (note 13); max_private_document_entries_per_transition caps a private document create at 16 entries (note 25); max_document_revisions_erased_per_transition caps an erase at 100 revisions (note 41); max_history_migration_batch_operations batches the move of retained document histories
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
         evidence: Some(ConsensusEvidenceParams {

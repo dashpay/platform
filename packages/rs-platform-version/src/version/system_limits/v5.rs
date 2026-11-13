@@ -22,6 +22,9 @@ use crate::version::system_limits::SystemLimits;
 /// * Retained-history erasure: one transition removes at most 100 revisions
 ///   (`max_document_revisions_erased_per_transition`, `None` before), as enforced by
 ///   `erase_document_for_contract_operations` 0.
+/// * Document history layout: the first block of the version moves retained document histories
+///   to the composite-key layout in batches of about 500 GroveDB operations
+///   (`max_history_migration_batch_operations`, `None` before).
 pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     max_document_revisions_erased_per_transition: Some(100), // one bounded lifecycle erasure chunk (note 41)
     max_compiled_contract_size: Some(1_048_576), // changed: contracts stored compiled take at most 1 MiB
@@ -30,5 +33,6 @@ pub const SYSTEM_LIMITS_V5: SystemLimits = SystemLimits {
     private_document_store_min_chunk_power: Some(4), // changed: and its chunk power is at least 4
     private_document_store_max_chunk_power: Some(11), // changed: and at most 11
     max_private_document_entries_per_transition: Some(16), // changed: a PrivateDocumentCreateFromShieldedPool appends at most 16 entries
+    max_history_migration_batch_operations: Some(500), // changed: the protocol version 15 move of retained document histories applies its writes in batches of about this many operations
     ..SYSTEM_LIMITS_V4
 };

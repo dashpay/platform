@@ -190,8 +190,9 @@ impl Drive {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_type: TreeType::NormalTree,
                 // A tree created at PV15 carries its creator's single-epoch owned flags;
-                // one migrated at activation carries the contract's flags, which can be larger.
-                // This is an average-case figure; the delete's total estimate covers the applied read.
+                // one migrated at activation keeps its legacy tree's flags, the creator's
+                // single-epoch owned flags or none. This is an average-case figure; the
+                // delete's total estimate covers the applied read.
                 query_target: QueryTargetTree(
                     StorageFlags::approximate_size(true, None),
                     TreeType::ProvableCountTree,
