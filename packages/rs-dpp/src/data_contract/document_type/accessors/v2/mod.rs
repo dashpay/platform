@@ -10,6 +10,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait providing getters for DocumentTypeV2-specific fields.
 pub trait DocumentTypeV2Getters {
+    /// Whether a deleted document's retained history may be erased.
+    fn documents_can_be_erased(&self) -> bool {
+        false
+    }
     /// Returns whether documents of this type are countable.
     /// When true, the primary key tree uses a CountTree enabling O(1) total document count queries.
     fn documents_countable(&self) -> bool;

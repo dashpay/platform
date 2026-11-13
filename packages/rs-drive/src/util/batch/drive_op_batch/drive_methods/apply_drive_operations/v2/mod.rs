@@ -180,6 +180,7 @@ impl Drive {
             let mut converted = drive_op.into_low_level_drive_operations_after_ttl_drain(
                 self,
                 &mut estimated_costs_only_with_layer_info,
+                Some(&mut low_level_operations),
                 block_info,
                 transaction,
                 platform_version,
@@ -358,6 +359,7 @@ mod tests {
             .into_low_level_drive_operations_after_ttl_drain(
                 drive,
                 &mut estimate,
+                None,
                 &BlockInfo::default(),
                 None,
                 platform_version,

@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -119,5 +120,36 @@ internal suspend fun <T> TeardownGate?.opWithCleanupOnCancellation(
         return value
     } finally {
         completed?.let { cleanup(it.value) }
+    }
+}
+
+/**
+ * Run [block] like [op], but if the block completed and only the handoff back
+ * to a cancelled caller failed, return its result instead of throwing.
+ *
+ * For blocking JNI calls that move funds. Native code cannot observe coroutine
+ * cancellation, so a payment can finish after the caller was cancelled, and
+ * `withContext`'s prompt cancellation would then drop the result: the caller
+ * could not tell the payment happened and might retry it. Returning the result
+ * keeps it visible. Swift behaves the same way: its credit-movement calls run in
+ * `Task.detached`, whose value comes back even when the caller is cancelled.
+ *
+ * Cancellation before [block] completes (gate entry, dispatch, a native error)
+ * still throws. The coroutine stays cancelled, so its next suspension point
+ * throws: the caller must handle the result before suspending again.
+ */
+internal suspend fun <T> TeardownGate?.opReturningCompletedResult(
+    block: suspend () -> T,
+): T {
+    class CompletedResult<T>(val value: T)
+
+    var completed: CompletedResult<T>? = null
+    try {
+        return op {
+            block().also { completed = CompletedResult(it) }
+        }
+    } catch (e: CancellationException) {
+        completed?.let { return it.value }
+        throw e
     }
 }

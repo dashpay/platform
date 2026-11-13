@@ -103,9 +103,10 @@ fn delete_operations(
             contract
                 .document_type_for_name(doctype)
                 .expect("doctype exists"),
+            &BlockInfo::default(),
+            None,
             None,
             &mut None,
-            0,
             None,
             platform_version(),
         )

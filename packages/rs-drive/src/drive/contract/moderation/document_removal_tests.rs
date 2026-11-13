@@ -936,6 +936,7 @@ fn add_post(
 fn delete_post<'a>(contract: &'a DataContract, document_id: Identifier) -> DriveOperation<'a> {
     DocumentOperation(DocumentOperationType::DeleteDocument {
         document_id,
+        deleter_id: None,
         contract_info: DataContractInfo::BorrowedDataContract(contract),
         document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),
     })
