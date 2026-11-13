@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the Settings erase route against an offline SDK, without an iOS build."""
+"""Compile the real Settings erase route against a single-operation wallet stub."""
 
 from pathlib import Path
 import shutil
@@ -7,124 +7,140 @@ import subprocess
 import tempfile
 import unittest
 
-
-VIEW = (Path(__file__).resolve().parents[1] / "SwiftExampleApp" /
-        "SwiftExampleApp/Views/TransitionDetailView.swift")
+ROOT = Path(__file__).resolve().parents[1]
+VIEWS = ROOT / "SwiftExampleApp/SwiftExampleApp/Views"
 
 
 @unittest.skipUnless(shutil.which("swiftc"), "Swift compiler unavailable")
 class DocumentErasePreflightTests(unittest.TestCase):
-    def test_should_skip_active_and_absent_without_claiming_an_erase_completed(self):
-        source = VIEW.read_text()
+    def test_should_display_rust_outcomes_without_orchestrating_an_erase(self):
+        source = (VIEWS / "TransitionDetailView.swift").read_text()
         start = source.index("  private func executeDocumentErase(")
         end = source.index("\n  private func executeDocumentTransfer(", start)
-        # Compile the actual route, including its reads and broadcast call.
-        # The stubs isolate presentation behavior from SwiftUI and the FFI.
+        display = (VIEWS / "DocumentsView.swift").read_text()
+        display_start = display.index("func describeDocumentEraseOutcome(")
+        display_end = display.index("struct EraseDocumentView:", display_start)
         harness = r'''
 import Foundation
 
 enum SDKError: Error { case invalidParameter(String) }
-enum LifecycleState: String, CaseIterable { case active, deleted, erasing, absent }
+enum PlatformWalletError: Error { case transactionBroadcastUnconfirmed(String) }
+enum LifecycleState: String { case active, deleted, erasing, absent }
 struct DocumentHistoryLifecycle {
     let state: LifecycleState
     let remainingRevisions: UInt64
-    static func describeEraseProgress(
-        before: Self?, after: Self
-    ) -> String {
-        after.state == .absent ? "Erasure complete: no retained revisions remain." : "Retained revisions remain."
+    static func describeEraseProgress(before: Self?, after: Self) -> String {
+        after.state == .absent ? "Erasure complete" : "Retained revisions remain"
     }
 }
-struct PublicKey { let id: UInt32 = 0 }
+enum DocumentEraseNotSubmittedReason {
+    case active, absent, preflightUnavailable, notNewestOwner(Data)
+}
+enum DocumentEraseOutcome {
+    case notSubmitted(reason: DocumentEraseNotSubmittedReason, before: DocumentHistoryLifecycle?)
+    case submitted(before: DocumentHistoryLifecycle?, after: DocumentHistoryLifecycle?)
+    var before: DocumentHistoryLifecycle? {
+        switch self { case .notSubmitted(_, let b), .submitted(let b, _): return b }
+    }
+    var after: DocumentHistoryLifecycle? {
+        if case .submitted(_, let a) = self { return a }; return nil
+    }
+}
+extension Data {
+    static func identifier(fromBase58: String) -> Data? { Data(repeating: 1, count: 32) }
+    func toBase58String() -> String { "owner" }
+}
 struct Identity {
     let identityIdBase58 = "signer"
-    let identityId = "signer"
-    let identityPublicKeys = [PublicKey()]
-    let balance: Int64 = 100
+    let identityId = Data(repeating: 1, count: 32)
+    var wallet: WalletLink? = WalletLink()
 }
-struct DPPIdentity {
-    let id: String
-    let publicKeys: [UInt32: PublicKey]
-    let balance: UInt64
-    let revision: UInt32
-}
+struct WalletLink { let walletId = Data() }
 struct ModelContext { let container = 0 }
-struct KeychainSigner {
-    init(modelContainer: Int) {}
-    let handle = 0
-}
-@MainActor final class SDK {
-    let initialState: LifecycleState?
-    var reads = 0
-    var broadcasts = 0
-    init(_ state: LifecycleState?) { initialState = state }
-    func documentGetLifecycle(
-        dataContractId: String, documentType: String, documentId: String
-    ) async throws -> DocumentHistoryLifecycle {
-        reads += 1
-        if reads == 1 {
-            guard let initialState else { throw SDKError.invalidParameter("Read unavailable") }
-            return DocumentHistoryLifecycle(state: initialState, remainingRevisions: 0)
-        }
-        return DocumentHistoryLifecycle(state: .absent, remainingRevisions: 0)
-    }
-    func documentErase(
-        contractId: String, documentType: String, documentId: String,
-        ownerIdentity: DPPIdentity, signer: Int
-    ) async throws {
-        broadcasts += 1
+struct KeychainSigner { init(modelContainer: Int) {} }
+struct SDK {}
+@MainActor final class Wallet {
+    let outcome: DocumentEraseOutcome
+    var calls = 0
+    init(_ outcome: DocumentEraseOutcome) { self.outcome = outcome }
+    func eraseDocumentAndObserve(submittingIdentityId: Data, contractId: Data,
+        documentType: String, documentId: Data, signer: KeychainSigner) async throws -> DocumentEraseOutcome {
+        calls += 1
+        return outcome
     }
 }
+@MainActor struct WalletManager {
+    let loaded: Wallet
+    func wallet(for: Data) -> Wallet? { loaded }
+}
+''' + display[display_start:display_end] + r'''
 @MainActor struct SettingsRoute {
     let selectedIdentityId = "signer"
-    let identities = [Identity()]
+    let identities: [Identity]
     let formInputs = ["contractId": "contract", "documentType": "note", "documentId": "doc"]
     let modelContext = ModelContext()
-    func run(_ sdk: SDK) async throws -> [String: Any] {
-        try await executeDocumentErase(sdk: sdk) as! [String: Any]
+    let walletManager: WalletManager
+    func run() async throws -> [String: Any] {
+        try await executeDocumentErase(sdk: SDK()) as! [String: Any]
     }
 ''' + source[start:end] + r'''
 }
 @main struct Main {
     @MainActor static func main() async throws {
-        var failures: [String] = []
-        func require(_ condition: Bool, _ message: String) {
-            if !condition { failures.append(message) }
-        }
-        let states: [LifecycleState?] = [.active, .absent, .deleted, .erasing, nil]
-        for state in states {
-            let sdk = SDK(state)
-            let result = try await SettingsRoute().run(sdk)
-            let label = state?.rawValue ?? "unreadable"
-            if state == .active || state == .absent {
-                require(sdk.broadcasts == 0, "\(label): must not broadcast a paid erase")
-                require(sdk.reads == 1, "\(label): no closing read without a broadcast")
-                require(result["message"] as? String == "Erase not submitted", "\(label): explain the skip")
-                require(result["lifecycle"] as? String == label, "\(label): show the observed lifecycle")
-                require(result["remainingRevisions"] as? UInt64 == 0, "\(label): show retained revisions")
-                let progress = result["progress"] as? String ?? ""
-                require(!progress.isEmpty, "\(label): show progress")
-                if state == .absent {
-                    require(progress.contains("No retained revisions exist"), "absent: describe the observation")
-                    require(!progress.contains("Erasure complete"), "absent: an observation does not prove an erase completed")
+        let erasing = DocumentHistoryLifecycle(state: .erasing, remainingRevisions: 50)
+        let deleted = DocumentHistoryLifecycle(state: .deleted, remainingRevisions: 50)
+        let outcomes: [DocumentEraseOutcome] = [
+            .notSubmitted(reason: .active, before: nil),
+            .notSubmitted(reason: .absent, before: nil),
+            .notSubmitted(reason: .preflightUnavailable, before: nil),
+            .notSubmitted(reason: .notNewestOwner(Data()), before: erasing),
+            .submitted(before: deleted, after: nil),
+            .submitted(before: erasing, after: .init(state: .absent, remainingRevisions: 0)),
+        ]
+        for outcome in outcomes {
+            let wallet = Wallet(outcome)
+            let route = SettingsRoute(identities: [Identity()], walletManager: .init(loaded: wallet))
+            let result = try await route.run()
+            precondition(wallet.calls == 1, "host must call the single Rust operation")
+            let message = result["message"] as! String
+            switch outcome {
+            case .notSubmitted(let reason, let before):
+                precondition(message.hasPrefix("Erase not submitted"))
+                if case .absent = reason { precondition(!message.contains("Erasure complete")) }
+                if let before {
+                    precondition(result["lifecycle"] as? String == before.state.rawValue)
+                    precondition(result["remainingRevisions"] as? UInt64 == before.remainingRevisions)
+                } else {
+                    precondition(result["lifecycle"] == nil && result["remainingRevisions"] == nil)
                 }
-            } else {
-                require(sdk.broadcasts == 1, "\(label): continue the requested erase")
-                require(sdk.reads == 2, "\(label): describe the result after broadcast")
-                require(result["message"] as? String == "Erase submitted; document absence observed under proof",
-                        "\(label): preserve submission status")
+            case .submitted(_, let after):
+                precondition(message.hasPrefix("Erase submitted"))
+                if let after {
+                    precondition(result["lifecycle"] as? String == after.state.rawValue)
+                    precondition(result["remainingRevisions"] as? UInt64 == after.remainingRevisions)
+                } else {
+                    precondition(message.contains("Lifecycle not read"))
+                    precondition(result["lifecycle"] == nil && result["remainingRevisions"] == nil,
+                        "a submitted erase must not display its stale preflight lifecycle")
+                }
             }
         }
-        if !failures.isEmpty {
-            failures.forEach { print($0) }
-            exit(1)
+        let wallet = Wallet(outcomes[0])
+        var unlinked = Identity(); unlinked.wallet = nil
+        do {
+            _ = try await SettingsRoute(identities: [unlinked], walletManager: .init(loaded: wallet)).run()
+            fatalError("orphaned identity must not reach Rust")
+        } catch SDKError.invalidParameter(let message) {
+            precondition(message == "Identity has no wallet linkage; cannot erase document history")
         }
-        print("Five erase preflight controls passed")
+        precondition(wallet.calls == 0)
+        print("Six typed outcomes and wallet-linkage control passed")
     }
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
-            source_path = Path(directory) / "ErasePreflight.swift"
-            binary = Path(directory) / "erase-preflight"
+            source_path = Path(directory) / "EraseRoute.swift"
+            binary = Path(directory) / "erase-route"
             source_path.write_text(harness)
             compiled = subprocess.run(
                 ["swiftc", "-parse-as-library", str(source_path), "-o", str(binary)],

@@ -4995,73 +4995,40 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Erase + broadcast a chunk of the retained revisions of the already
-    /// deleted `documentId` on `contractId`'s `documentType`, signed with
-    /// the explicit AUTHENTICATION + ECDSA key `signingKeyId` of
-    /// `ownerIdentityId`. Returns the document's 32-byte id once Platform
-    /// has proved it absent from ordinary reads. That absence predates the
-    /// erase, so the return observes the affected state and is not
-    /// evidence that this erase removed a revision; read
-    /// `SDK.documentGetLifecycle` for the state and the exact number of
-    /// revisions still retained.
-    ///
-    /// Sibling to `deleteDocument`. Routes through
-    /// `IdentityWallet::erase_document_with_signer` (via
-    /// `platform_wallet_document_erase`). Only a keep-history document
-    /// type whose schema sets `canBeErased` can be erased, and only after
-    /// the document has been deleted: the first erase must be signed by
-    /// the document's owner, every later one may be signed by any
-    /// identity, so `ownerIdentityId` is the signing identity rather than
-    /// necessarily the owner. One erase removes a bounded chunk of
-    /// revisions; erase again while the lifecycle reports any. Erase
-    /// returns no document body, so there is no canonical JSON.
-    public func eraseDocument(
-        ownerIdentityId: Identifier,
+    /// Rust owns eligibility, key selection, one submission and lifecycle observations.
+    public func eraseDocumentAndObserve(
+        submittingIdentityId: Identifier,
         contractId: Identifier,
         documentType: String,
         documentId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
-    ) async throws -> Identifier {
-        let handle = self.handle
-        let signerHandle = signer.handle
-        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
-        }
-        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
-            Array(UnsafeBufferPointer(start: ptr, count: 32))
+    ) async throws -> DocumentEraseOutcome {
+        guard submittingIdentityId.count == 32, contractId.count == 32, documentId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("Identifiers must be 32 bytes")
         }
         return try await Task.detached(priority: .userInitiated) { [self] in
-            var documentIdBytes = [UInt8](repeating: 0, count: 32)
-
+            var output = DocumentEraseOutcomeFFI()
             let result = withExtendedLifetime((self, signer)) {
-                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                        documentType.withCString { typePtr in
-                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
-                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                    platform_wallet_document_erase(
-                                        handle,
-                                        ownerBp.baseAddress!,
-                                        contractBp.baseAddress!,
-                                        typePtr,
-                                        docBp.baseAddress!,
-                                        signingKeyId,
-                                        signerHandle,
-                                        outBp.baseAddress!
-                                    )
-                                }
+                submittingIdentityId.withUnsafeBytes { owner in
+                    contractId.withUnsafeBytes { contract in
+                        documentType.withCString { type in
+                            documentId.withUnsafeBytes { document in
+                                platform_wallet_document_erase_and_observe(
+                                    self.handle,
+                                    owner.bindMemory(to: UInt8.self).baseAddress!,
+                                    contract.bindMemory(to: UInt8.self).baseAddress!,
+                                    type,
+                                    document.bindMemory(to: UInt8.self).baseAddress!,
+                                    signer.handle,
+                                    &output
+                                )
                             }
                         }
                     }
                 }
             }
-
             try result.check()
-            return Data(documentIdBytes)
+            return try DocumentEraseOutcome(ffi: output)
         }.value
     }
 
