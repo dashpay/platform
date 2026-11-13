@@ -6904,6 +6904,72 @@ mod tests {
         }
     }
 
+    /// A settle that finds its held request on Platform does not record it
+    /// over a newer request the wallet tracks, as a sweep read in one that
+    /// another device of the identity sent while the hold stood: the hold is
+    /// released, the newer request stays tracked, and nothing is answered as
+    /// recorded.
+    #[tokio::test]
+    async fn should_keep_a_newer_tracked_request_when_a_settle_finds_the_held_one() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet, _transition, reference) =
+            unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+        expect_sent_request(
+            &alice_wallet,
+            &alice,
+            &bob,
+            reference,
+            Some(sent_request_document(&alice, &bob, reference)),
+        )
+        .await;
+        // As a sweep reads in a rotation past the held request.
+        let newer = reference + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        {
+            let iw = alice_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&alice_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("the sender")
+                .add_sent_contact_request(public_request(&alice, &bob, newer), &iw.persister)
+                .expect("recorded");
+        }
+        assert!(
+            unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_some(),
+            "the older request is held still"
+        );
+
+        let settled = alice_wallet
+            .identity()
+            .dashpay()
+            .settle_unconfirmed_public_request(&alice.id(), &bob.id(), true)
+            .await
+            .expect("the reads");
+
+        assert_eq!(settled, None, "nothing recorded");
+        assert!(
+            unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_none(),
+            "the hold is released"
+        );
+        managed(&alice_wallet, ALICE, |managed| {
+            assert_eq!(
+                managed
+                    .dashpay()
+                    .outgoing_request(&bob.id())
+                    .map(|request| request.account_reference),
+                Some(newer),
+                "the newer request stays tracked"
+            );
+        })
+        .await;
+    }
+
     /// Every flush of the records under a wallet id is counted in one place,
     /// whichever handle makes it: one through the handle of a wallet removed
     /// since, failing for good, drops what its same-id successor had

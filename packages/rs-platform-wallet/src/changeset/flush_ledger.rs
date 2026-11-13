@@ -10,19 +10,23 @@ use crate::wallet::platform_wallet::WalletId;
 /// What this process knows of the flushes of one wallet's records.
 ///
 /// A backend buffers a wallet's records under its id, whoever stored them,
-/// and a flush that fails for good drops that buffer, whoever flushed. So
-/// what a flush did to the buffer is known only where every flush of the id
-/// is counted: one ledger per wallet id, shared by the manager and by every
+/// and a flush takes that buffer, whoever flushed: one that fails for good
+/// drops what it took, and one that fails transiently puts it back. So what
+/// a flush did to the buffer is known only where every flush of the id is
+/// counted: one ledger per wallet id, shared by the manager and by every
 /// handle of a wallet under that id, a removed wallet's handles and its
 /// same-id successor's alike ([`FlushLedgers`]). Every flush of the wallet's
 /// records goes through [`Self::flush`].
 #[derive(Debug, Default)]
 pub struct FlushLedger {
     /// How many flushes are in progress: each is counted from before it calls
-    /// the backend until its outcome is recorded in `lost`, so while none is,
-    /// `lost` tells of every flush that failed for good.
+    /// the backend until its outcome is recorded in `failed` and `lost`, so
+    /// while none is, they tell of every flush that failed.
     in_flight: AtomicUsize,
-    /// How many flushes failed for good, the backend dropping what it
+    /// How many flushes failed, for good or not: none wrote what it had taken
+    /// from the buffer, which the backend dropped or put back.
+    failed: AtomicU64,
+    /// How many of them failed for good, the backend dropping what it
     /// buffered.
     lost: AtomicU64,
 }
@@ -45,9 +49,9 @@ impl Drop for InFlight<'_> {
 
 impl FlushLedger {
     /// Flush `wallet_id`'s records on `backend`: in progress from before the
-    /// backend is called until its outcome is recorded, and counted as lost
-    /// when it fails for good (anything but a transient failure, which keeps
-    /// the buffer).
+    /// backend is called until its outcome is recorded, counted as failed
+    /// when it fails, and as lost too when it fails for good (anything but a
+    /// transient failure, which keeps the buffer).
     pub(crate) fn flush(
         &self,
         backend: &dyn PlatformWalletPersistence,
@@ -55,8 +59,11 @@ impl FlushLedger {
     ) -> Result<(), PersistenceError> {
         let _in_flight = InFlight::enter(&self.in_flight);
         let flushed = backend.flush(wallet_id);
-        if flushed.as_ref().is_err_and(|error| !error.is_transient()) {
-            self.lost.fetch_add(1, Ordering::SeqCst);
+        if let Err(error) = &flushed {
+            if !error.is_transient() {
+                self.lost.fetch_add(1, Ordering::SeqCst);
+            }
+            self.failed.fetch_add(1, Ordering::SeqCst);
         }
         flushed
     }
@@ -64,6 +71,11 @@ impl FlushLedger {
     /// How many flushes are in progress.
     pub(crate) fn in_flight(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
+    }
+
+    /// How many flushes failed so far, for good or not.
+    pub(crate) fn failed(&self) -> u64 {
+        self.failed.load(Ordering::SeqCst)
     }
 
     /// How many flushes failed for good so far.
