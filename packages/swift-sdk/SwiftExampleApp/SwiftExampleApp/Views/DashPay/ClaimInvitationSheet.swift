@@ -203,7 +203,7 @@ struct ClaimInvitationSheet: View {
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 let identityIndex = nextUnusedIdentityIndex()
-                reserveIdentitySlot(identityIndex)
+                try reserveIdentitySlot(identityIndex)
 
                 // Register the invitee's own keys exactly like a normal
                 // registration: master + auth keys, plus a DashPay enc/dec pair
@@ -360,12 +360,19 @@ struct ClaimInvitationSheet: View {
     /// Mark the claim's slot used before its keys are derived, so a normal
     /// registration started meanwhile skips it: `CreateIdentityView` treats a
     /// slot whose identity-registration address is `isUsed` as taken. A no-op
-    /// when the slot row is beyond the derived lookahead, as there.
-    private func reserveIdentitySlot(_ identityIndex: UInt32) {
+    /// when the slot row is beyond the derived lookahead, as there. Saved at
+    /// once, so the reservation outlives an app exit during the claim.
+    ///
+    /// This sheet's own selector does not read the marker: a retry after a
+    /// lost result must come back to the same slot, where the landed claim's
+    /// keys are, to be recognized as this wallet's claim.
+    private func reserveIdentitySlot(_ identityIndex: UInt32) throws {
         let slot = accounts
             .first { $0.wallet.walletId == walletId && $0.accountType == 2 }?
             .coreAddresses
             .first { $0.addressIndex == identityIndex }
-        slot?.isUsed = true
+        guard let slot, !slot.isUsed else { return }
+        slot.isUsed = true
+        try modelContext.save()
     }
 }
