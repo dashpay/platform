@@ -2201,14 +2201,16 @@ mod tests {
         /// When set, every round recording a DashPay payment fails
         /// transiently (and is not recorded).
         fail_payment_records: Mutex<bool>,
-        /// Once set, the next flush is overtaken: before it writes, a flush
-        /// through this persister fails for good, as one from another thread
-        /// would, dropping what was buffered; the overtaken flush then
+        /// Once set, the next flush is overtaken: a flush through this
+        /// persister, as one from another thread would, takes what was
+        /// buffered before it writes, and fails; the overtaken flush then
         /// succeeds over nothing.
         overtaken_by: Mutex<Option<WalletPersister>>,
-        /// While set, a flush fails for good: the backend drops what it
-        /// buffered.
-        flush_drops_buffer: std::sync::atomic::AtomicBool,
+        /// Whether the overtaking flush fails transiently, putting back what
+        /// it took, or for good, dropping it.
+        overtaking_puts_back: std::sync::atomic::AtomicBool,
+        /// While set, a flush is the overtaking one, and fails.
+        overtaking: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -2298,20 +2300,27 @@ mod tests {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             // Taken in its own statement: the flush below comes back here.
             let overtaking = self.overtaken_by.lock().unwrap().take();
+            let puts_back = self
+                .overtaking_puts_back
+                .load(std::sync::atomic::Ordering::SeqCst);
             if let Some(persister) = overtaking {
-                self.flush_drops_buffer
+                self.overtaking
                     .store(true, std::sync::atomic::Ordering::SeqCst);
                 let overtook = persister.flush();
-                self.flush_drops_buffer
+                self.overtaking
                     .store(false, std::sync::atomic::Ordering::SeqCst);
-                assert!(overtook.is_err_and(|error| !error.is_transient()));
+                assert!(overtook.is_err_and(|error| error.is_transient() == puts_back));
                 return Ok(());
             }
-            if self
-                .flush_drops_buffer
-                .load(std::sync::atomic::Ordering::SeqCst)
-            {
-                return Err(PersistenceError::backend("the database is corrupt"));
+            if self.overtaking.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(if puts_back {
+                    PersistenceError::backend_with_kind(
+                        PersistenceErrorKind::Transient,
+                        "the disk is busy",
+                    )
+                } else {
+                    PersistenceError::backend("the database is corrupt")
+                });
             }
             if *self.fail_flushes.lock().unwrap() {
                 return Err(PersistenceError::backend_with_kind(
@@ -15052,6 +15061,103 @@ mod tests {
             first_output,
             "the address was released, so the retry pays it"
         );
+        iw.dashpay()
+            .send_prepared_payment(retry)
+            .await
+            .expect("the retry's reservation is durable");
+        assert!(
+            probe
+                .seen
+                .lock()
+                .unwrap()
+                .is_some_and(|(_, reserved)| reserved),
+            "the retry reached the network with its reservation stored"
+        );
+    }
+
+    /// A prepared payment's reservation is not on disk either while another
+    /// flush of the wallet's records holds it, one that then fails
+    /// transiently and puts it back: nothing is sent, the address and the
+    /// inputs come back, and the error is a flush to be tried again, not a
+    /// lost round.
+    #[tokio::test]
+    async fn should_send_nothing_when_another_flush_took_a_prepared_reservation_and_put_it_back() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xD3, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        *persister.buffered.lock().unwrap() = true;
+        persister
+            .overtaking_puts_back
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        *persister.overtaken_by.lock().unwrap() = Some(wallet_arc.persister().clone());
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a reservation another flush holds must not be broadcast");
+        assert!(
+            matches!(
+                &err,
+                PlatformWalletError::PersisterFlush(source)
+                    if source.kind() == Some(PersistenceErrorKind::Transient)
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            persister.overtaken_by.lock().unwrap().is_none(),
+            "a flush was overtaken"
+        );
+        assert!(
+            probe.seen.lock().unwrap().is_none(),
+            "the broadcaster never ran"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
         iw.dashpay()
             .send_prepared_payment(retry)
             .await

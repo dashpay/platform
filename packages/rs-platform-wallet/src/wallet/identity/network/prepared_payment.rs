@@ -735,9 +735,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// A flush that succeeded is not trusted by itself: another flush may
     /// have taken what the store buffered and failed for good, dropping it.
     /// That is reported as the flush failure it is, `PersisterFlush` of kind
-    /// `Fatal`, the buffered round discarded; and a flush still in progress,
-    /// whose outcome is not known yet, as one of kind `Transient`, to be
-    /// tried again.
+    /// `Fatal`, the buffered round discarded. Another flush that is still in
+    /// progress, or that failed and put back what it took, leaves the round
+    /// buffered for a later flush: `PersisterFlush` of kind `Transient`, to
+    /// be tried again.
     pub(super) fn store_durably(
         &self,
         changeset: PlatformWalletChangeSet,
