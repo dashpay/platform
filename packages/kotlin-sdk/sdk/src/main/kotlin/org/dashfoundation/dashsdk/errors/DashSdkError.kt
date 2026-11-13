@@ -804,7 +804,9 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.identityLookupFailed`.
          */
         class IdentityLookupFailed(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.

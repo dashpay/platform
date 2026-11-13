@@ -411,6 +411,7 @@ class DashSdkErrorTest {
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityLookupFailed)
         assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so it may be retried as it is", mapped.isRetryable)
     }
 
     @Test
