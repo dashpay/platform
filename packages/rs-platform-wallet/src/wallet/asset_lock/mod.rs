@@ -23,7 +23,7 @@ pub mod restored_record;
 pub(crate) mod sync;
 pub mod tracked;
 
-pub use build::AssetLockBuiltObserver;
+pub use build::{AssetLockBuildAmount, AssetLockBuiltObserver};
 pub use lock_notify_handler::LockNotifyHandler;
 pub use orchestration::AssetLockFunding;
 
