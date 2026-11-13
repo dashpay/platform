@@ -1108,7 +1108,7 @@ impl PlatformWallet {
         // because the loop above proved the derived keys equal the
         // persisted ones: the rows the restore filters on are unchanged
         // by that write.
-        self.install_shielded_views(account_views, &coordinator, start, snapshot_generation)
+        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
             .await
     }
 
