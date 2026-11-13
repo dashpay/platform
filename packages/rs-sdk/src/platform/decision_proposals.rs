@@ -24,6 +24,11 @@
 //! for the poll's status and tallies, and to
 //! [`MasternodeYesNoVoteQuery::new`](crate::platform::yes_no_vote_polls::MasternodeYesNoVoteQuery::new)
 //! for a masternode's answer.
+//!
+//! A question with more than two answers is a multiple choice proposal, whose answers are
+//! choices that contend in a masternode vote: see [`multiple_choice`].
+
+pub mod multiple_choice;
 
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::documents::page::DocumentsPage;
@@ -83,14 +88,14 @@ pub struct DecisionProposalEdit {
     pub url: Option<Option<String>>,
 }
 
-/// A proposal ready to be put with
+/// A proposal, or a choice of a multiple choice proposal, ready to be put with
 /// [`PutDocument`](crate::platform::transition::put_document::PutDocument): the document and
 /// the entropy its id derives from, which the put must reuse.
 #[derive(Debug, Clone)]
 pub struct DecisionProposalDocument {
     /// The document. Its id is a placeholder until it is put: from protocol version 14 the id
-    /// also commits to the identity contract nonce of the create transition. The poll is named
-    /// by the id of the document the put returns.
+    /// also commits to the identity contract nonce of the create transition. A proposal's poll,
+    /// and a choice in its vote, are named by the id of the document the put returns.
     pub document: Document,
     /// The entropy the document id derives from.
     pub entropy: Bytes32,
@@ -181,9 +186,6 @@ pub fn build_decision_proposal_document(
     input: &DecisionProposalInput,
     entropy: Bytes32,
 ) -> Result<DecisionProposalDocument, Error> {
-    let document_type = contract
-        .document_type_for_name(PROPOSAL_DOCUMENT_TYPE_NAME)
-        .map_err(|e| Error::Protocol(e.into()))?;
     let mut properties = BTreeMap::from([
         (
             properties::TITLE.to_string(),
@@ -206,11 +208,32 @@ pub fn build_decision_proposal_document(
     if let Some(url) = &input.url {
         properties.insert(properties::URL.to_string(), Value::Text(url.clone()));
     }
+    new_document(
+        contract,
+        PROPOSAL_DOCUMENT_TYPE_NAME,
+        owner_id,
+        properties,
+        entropy,
+    )
+}
+
+/// A new `document_type_name` document of `owner_id` in `contract` holding `properties`, with
+/// its id derived from `entropy` and its first revision when the type keeps one.
+fn new_document(
+    contract: &DataContract,
+    document_type_name: &str,
+    owner_id: Identifier,
+    properties: BTreeMap<String, Value>,
+    entropy: Bytes32,
+) -> Result<DecisionProposalDocument, Error> {
+    let document_type = contract
+        .document_type_for_name(document_type_name)
+        .map_err(|e| Error::Protocol(e.into()))?;
     let document = DocumentV0 {
         id: Document::generate_document_id_v0(
             &contract.id(),
             &owner_id,
-            PROPOSAL_DOCUMENT_TYPE_NAME,
+            document_type_name,
             entropy.as_slice(),
         ),
         owner_id,
@@ -303,13 +326,15 @@ fn proposals_by_end_date_query(
     )
 }
 
-/// The query for the proposals of `owner_id`, by creation time (`byOwner`), one page of them.
+/// The query for the `document_type_name` documents of `owner_id`, by creation time (`byOwner`),
+/// one page of them.
 fn proposals_by_owner_query(
     contract: Arc<DataContract>,
+    document_type_name: &str,
     owner_id: Identifier,
     page: DocumentsPage,
 ) -> Result<DocumentQuery, Error> {
-    let query = DocumentQuery::new(contract, PROPOSAL_DOCUMENT_TYPE_NAME)?
+    let query = DocumentQuery::new(contract, document_type_name)?
         .with_where(WhereClause {
             field: "$ownerId".to_string(),
             operator: WhereOperator::Equal,
@@ -324,16 +349,17 @@ fn proposals_by_owner_query(
     paged(query, page)
 }
 
-/// The query for every proposal, newest first (`byCreatedAt`), one page of them.
+/// The query for every `document_type_name` document, newest first (`byCreatedAt`), one page
+/// of them.
 fn proposals_by_created_at_query(
     contract: Arc<DataContract>,
+    document_type_name: &str,
     page: DocumentsPage,
 ) -> Result<DocumentQuery, Error> {
-    let query =
-        DocumentQuery::new(contract, PROPOSAL_DOCUMENT_TYPE_NAME)?.with_order_by(OrderClause {
-            field: "$createdAt".to_string(),
-            ascending: false,
-        });
+    let query = DocumentQuery::new(contract, document_type_name)?.with_order_by(OrderClause {
+        field: "$createdAt".to_string(),
+        ascending: false,
+    });
     paged(query, page)
 }
 
@@ -415,7 +441,11 @@ impl Sdk {
         page: DocumentsPage,
     ) -> Result<Documents, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
-        Document::fetch_many(self, proposals_by_owner_query(contract, owner_id, page)?).await
+        Document::fetch_many(
+            self,
+            proposals_by_owner_query(contract, PROPOSAL_DOCUMENT_TYPE_NAME, owner_id, page)?,
+        )
+        .await
     }
 
     /// One page of every proposal, newest first. [`DocumentsPage::after`] gives the next page.
@@ -424,7 +454,11 @@ impl Sdk {
         page: DocumentsPage,
     ) -> Result<Documents, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
-        Document::fetch_many(self, proposals_by_created_at_query(contract, page)?).await
+        Document::fetch_many(
+            self,
+            proposals_by_created_at_query(contract, PROPOSAL_DOCUMENT_TYPE_NAME, page)?,
+        )
+        .await
     }
 
     /// A masternode's answer `vote_choice` on the proposal `proposal_id`, to put with
@@ -804,13 +838,22 @@ mod tests {
         }
         assert_eq!(
             served_through(
-                &proposals_by_owner_query(contract.clone(), Identifier::from([3; 32]), page)
-                    .expect("builds")
+                &proposals_by_owner_query(
+                    contract.clone(),
+                    PROPOSAL_DOCUMENT_TYPE_NAME,
+                    Identifier::from([3; 32]),
+                    page
+                )
+                .expect("builds")
             ),
             "byOwner"
         );
-        let by_created_at =
-            proposals_by_created_at_query(contract, DocumentsPage::default()).expect("builds");
+        let by_created_at = proposals_by_created_at_query(
+            contract,
+            PROPOSAL_DOCUMENT_TYPE_NAME,
+            DocumentsPage::default(),
+        )
+        .expect("builds");
         assert_eq!(served_through(&by_created_at), "byCreatedAt");
         assert_eq!(by_created_at.limit, 100);
         assert_eq!(by_created_at.start, None);
