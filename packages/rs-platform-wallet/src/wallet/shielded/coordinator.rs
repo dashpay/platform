@@ -447,6 +447,23 @@ impl NetworkShieldedCoordinator {
         self.network
     }
 
+    /// Refuse a wallet of another network. A bind derives the wallet's
+    /// viewing keys for the wallet's network: registered on this coordinator
+    /// they would be scanned for on another network's chain, so the bind
+    /// would succeed and the wallet would never see a note.
+    pub(crate) fn ensure_network(
+        &self,
+        wallet_network: dashcore::Network,
+    ) -> Result<(), PlatformWalletError> {
+        if self.network != wallet_network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the shielded coordinator is for {:?}, this wallet for {:?}",
+                self.network, wallet_network
+            )));
+        }
+        Ok(())
+    }
+
     /// Install (or replace) the per-chunk progress handler. The
     /// callback runs from inside `sync_shielded_notes`'s chunk loop
     /// — once per ~2048 notes processed — so keep it cheap. Used by

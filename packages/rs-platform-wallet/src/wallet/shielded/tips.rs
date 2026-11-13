@@ -51,6 +51,12 @@ pub fn is_shielded_identity_account(account: u32) -> bool {
 /// authentication key this wallet derives at that index (the key discovery and
 /// registration both use). Fails closed when no key matches, including when
 /// no public keys were restored.
+///
+/// Only an ECDSA MASTER authentication key counts. The hash alone proves
+/// nothing: a hash-only key (`ECDSA_HASH160`) or a key of another purpose or
+/// level can carry it on an identity whose master key is another wallet's or
+/// another index's. A disabled key still counts: rotating the master key
+/// does not change the index the identity was created at.
 fn verify_identity_index(
     seed: &[u8],
     network: key_wallet::Network,
@@ -60,7 +66,9 @@ fn verify_identity_index(
     use crate::wallet::identity::network::{
         derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
 
     let master = key_wallet::bip32::ExtendedPrivKey::new_master(network, seed)
         .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
@@ -70,10 +78,12 @@ fn verify_identity_index(
         identity_index,
         MASTER_KEY_INDEX,
     )?;
-    let verified = identity
-        .public_keys()
-        .values()
-        .any(|key| key.public_key_hash().ok() == Some(expected));
+    let verified = identity.public_keys().values().any(|key| {
+        key.key_type() == KeyType::ECDSA_SECP256K1
+            && key.purpose() == Purpose::AUTHENTICATION
+            && key.security_level() == SecurityLevel::MASTER
+            && key.public_key_hash().ok() == Some(expected)
+    });
     if verified {
         Ok(())
     } else {
@@ -96,8 +106,19 @@ impl PlatformWallet {
             .identity_manager
             .managed_identities()
             .filter(|identity| identity.wallet_id == Some(self.wallet_id()))
-            .filter_map(|identity| identity.identity_index)
-            .filter_map(|index| shielded_identity_account_index(index).ok())
+            .filter_map(|identity| {
+                let index = identity.identity_index?;
+                let account = shielded_identity_account_index(index);
+                if account.is_err() {
+                    tracing::warn!(
+                        identity = %identity.identity.id(),
+                        identity_index = index,
+                        "identity index is outside the identity shielded account range; \
+                         its shielded account is not bound"
+                    );
+                }
+                account.ok()
+            })
             .collect())
     }
 
@@ -115,13 +136,12 @@ impl PlatformWallet {
         // The account's keys are derived for this wallet's network. Bound to
         // a coordinator of another network they would scan the wrong chain,
         // while the address was handed out and recorded as prepared.
-        if coordinator.network() != self.sdk.network {
-            return Err(PlatformWalletError::InvalidParameter(format!(
-                "the shielded coordinator is for {:?}, this wallet for {:?}",
-                coordinator.network(),
-                self.sdk.network
-            )));
-        }
+        coordinator.ensure_network(self.sdk.network)?;
+        // Sampled before the first wait. A Clear that runs while this waits
+        // for admission below has bumped it by the time this is admitted, and
+        // the host wipes its own rows only after that Clear returns: the bind
+        // here would load them and restore the notes the Clear removed.
+        let clear_generation = coordinator.clear_generation();
         // Do not publish a key from a mis-associated mnemonic. A first bind
         // has no persisted FVK against which to detect a wrong seed.
         let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
@@ -146,12 +166,14 @@ impl PlatformWallet {
             )));
         }
         let _operation = coordinator.operation_guard().await;
+        if coordinator.clear_generation() != clear_generation {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         let account = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
-        let clear_generation = coordinator.clear_generation();
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
@@ -163,7 +185,7 @@ impl PlatformWallet {
             .await?;
         self.persister()
             .flush()
-            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+            .map_err(PlatformWalletError::from_flush_failure)?;
         let address = self
             .shielded_default_address(account)
             .await
@@ -221,11 +243,9 @@ impl PlatformWallet {
                 "Tip account requires a wallet-owned identity".to_string(),
             ));
         }
-        let index = identity.identity_index.ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Tip account requires a recoverable identity index".to_string(),
-            )
-        })?;
+        let index = identity
+            .identity_index
+            .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
         verify_identity_index(seed, self.sdk.network, index, &identity.identity)?;
         shielded_identity_account_index(index)
     }

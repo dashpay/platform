@@ -883,7 +883,21 @@ impl PlatformWallet {
     /// shielded wallet (e.g. after a network switch).
     ///
     /// `accounts` must be non-empty; pass `&[0]` for the
-    /// single-account default.
+    /// single-account default. They are the ordinary accounts to bind,
+    /// not the whole bound set. The bind adds to them:
+    ///
+    /// - the identity account (`shielded_identity_account_index`) of
+    ///   every identity this wallet holds with a recorded index;
+    /// - every identity account with a persisted viewing key, so the
+    ///   account of an identity removed since keeps scanning.
+    ///
+    /// The bound set can therefore be larger than the request, and each
+    /// added account is one more to scan. Pass the ordinary accounts
+    /// again on the next bind, never the bound set: it can hold more
+    /// accounts than the host bindings accept in one request.
+    ///
+    /// Fails, before anything is derived, stored or registered, for a
+    /// `coordinator` of another network than this wallet's.
     ///
     /// [`bind_shielded_from_persisted`]: Self::bind_shielded_from_persisted
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
@@ -908,6 +922,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
+        coordinator.ensure_network(self.sdk.network)?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -939,7 +954,7 @@ impl PlatformWallet {
         let start = self
             .persister
             .load()
-            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+            .map_err(PlatformWalletError::from_load_failure)?;
         accounts.extend(
             start
                 .shielded
@@ -1029,6 +1044,14 @@ impl PlatformWallet {
     /// rows); the caller then falls back to the seed path. A persisted
     /// row that fails to decode is an error, not a fallback — silent
     /// re-resolution would mask persistence corruption.
+    ///
+    /// `accounts` are the ordinary accounts, as for
+    /// [`bind_shielded`](Self::bind_shielded): the same identity accounts
+    /// are added to them, so the bound set can be larger than the
+    /// request. One of those without a persisted viewing key (an identity
+    /// found since the last seed-backed bind) also returns `Ok(false)`.
+    /// A `coordinator` of another network than this wallet's is refused
+    /// the same way.
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded_from_persisted(
         &self,
@@ -1036,6 +1059,7 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        coordinator.ensure_network(self.sdk.network)?;
         let _config = self.shielded_config_lock.lock().await;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
@@ -1057,11 +1081,10 @@ impl PlatformWallet {
         // Sampled before the load so the install can tell that the
         // snapshot predates a Clear.
         let snapshot_generation = coordinator.clear_generation();
-        let start = self.persister.load().map_err(|e| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "persister load failed while rebinding shielded viewing keys: {e}"
-            ))
-        })?;
+        let start = self
+            .persister
+            .load()
+            .map_err(PlatformWalletError::from_load_failure)?;
         let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
         // Newly discovered identities require their tip accounts too. Missing
         // FVKs must trigger seed-backed binding: skipping them would report a

@@ -164,12 +164,16 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+    coordinator_for(dir, Network::Testnet)
+}
+
+fn coordinator_for(dir: &std::path::Path, network: Network) -> Arc<NetworkShieldedCoordinator> {
     std::fs::create_dir_all(dir).expect("create temp dir");
     let db_path = dir.join("tree.sqlite");
     let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
     Arc::new(NetworkShieldedCoordinator::new(
         Arc::new(dash_sdk::Sdk::new_mock()),
-        Network::Testnet,
+        network,
         db_path,
         store,
     ))
@@ -184,7 +188,15 @@ where
 {
     let (wallet_manager, wallet_id, balance, _signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    // On the wallet manager's and the coordinators' network: the bare mock
+    // SDK is a mainnet one, and a bind refuses a coordinator of another
+    // network than the SDK's.
+    let sdk = Arc::new(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+    );
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&wallet_manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
@@ -1453,7 +1465,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             wallet
                 .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
                 .await,
-            Err(crate::PlatformWalletError::Persistence(_))
+            Err(crate::PlatformWalletError::PersisterFlush(_))
         ));
         assert_eq!(
             *persister.durability_events.lock().unwrap(),
@@ -1693,6 +1705,12 @@ async fn race_tip_preparation<F, Fut>(
     let mut writing = tokio::spawn(writer(wallet.clone()));
     // Unserialized, the writer finishes now and the resumed preparation then
     // rebinds its stale {0} plus the tip account, dropping account 1.
+    //
+    // The callers run on a paused clock, which is load-bearing: the timeout
+    // fires only once nothing else is runnable, so it reads "the runtime had
+    // no work left and the writer still had not finished". On a real clock a
+    // writer that is merely slow to be scheduled passes it too, with the
+    // lock removed.
     let finished_early =
         tokio::time::timeout(std::time::Duration::from_millis(500), &mut writing).await;
     assert!(
@@ -1709,7 +1727,7 @@ async fn race_tip_preparation<F, Fut>(
 /// not be undone by the stale snapshot: preparation is paused right after its
 /// snapshot while another task binds accounts 0 and 1, and account 1 must
 /// still be bound and registered once both finish.
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
     use crate::shielded_identity_account_index;
     let (wallet, seed, id, coordinator) = tip_race_fixture("tips_concurrent_bind").await;
@@ -1741,7 +1759,7 @@ async fn should_keep_an_ordinary_account_bound_during_tip_preparation() {
 /// `shielded_add_account` writes the same account set, so it must not land
 /// between preparation's snapshot and its bind either, or that bind replaces
 /// the key map without the added account.
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn should_keep_an_added_account_during_tip_preparation() {
     use crate::shielded_identity_account_index;
     let (wallet, seed, id, coordinator) = tip_race_fixture("tips_concurrent_add").await;
@@ -1766,16 +1784,7 @@ async fn should_keep_an_added_account_during_tip_preparation() {
 #[tokio::test]
 async fn should_refuse_tip_preparation_on_a_coordinator_of_another_network() {
     let (wallet, seed, id, _coordinator) = tip_race_fixture("tips_other_network").await;
-    let dir = temp_dir("tips_other_network_mainnet");
-    std::fs::create_dir_all(&dir).expect("create temp dir");
-    let db_path = dir.join("tree.sqlite");
-    let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
-    let mainnet = Arc::new(NetworkShieldedCoordinator::new(
-        Arc::new(dash_sdk::Sdk::new_mock()),
-        Network::Mainnet,
-        db_path,
-        store,
-    ));
+    let mainnet = coordinator_for(&temp_dir("tips_other_network_mainnet"), Network::Mainnet);
     let bound_before = wallet.shielded_account_indices().await;
 
     let refused = wallet
@@ -1791,6 +1800,121 @@ async fn should_refuse_tip_preparation_on_a_coordinator_of_another_network() {
     );
     assert_eq!(wallet.shielded_account_indices().await, bound_before);
     assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+}
+
+/// A bind derives its viewing keys for the wallet's network, so both bind
+/// routes refuse a coordinator of another network before anything is read,
+/// derived, stored or registered.
+#[tokio::test]
+async fn should_refuse_a_bind_on_a_coordinator_of_another_network() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let mainnet = coordinator_for(&temp_dir("bind_other_network"), Network::Mainnet);
+
+    let seeded = wallet.bind_shielded(&[0x42u8; 64], &[0], &mainnet).await;
+    assert!(
+        matches!(seeded, Err(crate::PlatformWalletError::InvalidParameter(_))),
+        "{seeded:?}"
+    );
+    let seedless = wallet.bind_shielded_from_persisted(&[0], &mainnet).await;
+    assert!(
+        matches!(
+            seedless,
+            Err(crate::PlatformWalletError::InvalidParameter(_))
+        ),
+        "{seedless:?}"
+    );
+
+    assert!(wallet.shielded_account_indices().await.is_empty());
+    assert!(mainnet.registered_subwallets().await.is_empty());
+    assert!(persister.stored.lock().unwrap().is_empty());
+    assert_eq!(*persister.load_calls.lock().unwrap(), 0);
+}
+
+/// The seed proof accepts only the identity's ECDSA MASTER authentication
+/// key. The derived key's hash on a hash-only key, or the derived key itself
+/// below MASTER, says nothing about the index the identity was created at.
+#[tokio::test]
+async fn should_refuse_tip_preparation_when_the_derived_key_is_not_the_master_key() {
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::prelude::Identifier;
+    let (wallet, seed, _, coordinator) = tip_race_fixture("tips_not_master_key").await;
+
+    // Index 3: the derived key's hash, carried by a hash-only key.
+    let mut hash_only = seed_master_key(&seed[..], 3);
+    let derived_hash = hash_only[&0].public_key_hash().unwrap();
+    let Some(IdentityPublicKey::V0(key)) = hash_only.get_mut(&0) else {
+        panic!("the helper builds a V0 key");
+    };
+    key.key_type = KeyType::ECDSA_HASH160;
+    key.data = BinaryData::new(derived_hash.to_vec());
+    assert_eq!(hash_only[&0].public_key_hash().unwrap(), derived_hash);
+    // Index 4: the derived key itself, below MASTER.
+    let mut below_master = seed_master_key(&seed[..], 4);
+    let Some(IdentityPublicKey::V0(key)) = below_master.get_mut(&0) else {
+        panic!("the helper builds a V0 key");
+    };
+    key.security_level = SecurityLevel::HIGH;
+
+    for (id, index, public_keys) in [
+        (Identifier::from([0x71; 32]), 3, hash_only),
+        (Identifier::from([0x72; 32]), 4, below_master),
+    ] {
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id,
+                        public_keys,
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    index,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+        }
+        let refused = wallet
+            .prepare_shielded_identity_address(&seed, &id, &coordinator)
+            .await;
+        assert!(
+            matches!(refused, Err(crate::PlatformWalletError::InvalidIdentityData(ref msg)) if msg.contains("not verified")),
+            "index {index}: {refused:?}"
+        );
+        assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    }
+}
+
+/// A Clear that is admitted while a preparation waits for admission wins. The
+/// host wipes its own rows only after that Clear returns, so a preparation
+/// admitted right behind it would bind from the rows the Clear removed: it is
+/// refused and nothing is prepared.
+#[tokio::test]
+async fn should_refuse_a_tip_preparation_admitted_behind_a_clear() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_behind_clear").await;
+    // Admission is held, so the Clear queues for it and the preparation
+    // queues behind the Clear (the lock is fair: a waiting writer goes
+    // before a later reader). Releasing it admits the Clear first.
+    let admission = coordinator.operation_guard().await;
+    let (cleared, prepared, ()) = tokio::join!(
+        coordinator.clear(),
+        wallet.prepare_shielded_identity_address(&seed, &id, &coordinator),
+        async move { drop(admission) },
+    );
+
+    cleared.unwrap();
+    assert!(
+        matches!(prepared, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{prepared:?}"
+    );
+    assert_eq!(wallet.prepared_shielded_identity_account(&id), None);
+    assert!(coordinator.registered_subwallets().await.is_empty());
 }
 
 /// A Clear drops the coordinator's state for the account, so the preparation no
