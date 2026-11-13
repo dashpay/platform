@@ -1,10 +1,43 @@
 import XCTest
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// The lifecycle block is the only authenticated account of what an erase
 /// removed, so a malformed number must be rejected rather than truncated into
 /// a count or a timestamp the user then acts on.
 final class DocumentHistoryLifecycleTests: XCTestCase {
+
+    func testSubmittedEraseWithUnavailableClosingReadRemainsSubmitted() throws {
+        var value = DocumentEraseOutcomeFFI()
+        value.kind = 2
+        value.before.state = 4
+        value.before.remaining_revisions = UInt64.max
+        let outcome = try DocumentEraseOutcome(ffi: value)
+        guard case .submitted(let before, let after) = outcome else {
+            return XCTFail("Rust reported a submitted erase")
+        }
+        XCTAssertEqual(before?.remainingRevisions, UInt64.max)
+        XCTAssertNil(after)
+    }
+
+    func testUnknownEraseTagsReportUnreadableResult() {
+        var value = DocumentEraseOutcomeFFI()
+        value.kind = 255
+        XCTAssertThrowsError(try DocumentEraseOutcome(ffi: value)) { error in
+            XCTAssertEqual(error.localizedDescription, "Erase result unreadable; read history before retrying.")
+        }
+    }
+
+    func testUnavailablePreflightIsNotAnAbsentObservation() throws {
+        var value = DocumentEraseOutcomeFFI()
+        value.kind = 1
+        value.reason = 4
+        let outcome = try DocumentEraseOutcome(ffi: value)
+        guard case .notSubmitted(.preflightUnavailable, let before) = outcome else {
+            return XCTFail("Rust did not submit the erase")
+        }
+        XCTAssertNil(before)
+    }
 
     /// Parses through `JSONSerialization` the way the query path does: that
     /// is what bridges JSON booleans and fractional numbers to `NSNumber`,

@@ -151,50 +151,8 @@ impl Sdk {
             ],
         };
 
-        let mut state: Option<Contenders> = None;
-        let mut start_at = None;
-        loop {
-            let read = state.as_ref().map_or(0, |state| state.contenders.len());
-            let page_limit = match limit {
-                Some(limit) => {
-                    let left = (limit as usize).saturating_sub(read);
-                    if left == 0 {
-                        break;
-                    }
-                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
-                }
-                None => DEFAULT_QUERY_LIMIT,
-            };
-            let page = ContenderWithSerializedDocument::fetch_many(
-                self,
-                ContestedDocumentVotePollDriveQuery {
-                    vote_poll: vote_poll.clone(),
-                    result_type:
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-                    allow_include_locked_and_abstaining_vote_tally: true,
-                    start_at,
-                    limit: Some(page_limit),
-                    offset: None,
-                },
-            )
-            .await?;
-            let page_len = page.contenders.len();
-            let last = page.contenders.keys().last().copied();
-            match state.as_mut() {
-                None => state = Some(page),
-                Some(state) => state.contenders.extend(page.contenders),
-            }
-
-            // A short page is the last one
-            match last {
-                Some(last) if page_len >= page_limit as usize => {
-                    start_at = Some((last.to_buffer(), false));
-                }
-                _ => break,
-            }
-        }
-
-        Ok(state.unwrap_or_default())
+        self.fetch_contested_resource_vote_state(&vote_poll, limit)
+            .await
     }
 
     /// Get voters who voted for a specific identity for a contested DPNS username

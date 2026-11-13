@@ -37,6 +37,11 @@ mod contract;
 mod decision_proposal;
 mod discovery;
 mod document;
+mod document_erase;
+pub(crate) use document_erase::DocumentEraseGate;
+pub use document_erase::{
+    DocumentEraseNotSubmittedReason, DocumentEraseOutcome, DocumentLifecycleObservation,
+};
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;

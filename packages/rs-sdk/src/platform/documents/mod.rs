@@ -13,6 +13,7 @@ pub use dash_platform_queries::documents::{
 
 pub mod chained_document_query_sdk;
 pub mod contest_fund;
+pub mod contest_vote_state;
 pub mod document_query_sdk;
 mod fetch_bindings;
 pub mod page;

@@ -408,7 +408,7 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             .limit
             .map(u16::try_from)
             .transpose()
-            .map_err(|_| Error::Generic("history limit out of bounds".to_owned()))?;
+            .map_err(|_| Error::InvalidRequest("history limit out of bounds".to_owned()))?;
         DocumentHistoryDriveQuery {
             contract_id: self.data_contract_id.to_buffer(),
             document_type_name: self.document_type_name.clone(),
@@ -416,7 +416,11 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             filter: self.filter.clone(),
             limit,
         }
-        .validate()?;
+        .validate()
+        .map_err(|error| match error {
+            drive::error::Error::Query(_) => Error::InvalidRequest(error.to_string()),
+            other => Error::Drive(other),
+        })?;
         let filter = match self.filter {
             DocumentHistoryFilter::StartAtTime(time) => Filter::StartAtMs(time),
             DocumentHistoryFilter::StartAfter { time_ms, revision } => {
@@ -1826,6 +1830,48 @@ mod history_query_tests {
     }
 
     #[test]
+    fn should_classify_invalid_history_selectors_as_invalid_requests() {
+        let request_settings = Default::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
+            prove: true,
+        };
+        let invalid = [
+            (DocumentHistoryFilter::StartAtTime(0), Some(0)),
+            (DocumentHistoryFilter::StartAtTime(0), Some(11)),
+            (DocumentHistoryFilter::StartAtTime(0), Some(u32::MAX)),
+            (DocumentHistoryFilter::Revision(1), Some(2)),
+            (DocumentHistoryFilter::StartAtRevision(0), Some(1)),
+        ];
+        for (filter, limit) in invalid {
+            let query = DocumentHistoryQuery {
+                data_contract_id: [1; 32].into(),
+                document_type_name: "note".into(),
+                document_id: [2; 32].into(),
+                filter,
+                limit,
+            };
+            assert!(
+                matches!(query.query(&settings), Err(Error::InvalidRequest(_))),
+                "{query:?}: {:?}",
+                query.query(&settings)
+            );
+        }
+        for limit in [None, Some(1), Some(10)] {
+            let query = DocumentHistoryQuery {
+                data_contract_id: [1; 32].into(),
+                document_type_name: "note".into(),
+                document_id: [2; 32].into(),
+                filter: DocumentHistoryFilter::StartAtTime(0),
+                limit,
+            };
+            assert!(query.query(&settings).is_ok());
+        }
+    }
+
+    #[test]
     fn should_report_oversized_history_limits_as_request_errors() {
         let request_settings = Default::default();
         let settings = QuerySettings {
@@ -1843,7 +1889,7 @@ mod history_query_tests {
                 limit: Some(limit),
             };
             assert!(
-                matches!(query.query(&settings), Err(Error::Generic(message))
+                matches!(query.query(&settings), Err(Error::InvalidRequest(message))
                 if message == "history limit out of bounds")
             );
         }
