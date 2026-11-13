@@ -443,13 +443,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 * point every publishable package at the repository it lives in
 * upgrade Tenderdash to v2.0.0-dev.2 ([#5836](https://github.com/dashpay/platform/issues/5836))
 
-## [Unreleased]
+### Notes
 
-### Tests
+#### Tests
 
 * **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
 
-### Fixed
+#### Fixed
 
 - **dpp:** require a WASM-compatible `blst` version for BLS signatures and Core
   message/quorum verification, including external consumers with older dependency lockfiles.
@@ -465,7 +465,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
   `ContextProviderError::QuorumSourceUnavailable`.
   `get_quorum_public_key_with_status` still returns the key with its status.
 
-### Changed
+#### Changed
 
 - **swift-sdk:** `SDK(network:)` builds the adaptive context provider in Auto mode
   instead of the trusted one (`contextProvider` defaults to `.adaptive`). An SDK that no
